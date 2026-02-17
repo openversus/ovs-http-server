@@ -3,7 +3,8 @@ node_modules
 dist
 .env
 build
-
+.vs/**
+.vscode/**
 
 packets/
 game.log

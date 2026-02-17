@@ -1,13 +1,32 @@
+import { logger } from "../config/logger";
 import express, { Request, Response } from "express";
+import { redisClient, RedisPlayerConnection, redisSetPlayerConnectionCosmetics, redisGetPlayer, redisGetPlayers } from "../config/redis";
+import { Cosmetics, CosmeticsModel, TauntSlotsClass } from "../database/Cosmetics";
+import { getEquippedCosmetics } from "../services/cosmeticsService";
 import { MVSQueries } from "../interfaces/queries_types";
 import ObjectID from "bson-objectid";
 import { randomUUID } from "crypto";
 import { MVSTime } from "../utils/date";
 import env from "../env/env";
 import { cancelMatchmaking, MATCH_TYPES, queueMatch } from "../services/matchmakingService";
+import * as SharedTypes from "../types/shared-types";
+import { HYDRA_ACCESS_TOKEN, SECRET, decodeToken } from "../middleware/auth";
+import * as AuthUtils from "../utils/auth";
+import * as KitchenSink from "../utils/garbagecan";
+
+const serviceName = "Handlers.Matches";
+const BE_VERBOSE: boolean = env.VERBOSE_LOGGING === 0 ? false : true;
 
 export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Response) {
-  const account = req.token;
+  //const account = req.token;
+
+  const account = AuthUtils.DecodeClientToken(req);
+  const aID = account.id;
+  const hydraUsername = account.hydraUsername;
+  const playerUsername = account.username;
+  const wb_network_id = account.wb_network_id;
+  const profile_id = account.profile_id;
+
   res.send({
     updated_at: { _hydra_unix_date: 1742265244 },
     created_at: { _hydra_unix_date: 1742265244 },
@@ -29,8 +48,8 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
         {
           TeamIndex: 0,
           Players: {
-            [account.id]: {
-              Account: { id: account.id },
+            [aID]: {
+              Account: { id: aID },
               JoinedAt: { _hydra_unix_date: MVSTime(new Date()) },
               BotSettingSlug: "",
               LobbyPlayerIndex: 0,
@@ -44,14 +63,14 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
         { TeamIndex: 3, Players: {}, Length: 0 },
         { TeamIndex: 4, Players: {}, Length: 0 },
       ],
-      LeaderID: account.id,
+      LeaderID: aID,
       LobbyType: 0,
       ReadyPlayers: {},
-      PlayerGameplayPreferences: { [account.id]: 544 },
-      PlayerAutoPartyPreferences: { [account.id]: true },
+      PlayerGameplayPreferences: { [aID]: 544 },
+      PlayerAutoPartyPreferences: { [aID]: false },
       GameVersion: env.GAME_VERSION,
       HissCrc: 1167552915,
-      Platforms: { [account.id]: "PC" },
+      Platforms: { [aID]: "PC" },
       AllMultiplayParams: {
         "1": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252499", MultiplayRegionId: "" },
         "2": {
@@ -66,37 +85,37 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
           MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682",
         },
       },
-      LockedLoadouts: { [account.id]: { Character: "character_wonder_woman", Skin: "skin_wonder_woman_default" } },
+      LockedLoadouts: { [aID]: { Character: "character_wonder_woman", Skin: "skin_wonder_woman_default" } },
       ModeString: "1v1",
       IsLobbyJoinable: true,
     },
     players: {
       all: [
         {
-          account_id: account.id,
+          account_id: aID,
           source: {},
           state: "join",
           data: {},
           identity: {
-            username: account.hydraUsername,
+            username: hydraUsername,
             avatar: "https://s3.amazonaws.com/wb-agora-hydra-ugc-dokken/identicons/identicon.584.png",
             default_username: true,
             personal_data: {},
             alternate: {
-              wb_network: [{ id: account.wb_network_id, username: account.username, avatar: null, email: null }],
+              wb_network: [{ id: wb_network_id, username: playerUsername, avatar: null, email: null }],
               steam: [
                 {
                   id: "76561195177950873",
-                  username: account.username,
+                  username: playerUsername,
                   avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg",
                   email: null,
                 },
               ],
             },
             usernames: [
-              { auth: "hydra", username: account.hydraUsername },
-              { auth: "steam", username: account.username },
-              { auth: "wb_network", username: account.username },
+              { auth: "hydra", username: hydraUsername },
+              { auth: "steam", username: playerUsername },
+              { auth: "wb_network", username: playerUsername },
             ],
             platforms: ["steam"],
             current_platform: "steam",
@@ -104,7 +123,7 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
           },
         },
       ],
-      current: [account.id],
+      current: [aID],
       count: 1,
     },
     matchmaking: null,
@@ -161,10 +180,53 @@ export interface MATCH_MAKING_REQUEST {
 }
 
 export async function handleMatches_matchmaking_1v1_retail_request(req: Request<{}, {}, MATCH_MAKING_REQUEST, {}>, res: Response) {
-  const account = req.token;
+  // const account = req.token;
+
+  logger.info(`[${serviceName}]: Received 1v1 retail matchmaking request`);
+
+  if (BE_VERBOSE) {
+    logger.info(`[${serviceName}]: Request is: \n`);
+    KitchenSink.TryInspectRequestVerbose(req);
+  }
+
+  const account = AuthUtils.DecodeClientToken(req);
+
+  let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${account.id}`) as unknown as RedisPlayerConnection;
+  if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
+    logger.error(`[${serviceName}]: No Redis player connection found for player ID ${account.id}, this should not happen.`);
+  }
+
+  const aID = rPlayerConnectionByID.id || account.id;
+  const hydraUsername = rPlayerConnectionByID.hydraUsername || account.hydraUsername;
+  const playerUsername = rPlayerConnectionByID.username || account.username;
+  const wb_network_id = rPlayerConnectionByID.wb_network_id || account.wb_network_id;
+  const profile_id = rPlayerConnectionByID.profile_id || account.profile_id;
+
+  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${rPlayerConnectionByID.current_ip}`) as unknown as RedisPlayerConnection;
+  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
+    logger.error(`[${serviceName}]: No Redis player connection found for IP ${rPlayerConnectionByID.current_ip}, this should not happen.`);
+  }
+
+  let numCosmetics = await redisClient.keys(`player:${aID}:cosmetics`).then(keys => keys.length);
+
+  if (numCosmetics === 0) {
+    logger.warn(`[${serviceName}]: No cosmetics found in Redis for AccountId ${account.id} during matchmaking. This should not happen, as cosmetics should be cached when the player equips a cosmetic. Creating default cosmetics for this account.`);
+    let rPlayerCosmetics = await getEquippedCosmetics(rPlayerConnectionByID.id) as Cosmetics;
+    await redisSetPlayerConnectionCosmetics(aID, rPlayerCosmetics);
+  }
+
+  let playerLoadout = await redisGetPlayer(aID);
+  if (!playerLoadout || !playerLoadout.character || !playerLoadout.skin) {
+    logger.error(`[${serviceName}]: No Redis player loadout found for player ID ${aID}, cannot matchmake.`);
+    return;
+  }
+
+  await redisClient.hSet(`connections:${aID}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+  await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+
   const data = {
     updated_at: { _hydra_unix_date: MVSTime(new Date()) },
-    requester_account_id: account.id,
+    requester_account_id: aID,
     is_concurrent: false,
     concurrent_identifier: randomUUID(),
     created_at: { _hydra_unix_date: MVSTime(new Date()) },
@@ -183,15 +245,15 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
     criteria_slug: "1v1-retail",
     cluster: req.body.data.MultiplayParams.MultiplayClusterSlug,
     players_connection_info: {
-      [account.id]: {
+      [aID]: {
         game_server_region_data: [{ region_id: "19c465a7-f21f-11ea-a5e3-0954f48c5682", latency: 0.04239736124873161 }],
       },
     },
-    player_connections: { [account.id]: [randomUUID()] },
+    player_connections: { [aID]: [randomUUID()] },
     players: {
-      [account.id]: {
+      [aID]: {
         updated_at: null,
-        account_id: account.id,
+        account_id: aID,
         created_at: null,
         last_login: null,
         last_inbox_read: null,
@@ -209,12 +271,12 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
         files: [],
         user_segments: [],
         random_distribution: null,
-        id: account.profile_id,
+        id: profile_id,
       },
     },
     groups: [1],
     relationships: [],
-    recently_played: { [account.id]: [] },
+    recently_played: { [aID]: [] },
     from_match: req.body.match,
     reuse_match: false,
     party_id: null,
@@ -237,17 +299,62 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
     id: ObjectID().toHexString(),
   };
   res.send(data);
-  await queueMatch(account.id, [account.id], data.from_match, data.id, MATCH_TYPES.ONE_V_ONE);
+  await queueMatch(aID, [aID], data.from_match, data.id, MATCH_TYPES.ONE_V_ONE);
 }
 
 export async function handleMatches_matchmaking_2v2_retail_request(req: Request<{}, {}, MATCH_MAKING_REQUEST, {}>, res: Response) {
-  const account = req.token;
+  // const account = req.token;
+
+  logger.info("Received 2v2 retail matchmaking request");
+  
+  if (BE_VERBOSE) {
+    logger.info(`[${serviceName}]: Request is: \n`)
+    KitchenSink.TryInspectRequestVerbose(req);
+  }
+
+  // Should really extract this code out into a helper function since it's repeated in both 1v1 and 2v2 handlers, but
+  // for now I'm just going to be lazy and copy/paste it
+  const account = AuthUtils.DecodeClientToken(req);
+  
+  let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${account.id}`) as unknown as RedisPlayerConnection;
+  if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
+    logger.error(`[${serviceName}]: No Redis player connection found for player ID ${account.id}, this should not happen.`);
+  }
+
+  const aID = rPlayerConnectionByID.id || account.id;
+  const hydraUsername = rPlayerConnectionByID.hydraUsername || account.hydraUsername;
+  const playerUsername = rPlayerConnectionByID.username || account.username;
+  const wb_network_id = rPlayerConnectionByID.wb_network_id || account.wb_network_id;
+  const profile_id = rPlayerConnectionByID.profile_id || account.profile_id;
+
+  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${rPlayerConnectionByID.current_ip}`) as unknown as RedisPlayerConnection;
+  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
+    logger.error(`[${serviceName}]: No Redis player connection found for IP ${rPlayerConnectionByID.current_ip}, this should not happen.`);
+  }
+
+  let numCosmetics = await redisClient.keys(`player:${aID}:cosmetics`).then(keys => keys.length);
+
+  if (numCosmetics === 0) {
+    logger.warn(`[${serviceName}]: No cosmetics found in Redis for AccountId ${account.id} during matchmaking. This should not happen, as cosmetics should be cached when the player equips a cosmetic. Creating default cosmetics for this account.`);
+    let rPlayerCosmetics = await getEquippedCosmetics(rPlayerConnectionByID.id) as Cosmetics;
+    await redisSetPlayerConnectionCosmetics(aID, rPlayerCosmetics);
+  }
+
+  let playerLoadout = await redisGetPlayer(aID);
+  if (!playerLoadout || !playerLoadout.character || !playerLoadout.skin) {
+    logger.error(`[${serviceName}]: No Redis player loadout found for player ID ${aID}, cannot matchmake.`);
+    return;
+  }
+
+  await redisClient.hSet(`connections:${aID}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+  await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+
   const newMatchId = ObjectID().toHexString();
 
   const data = {
     id: newMatchId,
     updated_at: { _hydra_unix_date: MVSTime(new Date()) },
-    requester_account_id: account.id,
+    requester_account_id: aID,
     is_concurrent: false,
     concurrent_identifier: randomUUID(),
     created_at: { _hydra_unix_date: MVSTime(new Date()) },
@@ -266,18 +373,18 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
     criteria_slug: "2v2-retail",
     cluster: req.body.data.MultiplayParams.MultiplayClusterSlug,
     players_connection_info: {
-      [account.id]: {
+      [aID]: {
         game_server_region_data: [{ region_id: "19c465a7-f21f-11ea-a5e3-0954f48c5682", latency: 0.04791003838181496 }],
       },
     },
     player_connections: {
-      [account.id]: [randomUUID()],
+      [aID]: [randomUUID()],
     },
     players: {
-      [account.id]: {
-        id: account.profile_id,
+      [aID]: {
+        id: profile_id,
         updated_at: null,
-        account_id: account.id,
+        account_id: aID,
         created_at: null,
         last_login: null,
         last_inbox_read: null,
@@ -294,7 +401,7 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
     groups: [1],
     relationships: [],
     recently_played: {
-      [account.id]: [],
+      [aID]: [],
     },
     from_match: req.body.match,
     reuse_match: false,
@@ -319,9 +426,12 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
 
   res.send(data);
 
-  await queueMatch(account.id, [account.id], data.from_match, data.id, MATCH_TYPES.TWO_V_TWO);
+  await queueMatch(aID, [aID], data.from_match, data.id, MATCH_TYPES.TWO_V_TWO);
 }
 
 export async function handle_cancel_matchmaking(req: Request<{ id: string }, {}, {}, {}>, res: Response) {
-  await cancelMatchmaking(req.token.id, req.params.id);
+  const account = AuthUtils.DecodeClientToken(req);
+  const aID = account.id;
+
+  await cancelMatchmaking(aID, req.params.id);
 }

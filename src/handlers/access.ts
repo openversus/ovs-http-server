@@ -1,58 +1,123 @@
 import express, { Request, Response } from "express";
+import * as Redis from "../config/redis"; //nc
 import { MVSQueries } from "../interfaces/queries_types";
 import ObjectID from "bson-objectid";
 import * as jwt from "jsonwebtoken";
 import { SECRET } from "../middleware/auth";
 import ky from "ky";
 import { HydraDecoder } from "mvs-dump";
-import { parseEncryptedAppTicket } from "steam-appticket";
+import { parseAppTicket, parseEncryptedAppTicket } from "steam-appticket";
 import env from "../env/env";
 import { logger } from "../config/logger";
 import { PlayerTesterModel } from "../database/PlayerTester";
-
 import { getAssetsByType } from "../loadAssets";
+import * as SharedTypes from "../types/shared-types";
+import * as KitchenSink from "../utils/garbagecan";
+import { AccountToken, IAccountToken } from "../types/AccountToken";
+import { NameGenerator } from "../utils/namegeneration";
+import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
 
-let USERNAME_COUNT = 0;
-const USERNAME = () => `MSVI_TESTER_${USERNAME_COUNT}`;
+const serviceName = "Handlers.Access";
+const BE_VERBOSE = env.VERBOSE_LOGGING === 1 ? true : false;
 
-export interface AccountToken {
-  public_id: string;
-  wb_network_id: string;
-  id: string;
-  profile_id: string;
-  username: string;
-  hydraUsername: string;
+async function deleteStaticAccess(req: express.Request) {
+  logger.info("In deleteStaticAccess, received request to delete access. \n");
+  KitchenSink.TryInspectRequestVerbose(req);
+
+  let tempIp = "";
+  try {
+    tempIp = req.ip!.replace(/^::ffff:/, "");
+  }
+  catch (error) {
+    return;
+  }
+
+  let ip = tempIp;
+  let player = await PlayerTesterModel.findOne({ ip });
+  if (!player) {
+    logger.info("No player found for IP:", ip);
+    return;
+  }
+
+  logger.info(`[${serviceName}]: Player ${player.id} with name ${player.name} and IP ${ip} is disconnecting and will be removed from Redis.`);
+  return;
 }
 
-export const accounts = new Map<string, AccountToken>();
-
 async function generateStaticAccess(req: express.Request) {
-  let ip = req.ip!.replace(/^::ffff:/, "");
+  logger.info(`[${serviceName}]: In generateStaticAccess, received request to generate access. \n`);
+  KitchenSink.TryInspectRequestVerbose(req);
+  
+  let tempIp = "";
+  try {
+    tempIp = req.ip!.replace(/^::ffff:/, "");
+  }
+  catch (error) {
+    logger.error(`[${serviceName}]: Error extracting IP from request: ${error}`);
+    return;
+  }
+  let ip = tempIp;
+
+  if (isBanned(ip)) {
+    logger.warn(GetBanWarningMessage(ip));
+    return;
+  }
 
   let player = await PlayerTesterModel.findOne({ ip });
   if (!player) {
-    const randomName = `MSVI_TESTER_${Math.random().toString(36).substring(2, 4)}`;
-    // generate a random name like Player_ab12cd34
+    var nameGenerator = new NameGenerator();
+    const randomName = nameGenerator.Generate("OpenVersus_");
+    // generate a random name like OpenVersus_1247112554154
     player = new PlayerTesterModel({ ip, name: randomName });
-    await player.save();
+    try {
+      await player.save();
+      logger.info(`[${serviceName}]: No player found for IP ${ip}. Created new player with id ${player.id} and name ${randomName}.`);
+    }
+    catch (error) {
+      logger.error(`[${serviceName}]: Error creating new player, error: ${error}`);
+      KitchenSink.TryInspect(error);
+    }
   }
 
-  let ws = `ws://mvsi-test.com:${env.WEBSOCKET_PORT}`;
+  let ws = `ws://testing.openversus.org:${env.WEBSOCKET_PORT}`;
   if (ip === "127.0.0.1") {
-    ws = `ws://mvsi-test.com:${env.WEBSOCKET_PORT}`;
+    ws = `ws://testing.openversus.org:${env.WEBSOCKET_PORT}`;
   } else {
     ws = `ws://${env.LOCAL_PUBLIC_IP}:${env.WEBSOCKET_PORT}`;
   }
-  const account: AccountToken = {
+
+  const account: SharedTypes.IAccountToken = {
     id: player.id,
     profile_id: player.profile_id.toHexString(),
     public_id: player.public_id,
-    wb_network_id: "pafd8d7950aa1484ea791d06662fa75ce",
+    wb_network_id: player.id,
     hydraUsername: player.name,
     username: player.name,
+    current_ip: ip,
+    lobby_id: "",
   };
+  player.token = account;
+  player.account = account;
+
+  try {
+    await player.save();
+  }
+  catch (error) {
+    logger.error(`[${serviceName}]: Error saving player after token/account creation: ${error}`);
+  }
+
   const token = jwt.sign(account, SECRET);
-  logger.info(`Player ${account.id} - ${account.username} connected`);
+  logger.info(`[${serviceName}]: Player ${account.id} - ${account.username} connected; ws: ${ws}`);
+
+  await Redis.redisAddPlayerConnection(player.id, ip, token, account);
+
+  if (BE_VERBOSE) {
+    let rPlayerConnectionByID = await Redis.redisClient.hGetAll(`connections:${player.id}`);
+    logger.info(`[${serviceName}]: Redis connection by player ID: ${JSON.stringify(rPlayerConnectionByID)}`);
+
+    logger.info(`[${serviceName}]: Connections via KitchenSink by ID: `);
+    KitchenSink.TryInspect(rPlayerConnectionByID)
+  }
+
   return {
     token: token,
     in_queue: false,
@@ -66,7 +131,7 @@ async function generateStaticAccess(req: express.Request) {
         "default-cluster": "ec2-us-east-1-dokken",
         servers: {
           "ec2-us-east-1-dokken": {
-            "mvsi-realtime": { ws: ws, udp: "0.0.0.0:0" },
+            "ovs-realtime": { ws: ws, udp: "0.0.0.0:0" },
           },
         },
       },
@@ -732,6 +797,7 @@ async function generateStaticAccess(req: express.Request) {
         character_C029: { count: 1, created_at: { _hydra_unix_date: 1738983257 } },
         character_C020: { count: 1, created_at: { _hydra_unix_date: 1741621929 } },
         character_c038: { count: 1, created_at: { _hydra_unix_date: 1741622129 } },
+        match_toasts: { count: 9998, created_at: { _hydra_unix_date: 1657745616 } },
       },
       matches: {
         rift_container_one_player: {
@@ -907,7 +973,47 @@ export interface Metadata {
 }
 
 export async function handleAccess(req: Request<{}, {}, ACCESS_REQ, {}>, res: Response) {
-  //const ticket = Buffer.from(req.body.auth.steam, "hex");
-  //console.log(parseEncryptedAppTicket(ticket, spaceWarPublicKey));
+  // const rawTicket = req.body.auth.steam;
+  // let tempPaddedTicket = rawTicket;
+  // while (tempPaddedTicket.length % 4 !== 0) {
+  //   tempPaddedTicket = "=" + tempPaddedTicket;
+  // }
+
+  // const base64Ticket = tempPaddedTicket;
+  // const base64Buffer = Buffer.from(base64Ticket, "base64");
+
+  // const ticket = Buffer.from(req.body.auth.steam, "hex");
+  // const dKey = 'ed9386073647cea58b7721490d59ed445723f0f66e7414e1533ba33cd803bdbd';
+  // const swk = '30819f300d06092a864886f70d010101050003818d0030818902818100c0d23be9c8ad41b7e36f59807d2c23d86bbdbb8f3c9a8658728b528348a678d34f2c5b6eecb6d0b9057a02c8947e3a7607ef33c67dbf51f44c51411b2a6f88d0322265e3e13db17f121420b9b7bd297ff7b3b098bdf7ce4b5c5686c4c1179cbf72a248c9fba6f5bb1c98270fc5324b41fa898e1d8791f78e03b20203010001';
+  // logger.info("Received auth request with Steam ticket\n");
+  // logger.info("Raw ticket is:\n");
+  // logger.info(ticket.toString('hex'));
+
+  // // const parsedTicket = parseAppTicket(ticket, true);
+  // // logger.info("Unencrypted parsed ticket is:\n");
+  // // logger.info(parsedTicket);
+  
+  // // const decryptedAppTicketswk = parseEncryptedAppTicket(ticket, swk);
+  // const decryptedAppTicketswk = parseEncryptedAppTicket(base64Buffer, swk);
+  // logger.info("Decrypted ticket with swk is:\n");
+  // logger.info(decryptedAppTicketswk);
+
+  // //const decryptedAppTicket = parseEncryptedAppTicket(ticket, spaceWarPublicKey);
+  // const decryptedAppTicket = parseEncryptedAppTicket(base64Buffer, spaceWarPublicKey);
+  // //const decryptedAppTicketdKey = parseEncryptedAppTicket(ticket, dKey);
+  // const decryptedAppTicketdKey = parseEncryptedAppTicket(base64Buffer, dKey);
+
+  // logger.info("Decrypted ticket with existing spaceWarPublicKey is:\n");
+  // logger.info(decryptedAppTicket);
+
+  // logger.info("Decrypted ticket with dKey is:\n");
+  // logger.info(decryptedAppTicketdKey);
+
   res.send(await generateStaticAccess(req));
+}
+
+export async function deleteAccess(req: Request<{}, {}, ACCESS_REQ, {}>, res: Response) {
+  //const ticket = Buffer.from(req.body.auth.steam, "hex");
+  //logger.info(parseEncryptedAppTicket(ticket, spaceWarPublicKey));
+  res.send(await deleteStaticAccess(req));
 }

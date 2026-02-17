@@ -1,9 +1,11 @@
 import express, { Request, Response } from "express";
 import { DataAssetModel } from "./database/DataAssets";
 import env from "./env/env";
+import { logger } from "./config/logger";
 import { loadAssets } from "./loadAssets";
 import { UpdateCrc } from "./data/config";
 
+const serviceName: string = "DataAssetSync";
 export const syncRouter = express.Router();
 
 interface SYNC_ASSET {
@@ -15,8 +17,11 @@ interface SYNC_ASSET {
   oldSlug: string;
 }
 syncRouter.post("/syncAsset", async (req, res) => {
-  console.log("Trying syncAsset");
+  logger.info(`[${serviceName}]: Trying syncAsset`);
   try {
+    if (undefined !== req.headers["authorization"] && !req.headers["authorization"] && req.headers["authorization"] !== "") {
+      logger.debug(`[${serviceName}]: Received DATA_ASSET_TOKEN ${req.headers["authorization"]}`);
+    }
     if (req.headers["authorization"] !== `Bearer ${env.DATA_ASSET_TOKEN}`) {
       res.sendStatus(403);
       return;
@@ -39,7 +44,8 @@ syncRouter.post("/syncAsset", async (req, res) => {
       UpdateCrc();
     });
     res.sendStatus(200);
-  } catch (e) {
+  }
+  catch (e) {
     res.status(404);
     //@ts-ignore
     res.send(e.codeName);

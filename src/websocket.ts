@@ -1,10 +1,14 @@
 import { WebSocket, WebSocketServer } from "ws";
 import { MVSHTTPServer } from "./server";
-import { randomUUID } from "crypto";
+import { randomUUID, randomInt } from "crypto";
 import { HydraDecoder, HydraEncoder } from "mvs-dump";
 import { buffer } from "stream/consumers";
 import { decodeToken } from "./middleware/auth";
-import { AccountToken } from "./handlers";
+//import { AccountToken } from "./handlers";
+import * as SharedTypes from "./types/shared-types";
+import * as RollbackProcess from "./utils/processes";
+//import { exec, spawn, spawnSync, SpawnOptions } from "child_process";
+
 import {
   ALL_PERKS_LOCKED_CHANNEL,
   initRedisSubscriber,
@@ -18,7 +22,7 @@ import {
   RedisPlayerConfig,
   RedisGameServerInstanceReadyNotification,
   RedisClient,
-  redisGetAllPlayersEquippedComsetics,
+  redisGetAllPlayersEquippedCosmetics,
   redisGetPlayers,
   RedisAllPerksLockedNotification,
   MATCHMAKING_COMPLETE_CHANNEL,
@@ -34,6 +38,10 @@ import {
   RedisCancelMatchMakingNotification,
   ON_END_OF_MATCH,
   RedisMatchEndNotification,
+  redisGetGamePort,
+  redisDeleteConnectionKeysByIp,
+  redisSetPlayerConnectionCosmetics,
+  RedisPlayerConnection
 } from "./config/redis";
 import { Server } from "https";
 import { Server as HttpServer } from "http";
@@ -43,12 +51,16 @@ import { MVSTime } from "./utils/date";
 import ObjectID from "bson-objectid";
 import { RedisClientType } from "@redis/client";
 import env from "./env/env";
+import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./database/Cosmetics";
+import { getEquippedCosmetics } from "./services/cosmeticsService";
+
+const serviceName: string = "WebSocket";
 
 export class WebSocketPlayer {
   init: boolean = false;
   ws: WebSocket;
   deleted?: boolean;
-  account: AccountToken | undefined;
+  account: SharedTypes.IAccountToken | undefined;
   matchTick: NodeJS.Timeout | undefined;
   matchConfig?: GameNotification;
   ticket?: ON_MATCH_MAKER_STARTED_NOTIFICATION;
@@ -56,7 +68,7 @@ export class WebSocketPlayer {
 
   constructor(_ws: WebSocket, ip: string) {
     this.ip = ip;
-    console.log(ip);
+    logger.info(ip);
     this.ws = _ws;
   }
 
@@ -198,7 +210,7 @@ export class WebSocketService {
     playerWS.account = decodedBody.account;
     playerWS.sendRaw(buffer);
     this.clients.set(playerWS.account.id, playerWS);
-    console.log(`Player ${playerWS.account.id} connected to websocket`);
+    logger.info(`[${serviceName}]: Player ${playerWS.account.id} with IP ${playerWS.ip} and name ${playerWS.account.username} connected to websocket`);
   }
 
   handleHeartBeats() {
@@ -216,7 +228,8 @@ export class WebSocketService {
       this.attemptRemoveMatchTicket(playerWS);
       this.clients.delete(playerWS.account.id);
       redisDeletePlayerKeys(playerWS.account.id);
-      console.log(`Player ${playerWS.account.id} disconnected from websocket`);
+      redisDeleteConnectionKeysByIp(playerWS.ip);
+      logger.info(`[${serviceName}]: Player ${playerWS.account.id} with IP ${playerWS.ip} and name ${playerWS.account.username} disconnected from websocket`);
     }
   }
 
@@ -229,8 +242,8 @@ export class WebSocketService {
 
   setupSocketHandlers() {
     this.ws.on("connection", (ws, request) => {
-      console.log("Client connected");
       let ip = request.socket.remoteAddress!.replace(/^::ffff:/, "");
+      logger.info(`[${serviceName}]: Client with IP ${ip} connected`);
 
       const playerWS = new WebSocketPlayer(ws, ip!);
       ws.on("message", (message) => {
@@ -248,14 +261,14 @@ export class WebSocketService {
       });
 
       ws.on("error", (error) => {
-        console.error("WebSocket error:", error);
+        logger.error(`[${serviceName}]: WebSocket error for player ${playerWS.account?.id ?? "unknown"} with IP ${playerWS.ip} and name ${playerWS.account?.username ?? "unknown"}, error: ${JSON.stringify(error)}`);
       });
     });
   }
 
   stopMatchTick(player: WebSocketPlayer) {
     if (player.matchTick) {
-      logger.info(`Stopping matchtick for ${player.account?.id}`);
+      logger.info(`[${serviceName}]: Stopping matchtick for player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"}`);
       clearInterval(player.matchTick);
       player.matchTick = undefined;
     }
@@ -321,7 +334,7 @@ export class WebSocketService {
       clearInterval(client.matchTick);
       client.matchTick = undefined;
       client.send(message);
-      logger.trace(`Canceling matchmaking - ${client.account?.id}`);
+      logger.trace(`[${serviceName}]: Canceling matchmaking - ${client.account?.id ?? "unknown"} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} - matchmakingRequestId: ${matchmakingRequestId}`);
     }
   }
 
@@ -329,15 +342,40 @@ export class WebSocketService {
     const arr = [env.UDP_SERVER_IP, env.UDP_SERVER_IP2];
     const randomIndex = Math.floor(Math.random() * arr.length);
     for (const matchPlayer of notification.players) {
-      const player = this.clients.get(matchPlayer.playerId);
+      let tempPlayer = null;
+      try {
+        tempPlayer = this.clients.get(matchPlayer.playerId);
+      }
+      catch (error) {
+        logger.error(`[${serviceName}]: Error getting player from clients map for player ${matchPlayer.playerId} with IP ${matchPlayer.ip}, error: ${JSON.stringify(error)}`);
+      }
+
+      if (!tempPlayer) {
+        logger.error(`[${serviceName}]: Could not find player ${matchPlayer.playerId} with IP ${matchPlayer.ip} to prepare match found notification for match ${notification.matchId}`);
+        continue;
+      }
+
+      const player = tempPlayer;
       if (player) {
-        this.stopMatchTick(player);
-        console.log(player);
+        try {
+          this.stopMatchTick(player);
+        }
+        catch (error) {
+          logger.error(`[${serviceName}]: Error stopping match tick for player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"}`, error);
+        }
+
+        //logger.info(player);
+
+        //const gameServerPort: Promise<number | undefined> = redisGetGamePort(notification.matchId).then(port => port) || GAME_SERVER_PORT;
+        //const gameServerPort = redisGetGamePort(notification.matchId).then(port => port);
+        const gameServerPort = notification.rollbackPort || GAME_SERVER_PORT;
+        logger.info(`[${serviceName}]: Match ${notification.matchId} found for player ${player.account?.id ?? "unknown"}, sending match found notification with game server port ${gameServerPort}`);
         const message = {
           data: {
             MatchKey: notification.matchKey,
             MatchID: notification.matchId,
-            Port: GAME_SERVER_PORT,
+            //Port: gameServerPort || GAME_SERVER_PORT,
+            Port: gameServerPort,
             template_id: "GameServerReadyNotification",
             IPAddress: player.ip === "127.0.0.1" ? "127.0.0.1" : arr[randomIndex],
           },
@@ -350,12 +388,25 @@ export class WebSocketService {
           header: "",
           cmd: "update",
         };
-        console.log(player.account?.id, message);
-        player.send(message);
-        logger.info(`Sent match notification to player ${matchPlayer.playerId} for match ${notification.matchId}`);
+
+        //logger.info(player.account?.id, message);
+        try {
+          player.send(message);
+        }
+        catch (error) {
+          logger.error(`[${serviceName}]: Error sending match found notification to player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"} for match ${notification.matchId}, error: ${JSON.stringify(error)}`);
+          continue;
+        }
+
+        logger.info(`[${serviceName}]: Sent match notification to player ${matchPlayer.playerId} for match ${notification.matchId}`);
       }
     }
-    this.handleSendGamePlayConfig(notification);
+    try {
+      this.handleSendGamePlayConfig(notification);
+    }
+    catch (error) {
+      logger.error(`[${serviceName}]: Error handling send gameplay config for match ${notification.matchId}, error: ${JSON.stringify(error)}`);
+    }
   }
 
   getNumRingouts(notification: MATCH_FOUND_NOTIFICATION) {
@@ -374,7 +425,53 @@ export class WebSocketService {
 
     // Get the player configs from redis
     const playerIds = notification.players.map((p) => p.playerId);
-    const playerConfigs = await redisGetAllPlayersEquippedComsetics(playerIds);
+    //const playerConfigs = await redisGetAllPlayersEquippedCosmetics(playerIds);
+    let playerConfigs: Cosmetics[] = [];
+    for (const playerId of playerIds) {
+      // //const cosmetics = await getEquippedCosmetics(playerId);
+      // const cosmetics = await redisClient.hGetAll(`connections:${playerId}:cosmetics`) as unknown as Cosmetics;
+
+      // if (!cosmetics || !cosmetics.Banner) {
+      //   logger.warn(`No cosmetics found in Redis for player ID ${playerId} during gameplay config preparation. This should not happen, as cosmetics should be cached when the player equips a cosmetic. Creating default cosmetics for this account.`);
+      //   const dbCosmetics = await getEquippedCosmetics(playerId);
+      //   await redisSetPlayerConnectionCosmetics(playerId, dbCosmetics);
+      //   playerConfigs.push(dbCosmetics);
+      //   // let rPlayerCosmetics = await getEquippedCosmetics(playerId) as Cosmetics;
+      //   // await redisSetPlayerConnectionCosmetics(playerId, rPlayerCosmetics);
+      //   // playerConfigs.push(rPlayerCosmetics);
+      //   // continue;
+      // }
+      // else
+      // {
+      //   playerConfigs.push(cosmetics);
+      // }
+
+      const rawCosmetics = await redisClient.hGetAll(`connections:${playerId}:cosmetics`);
+      const matchPlayer = await redisClient.hGetAll(`connections:${playerId}`) as unknown as RedisPlayerConnection;
+
+      if (!rawCosmetics || Object.keys(rawCosmetics).length === 0) {
+        logger.warn(`[${serviceName}]: No cosmetics found for player ${playerId} with IP ${matchPlayer.current_ip} and name ${matchPlayer.username ?? "unknown"} in Redis, fetching from database`);
+        const dbCosmetics = await getEquippedCosmetics(playerId);
+        await redisSetPlayerConnectionCosmetics(playerId, dbCosmetics);
+        playerConfigs.push(dbCosmetics);
+      }
+      else {
+        // Parse the JSON strings back into objects
+        const cosmetics: Cosmetics = {} as Cosmetics;
+        for (const [key, value] of Object.entries(rawCosmetics)) {
+          try {
+            cosmetics[key as keyof Cosmetics] = JSON.parse(value as string);
+          }
+          catch (e) {
+            logger.error(`[${serviceName}]: Failed to parse cosmetic field ${key} for player ${playerId} with IP ${matchPlayer.current_ip} and name ${matchPlayer.username ?? "unknown"}, error: ${JSON.stringify(e)}. This should not happen, as all cosmetics should be stored as JSON strings in Redis. Assigning default value for this field.`);
+            cosmetics[key as keyof Cosmetics] = value as any;
+          }
+        }
+        playerConfigs.push(cosmetics);
+      }
+
+
+    }
     const playerLoadouts = await redisGetPlayers(playerIds);
 
     // Get the player configs from redis
@@ -383,39 +480,210 @@ export class WebSocketService {
 
     for (let i = 0; i < notification.players.length; i++) {
       const player = notification.players[i];
-      const playerConfig = playerConfigs[i];
+      const rPlayerByConnectionId = await redisClient.hGetAll(`connections:${player.playerId}`) as unknown as RedisPlayerConnection;
       const playerLoadout = playerLoadouts[i];
-      console.log(`Player ${player.playerId} ${player.playerIndex} selected ${playerLoadout.character}`);
-      Players[player.playerId] = {
-        AccountId: player.playerId,
-        Taunts: playerConfig.Taunts[playerLoadout.character].TauntSlots,
-        BotBehaviorOverride: "",
-        bAutoPartyPreference: true,
-        Gems: [],
-        PartyMember: null,
-        GameplayPreferences: 964,
-        BotDifficultyMax: 0,
-        bIsBot: false,
-        RankedDivision: null,
-        bUseCharacterDisplayName: false,
-        StartingDamage: 0,
-        TeamIndex: player.teamIndex,
-        ProfileIcon: playerLoadouts[i].profileIcon,
-        WinStreak: null,
-        RankedTier: null,
-        Handicap: 0,
-        RingoutVfx: playerConfig.RingoutVfx,
-        Character: playerLoadout.character,
-        Banner: playerConfig.Banner,
-        StatTrackers: playerConfig.StatTrackers.StatTrackerSlots.map((s) => [s, 1]), // TODO: We should get this from database?
-        Perks: [],
-        PlayerIndex: player.playerIndex,
-        PartyId: player.partyId,
-        Username: {},
-        Buffs: [],
-        Skin: playerLoadout.skin,
-        BotDifficultyMin: 0,
-      };
+      const playerConfig = playerConfigs[i];
+      const profileIcon = rPlayerByConnectionId.profileIcon || "profile_icon_default_gold";
+      const character = rPlayerByConnectionId.character || "character_jason";
+      const skin = rPlayerByConnectionId.skin || "skin_jason_000";
+
+      try {
+        // // Parse Taunts if it's a string (from Redis)
+        // let taunts = playerConfig.Taunts;
+        // if (typeof taunts === 'string') {
+        //   try {
+        //     taunts = JSON.parse(taunts);
+        //   } catch (e) {
+        //     logger.error(`[${serviceName}]: Failed to parse Taunts for player ${player.playerId}: ${e}`);
+        //     taunts = {};
+        //   }
+        // }
+
+        // // Parse StatTrackers if it's a string (from Redis)
+        // let statTrackers = playerConfig.StatTrackers;
+        // if (typeof statTrackers === 'string') {
+        //   try {
+        //     statTrackers = JSON.parse(statTrackers);
+        //   } catch (e) {
+        //     logger.error(`[${serviceName}]: Failed to parse StatTrackers for player ${player.playerId}: ${e}`);
+        //     statTrackers = { StatTrackerSlots: ["stat_tracking_bundle_default", "stat_tracking_bundle_default", "stat_tracking_bundle_default"] };
+        //   }
+        // }
+
+        // // Safely get character taunts with fallback
+        // const characterTaunts = taunts?.[character]?.TauntSlots || ["", "", "", ""];
+        // const statTrackerSlots = statTrackers?.StatTrackerSlots || ["stat_tracking_bundle_default", "stat_tracking_bundle_default", "stat_tracking_bundle_default"];
+
+        const characterTaunts = playerConfig.Taunts?.[character]?.TauntSlots || ["", "", "", ""];
+        const statTrackerSlots = playerConfig.StatTrackers?.StatTrackerSlots || [
+          "stat_tracking_bundle_default",
+          "stat_tracking_bundle_default",
+          "stat_tracking_bundle_default"
+        ];
+
+        Players[player.playerId] = {
+          Taunts: characterTaunts,
+          BotBehaviorOverride: "",
+          AccountId: player.playerId,
+          bAutoPartyPreference: false,
+          Gems: [],
+          PartyMember: null,
+          GameplayPreferences: 964,
+          BotDifficultyMax: 0,
+          bIsBot: false,
+          RankedDivision: null,
+          bUseCharacterDisplayName: false,
+          StartingDamage: 0,
+          TeamIndex: player.teamIndex,
+          ProfileIcon: profileIcon,
+          WinStreak: null,
+          RankedTier: null,
+          Handicap: 0,
+          RingoutVfx: playerConfig.RingoutVfx || "ring_out_vfx_default",
+          Character: character,
+          Banner: playerConfig.Banner || "banner_default",
+          StatTrackers: [
+            [statTrackerSlots[0], 1],
+            [statTrackerSlots[1], 1],
+            [statTrackerSlots[2], 1],
+          ],
+          Perks: [],
+          PlayerIndex: player.playerIndex,
+          PartyId: player.partyId,
+          Username: { default: rPlayerByConnectionId.username || "Player" },
+          Buffs: [],
+          Skin: skin,
+          BotDifficultyMin: 0,
+        };
+      }
+      catch (error) {
+        logger.error(`[${serviceName}]: Error creating player config for player ${player.playerId} with IP ${rPlayerByConnectionId.current_ip} and name ${rPlayerByConnectionId.username ?? "unknown"} : ${JSON.stringify(error)}`);
+        // logger.error(`[${serviceName}]: Character: ${character}, PlayerConfig.Taunts: ${JSON.stringify(playerConfig.Taunts)}`);
+        // logger.error(`[${serviceName}]: PlayerConfig.StatTrackers: ${JSON.stringify(playerConfig.StatTrackers)}`);
+        
+        // Create a minimal valid config as fallback
+        Players[player.playerId] = {
+          Taunts: ["", "", "", ""],
+          BotBehaviorOverride: "",
+          AccountId: player.playerId,
+          bAutoPartyPreference: false,
+          Gems: [],
+          PartyMember: null,
+          GameplayPreferences: 964,
+          BotDifficultyMax: 0,
+          bIsBot: false,
+          RankedDivision: null,
+          bUseCharacterDisplayName: false,
+          StartingDamage: 0,
+          TeamIndex: player.teamIndex,
+          ProfileIcon: "profile_icon_default_gold",
+          WinStreak: null,
+          RankedTier: null,
+          Handicap: 0,
+          RingoutVfx: "ring_out_vfx_default",
+          Character: character,
+          Banner: "banner_default",
+          StatTrackers: [
+            ["stat_tracking_bundle_default", 1],
+            ["stat_tracking_bundle_default", 1],
+            ["stat_tracking_bundle_default", 1],
+          ],
+          Perks: [],
+          PlayerIndex: player.playerIndex,
+          PartyId: player.partyId,
+          Username: { default: rPlayerByConnectionId.username || "Player" },
+          Buffs: [],
+          Skin: skin,
+          BotDifficultyMin: 0,
+        };
+      }
+
+      // try {
+      //   logger.info(`Player ${player.playerId} ${player.playerIndex} selected ${playerLoadout.character}`);
+      //   Players[player.playerId] = {
+      //     AccountId: player.playerId,
+      //     Taunts: playerConfig.Taunts[playerLoadout.character].TauntSlots || ["", "", "", ""],
+      //     BotBehaviorOverride: "",
+      //     bAutoPartyPreference: false,
+      //     Gems: [],
+      //     PartyMember: null,
+      //     GameplayPreferences: 964,
+      //     BotDifficultyMax: 0,
+      //     bIsBot: false,
+      //     RankedDivision: null,
+      //     bUseCharacterDisplayName: false,
+      //     StartingDamage: 0,
+      //     TeamIndex: player.teamIndex,
+      //     //ProfileIcon: playerLoadouts[i].profileIcon,
+      //     ProfileIcon: profileIcon,
+      //     WinStreak: null,
+      //     RankedTier: null,
+      //     Handicap: 0,
+      //     RingoutVfx: playerConfig.RingoutVfx,
+      //     //Character: playerLoadout.character,
+      //     Character: character,
+      //     Banner: playerConfig.Banner,
+      //     StatTrackers: playerConfig.StatTrackers.StatTrackerSlots.map((s) => [s, 1]), // TODO: We should get this from database?
+      //     Perks: [],
+      //     PlayerIndex: player.playerIndex,
+      //     PartyId: player.partyId,
+      //     Username: {},
+      //     Buffs: [],
+      //     //Skin: playerLoadout.skin,
+      //     Skin: skin,
+      //     BotDifficultyMin: 0,
+      //   };
+      // }
+
+      // catch (error) {
+      //   let originalError = error instanceof Error ? error : new Error(String(error));
+      //   logger.error(`Error constructing PlayerConfig for player ${player.playerId}, assigning default config. Error: `);
+      //   try {
+      //     logger.error(originalError);
+      //   }
+      //   catch (error) {
+      //     try {
+      //       logger.error(JSON.stringify(originalError));
+      //     }
+      //     catch (error) {
+      //       logger.error("All attempts to print a simple error have failed, because JavaScript fucking sucks.");
+      //     }
+      //   }
+      //   logger.info(`Player ${player.playerId} ${player.playerIndex} selected ${playerLoadout.character}`);
+      //   Players[player.playerId] = {
+      //     AccountId: player.playerId,
+      //     //Taunts: ["", "", "", ""],
+      //     Taunts: defaultTaunts[playerLoadout.character]?.TauntSlots || ["", "", "", ""],
+      //     BotBehaviorOverride: "",
+      //     bAutoPartyPreference: false,
+      //     Gems: [],
+      //     PartyMember: null,
+      //     GameplayPreferences: 964,
+      //     BotDifficultyMax: 0,
+      //     bIsBot: false,
+      //     RankedDivision: null,
+      //     bUseCharacterDisplayName: false,
+      //     StartingDamage: 0,
+      //     TeamIndex: player.teamIndex,
+      //     ProfileIcon: playerLoadouts[i].profileIcon || "profile_icon_default_gold",
+      //     WinStreak: null,
+      //     RankedTier: null,
+      //     Handicap: 0,
+      //     RingoutVfx: playerConfig.RingoutVfx || "ring_out_vfx_default",
+      //     Character: playerLoadout.character,
+      //     Banner: playerConfig.Banner || "banner_default",
+      //     //StatTrackers: playerConfig.StatTrackers.StatTrackerSlots.map((s) => [s, 1]), // TODO: We should get this from database?
+      //     //StatTrackers: [["", 1], ["", 1], ["", 1]],
+      //     StatTrackers: [ [ "stat_tracking_bundle_default", 1 ], [ "stat_tracking_bundle_default", 1 ], [ "stat_tracking_bundle_default", 1 ] ],
+      //     Perks: [],
+      //     PlayerIndex: player.playerIndex,
+      //     PartyId: player.partyId,
+      //     Username: {},
+      //     Buffs: [],
+      //     Skin: playerLoadout.skin,
+      //     BotDifficultyMin: 0,
+      //   };
+      // }
     }
 
     // Create the message to send to the players
@@ -481,7 +749,7 @@ export class WebSocketService {
       if (client) {
         client.send(message);
         client.matchConfig = message;
-        logger.info(`Sent gameplay config to player ${client.account?.id} for match ${notification.matchId}`);
+        logger.info(`[${serviceName}]: Sent gameplay config to player ${client.account?.id ?? "unknown"} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.matchId}`);
       }
     }
   }
@@ -497,7 +765,7 @@ export class WebSocketService {
             client.matchConfig.data.GameplayConfig.Players[playerId].Perks = playerPerk;
             client.matchConfig.data.template_id = "PerksLockedNotification";
           } else {
-            logger.error("Match Perks are incomplete!!! This should not really happen");
+            logger.error(`[${serviceName}]: Match Perks are incomplete!!! This should not really happen for player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"}`);
           }
         }
       }
@@ -506,23 +774,30 @@ export class WebSocketService {
       const client = this.clients.get(playerId);
       if (client && client.matchConfig) {
         client.send(client.matchConfig);
-        console.log(client.matchConfig.data.GameplayConfig.Players);
-        logger.info(`Sent all perks lock to player ${playerId} for match ${notification.containerMatchId}`);
+        logger.info(client.matchConfig.data.GameplayConfig.Players);
+        logger.info(`[${serviceName}]: Sent all perks lock to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`);
       }
     }
   }
 
   async handleGameServerInstanceReady(notification: RedisGameServerInstanceReadyNotification) {
+    let useCentralRollback = env.USE_INTERNAL_ROLLBACK === 1 ? true : false;
+    let rollbackHost = useCentralRollback ? `${env.UDP_SERVER_IP}` : "127.0.0.1";
     for (const playerId of notification.playerIds) {
       const client = this.clients.get(playerId);
+
+      const gameServerPort = notification.rollbackPort || GAME_SERVER_PORT;
+      logger.info(`[${serviceName}]: Received game server instance ready for match ${notification.containerMatchId} and player ${playerId} with IP ${client?.ip ?? "unknown"} and name ${client?.account?.username ?? "unknown"}, sending game server info with port ${gameServerPort}`);
+
       const message = {
         data: {},
         payload: {
           game_server_instance: {
             game_server_type_slug: "multiplay",
-            port: GAME_SERVER_PORT,
+            port: gameServerPort || GAME_SERVER_PORT,
             owner_id: notification.containerMatchId,
-            host: "127.0.0.1",
+            //host: "127.0.0.1",
+            host: rollbackHost,
             id: notification.resultId,
           },
           proxied_data: null,
@@ -530,11 +805,19 @@ export class WebSocketService {
         header: "Your game server is ready to join.",
         cmd: "game-server-instance-ready",
       };
+
+      //logger.info(`Spawning rollback process for match ${notification.containerMatchId}`);
+      //let rollbackProcess = await RollbackProcess.execRollbackProcessAsync(gameServerPort || GAME_SERVER_PORT);
+      // spawn('node', ['bgService.js'], {
+      //     stdio: 'ignore', // piping all stdio to /dev/null
+      //     detached: true
+      // }).unref();
       if (client) {
-        logger.info(`Sent game server instance ready to player ${playerId} for match ${notification.containerMatchId}`);
+        logger.info(`[${serviceName}]: Sent game server instance ready to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`);
         client.send(message);
-      } else {
-        logger.error(`Could not find player ${playerId} to send game server instance ready message for match ${notification.containerMatchId}`);
+      }
+      else {
+        logger.error(`[${serviceName}]: Could not find player ${playerId} to send game server instance ready message for match ${notification.containerMatchId}`);
       }
     }
   }
@@ -555,7 +838,7 @@ export class WebSocketService {
         cmd: "update",
       };
       if (client) {
-        logger.trace(`OnLobbyModeUpdated send to ${playerId}`);
+        logger.trace(`[${serviceName}]: OnLobbyModeUpdated send to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for lobby ${notification.lobbyId} with mode ${notification.modeString}`);
         client.send(message);
       }
     }
@@ -594,7 +877,7 @@ export class WebSocketService {
           header: "",
           cmd: "profile-notification",
         };
-        console.log("END OF MATCH WS", data);
+        logger.info(`[${serviceName}]: END OF MATCH WS: ${JSON.stringify(data)}`);
         client.send(data);
         setTimeout(() => {
           const data = {
@@ -690,7 +973,7 @@ export class WebSocketService {
 }
 
 // CHATGPT really figure this one out... Hats off to CHATGPT
-export function parseInitHydraWebsocketMessage(buf: Buffer): { account: AccountToken; id: string } {
+export function parseInitHydraWebsocketMessage(buf: Buffer): { account: SharedTypes.IAccountToken; id: string } {
   // 1) JWT length prefix at byte 0x13 (19)
   const jwtLen = buf.readUInt16BE(0x13);
 

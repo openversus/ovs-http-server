@@ -171,7 +171,7 @@ export function generate_hiss() {
             EnableMonitorSwitchingFix: true,
             HissInvalidationKick: false,
             BeginnerMode: true,
-            AutoParty: true,
+            AutoParty: false,
             S3EogBackwardsCompatibility: true,
             EnableTileViewStoreArea: true,
             evtq_colbyqueue: false,
@@ -430,9 +430,9 @@ export function generate_hiss() {
                   character_c038: {
                     Slugs: [],
                   },
-                  character_supershaggy: {
-                    Slugs: [],
-                  },
+                  // character_supershaggy: {
+                  //   Slugs: [],
+                  // },
                 },
               },
               DefaultVisibleAssets: {

@@ -1,17 +1,19 @@
+import { logger } from "../config/logger";
 import { NextFunction, Request, Response } from "express";
-
 import { HydraDecoder, HydraEncoder } from "mvs-dump";
-
 export const HYDRA_CONTENT_TYPE = "application/x-ag-binary";
+
+const serviceName = "Middleware.HydraParser";
 
 export const hydraDecoderMiddleware = <T>(req: Request, res: Response, next: NextFunction) => {
   //@ts-ignore
   if (req.batch) {
-    //console.log("BATCHED_URL:", req.url);
+    //logger.info(`[${serviceName}]: BATCHED_URL: ${req.url}`);
     next();
     return;
-  } else {
-    //console.log("URL:", req.url);
+  }
+  else {
+    //logger.info(`[${serviceName}]: URL: ${req.url}`);
   }
 
   if (req.headers["content-type"] === HYDRA_CONTENT_TYPE) {
@@ -29,9 +31,10 @@ export const hydraDecoderMiddleware = <T>(req: Request, res: Response, next: Nex
         const binaryData = Buffer.concat(dataChunks);
         const decodedBody = new HydraDecoder(binaryData).readValue();
         req.body = decodedBody;
-      } catch (e) {
+      }
+      catch (e) {
         // If parsing fails, handle the error or set req.body to an empty object
-        console.log("Parsing failed")
+        logger.error(`[${serviceName}]: Parsing failed ${e}`);
         req.body = {};
       }
       next(); // Call next to move to the next middleware or route handler

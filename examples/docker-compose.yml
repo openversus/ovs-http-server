@@ -1,0 +1,85 @@
+# This is an example Docker Compose stack for running the OpenVersus server alongside MongoDB and Redis.
+# Adjust the configuration as needed to fit your specific setup and requirements, especially the volume mappings and environment variable files.
+#
+# A quick note:
+#
+# This is just an example meant to deploy a proof-of-concept instance. This IS NOT how it should be deployed in a production environment, where
+# redundancy, security, availability, load-balancing, and scalability are important factors to consider. I will commit a more production-ready
+# example in the future, but for now, this is just meant to be a quick and easy way to get a server up & running for testing and development purposes.
+
+services:
+  mongo:
+    deploy:
+      resources:
+        limits:
+          cpus: "6"
+    env_file: .env.mongo
+    image: mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+
+    # The host portion of the port mapping below is absent for a reason.
+    # You don't need to (and should not) expose this to the Internet
+    # under normal (nearly all) circumstances. The only valid case where
+    # this would not be true is if you're running Mongo or Redis on a
+    # separate host from the OpenVersus server, or on a separate Docker
+    # network, but if you're doing that, you are not the target audience
+    # of this comment and probably already know how to adjust the
+    # configuration accordingly.
+    ports:
+      - "27017"
+
+  redis:
+    command: redis-server /usr/local/etc/redis/redis.conf
+    deploy:
+      resources:
+        limits:
+          cpus: "6"
+    image: redis:8-alpine
+
+    # See the novel of a comment I wrote for the Mongo service above regarding the port mapping.
+    # TL;DR: don't expose this to the Internet, and if you need to run it on a separate host or
+    # Docker network, adjust the configuration accordingly. Adjust the source path to the redis.conf
+    # file as needed. An example configuration is available in the repo in the "examples" directory.
+    ports:
+      - "6379"
+    restart: unless-stopped
+    volumes:
+      - /opt/docker/openversus/redis.conf:/usr/local/etc/redis/redis.conf
+      - redis_data:/data
+
+  # The OpenVersus server itself. Adjust the volume mappings as needed. The mapping for
+  # the entrypoint script is commented out because it's not strictly necessary, as the default
+  # is copied into the container at image build ime, but you can use this mapping to quickly adjust
+  # the startup sequence without rebuilding the image, if you want.
+  # The other volume mappings are for the various ban/disallow lists that OpenVersus uses.
+  # You may adjust the source paths as needed, but the target paths they are mapped to inside the
+  # container should not be changed.
+  openversus:
+    depends_on:
+      - mongo
+      - redis
+    deploy:
+      resources:
+        limits:
+          cpus: "6"
+    env_file: .env
+    image: openversus:latest
+    ports:
+      - "3000:3000"
+      - "8000:8000"
+      - "41234:41234/udp"
+    restart: unless-stopped
+    volumes:
+      # - /opt/docker/openversus/entrypoint.sh:/entrypoint.sh
+      - /opt/docker/openversus/bans.txt:/app/build/src/data/bans.txt
+      - /opt/docker/openversus/cidr_bans.txt:/app/build/src/data/cidr_bans.txt
+      - /opt/docker/openversus/banned_names.txt:/app/build/src/data/banned_names.txt
+      - /opt/docker/openversus/force_change_names.txt:/app/build/src/data/force_change_names.txt
+      - openversus_logs:/var/log/openversus
+
+volumes:
+  mongo_data:
+  redis_data:
+  openversus_logs:

@@ -1,5 +1,10 @@
+import { logger } from "../config/logger";
 import express, { Request, Response } from "express";
 import { MVSQueries } from "../interfaces/queries_types";
+import { stat } from "node:fs";
+import * as KitchenSink from "../utils/garbagecan";
+
+const serviceName = "Handlers.Commerce";
 
 export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQueries.Commerce_products_QUERY>, res: Response) {
   if (req.query.partial_response) {
@@ -15691,4 +15696,13 @@ export async function handleCommerce_purchases_me(req: Request<{}, {}, {}, MVSQu
 
 export async function handleCommerce_steam_mtx_user_info_me(req: Request<{}, {}, {}, {}>, res: Response) {
   res.send({ currency: "USD", state: "IL", country: "US", status: "Trusted" });
+}
+
+export async function handleCommerce_purchases_toasts_gleamium(req: Request<{}, {}, {}, {}>, res: Response) {
+  logger.info(`[${serviceName}]: Called handleCommerce_purchases_toasts_gleamium`);
+  logger.info(`[${serviceName}]: Request object: \n`);
+  KitchenSink.TryInspectRequestVerbose(req);
+
+  res.statusCode = 200;
+  res.send({});
 }

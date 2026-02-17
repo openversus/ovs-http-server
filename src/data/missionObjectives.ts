@@ -9529,35 +9529,35 @@ export const MISSION_OBJECTIVES = {
     },
     id: "675874d45ca68abece294fb1",
   },
-  misobj_ownsitem_c022: {
-    slug: "misobj_ownsitem_c022",
-    global_configuration_type_slug: "mission-objectives",
-    ui_editor_type: null,
-    data: {
-      AssetBundleData: {
-        Bundles: [],
-      },
-      bIsEnabled: true,
-      ObjectiveFlags: [
-        {
-          GameplayTag: "Constraint:Inventory:OwnsItem",
-          Operator: "==",
-          SelectedValue: "String",
-          TagValue: "TS:Fixed:Universe:PowerPuffGirls",
-          Value: "character_C025",
-        },
-      ],
-      Slug: "misobj_ownsitem_c022",
-    },
-    private_data: null,
-    created_at: {
-      _hydra_unix_date: 1733850324,
-    },
-    updated_at: {
-      _hydra_unix_date: 1733850324,
-    },
-    id: "675874d45ca68abece294fb2",
-  },
+  // misobj_ownsitem_c022: {
+  //   slug: "misobj_ownsitem_c022",
+  //   global_configuration_type_slug: "mission-objectives",
+  //   ui_editor_type: null,
+  //   data: {
+  //     AssetBundleData: {
+  //       Bundles: [],
+  //     },
+  //     bIsEnabled: true,
+  //     ObjectiveFlags: [
+  //       {
+  //         GameplayTag: "Constraint:Inventory:OwnsItem",
+  //         Operator: "==",
+  //         SelectedValue: "String",
+  //         TagValue: "TS:Fixed:Universe:PowerPuffGirls",
+  //         Value: "character_C025",
+  //       },
+  //     ],
+  //     Slug: "misobj_ownsitem_c022",
+  //   },
+  //   private_data: null,
+  //   created_at: {
+  //     _hydra_unix_date: 1733850324,
+  //   },
+  //   updated_at: {
+  //     _hydra_unix_date: 1733850324,
+  //   },
+  //   id: "675874d45ca68abece294fb2",
+  // },
   misobj_ownsitem_c021: {
     slug: "misobj_ownsitem_c021",
     global_configuration_type_slug: "mission-objectives",

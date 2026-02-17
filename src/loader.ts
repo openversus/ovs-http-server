@@ -1,12 +1,16 @@
+import { logger } from "./config/logger";
 import { INVENTORY_DEFINITIONS } from "./data/inventoryDefs";
 import { ENABLED_SKINS } from "./data/skins";
 import { connect } from "./database/client";
 import { DataAssetModel } from "./database/DataAssets";
+import { disabledCharacters, isDisabledChar, isEnabledChar } from "./utils/garbagecan";
+
+const serviceName = "Loader";
 
 const CHARACTER_SLUGS = [
-  "character_supershaggy",
-  "character_Meeseeks",
-  "character_C022",
+  // "character_supershaggy",
+  // "character_Meeseeks",
+  // "character_C022",
   "character_arya",
   "character_BananaGuard",
   "character_batman",
@@ -1185,19 +1189,19 @@ interface CharacterTauntData {
 }
 
 const TAUNTS_DATA: TauntsData = {
-  character_C022: {
-    Slugs: [],
-  },
-  character_supershaggy: {
-    Slugs: [
-      "taunt_supershaggy_default",
-    ],
-  },
-  character_Meeseeks: {
-    Slugs: [
-      "taunt_c019_default",
-    ],
-  },
+  // character_C022: {
+  //   Slugs: [],
+  // },
+  // character_supershaggy: {
+  //   Slugs: [
+  //     "taunt_supershaggy_default",
+  //   ],
+  // },
+  // character_Meeseeks: {
+  //   Slugs: [
+  //     "taunt_c019_default",
+  //   ],
+  // },
   character_wonder_woman: {
     Slugs: [
       "taunt_wonder_woman_hands_on_hips",
@@ -1477,9 +1481,9 @@ interface Data {
 
 export async function start() {
   await connect();
-  console.log("Connected to Mongo");
+  logger.info(`[${serviceName}]: Connected to Mongo`);
 
-  console.log("Loading Emotes");
+  logger.info(`[${serviceName}]: Loading Emotes`);
   for (const emote of emotes) {
     const def = INVENTORY_DEFINITIONS[emote as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1497,7 +1501,7 @@ export async function start() {
     ).exec();
   }
 
-  console.log("Loading Banners");
+  logger.info(`[${serviceName}]: Loading Banners`);
   for (const banner of banners) {
     const def = INVENTORY_DEFINITIONS[banner as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1515,7 +1519,7 @@ export async function start() {
     ).exec();
   }
 
-  console.log("Loading ringout");
+  logger.info(`[${serviceName}]: Loading ringouts`);
   for (const ringout of ringouts) {
     const def = INVENTORY_DEFINITIONS[ringout as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1533,7 +1537,7 @@ export async function start() {
     ).exec();
   }
 
-  console.log("Loading profile_icons");
+  logger.info(`[${serviceName}]: Loading profile icons`);
   for (const pf_icon of profiles_icons) {
     const def = INVENTORY_DEFINITIONS[pf_icon as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1551,7 +1555,7 @@ export async function start() {
     ).exec();
   }
 
-  console.log("Loading announcer paks");
+  logger.info(`[${serviceName}]: Loading announcer packs`);
   for (const ap of announcer_packs) {
     const def = INVENTORY_DEFINITIONS[ap as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1569,7 +1573,7 @@ export async function start() {
     ).exec();
   }
 
-  console.log("Loading stats");
+  logger.info(`[${serviceName}]: Loading stat trackers`);
   for (const statTracker of stats) {
     const def = INVENTORY_DEFINITIONS[statTracker as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1579,7 +1583,8 @@ export async function start() {
           slug: statTracker,
           assetType: "StatTrackingBundleData",
           character_slug: def.CharacterSlug,
-          enabled: true,
+          //enabled: true,
+          enabled: isEnabledChar(statTracker),
           assetPath: def.AssetPath,
         },
       },
@@ -1587,7 +1592,7 @@ export async function start() {
     ).exec();
   }
 
-  console.log("Loading gems");
+  logger.info(`[${serviceName}]: Loading gems`);
   for (const gem of gems) {
     const def = INVENTORY_DEFINITIONS[gem as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1605,7 +1610,7 @@ export async function start() {
     ).exec();
   }
 
-  console.log("Loading perks");
+  logger.info(`[${serviceName}]: Loading perks`);
   for (const perk of perks) {
     const def = INVENTORY_DEFINITIONS[perk as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1615,7 +1620,9 @@ export async function start() {
           slug: perk,
           assetType: "MvsPerkHsda",
           character_slug: "",
-          enabled: perk === "perk_platform_from_dodge" ? false : true,
+          //enabled: perk === "perk_platform_from_dodge" ? false : true,
+          //enabled: isEnabledChar(perk),
+          enabled: true,
           assetPath: def.AppliedBuffs[0],
         },
       },
@@ -1623,7 +1630,7 @@ export async function start() {
     ).exec();
   }
 
-  console.log("Loading chars");
+  logger.info(`[${serviceName}]: Loading chars`);
   for (const char of CHARACTER_SLUGS) {
     const def = INVENTORY_DEFINITIONS[char as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1633,7 +1640,8 @@ export async function start() {
           slug: char,
           assetType: "CharacterData",
           character_slug: "",
-          enabled: true,
+          //enabled: true,
+          enabled: isEnabledChar(char),
           assetPath: def.AssetPath,
           MasteryRewardTrack: def.MasteryRewardTrack,
         },
@@ -1642,52 +1650,73 @@ export async function start() {
     ).exec();
   }
 
-  console.log("Loading Skins");
+  logger.info(`[${serviceName}]: Loading Skins`);
   for (const char of Object.keys(ENABLED_SKINS)) {
+    if (isDisabledChar(char))
+    {
+      logger.info(`[${serviceName}]: Skipping skins for disabled char: ${char}`);
+      continue;
+    }
     for (const skin of ENABLED_SKINS[char as keyof typeof ENABLED_SKINS].Slugs) {
       const t = INVENTORY_DEFINITIONS[skin as keyof typeof INVENTORY_DEFINITIONS];
 
       const def = t?.data as Data;
-      const doc = await DataAssetModel.findOneAndUpdate(
-        { assetPath: def ? def.AssetPath : "NONE" },
-        {
-          $set: {
-            slug: skin,
-            assetType: "SkinData",
-            character_slug: char,
-            enabled: true,
-            assetPath: def ? def.AssetPath : "",
+      try {
+        const doc = await DataAssetModel.findOneAndUpdate(
+          { assetPath: def ? def.AssetPath : "NONE" },
+          {
+            $set: {
+              slug: skin,
+              assetType: "SkinData",
+              character_slug: char,
+              enabled: true,
+              assetPath: def ? def.AssetPath : "",
+            },
           },
-        },
-        { upsert: true, new: true },
-      ).exec();
-      if (!t) console.log(skin);
+          { upsert: true, new: true },
+        ).exec();
+      }
+      catch (error) {
+        logger.error(`[${serviceName}]: Error processing skin: ${skin}. Error: ${error}`);
+      }
+      if (!t) logger.info(`[${serviceName}]: ${skin}`);
     }
   }
 
-    console.log("Loading Taunts");
+    logger.info(`[${serviceName}]: Loading Taunts`);
   for (const char of Object.keys(TAUNTS_DATA)) {
+    if (isDisabledChar(char))
+    {
+      logger.info(`[${serviceName}]: Skipping taunts for disabled char: ${char}`);
+      continue;
+    }
     for (const taunt of TAUNTS_DATA[char as keyof typeof TAUNTS_DATA].Slugs) {
       const t = INVENTORY_DEFINITIONS[taunt as keyof typeof INVENTORY_DEFINITIONS];
 
       const def = t?.data as Data;
-      const doc = await DataAssetModel.findOneAndUpdate(
-        { assetPath: def ? def.AssetPath : "NONE" },
-        {
-          $set: {
-            slug: taunt,
-            assetType: "UTauntData",
-            character_slug: char,
-            enabled: true,
-            assetPath: def ? def.AssetPath : "",
+      try {
+        const doc = await DataAssetModel.findOneAndUpdate(
+          { assetPath: def ? def.AssetPath : "NONE" },
+          {
+            $set: {
+              slug: taunt,
+              assetType: "UTauntData",
+              character_slug: char,
+              enabled: true,
+              assetPath: def ? def.AssetPath : "",
+            },
           },
-        },
-        { upsert: true, new: true },
-      ).exec();
-      if (!t) console.log(taunt);
+          { upsert: true, new: true },
+        ).exec();        
+      }
+      catch (error) {
+        logger.error(`[${serviceName}]: Error processing taunt: ${taunt}. Error: ${error}`);
+      }
+
+      if (!t) logger.info(`[${serviceName}]: ${taunt}`);
     }
   }
 
-  console.log("END");
+  logger.info(`[${serviceName}]: END`);
 }
 start();

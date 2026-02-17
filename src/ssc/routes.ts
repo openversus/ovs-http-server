@@ -1,3 +1,4 @@
+import { logger } from "../config/logger";
 import express, { Request, Response } from "express";
 import {
   handle_ssc_set_lobby_mode,
@@ -7,11 +8,11 @@ import {
   set_lock_lobby_loadout,
   set_perks_absent,
 } from "./ssc";
-import { app } from "../server";
+
 export const sscRouter = express.Router();
 
 sscRouter.put("/ssc/invoke/lock_lobby_loadout", (req: Request, res: Response) => {
-  console.log(req.body);
+  logger.info(req.body);
   set_lock_lobby_loadout(req, res);
 });
 
@@ -33,4 +34,8 @@ sscRouter.put("/ssc/invoke/create_party_lobby", async (req: Request, res: Respon
 
 sscRouter.put("/ssc/invoke/set_mode_for_lobby", async (req: Request, res: Response) => {
   await handle_ssc_set_lobby_mode(req, res);
+});
+
+sscRouter.put("/ssc/invoke/create_custom_game_lobby", async (req: Request, res: Response) => {
+  await handleSsc_invoke_create_party_lobby(req, res);
 });

@@ -1,0 +1,13 @@
+# Enable persistence (save data to disk)
+appendonly yes
+appendfilename "appendonly.aof"
+appendfsync everysec
+
+# ACL configuration
+# Syntax: user <username> <enabled> <password> <key patterns> <channel patterns> <permissions>
+# - "on": Enable the user
+# - ">password": Set password (replace "mypassword" with a strong password)
+# - "~*": Allow access to all keys (adjust to restrict, e.g., "~user:*" for user-specific keys)
+# - "&*": Allow access to all pub/sub channels
+# - "+@all": Allow all commands (adjust to restrict, e.g., "+@read" for read-only)
+user mvsuser on >SuperSecretPassword123 ~* &* +@all

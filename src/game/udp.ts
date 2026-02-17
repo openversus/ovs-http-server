@@ -1,3 +1,4 @@
+import { logger } from "../config/logger";
 import dgram from "dgram";
 import {
   ClientMessageType,
@@ -34,9 +35,9 @@ function formatTime(date: Date) {
 
 function logPacket(data: Buffer | null, type: string, direction: "RECV" | "SEND", json?: Object) {
   if (direction === "RECV") {
-    console.log(chalk.green(direction), chalk.green(type), chalk.blue(formatTime(new Date())), data ? chalk.green(space2(data.toString("hex"))) : "");
+    logger.info(chalk.green(direction), chalk.green(type), chalk.blue(formatTime(new Date())), data ? chalk.green(space2(data.toString("hex"))) : "");
   } else {
-    console.log(
+    logger.info(
       chalk.yellow(direction),
       chalk.yellow(type),
       chalk.blue(formatTime(new Date())),
@@ -44,7 +45,7 @@ function logPacket(data: Buffer | null, type: string, direction: "RECV" | "SEND"
     );
   }
   if (json) {
-    console.log(JSON.stringify(json, null, 2));
+    logger.info(JSON.stringify(json, null, 2));
   }
 }
 
@@ -84,7 +85,8 @@ interface MatchState {
   pingPhaseTotal: number; // e.g. 65
 }
 
-const EMULATE_P2 = true;
+const USE_INTERNAL_ROLLBACK = env.USE_INTERNAL_ROLLBACK === 1 ? true : false;
+const EMULATE_P2 = env.EMULATE_P2 === 1 ? true : false;
 let P2_CONNECTED = false;
 
 function emulateP2NewConnection(server: RollbackServer, payload: NewConnectionPayload) {
@@ -113,7 +115,7 @@ export class RollbackServer {
   constructor(private port = GAME_SERVER_PORT, private maxPlayers = 2) {
     this.socket.on("message", (msg, rinfo) => this.onMessage(msg, rinfo));
     this.socket.bind(this.port, () => {
-      console.log(`Rollback server listening on UDP ${this.port}`);
+      logger.info(`Rollback server listening on UDP ${this.port}`);
     });
   }
 
@@ -383,8 +385,8 @@ export class RollbackServer {
     const expectedClientFrame = preciseServerFrame - pingInFrames / 2;
     const newRift = clientFrame - expectedClientFrame + 5;
 
-    const rift = (clientFrame  + (ping / TARGET_FRAME_TIME/2)) - serverFrame;
-    console.log("rift", newRift, "serverFrame", serverFrame, "ping", ping, "lastTickDuration", lastTickDuration, "FRAME_ADV",rift);
+    const rift = (clientFrame + (ping / TARGET_FRAME_TIME / 2)) - serverFrame;
+    logger.info("rift", newRift, "serverFrame", serverFrame, "ping", ping, "lastTickDuration", lastTickDuration, "FRAME_ADV", rift);
     return newRift;
   }
 

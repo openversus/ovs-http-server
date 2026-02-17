@@ -214,7 +214,7 @@ export async function handleObjects_preferences_unique_id_id1(req: Request<{}, {
         StatTracker3: { AssetPath: "", Slug: "" },
       },
       MapLevels: { MapLevelPreferences: {} },
-      OnlinePreferences: { AutoPartyEnabled: true, CrossplayOption: "Enabled", DMCAModeEnabled: false },
+      OnlinePreferences: { AutoPartyEnabled: false, CrossplayOption: "Enabled", DMCAModeEnabled: false },
       UIPreferences: { UIStyle: "Recommended" },
     },
     server_data: null,

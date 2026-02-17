@@ -1,0 +1,1 @@
+Remove this line and enter any names that you wish to ban here, one per line. If a player connects or attempts to change their name to any name in this list, they will be immediately and automatically banned from connection.

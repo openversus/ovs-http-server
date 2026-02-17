@@ -1,16 +1,27 @@
+import { logger } from "../config/logger";
 import { Request, Response } from "express";
 import { Types } from "mongoose";
 import {
+  redisClient,
   redisGetMatch,
   redisGetPlayerPerk,
   redisLockPerks,
-  redisPublishAllPerksLocked
+  redisPublishAllPerksLocked,
+  RedisPlayerConnection
 } from "../config/redis";
 import {  getCurrentCRC, MATCHMAKING_CRC } from "../data/config";
 import { PerkPagesModel } from "../database/PerkPages";
+import { Cosmetics } from "../database/Cosmetics";
 import { getEquippedCosmetics } from "../services/cosmeticsService";
 import { MVSTime } from "../utils/date";
 import { generate_hiss } from "./hiss_amalgation_get";
+import * as SharedTypes from "../types/shared-types";
+import * as AuthUtils from "../utils/auth";
+import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
+import { AccountToken, IAccountToken } from "../types/AccountToken";
+import * as KitchenSink from "../utils/garbagecan";
+
+const serviceName = "Handlers.SSC";
 
 export async function handleSsc_invoke_attempt_daily_refresh(req: Request<{}, {}, {}, {}>, res: Response) {
   res.send({
@@ -298,8 +309,46 @@ export async function handleSsc_invoke_get_country_code(req: Request<{}, {}, {},
 
 export async function handleSsc_invoke_get_equipped_cosmetics(req: Request<{}, {}, {}, {}>, res: Response) {
   const account = req.token;
+  logger.info(`[${serviceName}]: Inside handleSsc_invoke_get_equipped_cosmetics`);
+
+  //KitchenSink.TryInspect(req);
+
+  //let ip = req.ip!.replace(/^::ffff:/, "");
+  let ip: string = account.current_ip;
+
+  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${ip}`) as unknown as RedisPlayerConnection;
+  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
+    logger.warn(`[${serviceName}]: No Redis player connection found for IP ${ip}, cannot set loadout.`);
+  }
+  let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`) as unknown as RedisPlayerConnection;
+  if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
+    logger.warn(`[${serviceName}]: No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
+  }
+
+  let rPlayerCosmetics = await getEquippedCosmetics(rPlayerConnectionByID.id) as Cosmetics;
+
   try {
-    const EquippedCosmetics = await getEquippedCosmetics(account.id)
+    logger.info(`[${serviceName}]: Player cosmetics: `);
+    KitchenSink.TryInspect(rPlayerCosmetics);
+  }
+  catch (error) {
+    logger.warn(`[${serviceName}]: Could not serialize Cosmetics object`);
+    logger.error(`[${serviceName}]: ${JSON.stringify(error)}`);
+  }
+
+  // let player = await PlayerTesterModel.findOne({ account_id: new Types.ObjectId(rPlayerConnectionByID.id) });
+  // if (!player) {
+  //   logger.info(`No player found for id ${account.id}, cannot set lobby loadout.`);
+  //   //return;
+  // }
+  
+  //const aID = player.id;
+
+  let aID = rPlayerConnectionByID.id || account.id;
+
+  try {
+    //const EquippedCosmetics = await getEquippedCosmetics(aID)
+    const EquippedCosmetics = rPlayerCosmetics;
     const message = {
       body: {
         EquippedCosmetics,
@@ -308,11 +357,13 @@ export async function handleSsc_invoke_get_equipped_cosmetics(req: Request<{}, {
       return_code: 0,
     };
 
+    logger.info(`[${serviceName}]: Message sent to client will be: ${JSON.stringify(message)}`);
 
     res.send(message);
-  } catch (error) {
+  }
+  catch (error) {
     //response.StatusCodes()
-    console.log("ERROR IN GETTING COSMETICS", error);
+    logger.error(`[${serviceName}]: ERROR GETTING COSMETICS`, error);
   }
 }
 
@@ -1741,18 +1792,18 @@ export async function handleSsc_invoke_get_milestone_reward_tracks(req: Request<
           InfiniteTierThreshold: 15,
           HighestClaimedInifiniteTier: -1,
         },
-        {
-          TrackSlug: "mrt_mastery_mr_meeseeks",
-          RewardTrackClass: "MvsCharacterMasteryRewardTrackHsda",
-          CurrentScore: 0,
-          CurrentTier: 99,
-          CompletedTiers: [],
-          ClaimedRewards: [],
-          bHasPremium: false,
-          Guid: "",
-          InfiniteTierThreshold: -1,
-          HighestClaimedInifiniteTier: -1,
-        },
+        // {
+        //   TrackSlug: "mrt_mastery_mr_meeseeks",
+        //   RewardTrackClass: "MvsCharacterMasteryRewardTrackHsda",
+        //   CurrentScore: 0,
+        //   CurrentTier: 99,
+        //   CompletedTiers: [],
+        //   ClaimedRewards: [],
+        //   bHasPremium: false,
+        //   Guid: "",
+        //   InfiniteTierThreshold: -1,
+        //   HighestClaimedInifiniteTier: -1,
+        // },
         {
           TrackSlug: "mrt_mastery_lebron",
           RewardTrackClass: "MvsCharacterMasteryRewardTrackHsda",
@@ -3991,11 +4042,21 @@ export async function handleSsc_invoke_get_milestone_reward_tracks(req: Request<
 }
 
 export async function handleSsc_invoke_get_or_create_mission_object(req: Request<{}, {}, {}, {}>, res: Response) {
-  const account = req.token;
+  //const account = req.token;
+
+  const account = AuthUtils.DecodeClientToken(req);
+  const aID = account.id || req.token.id;
+  const hydraUsername = account.hydraUsername || req.token.hydraUsername;
+  const playerUsername = account.username || req.token.username;
+  const wb_network_id = account.wb_network_id || req.token.wb_network_id;
+  const profile_id = account.profile_id || req.token.profile_id;
+
   res.send({
     body: {
       updated_at: { _hydra_unix_date: 1742223633 },
-      owner_id: account.id,
+      //owner_id: account.id,
+      //owner_id: "69766ab4859f8090d136bd64",
+      owner_id: aID,
       unique_key: "missions",
       object_type_slug: "player-missions",
       server_data: {
@@ -4730,7 +4791,7 @@ export async function handleSsc_invoke_get_or_create_mission_object(req: Request
 
 export async function handleSsc_invoke_hiss_amalgamation(req: Request<{}, {}, { Crc: number }, {}>, res: Response) {
   if (req.body.Crc !== getCurrentCRC()) {
-    console.log("Crc: out of date , sending new");
+    logger.info(`[${serviceName}]: Crc: out of date , sending new`);
     res.send(generate_hiss());
   } else {
     res.send({ body: { Crc: getCurrentCRC(), MatchmakingCrc: MATCHMAKING_CRC }, metadata: null, return_code: 304 });
@@ -57717,8 +57778,19 @@ export interface Ssc_invoke_perks_lock_REQUEST {
 }
 
 export async function handleSsc_invoke_perks_lock(req: Request<{}, {}, Ssc_invoke_perks_lock_REQUEST, {}>, res: Response) {
-  const account = req.token;
-  await redisLockPerks({ containerMatchId: req.body.ContainerMatchId, playerId: account.id, perks: req.body.Perks });
+  // const account = req.token;
+
+  KitchenSink.TryInspectVerbose(req);
+  //logger.info(`[${serviceName}]: Perks Lock Request:\n`, req);
+
+  const account = AuthUtils.DecodeClientToken(req);
+  const aID = account.id || req.token.id;
+  const hydraUsername = account.hydraUsername || req.token.hydraUsername;
+  const playerUsername = account.username || req.token.username;
+  const wb_network_id = account.wb_network_id || req.token.wb_network_id;
+  const profile_id = account.profile_id || req.token.profile_id;
+
+  await redisLockPerks({ containerMatchId: req.body.ContainerMatchId, playerId: aID, perks: req.body.Perks });
 
   // Check if all players have locked their perks
   // If all players have locked their perks, publish the event
@@ -57727,7 +57799,7 @@ export async function handleSsc_invoke_perks_lock(req: Request<{}, {}, Ssc_invok
     const playersIds = match.tickets.flatMap((ticket) => ticket.players.map((player) => player.id));
     const playersPerks = await Promise.all(
       playersIds
-        .filter((id) => id !== account.id)
+        .filter((id) => id !== aID)
         .map(async (playerId) => {
           const perks = await redisGetPlayerPerk(req.body.ContainerMatchId, playerId);
           if (perks) {
@@ -58011,9 +58083,22 @@ export async function handleSsc_invoke_set_lobby_joinable(req: Request<{}, {}, {
 }
 
 export async function handleSsc_invoke_set_ready_for_lobby(req: Request<{}, {}, Ssc_invoke_set_ready_for_lobby_REQUEST, {}>, res: Response) {
-  const account = req.token;
+  // const account = req.token;
+
+  logger.info(`[${serviceName}]: invoke_set_ready_for_lobby request:\n`);
+  KitchenSink.TryInspectRequestVerbose(req);
+
+  const account = AuthUtils.DecodeClientToken(req);
+  const aID = account.id || req.token.id;
+  const hydraUsername = account.hydraUsername || req.token.hydraUsername;
+  const playerUsername = account.username || req.token.username;
+  const wb_network_id = account.wb_network_id || req.token.wb_network_id;
+  const profile_id = account.profile_id || req.token.profile_id;
+
+  logger.info(`\n\n[${serviceName}]: Will send to client: MatchID ${req.body.MatchID}, PlayerID ${aID}, Ready true, bAllPlayersReady true\n\n`);
+
   res.send({
-    body: { MatchID: req.body.MatchID, PlayerID: account.id, Ready: true, bAllPlayersReady: true },
+    body: { MatchID: req.body.MatchID, PlayerID: aID, Ready: true, bAllPlayersReady: true },
     metadata: null,
     return_code: 0,
   });

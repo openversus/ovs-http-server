@@ -1,3 +1,4 @@
+import { logger } from "./config/logger";
 import express from "express";
 import router from "./router";
 import { hydraDecoderMiddleware } from "./middleware/hydraParser";
@@ -12,11 +13,28 @@ import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch } from "./conf
 import { GAME_SERVER_PORT } from "./game/udp";
 import { sscRouter } from "./ssc/routes";
 import {  getCurrentCRC, LoadConfig, MATCHMAKING_CRC } from "./data/config";
-import { PlayerTesterModel } from "./database/PlayerTester";
+import { PlayerTester, PlayerTesterModel } from "./database/PlayerTester";
 import { RegExpMatcher, TextCensor, englishDataset, englishRecommendedTransformers, asteriskCensorStrategy } from "obscenity";
 import env from "./env/env";
 import { syncRouter } from "./dataAssetSync";
 import { loadAssets } from "./loadAssets";
+import * as SharedTypes from "./types/shared-types";
+import { isParameter } from "typescript";
+import * as nodeutil from "node:util"
+import * as KitchenSink from "./utils/garbagecan";
+import * as AuthUtils from "./utils/auth";
+import { AccountToken, IAccountToken } from "./types/AccountToken";
+import {
+  isNameBanned,
+  isNameForceChange,
+  stringContainsBannedName,
+  stringContainsForceChangeName,
+  banIP
+} from "./services/banService";
+import { NameGenerator } from "./utils/namegeneration";
+
+const serviceName: string = "Server";
+const BE_VERBOSE = env.VERBOSE_LOGGING === 1 ? true : false;
 
 const matcher = new RegExpMatcher({
   ...englishDataset.build(),
@@ -25,14 +43,19 @@ const matcher = new RegExpMatcher({
 const censor = new TextCensor();
 censor.setStrategy(asteriskCensorStrategy());
 
+const defaultPlayer: PlayerTester = new PlayerTesterModel({ ip: "224.0.0.254", name: "Default Player" });
+const defaultPlayerToken: AccountToken = new AccountToken() as IAccountToken;
+
 export const app = express();
 app.disable("x-powered-by");
 
-//const port = 12181;
 const port = env.HTTP_PORT || 8000;
+const USE_INTERNAL_ROLLBACK = env.USE_INTERNAL_ROLLBACK === 1 ? true : false;
+const USE_INTERNAL_ROLLBACK_CPP = env.USE_INTERNAL_ROLLBACK_CPP === 1 ? true : false;
+const stringIsOnlyWhitespace = (string: string): boolean => string.trim().length === 0;
 
 process.on("warning", (e) => {
-  console.warn(e.stack);
+  logger.warn(`[${serviceName}]: ${e.stack}`);
 });
 
 
@@ -55,10 +78,18 @@ app.get("/namechange", async (req, res) => {
     let player = await PlayerTesterModel.findOne({ ip });
     // If no player exists, create a new document with empty name
     if (!player) {
-      player = new PlayerTesterModel({ ip, name: "" });
+      var randomName = NameGenerator.NewName();
+      player = new PlayerTesterModel({ ip, name: randomName });
+      logger.info(`[${serviceName}]: No player found for IP ${ip}. Creating new player with name "${randomName}" for IP ${ip}.`);
       await player.save();
     }
+
+    logger.info(`[${serviceName}]: Name change requested for IP ${ip} with current name "${player.name}"`);
+    logger.info(`[${serviceName}]: Name change Player document before: ${JSON.stringify(player)}`);
+
     // Render a simple HTML form
+    // Will be replaced by the sick name change form that brettlyc from the Discord server created
+    // I would just put it here now, but I want to make sure his name gets the commit
     res.send(`
       <!DOCTYPE html>
       <html lang="en">
@@ -72,47 +103,77 @@ app.get("/namechange", async (req, res) => {
         <form action="/namechange" method="POST">
           <label>
             Name:
-            <input maxlength="15" type="text" id="name" name="name" value="${player.name}" />
+            <input maxlength="24" type="text" id="name" name="name" value="${player.name}" />
           </label>
           <button type="submit">Save</button>
         </form>
       </body>
       </html>
     `);
-  } catch (e) {
-    console.log(e);
+  }
+  catch (e) {
+    logger.error(`[${serviceName}]: Error in route /namechange GET: ${e}`);
     res.send("");
   }
 });
 
-// POST /player - update or create player by IP
+// POST /namechange - update or create player by IP
 app.post("/namechange", async (req, res, next) => {
   try {
     let ip = req.ip!.replace(/^::ffff:/, "");
-    console.log(req.body);
-    const { name } = req.body;
+    let player = await PlayerTesterModel.findOne({ ip });
+    if (!player) {
+      logger.warn(`[${serviceName}]: No player found for IP ${ip} during name change POST. This should not happen since the GET route creates a player if one doesn't exist.`);
+    }
+    logger.info(req.body);
+    let { name } = req.body;
     if (typeof ip !== "string" || typeof name !== "string") {
       res.json("ERROR");
       return;
     }
+
+    if (name.length === 0 || stringIsOnlyWhitespace(name)) {
+      res.json("Blank or whitespace-only names are not permitted.");
+      return;
+    }
+
+    if (stringContainsBannedName(name)) {
+      res.json(`The name ${name} contains racial slurs, hate speech, or another banned term which is not welcome in the OVS community. You are now permanently banned from participating in matches held on OVS servers. If you think this is an error, please join the OVS Discord server at https://discord.gg/ez3Ve7eTvk and ping one of the admins.`);
+      banIP(ip, player ? player.profile_id.toString() : "Unknown Player ID", player ? player.name : "Unknown Old Name", name, "Banned name used");
+      return;
+    }
+
+    if (stringContainsForceChangeName(name)) {
+      res.json(`The name ${name} contains a term which is not permitted in a player name. Your name has not been changed. Please refresh the page and choose a new name. If you think this is an error, please join the OVS Discord server at https://discord.gg/ez3Ve7eTvk and ping one of the admins.`);
+      return;
+    }
+
+    if (name.length > 24) {
+      name = name.substring(0, 24);
+    }
+
     // Upsert the player's name based on IP
     const matches = matcher.getAllMatches(name);
     const filtered = censor.applyTo(name, matches);
-    await PlayerTesterModel.findOneAndUpdate({ ip }, { name: filtered.substring(0, 15) }, { upsert: true, new: true });
+    await PlayerTesterModel.findOneAndUpdate({ ip }, { name: filtered.substring(0, 24) }, { upsert: true, new: true });
     // Redirect back to the form
     res.redirect(`/namechange`);
-    console.log("Name Changed");
-  } catch (e) {
-    console.log(e);
+    logger.info(`[${serviceName}]: Name change for IP ${ip} to "${name}" (filtered: "${filtered}")`);
+    if (player) {
+      logger.info(`[${serviceName}]: Name change Player document after update: ${JSON.stringify(player)}`);
+    }
+  }
+  catch (e) {
+    logger.error(`[${serviceName}]: Error in route /namechange POST: ${e}`);
     res.send("");
   }
 });
 
-app.post("/mvsi_register", async (req, res, next) => {
-  console.log("GET REGISTRY");
+app.post("/ovs_register", async (req, res, next) => {
+  logger.info(`[${serviceName}]: OVS GET REGISTRY call from rollback server`);
   const body = req.body;
   const config = await redisGetMatchConfig(body.matchId);
-  if (config.matchKey !== body.key) {
+  if (!config || !config.matchKey || !body || !body.key || config.matchKey !== body.key) {
     res.send("");
     return;
   }
@@ -130,11 +191,57 @@ app.post("/mvsi_register", async (req, res, next) => {
   });
 });
 
-app.post("/mvsi_end_match", async (req, res, next) => {
-  console.log("mvsi_end_match");
+app.post("/ovs_end_match", async (req, res, next) => {
+  logger.info(`[${serviceName}]: OVS END MATCH call from rollback server`);
   const body = req.body;
   const config = await redisGetMatchConfig(body.matchId);
-  if (config.matchKey !== body.key) {
+
+  if (!config || !config.matchKey || !body || !body.key || config.matchKey !== body.key) {
+    res.send("");
+    return;
+  }
+  if (BE_VERBOSE) {
+    logger.info(`[${serviceName}]: OVS END MATCH body: ${JSON.stringify(body)}`);
+  }
+  if (config) {
+    await redisPublisdEndOfMatch(
+      config.players.map((p) => p.playerId),
+      config.matchId,
+    );
+    res.send("");
+  }
+});
+
+// Being kept for backwards compatibility with older OVS versions, can be removed eventually
+app.post("/mvsi_register", async (req, res, next) => {
+  logger.info(`[${serviceName}]: GET REGISTRY call from rollback server`);
+  const body = req.body;
+  const config = await redisGetMatchConfig(body.matchId);
+  if (!config || !config.matchKey || !body || !body.key || config.matchKey !== body.key) {
+    res.send("");
+    return;
+  }
+  const players = config.players.map((p) => {
+    return {
+      player_index: p.playerIndex,
+      ip: p.ip,
+      is_host: p.isHost,
+    };
+  });
+  res.json({
+    max_players: config.players.length,
+    match_duration: 36000,
+    players,
+  });
+});
+
+// Being kept for backwards compatibility with older OVS versions, can be removed eventually
+app.post("/mvsi_end_match", async (req, res, next) => {
+  logger.info("mvsi_end_match");
+  const body = req.body;
+  const config = await redisGetMatchConfig(body.matchId);
+
+  if (!config || !config.matchKey || !body || !body.key || config.matchKey !== body.key) {
     res.send("");
     return;
   }
@@ -153,25 +260,33 @@ app.use(hydraTokenMiddleware);
 app.use(router);
 app.use(sscRouter);
 app.get("/ssc/invoke/hiss_amalgamation", (req, res, next) => {
-  console.log("Missing Crc, sending fresh one");
+  logger.info(`[${serviceName}]: Missing Crc, sending fresh one`);
   res.send(generate_hiss());
 });
 
 app.use((req, res, next) => {
-  console.log("NOT IMPLEMENTED - ", req.method, req.url);
-  console.log(req.body);
+  logger.info(`[${serviceName}]: NOT IMPLEMENTED - ${req.method} ${req.url}\n`);
+  KitchenSink.TryInspectRequestVerbose(req);
+
   res.send({ body: { Crc: getCurrentCRC(), MatchmakingCrc: MATCHMAKING_CRC }, metadata: null, return_code: 200 });
 });
 
 export const MVSHTTPServer = http.createServer(app);
-//export const MVSHTTPServer = https.createServer(options,app);
+// export const MVSHTTPServer = https.createServer(options,app);
 
 export async function start() {
   await connect();
   await loadAssets();
   await LoadConfig();
 
+  if (USE_INTERNAL_ROLLBACK) {
+    if (!USE_INTERNAL_ROLLBACK_CPP) {
+      const rollbackModule = await import("./game/udp.js");
+      const rollbackServer = new rollbackModule.RollbackServer(env.UDP_PORT || 41234, 2);
+    }
+  }
+
   MVSHTTPServer.listen(port, "0.0.0.0", () => {
-    console.log(`MVS Server running on ${port}`);
+    logger.info(`[${serviceName}]: OVS Server running on ${port}`);
   });
 }

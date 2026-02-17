@@ -1715,34 +1715,34 @@ export const MISSION_CONTROLLERS = {
     },
     id: "675874d55ca68abece2950c8",
   },
-  misctl_unlockable_c022: {
-    slug: "misctl_unlockable_c022",
-    global_configuration_type_slug: "mission-controllers",
-    ui_editor_type: null,
-    data: {
-      AssetBundleData: {
-        Bundles: [],
-      },
-      bIsEnabled: true,
-      MvsMissionController: {
-        Constraints: [],
-        Count: 50,
-        MissionList: "/MvsSeason04/Missions/MissionsList/MISLIS_Unlockable_C022A.MISLIS_Unlockable_C022A",
-        UnlockConstraints: [
-          "misobj_ownsitem_c022",
-        ],
-      },
-      Slug: "misctl_unlockable_c022",
-    },
-    private_data: null,
-    created_at: {
-      _hydra_unix_date: 1733850325,
-    },
-    updated_at: {
-      _hydra_unix_date: 1733850325,
-    },
-    id: "675874d55ca68abece2950c9",
-  },
+  // misctl_unlockable_c022: {
+  //   slug: "misctl_unlockable_c022",
+  //   global_configuration_type_slug: "mission-controllers",
+  //   ui_editor_type: null,
+  //   data: {
+  //     AssetBundleData: {
+  //       Bundles: [],
+  //     },
+  //     bIsEnabled: true,
+  //     MvsMissionController: {
+  //       Constraints: [],
+  //       Count: 50,
+  //       MissionList: "/MvsSeason04/Missions/MissionsList/MISLIS_Unlockable_C022A.MISLIS_Unlockable_C022A",
+  //       UnlockConstraints: [
+  //         "misobj_ownsitem_c022",
+  //       ],
+  //     },
+  //     Slug: "misctl_unlockable_c022",
+  //   },
+  //   private_data: null,
+  //   created_at: {
+  //     _hydra_unix_date: 1733850325,
+  //   },
+  //   updated_at: {
+  //     _hydra_unix_date: 1733850325,
+  //   },
+  //   id: "675874d55ca68abece2950c9",
+  // },
   misctl_unlockable_c021: {
     slug: "misctl_unlockable_c021",
     global_configuration_type_slug: "mission-controllers",

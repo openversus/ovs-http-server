@@ -41,6 +41,16 @@ router.post("/access", async (req: Request<{}, {}, {}, {}>, res: Response) => {
   await h.handleAccess(req, res);
 });
 
+router.post("/.*/access", async (req: Request<{}, {}, {}, {}>, res: Response) => {
+  // @ts-ignore TODO : implementation. Remove comment once implemented`
+  await h.handleAccess(req, res);
+});
+
+router.delete("/access", async (req: Request<{}, {}, {}, {}>, res: Response) => {
+  // @ts-ignore TODO : implementation. Remove comment once implemented`
+  await h.deleteAccess(req, res);
+});
+
 router.put("/accounts/wb_network/bulk", (req: Request<{}, {}, {}, MVSQueries.Accounts_wb_network_bulk_QUERY>, res: Response) => {
   // @ts-ignore TODO : implementation. Remove comment once implemented`
   h.handleAccounts_wb_network_bulk(req, res);
@@ -379,6 +389,12 @@ router.put("/ssc/invoke/submit_end_of_match_stats", (req: Request<{}, {}, {}, {}
 router.put("/ssc/invoke/toast_player", (req: Request<{}, {}, {}, {}>, res: Response) => {
   // @ts-ignore TODO : implementation. Remove comment once implemented`
   h.handleSsc_invoke_toast_player(req, res);
+});
+
+router.post(/\/virtual_commerce\/purchases\/.{24}\/toasts_gleamium/, (req: Request<{}, {}, {}, {}>, res: Response) => {
+//router.post("/virtual_commerce/purchases/697fa194ce48c5be8a71abf4/toasts_gleamium", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  // @ts-ignore TODO : implementation. Remove comment once implemented`
+  h.handleCommerce_purchases_toasts_gleamium(req, res);
 });
 
 export default router;

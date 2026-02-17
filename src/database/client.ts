@@ -6,7 +6,9 @@ import { accountModel } from "./Account";
 import { configurationModel } from "./Configuration";
 import { logger } from "../config/logger";
 
+const serviceName: string = "Database.Client";
+
 export async function connect() {
   await mongoose.connect(env.MONGODB_URI);
-  logger.info("Successfully connected to MongoDB!");
+  logger.info(`${serviceName}: Successfully connected to MongoDB!`);
 }

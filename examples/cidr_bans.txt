@@ -1,0 +1,6 @@
+# Banned CIDR ranges, one per line
+# Empty lines and comments are ignored
+#
+# Example:
+
+224.1.0.0/16

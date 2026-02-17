@@ -19,7 +19,10 @@ import ObjectID from "bson-objectid";
 import { randomBytes } from "crypto";
 import { MATCH_TYPES } from "./services/matchmakingService";
 import { getRandomMap1v1, getRandomMapByType } from "./data/maps";
+import { randomUUID, randomInt } from "crypto";
+import env from "./env/env";
 
+const serviceName = "MatchmakingWorker";
 const CHECK_INTERVAL_MS = 2000;
 
 const MATCH_RULES = {
@@ -36,13 +39,13 @@ const MATCH_RULES = {
 };
 
 export function startMatchMakingWorker(): void {
-  logger.info("Starting matchmaking worker...");
+  logger.info(`[${serviceName}]: Starting matchmaking worker...`);
   // Run the first check immediately
   checkQueues();
   // Then set up interval to check regularly
   setInterval(checkQueues, CHECK_INTERVAL_MS);
 
-  logger.info(`Matchmaking worker started, checking queue every ${CHECK_INTERVAL_MS}ms`);
+  logger.info(`[${serviceName}]: Matchmaking worker started, checking queue every ${CHECK_INTERVAL_MS}ms`);
 }
 
 // Process 1v1 matchmaking queue
@@ -55,7 +58,7 @@ async function process1v1Queue(): Promise<boolean> {
       return false; // Not enough tickets to make a match
     }
 
-    logger.info(`Found ${tickets.length} tickets in 1v1 queue, attempting to create a match`);
+    logger.info(`[${serviceName}]: Found ${tickets.length} tickets in 1v1 queue, attempting to create a match`);
 
     // Parse ticket data from queue
     const matchedTickets: RedisMatchTicket[] = [];
@@ -70,8 +73,9 @@ async function process1v1Queue(): Promise<boolean> {
             break;
           }
         }
-      } catch (error) {
-        logger.error(`Error parsing ticket in 1v1 queue: ${error}`);
+      }
+      catch (error) {
+        logger.error(`[${serviceName}]: Error parsing ticket in 1v1 queue: ${error}`);
         // Continue to next ticket
       }
     }
@@ -85,21 +89,24 @@ async function process1v1Queue(): Promise<boolean> {
         // Create a match with these tickets
         await createMatch(matchedTickets, "1v1");
         return true;
-      } catch (error) {
-        logger.error(`Error removing matched tickets from queue: ${error}`);
+      }
+      catch (error) {
+        logger.error(`[${serviceName}]: Error removing matched tickets from queue: ${error}`);
         return false; // If we can't remove them, we can't proceed
       }
     }
 
-    logger.info(`Not enough valid tickets for a 1v1 match (need ${MATCH_RULES["1v1"].teamsRequired}, found ${matchedTickets.length})`);
+    logger.info(`[${serviceName}]: Not enough valid tickets for a 1v1 match (need ${MATCH_RULES["1v1"].teamsRequired}, found ${matchedTickets.length})`);
     return false;
-  } catch (error) {
-    logger.error(`Error processing 1v1 queue: ${error}`);
+
+  }
+  catch (error) {
+    logger.error(`[${serviceName}]: Error processing 1v1 queue: ${error}`);
     return false;
   }
 }
 
-// Process 1v1 matchmaking queue
+// Process 2v2 matchmaking queue
 async function process2v2Queue(): Promise<boolean> {
   try {
     // Get all tickets in the queue
@@ -109,7 +116,7 @@ async function process2v2Queue(): Promise<boolean> {
       return false; // Not enough tickets to make a match
     }
 
-    logger.info(`Found ${tickets.length} tickets in 2v2 queue, attempting to create a match`);
+    logger.info(`[${serviceName}]: Found ${tickets.length} tickets in 2v2 queue, attempting to create a match`);
 
     // Parse ticket data from queue
     const matchedTickets: RedisMatchTicket[] = [];
@@ -122,8 +129,9 @@ async function process2v2Queue(): Promise<boolean> {
         if (matchedTickets.length === MATCH_RULES["2v2"].totalPlayersRequired) {
           break;
         }
-      } catch (error) {
-        logger.error(`Error parsing ticket in 2v2 queue: ${error}`);
+      }
+      catch (error) {
+        logger.error(`[${serviceName}]: Error parsing ticket in 2v2 queue: ${error}`);
         // Continue to next ticket
       }
     }
@@ -137,16 +145,18 @@ async function process2v2Queue(): Promise<boolean> {
         // Create a match with these tickets
         await createMatch(matchedTickets, "2v2");
         return true;
-      } catch (error) {
-        logger.error(`Error removing matched tickets from queue: ${error}`);
+      }
+      catch (error) {
+        logger.error(`[${serviceName}]: Error removing matched tickets from queue: ${error}`);
         return false; // If we can't remove them, we can't proceed
       }
     }
 
-    logger.info(`Not enough valid tickets for a 2v2 match (need ${MATCH_RULES["2v2"].totalPlayersRequired}, found ${matchedTickets.length})`);
+    logger.info(`[${serviceName}]: Not enough valid tickets for a 2v2 match (need ${MATCH_RULES["2v2"].totalPlayersRequired}, found ${matchedTickets.length})`);
     return false;
-  } catch (error) {
-    logger.error(`Error processing 2v2 queue: ${error}`);
+  }
+  catch (error) {
+    logger.error(`[${serviceName}]: Error processing 2v2 queue: ${error}`);
     return false;
   }
 }
@@ -156,7 +166,8 @@ export async function createTeams(tickets: RedisMatchTicket[]): Promise<RedisTea
   // 1. total number of players
   const totalPlayers = tickets.reduce((sum, t) => sum + t.players.length, 0);
   if (totalPlayers % 2 !== 0) {
-    throw new Error("Need an even number of total players");
+    //throw new Error("Need an even number of total players");
+    logger.warn(`[${serviceName}]: Total players is odd (${totalPlayers}), one player will be left without a team`);
   }
   const slotsPerTeam = totalPlayers / 2;
 
@@ -225,6 +236,7 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       createdAt: Date.now(),
       matchType,
       totalPlayers,
+      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
     };
 
     // Get all player IDs from all tickets
@@ -244,6 +256,7 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       matchKey: randomBytes(32).toString("base64"),
       map: getRandomMapByType(matchType),
       mode: matchType,
+      rollbackPort: match.rollbackPort,
     };
 
     const playerIds = players.map((p) => p.playerId);
@@ -259,9 +272,10 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       await redisGameServerInstanceReady(matchId, playerIds);
     }
 
-    logger.info(`Created ${matchType} match ${match.resultId} with ${totalPlayers} players across ${tickets.length} tickets`);
-  } catch (error) {
-    logger.error(`Error creating match: ${error}`);
+    logger.info(`[${serviceName}]: Created ${matchType} match ${match.resultId} with ${totalPlayers} players across ${tickets.length} tickets`);
+  }
+  catch (error) {
+    logger.error(`[${serviceName}]: Error creating match: ${error}`);
   }
 }
 
@@ -275,13 +289,13 @@ async function checkQueues(): Promise<void> {
     const made2v2Match = await process2v2Queue();
 
     if (made1v1Match) {
-      logger.info(`Successfully created matches in this cycle: 1v1=${made1v1Match}`);
+      logger.info(`[${serviceName}]: Successfully created matches in this cycle: 1v1=${made1v1Match}`);
     }
 
     if (made2v2Match) {
-      logger.info(`Successfully created matches in this cycle: 2v2=${made1v1Match}`);
+      logger.info(`[${serviceName}]: Successfully created matches in this cycle: 2v2=${made2v2Match}`);
     }
   } catch (error) {
-    logger.error(`Error checking queue: ${error}`);
+    logger.error(`[${serviceName}]: Error checking queue: ${error}`);
   }
 }

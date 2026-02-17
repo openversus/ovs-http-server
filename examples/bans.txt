@@ -1,0 +1,6 @@
+# Banned IP addresses, one per line
+# Empty lines and comments are ignored
+#
+# Example:
+
+224.0.0.9

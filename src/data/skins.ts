@@ -224,6 +224,8 @@ export const ENABLED_SKINS = {
       "skin_c013_s27",
     ],
   },
+
+  // Reindog
   character_creature: {
     Slugs: [
       "skin_creature_default",
@@ -248,6 +250,8 @@ export const ENABLED_SKINS = {
       "skin_c009_s24",
     ],
   },
+
+  // Joker
   character_C028: {
     Slugs: [
       "skin_c028_default",
@@ -272,6 +276,8 @@ export const ENABLED_SKINS = {
       "skin_c028_s06",
     ],
   },
+
+  // Stripe
   character_C023B: {
     Slugs: [
       "skin_c023b_default",
@@ -290,6 +296,8 @@ export const ENABLED_SKINS = {
       "skin_c023b_s06",
     ],
   },
+
+  // Gizmo
   character_C023A: {
     Slugs: [
       "skin_c023A_default",
@@ -307,6 +315,8 @@ export const ENABLED_SKINS = {
       "skin_c023A_s33",
     ],
   },
+
+  // Black Adam
   character_C021: {
     Slugs: [
       "skin_c021_default",
@@ -326,6 +336,8 @@ export const ENABLED_SKINS = {
       "skin_c021_s15",
     ],
   },
+
+  // Rick
   character_C020: {
     Slugs: [
       "skin_c020_default",
@@ -341,6 +353,8 @@ export const ENABLED_SKINS = {
       "skin_c020_s05",
     ],
   },
+
+  // Morty
   character_c019: {
     Slugs: [
       "skin_c019_default",
@@ -357,6 +371,8 @@ export const ENABLED_SKINS = {
       "skin_c019_s04",
     ],
   },
+
+  // Marvin
   character_C018: {
     Slugs: [
       "skin_c018_default",
@@ -374,6 +390,8 @@ export const ENABLED_SKINS = {
       "skin_c018_s25",
     ],
   },
+
+  // Iron Giant
   character_C017: {
     Slugs: [
       "skin_c017_s01",
@@ -392,6 +410,8 @@ export const ENABLED_SKINS = {
       "skin_c017_s07",
     ],
   },
+
+  // Lebron
   character_c16: {
     Slugs: [
       "skin_c016_default",
@@ -470,9 +490,9 @@ export const ENABLED_SKINS = {
       "skin_c035_s15",
     ],
   },
-  character_Meeseeks: {
-    Slugs: ["skin_meeseeks_default"],
-  },
+  // character_Meeseeks: {
+  //   Slugs: ["skin_meeseeks_default"],
+  // },
   character_BananaGuard: {
     Slugs: [
       "skin_bananaguard_default",
@@ -531,12 +551,14 @@ export const ENABLED_SKINS = {
       "skin_c004_s33",
     ],
   },
-  character_C022: {
-    Slugs: ["c022_default"],
-  },
-  character_supershaggy: {
-    Slugs: ["supershaggy"],
-  },
+  // character_C022: {
+  //   Slugs: ["c022_default"],
+  // },
+  // character_supershaggy: {
+  //   Slugs: ["supershaggy"],
+  // },
+
+  // Agent Smith
   character_c036: {
     Slugs: [
       "skin_c036",
@@ -552,6 +574,8 @@ export const ENABLED_SKINS = {
       "skin_c036_s04",
     ],
   },
+
+  // PowerPuff Girls/Top 1A
   character_C030: {
     Slugs: [
       "skin_c030_default",
@@ -570,9 +594,13 @@ export const ENABLED_SKINS = {
       "skin_c030_s02",
     ],
   },
+
+  // Nubia
   character_C027: {
     Slugs: ["skin_C027_default", "skin_c027_s20", "skin_C027_s01", "skin_c027_s25", "skin_c027_s02", "skin_c027_s03", "skin_c027_s14", "c027_s04"],
   },
+
+  // Samurai Jack
   character_C026: {
     Slugs: [
       "skin_c026_default",
@@ -593,9 +621,13 @@ export const ENABLED_SKINS = {
       "skin_c026_s01",
     ],
   },
+
+  // Beetlejuice
   character_c024: {
     Slugs: ["skin_c024_default", "skin_c024_s22", "skin_c024_s01", "skin_c024_s28", "skin_c024_s27", "skin_c024_s03"],
   },
+
+  // Raven
   character_C025: {
     Slugs: [
       "skin_C025_default",
@@ -612,9 +644,13 @@ export const ENABLED_SKINS = {
       "skin_c025_s03",
     ],
   },
+
+  // Marceline/Top 1B
   character_C031: {
     Slugs: ["skin_c031_s05", "skin_c031_s00", "c031_s02", "c031_s00", "c031_s03", "skin_c031_s05"],
   },
+
+  // Aquaman
   character_C029: {
     Slugs: [
       "c029_default",
@@ -633,7 +669,10 @@ export const ENABLED_SKINS = {
       "c029_s04",
     ],
   },
+
+  // Lola
   character_c038: {
     Slugs: ["C038", "skin_c038_s01", "skin_c038_s05", "skin_c038_s02", "skin_c038_s03", "skin_c038_s04"],
   },
 };
+

@@ -1,0 +1,1 @@
+Remove this line and enter any names that you wish to disallow use of here, one per line. If a player connects or attempts to change their name to any name in this list, their request will be rejected and they will retain their original name.

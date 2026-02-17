@@ -1,11 +1,21 @@
+import { logger } from "../config/logger";
 import express, { Request, Response } from "express";
-import { RedisPlayer, redisUpdatePlayerLoadout } from "../config/redis";
+import { RedisPlayer, redisUpdatePlayerLoadout, RedisPlayerConnection, redisSetPlayerConnectionByID, redisClient, redisSetPlayerConnectionCosmetics } from "../config/redis";
+import { Cosmetics, CosmeticsModel, TauntSlotsClass } from "../database/Cosmetics";
+import { getEquippedCosmetics } from "../services/cosmeticsService";
 import env from "../env/env";
 import { PerkPagesModel } from "../database/PerkPages";
 import { Types } from "mongoose";
 import { changeLobbyMode, createLobby, LOBBY_MODES } from "../services/lobbyService";
 import { MVSTime } from "../utils/date";
-import { PlayerTesterModel } from "../database/PlayerTester";
+import * as SharedTypes from "../types/shared-types";
+import { HYDRA_ACCESS_TOKEN, SECRET, decodeToken } from "../middleware/auth";
+import * as AuthUtils from "../utils/auth";
+import * as KitchenSink from "../utils/garbagecan";
+import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
+import { AccountToken, IAccountToken } from "../types/AccountToken";
+
+const serviceName = "SSC.SSC";
 
 interface Lock_Lobby_Loadout_REQ {
   AutoPartyPreference: boolean;
@@ -37,17 +47,67 @@ export interface Lock_Lobby_Loadout_RES_BODY {
 }
 
 export async function set_lock_lobby_loadout(req: Request, res: Response<Lock_Lobby_Loadout_RES>) {
-  const account = req.token;
-  const body = req.body as Lock_Lobby_Loadout_REQ;
+  logger.info(`[${serviceName}]: Received set_lock_lobby_loadout request, body is: \n`);
+  KitchenSink.TryInspectRequest(req.body);
+
   let ip = req.ip!.replace(/^::ffff:/, "");
+
+  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${ip}`) as unknown as RedisPlayerConnection;
+  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
+    logger.warn(`[${serviceName}]: No Redis player connection found for IP ${ip}, cannot set loadout.`);
+  }
+  let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`) as unknown as RedisPlayerConnection;
+  if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
+    logger.warn(`[${serviceName}]: No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
+  }
+
+  let rPlayerCosmetics = await getEquippedCosmetics(rPlayerConnectionByID.id) as Cosmetics;
+
+  let player = await PlayerTesterModel.findOne({ ip });
+  if (!player) {
+    //player = await PlayerTesterModel.findOne({ _id: new Types.ObjectId(account.id) });
+    logger.warn(`[${serviceName}]: No player found for IP ${ip}, cannot set lobby loadout.`);
+
+    if (rPlayerConnectionByID && rPlayerConnectionByID.id) {
+      logger.info(`[${serviceName}]: Attempting to find player by ID ${rPlayerConnectionByID.id} as fallback.`);
+    }
+
+    player = await PlayerTesterModel.findOne({ _id: new Types.ObjectId(rPlayerConnectionByID.id) });
+    if (!player) {
+      logger.info(`[${serviceName}]: No player found for ID ${rPlayerConnectionByID.id}, cannot set lobby loadout.`);
+      return;
+    }
+  }
+
+  //const aID = decodedToken.id;
+  const aID = rPlayerConnectionByID.id;
+  const body = req.body as Lock_Lobby_Loadout_REQ;
+
   if (ip === "127.0.0.1") {
     ip = env.LOCAL_PUBLIC_IP;
   }
-  await redisUpdatePlayerLoadout(account.id, { character: body.Loadout.Character, skin: body.Loadout.Skin, ip: ip } as RedisPlayer);
+
+  await redisSetPlayerConnectionCosmetics(aID, rPlayerCosmetics);
+
+  let badChar: boolean = body.Loadout.Character === "character_Meeseeks" ||
+    body.Loadout.Character === "Meeseeks" ||
+    body.Loadout.Character === "character_supershaggy" ||
+    body.Loadout.Character === "supershaggy" ||
+    body.Loadout.Character === "character_c022" ||
+    body.Loadout.Character === "c022" ||
+    body.Loadout.Character === "character_C022" ||
+    body.Loadout.Character === "C022";
+
+  if (badChar) {
+    logger.info(`[${serviceName}]: Rejected attempt to set loadout to a disabled character during loadout lock for AccountId ${aID}: ${body.Loadout.Character}`);
+    return;
+  }
+
+  await redisUpdatePlayerLoadout(aID, { character: body.Loadout.Character, skin: body.Loadout.Skin, ip: ip } as RedisPlayer);
 
   try {
     const updatedDoc = await PlayerTesterModel.findOneAndUpdate(
-      { _id: new Types.ObjectId(account.id) },
+      { _id: new Types.ObjectId(aID) },
       {
         $set: {
           character: body.Loadout.Character,
@@ -55,13 +115,14 @@ export async function set_lock_lobby_loadout(req: Request, res: Response<Lock_Lo
         },
       },
     ).exec();
-  } catch (err) {
-    console.log("Error saving Character and variant last used", err);
+  }
+  catch (err) {
+    logger.error(`[${serviceName}]: Error saving character and last-used variant for player ${aID}, error: ${err}`);
   }
 
   res.send({
     body: {
-      AccountId: account.id,
+      AccountId: aID,
       Loadout: {
         Character: body.Loadout.Character,
         Skin: body.Loadout.Skin,
@@ -95,7 +156,30 @@ export async function set_perks_absent(req: Request, res: Response<PERKS_ABSENT_
 
 export async function perks_set_page(req: Request, res: Response) {
   const { Character, Description, DisplayName, PageIndex, Perks } = req.body;
-  const account_id = req.token.id; // Assuming this is an ObjectId or convertible
+
+  let rawToken = req.headers[HYDRA_ACCESS_TOKEN] as string;
+  let decodedToken = decodeToken(rawToken);
+  const account = decodedToken;
+
+  let account_id = "";
+  try {
+    //account_id = req.token.id; // Assuming this is an ObjectId or convertible
+    account_id = account.id;
+  }
+  catch (error) {
+    logger.error(`[${serviceName}]: Error getting account ID`, error);
+    // logger.info("Req is: ", req);
+    logger.info(`[${serviceName}]: Req.body is: `, req.body);
+    logger.info(`[${serviceName}]: Req.token is: `, req.token);
+    res.status(400).send({
+      body: {
+        message: "Invalid account ID",
+      },
+      metadata: null,
+      return_code: 1,
+    });
+    return;
+  }
 
   // Build the update path for this page
   const pageKey = `perk_pages.${Character}.${PageIndex}`;
@@ -115,8 +199,17 @@ export async function perks_set_page(req: Request, res: Response) {
       },
       { upsert: true, new: true },
     ).exec();
-  } catch (err) {
-    console.log("Error saving perks", err);
+  }
+  catch (err) {
+    logger.error(`[${serviceName}]: Error saving perks for account ${account_id}, error: ${err}`);
+    res.status(500).send({
+      body: {
+        message: "Error saving perks",
+      },
+      metadata: null,
+      return_code: 1,
+    });
+    return;
   }
 
   res.send({
@@ -129,28 +222,60 @@ export async function perks_set_page(req: Request, res: Response) {
 export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {}, {}>, res: Response) {
   const account = req.token;
 
+  let ip = req.ip!.replace(/^::ffff:/, "");
+  let player = await PlayerTesterModel.findOne({ ip });
+  const aID = player ? player.id : account.id;
+
   let character = "";
   let variant = "";
   let profileIcon = "";
 
-  const playerData = await PlayerTesterModel.findOne({ _id: new Types.ObjectId(account.id) });
-  //let profileicon = ""
+  const playerData = await PlayerTesterModel.findOne({ _id: new Types.ObjectId(aID) });
+
   if (playerData) {
     character = playerData.character;
     variant = playerData?.variant;
-    profileIcon = playerData?.profile_icon;
+    profileIcon = playerData?.profile_icon || "profile_icon_default_gold";
   }
 
   const loadout = { Character: character, Skin: variant };
+  logger.info(`[${serviceName}]: Received request to create party lobby for AccountId ${aID} with character: ${loadout.Character} and IP: ${ip}`);
 
-  let ip = req.ip!.replace(/^::ffff:/, "");
   if (ip === "127.0.0.1") {
     ip = env.LOCAL_PUBLIC_IP;
   }
-  const lobbyMode = LOBBY_MODES.ONE_V_ONE; // Default mode, can be changed later;
-  const newLobby = await createLobby(account.id, lobbyMode);
 
-  await redisUpdatePlayerLoadout(account.id, { character: character, skin: variant, ip: ip, profileIcon: profileIcon } as RedisPlayer);
+  let badChar: boolean = loadout.Character === "character_Meeseeks" ||
+    loadout.Character === "Meeseeks" ||
+    loadout.Character === "character_supershaggy" ||
+    loadout.Character === "supershaggy" ||
+    loadout.Character === "character_c022" ||
+    loadout.Character === "c022";
+
+  // Default to Shaggy if a disabled character is attempted to be set
+  if (badChar) {
+    logger.info(`[${serviceName}]: Rejected attempt to set loadout to a disabled character during lobby creation for AccountId ${aID}: ${loadout.Character}`);
+    loadout.Character = "character_shaggy";
+    loadout.Skin = "skin_shaggy_default";
+  }
+
+  const lobbyMode = LOBBY_MODES.ONE_V_ONE; // Default mode, can be changed later;
+  //const newLobby = await createLobby(account.id, lobbyMode);
+  const newLobby = await createLobby(aID, lobbyMode);
+
+  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${ip}`) as unknown as RedisPlayerConnection;
+  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
+    logger.warn(`[${serviceName}]: No Redis player connection found for IP ${ip}, cannot set loadout.`);
+  }
+  let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`) as unknown as RedisPlayerConnection;
+  if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
+    logger.warn(`[${serviceName}]: No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
+  }
+
+  let rPlayerCosmetics = await getEquippedCosmetics(rPlayerConnectionByID.id) as Cosmetics;
+  await redisSetPlayerConnectionCosmetics(aID, rPlayerCosmetics);
+
+  await redisUpdatePlayerLoadout(aID, { character: character, skin: variant, ip: ip, profileIcon: profileIcon } as RedisPlayer);
   res.send({
     body: {
       lobby: {
@@ -158,8 +283,8 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
           {
             TeamIndex: 0,
             Players: {
-              [account.id]: {
-                Account: { id: account.id },
+              [aID]: {
+                Account: { id: aID },
                 JoinedAt: { _hydra_unix_date: MVSTime(new Date()) },
                 BotSettingSlug: "",
                 LobbyPlayerIndex: 0,
@@ -173,14 +298,14 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
           { TeamIndex: 3, Players: {}, Length: 0 },
           { TeamIndex: 4, Players: {}, Length: 0 },
         ],
-        LeaderID: account.id,
+        LeaderID: aID,
         LobbyType: 0,
         ReadyPlayers: {},
-        PlayerGameplayPreferences: { [account.id]: 544 },
-        PlayerAutoPartyPreferences: { [account.id]: true },
+        PlayerGameplayPreferences: { [aID]: 544 },
+        PlayerAutoPartyPreferences: { [aID]: false },
         GameVersion: env.GAME_VERSION,
         HissCrc: 1167552915,
-        Platforms: { [account.id]: "PC" },
+        Platforms: { [aID]: "PC" },
         AllMultiplayParams: {
           "1": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252499", MultiplayRegionId: "" },
           "2": {
@@ -195,7 +320,7 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
             MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682",
           },
         },
-        LockedLoadouts: { [account.id]: { Character: loadout.Character, Skin: loadout.Skin } },
+        LockedLoadouts: { [aID]: { Character: loadout.Character, Skin: loadout.Skin } },
         ModeString: lobbyMode.toString(),
         IsLobbyJoinable: true,
         MatchID: newLobby.id,
@@ -224,7 +349,7 @@ export async function handleSsc_invoke_perks_get_all_pages(req: Request<{}, {}, 
       });
     })
     .catch((e) => {
-      console.log(e);
+      logger.error(`[${serviceName}]: Error fetching perk pages for account ${accountId}, error: ${e}`);
       res.send({
         body: {
           perk_pages: {},
@@ -248,8 +373,13 @@ export interface SET_LOBBY_MODE_REQ {
 }
 
 export async function handle_ssc_set_lobby_mode(req: Request<{}, {}, SET_LOBBY_MODE_REQ, {}>, res: Response) {
-  const account = req.token;
-  await changeLobbyMode(account.id, req.body.LobbyId, req.body.ModeString as LOBBY_MODES);
+
+  logger.info(`[${serviceName}]: Received set_lobby_mode request:\n`);
+  KitchenSink.TryInspectRequestVerbose(req);
+
+  const account = AuthUtils.DecodeClientToken(req);
+  const aID = account.id;
+  await changeLobbyMode(aID, req.body.LobbyId, req.body.ModeString as LOBBY_MODES);
   res.send({
     body: {},
     metadata: null,

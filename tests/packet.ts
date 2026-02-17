@@ -1,4 +1,3 @@
-
 import { decompressPacket } from "../src/game/compression";
 import { parseUdpClientOutboundMessage } from "../src/game/udpClientMessages";
 import { parseUdpServerMessage } from "../src/game/udpServerMessage";

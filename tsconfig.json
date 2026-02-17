@@ -9,7 +9,6 @@
     "strictNullChecks": true,
     "strictFunctionTypes": true,
     "sourceMap": true,
-
     "outDir": "./build",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
@@ -23,8 +22,9 @@
   ],
   "exclude": [
     "node_modules",
-    "**/node_modules/*",
-    "src/game/udp"
+    "**/node_modules/*"
+    //"**/node_modules/*",
+    //"src/game/udp"
   ],
   "ts-node": {
     "compilerOptions": {

@@ -30,7 +30,10 @@ function substringFromFirstOccurrence(str: string, char: string) {
 export function urlSearchParamsToObject(path: string) {
   const searchParams = new URLSearchParams(substringFromFirstOccurrence(path, "?"));
   const result: Record<string, string | string[]> = {};
-  for (const [key, value] of searchParams.entries()) {
+  for (const [
+    key,
+    value,
+  ] of searchParams.entries()) {
     if (result[key]) {
       if (!Array.isArray(result[key])) {
         result[key] = [result[key]];
@@ -100,19 +103,19 @@ export async function handle_batch_custom(req: Request<{}, {}, {}, {}>, res: Res
           },
           send(body: any) {
             sentBody = body;
-            resolve({  status_code, headers, body: sentBody });
+            resolve({ status_code, headers, body: sentBody });
             return this;
           },
           end(body?: any) {
             if (body !== undefined) sentBody = body;
-            resolve({  status_code, headers, body: sentBody });
+            resolve({ status_code, headers, body: sentBody });
             return this;
           },
         } as unknown as Response;
 
         req.app._router.handle(mockReq, mockRes);
       });
-    })
+    }),
   );
 
   req.url = "/batch";

@@ -41,7 +41,7 @@ import {
   redisGetGamePort,
   redisDeleteConnectionKeysByIp,
   redisSetPlayerConnectionCosmetics,
-  RedisPlayerConnection
+  RedisPlayerConnection,
 } from "./config/redis";
 import { Server } from "https";
 import { Server as HttpServer } from "http";
@@ -210,12 +210,17 @@ export class WebSocketService {
     playerWS.account = decodedBody.account;
     playerWS.sendRaw(buffer);
     this.clients.set(playerWS.account.id, playerWS);
-    logger.info(`[${serviceName}]: Player ${playerWS.account.id} with IP ${playerWS.ip} and name ${playerWS.account.username} connected to websocket`);
+    logger.info(
+      `[${serviceName}]: Player ${playerWS.account.id} with IP ${playerWS.ip} and name ${playerWS.account.username} connected to websocket`,
+    );
   }
 
   handleHeartBeats() {
     setInterval(() => {
-      for (const [_, playerWS] of this.clients) {
+      for (const [
+        _,
+        playerWS,
+      ] of this.clients) {
         playerWS.sendRaw(PING_BUFFER);
       }
     }, 20000);
@@ -229,7 +234,9 @@ export class WebSocketService {
       this.clients.delete(playerWS.account.id);
       redisDeletePlayerKeys(playerWS.account.id);
       redisDeleteConnectionKeysByIp(playerWS.ip);
-      logger.info(`[${serviceName}]: Player ${playerWS.account.id} with IP ${playerWS.ip} and name ${playerWS.account.username} disconnected from websocket`);
+      logger.info(
+        `[${serviceName}]: Player ${playerWS.account.id} with IP ${playerWS.ip} and name ${playerWS.account.username} disconnected from websocket`,
+      );
     }
   }
 
@@ -261,14 +268,18 @@ export class WebSocketService {
       });
 
       ws.on("error", (error) => {
-        logger.error(`[${serviceName}]: WebSocket error for player ${playerWS.account?.id ?? "unknown"} with IP ${playerWS.ip} and name ${playerWS.account?.username ?? "unknown"}, error: ${JSON.stringify(error)}`);
+        logger.error(
+          `[${serviceName}]: WebSocket error for player ${playerWS.account?.id ?? "unknown"} with IP ${playerWS.ip} and name ${playerWS.account?.username ?? "unknown"}, error: ${JSON.stringify(error)}`,
+        );
       });
     });
   }
 
   stopMatchTick(player: WebSocketPlayer) {
     if (player.matchTick) {
-      logger.info(`[${serviceName}]: Stopping matchtick for player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"}`);
+      logger.info(
+        `[${serviceName}]: Stopping matchtick for player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"}`,
+      );
       clearInterval(player.matchTick);
       player.matchTick = undefined;
     }
@@ -334,12 +345,17 @@ export class WebSocketService {
       clearInterval(client.matchTick);
       client.matchTick = undefined;
       client.send(message);
-      logger.trace(`[${serviceName}]: Canceling matchmaking - ${client.account?.id ?? "unknown"} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} - matchmakingRequestId: ${matchmakingRequestId}`);
+      logger.trace(
+        `[${serviceName}]: Canceling matchmaking - ${client.account?.id ?? "unknown"} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} - matchmakingRequestId: ${matchmakingRequestId}`,
+      );
     }
   }
 
   handleMatchFound(notification: MATCH_FOUND_NOTIFICATION) {
-    const arr = [env.UDP_SERVER_IP, env.UDP_SERVER_IP2];
+    const arr = [
+      env.UDP_SERVER_IP,
+      env.UDP_SERVER_IP2,
+    ];
     const randomIndex = Math.floor(Math.random() * arr.length);
     for (const matchPlayer of notification.players) {
       let tempPlayer = null;
@@ -347,11 +363,15 @@ export class WebSocketService {
         tempPlayer = this.clients.get(matchPlayer.playerId);
       }
       catch (error) {
-        logger.error(`[${serviceName}]: Error getting player from clients map for player ${matchPlayer.playerId} with IP ${matchPlayer.ip}, error: ${JSON.stringify(error)}`);
+        logger.error(
+          `[${serviceName}]: Error getting player from clients map for player ${matchPlayer.playerId} with IP ${matchPlayer.ip}, error: ${JSON.stringify(error)}`,
+        );
       }
 
       if (!tempPlayer) {
-        logger.error(`[${serviceName}]: Could not find player ${matchPlayer.playerId} with IP ${matchPlayer.ip} to prepare match found notification for match ${notification.matchId}`);
+        logger.error(
+          `[${serviceName}]: Could not find player ${matchPlayer.playerId} with IP ${matchPlayer.ip} to prepare match found notification for match ${notification.matchId}`,
+        );
         continue;
       }
 
@@ -361,7 +381,10 @@ export class WebSocketService {
           this.stopMatchTick(player);
         }
         catch (error) {
-          logger.error(`[${serviceName}]: Error stopping match tick for player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"}`, error);
+          logger.error(
+            `[${serviceName}]: Error stopping match tick for player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"}`,
+            error,
+          );
         }
 
         //logger.info(player);
@@ -369,7 +392,9 @@ export class WebSocketService {
         //const gameServerPort: Promise<number | undefined> = redisGetGamePort(notification.matchId).then(port => port) || GAME_SERVER_PORT;
         //const gameServerPort = redisGetGamePort(notification.matchId).then(port => port);
         const gameServerPort = notification.rollbackPort || GAME_SERVER_PORT;
-        logger.info(`[${serviceName}]: Match ${notification.matchId} found for player ${player.account?.id ?? "unknown"}, sending match found notification with game server port ${gameServerPort}`);
+        logger.info(
+          `[${serviceName}]: Match ${notification.matchId} found for player ${player.account?.id ?? "unknown"}, sending match found notification with game server port ${gameServerPort}`,
+        );
         const message = {
           data: {
             MatchKey: notification.matchKey,
@@ -394,7 +419,9 @@ export class WebSocketService {
           player.send(message);
         }
         catch (error) {
-          logger.error(`[${serviceName}]: Error sending match found notification to player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"} for match ${notification.matchId}, error: ${JSON.stringify(error)}`);
+          logger.error(
+            `[${serviceName}]: Error sending match found notification to player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"} for match ${notification.matchId}, error: ${JSON.stringify(error)}`,
+          );
           continue;
         }
 
@@ -447,10 +474,12 @@ export class WebSocketService {
       // }
 
       const rawCosmetics = await redisClient.hGetAll(`connections:${playerId}:cosmetics`);
-      const matchPlayer = await redisClient.hGetAll(`connections:${playerId}`) as unknown as RedisPlayerConnection;
+      const matchPlayer = (await redisClient.hGetAll(`connections:${playerId}`)) as unknown as RedisPlayerConnection;
 
       if (!rawCosmetics || Object.keys(rawCosmetics).length === 0) {
-        logger.warn(`[${serviceName}]: No cosmetics found for player ${playerId} with IP ${matchPlayer.current_ip} and name ${matchPlayer.username ?? "unknown"} in Redis, fetching from database`);
+        logger.warn(
+          `[${serviceName}]: No cosmetics found for player ${playerId} with IP ${matchPlayer.current_ip} and name ${matchPlayer.username ?? "unknown"} in Redis, fetching from database`,
+        );
         const dbCosmetics = await getEquippedCosmetics(playerId);
         await redisSetPlayerConnectionCosmetics(playerId, dbCosmetics);
         playerConfigs.push(dbCosmetics);
@@ -458,19 +487,22 @@ export class WebSocketService {
       else {
         // Parse the JSON strings back into objects
         const cosmetics: Cosmetics = {} as Cosmetics;
-        for (const [key, value] of Object.entries(rawCosmetics)) {
+        for (const [
+          key,
+          value,
+        ] of Object.entries(rawCosmetics)) {
           try {
             cosmetics[key as keyof Cosmetics] = JSON.parse(value as string);
           }
           catch (e) {
-            logger.error(`[${serviceName}]: Failed to parse cosmetic field ${key} for player ${playerId} with IP ${matchPlayer.current_ip} and name ${matchPlayer.username ?? "unknown"}, error: ${JSON.stringify(e)}. This should not happen, as all cosmetics should be stored as JSON strings in Redis. Assigning default value for this field.`);
+            logger.error(
+              `[${serviceName}]: Failed to parse cosmetic field ${key} for player ${playerId} with IP ${matchPlayer.current_ip} and name ${matchPlayer.username ?? "unknown"}, error: ${JSON.stringify(e)}. This should not happen, as all cosmetics should be stored as JSON strings in Redis. Assigning default value for this field.`,
+            );
             cosmetics[key as keyof Cosmetics] = value as any;
           }
         }
         playerConfigs.push(cosmetics);
       }
-
-
     }
     const playerLoadouts = await redisGetPlayers(playerIds);
 
@@ -480,7 +512,7 @@ export class WebSocketService {
 
     for (let i = 0; i < notification.players.length; i++) {
       const player = notification.players[i];
-      const rPlayerByConnectionId = await redisClient.hGetAll(`connections:${player.playerId}`) as unknown as RedisPlayerConnection;
+      const rPlayerByConnectionId = (await redisClient.hGetAll(`connections:${player.playerId}`)) as unknown as RedisPlayerConnection;
       const playerLoadout = playerLoadouts[i];
       const playerConfig = playerConfigs[i];
       const profileIcon = rPlayerByConnectionId.profileIcon || "profile_icon_default_gold";
@@ -514,11 +546,16 @@ export class WebSocketService {
         // const characterTaunts = taunts?.[character]?.TauntSlots || ["", "", "", ""];
         // const statTrackerSlots = statTrackers?.StatTrackerSlots || ["stat_tracking_bundle_default", "stat_tracking_bundle_default", "stat_tracking_bundle_default"];
 
-        const characterTaunts = playerConfig.Taunts?.[character]?.TauntSlots || ["", "", "", ""];
+        const characterTaunts = playerConfig.Taunts?.[character]?.TauntSlots || [
+          "",
+          "",
+          "",
+          "",
+        ];
         const statTrackerSlots = playerConfig.StatTrackers?.StatTrackerSlots || [
           "stat_tracking_bundle_default",
           "stat_tracking_bundle_default",
-          "stat_tracking_bundle_default"
+          "stat_tracking_bundle_default",
         ];
 
         Players[player.playerId] = {
@@ -543,9 +580,18 @@ export class WebSocketService {
           Character: character,
           Banner: playerConfig.Banner || "banner_default",
           StatTrackers: [
-            [statTrackerSlots[0], 1],
-            [statTrackerSlots[1], 1],
-            [statTrackerSlots[2], 1],
+            [
+              statTrackerSlots[0],
+              1,
+            ],
+            [
+              statTrackerSlots[1],
+              1,
+            ],
+            [
+              statTrackerSlots[2],
+              1,
+            ],
           ],
           Perks: [],
           PlayerIndex: player.playerIndex,
@@ -557,13 +603,20 @@ export class WebSocketService {
         };
       }
       catch (error) {
-        logger.error(`[${serviceName}]: Error creating player config for player ${player.playerId} with IP ${rPlayerByConnectionId.current_ip} and name ${rPlayerByConnectionId.username ?? "unknown"} : ${JSON.stringify(error)}`);
+        logger.error(
+          `[${serviceName}]: Error creating player config for player ${player.playerId} with IP ${rPlayerByConnectionId.current_ip} and name ${rPlayerByConnectionId.username ?? "unknown"} : ${JSON.stringify(error)}`,
+        );
         // logger.error(`[${serviceName}]: Character: ${character}, PlayerConfig.Taunts: ${JSON.stringify(playerConfig.Taunts)}`);
         // logger.error(`[${serviceName}]: PlayerConfig.StatTrackers: ${JSON.stringify(playerConfig.StatTrackers)}`);
-        
+
         // Create a minimal valid config as fallback
         Players[player.playerId] = {
-          Taunts: ["", "", "", ""],
+          Taunts: [
+            "",
+            "",
+            "",
+            "",
+          ],
           BotBehaviorOverride: "",
           AccountId: player.playerId,
           bAutoPartyPreference: false,
@@ -584,9 +637,18 @@ export class WebSocketService {
           Character: character,
           Banner: "banner_default",
           StatTrackers: [
-            ["stat_tracking_bundle_default", 1],
-            ["stat_tracking_bundle_default", 1],
-            ["stat_tracking_bundle_default", 1],
+            [
+              "stat_tracking_bundle_default",
+              1,
+            ],
+            [
+              "stat_tracking_bundle_default",
+              1,
+            ],
+            [
+              "stat_tracking_bundle_default",
+              1,
+            ],
           ],
           Perks: [],
           PlayerIndex: player.playerIndex,
@@ -749,7 +811,9 @@ export class WebSocketService {
       if (client) {
         client.send(message);
         client.matchConfig = message;
-        logger.info(`[${serviceName}]: Sent gameplay config to player ${client.account?.id ?? "unknown"} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.matchId}`);
+        logger.info(
+          `[${serviceName}]: Sent gameplay config to player ${client.account?.id ?? "unknown"} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.matchId}`,
+        );
       }
     }
   }
@@ -764,8 +828,11 @@ export class WebSocketService {
           if (playerPerk) {
             client.matchConfig.data.GameplayConfig.Players[playerId].Perks = playerPerk;
             client.matchConfig.data.template_id = "PerksLockedNotification";
-          } else {
-            logger.error(`[${serviceName}]: Match Perks are incomplete!!! This should not really happen for player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"}`);
+          }
+          else {
+            logger.error(
+              `[${serviceName}]: Match Perks are incomplete!!! This should not really happen for player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"}`,
+            );
           }
         }
       }
@@ -775,7 +842,9 @@ export class WebSocketService {
       if (client && client.matchConfig) {
         client.send(client.matchConfig);
         logger.info(client.matchConfig.data.GameplayConfig.Players);
-        logger.info(`[${serviceName}]: Sent all perks lock to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`);
+        logger.info(
+          `[${serviceName}]: Sent all perks lock to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`,
+        );
       }
     }
   }
@@ -787,7 +856,9 @@ export class WebSocketService {
       const client = this.clients.get(playerId);
 
       const gameServerPort = notification.rollbackPort || GAME_SERVER_PORT;
-      logger.info(`[${serviceName}]: Received game server instance ready for match ${notification.containerMatchId} and player ${playerId} with IP ${client?.ip ?? "unknown"} and name ${client?.account?.username ?? "unknown"}, sending game server info with port ${gameServerPort}`);
+      logger.info(
+        `[${serviceName}]: Received game server instance ready for match ${notification.containerMatchId} and player ${playerId} with IP ${client?.ip ?? "unknown"} and name ${client?.account?.username ?? "unknown"}, sending game server info with port ${gameServerPort}`,
+      );
 
       const message = {
         data: {},
@@ -813,11 +884,15 @@ export class WebSocketService {
       //     detached: true
       // }).unref();
       if (client) {
-        logger.info(`[${serviceName}]: Sent game server instance ready to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`);
+        logger.info(
+          `[${serviceName}]: Sent game server instance ready to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`,
+        );
         client.send(message);
       }
       else {
-        logger.error(`[${serviceName}]: Could not find player ${playerId} to send game server instance ready message for match ${notification.containerMatchId}`);
+        logger.error(
+          `[${serviceName}]: Could not find player ${playerId} to send game server instance ready message for match ${notification.containerMatchId}`,
+        );
       }
     }
   }
@@ -838,7 +913,9 @@ export class WebSocketService {
         cmd: "update",
       };
       if (client) {
-        logger.trace(`[${serviceName}]: OnLobbyModeUpdated send to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for lobby ${notification.lobbyId} with mode ${notification.modeString}`);
+        logger.trace(
+          `[${serviceName}]: OnLobbyModeUpdated send to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for lobby ${notification.lobbyId} with mode ${notification.modeString}`,
+        );
         client.send(message);
       }
     }

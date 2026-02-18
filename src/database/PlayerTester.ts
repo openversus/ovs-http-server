@@ -1,8 +1,8 @@
-import express from 'express';
-import 'reflect-metadata';
-import mongoose from 'mongoose';
-import { getModelForClass, prop, modelOptions, Severity } from '@typegoose/typegoose';
-import { randomUUID } from 'crypto';
+import express from "express";
+import "reflect-metadata";
+import mongoose from "mongoose";
+import { getModelForClass, prop, modelOptions, Severity } from "@typegoose/typegoose";
+import { randomUUID } from "crypto";
 import * as SharedTypes from "../types/shared-types";
 
 const defaultToken = new SharedTypes.AccountToken() as SharedTypes.IAccountToken;
@@ -10,7 +10,7 @@ const defaultToken = new SharedTypes.AccountToken() as SharedTypes.IAccountToken
 // Define the PlayerTester model
 @modelOptions({ options: { allowMixed: Severity.ALLOW } })
 export class PlayerTester {
-  @prop({ default: '' })
+  @prop({ default: "" })
   public name!: string;
 
   @prop({ required: true, unique: true })
@@ -29,13 +29,13 @@ export class PlayerTester {
   @prop({ default: () => randomUUID(), unique: true })
   public public_id!: string;
 
-  @prop({ default: 'profile_icon_default' })
+  @prop({ default: "profile_icon_default" })
   public profile_icon!: string;
 
-  @prop({ default: 'character_shaggy' })
+  @prop({ default: "character_shaggy" })
   public character!: string;
 
-  @prop({ default: 'skin_shaggy_default' })
+  @prop({ default: "skin_shaggy_default" })
   public variant!: string;
 }
 

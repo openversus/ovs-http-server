@@ -96,9 +96,10 @@ async function process1v1Queue(): Promise<boolean> {
       }
     }
 
-    logger.info(`[${serviceName}]: Not enough valid tickets for a 1v1 match (need ${MATCH_RULES["1v1"].teamsRequired}, found ${matchedTickets.length})`);
+    logger.info(
+      `[${serviceName}]: Not enough valid tickets for a 1v1 match (need ${MATCH_RULES["1v1"].teamsRequired}, found ${matchedTickets.length})`,
+    );
     return false;
-
   }
   catch (error) {
     logger.error(`[${serviceName}]: Error processing 1v1 queue: ${error}`);
@@ -152,7 +153,9 @@ async function process2v2Queue(): Promise<boolean> {
       }
     }
 
-    logger.info(`[${serviceName}]: Not enough valid tickets for a 2v2 match (need ${MATCH_RULES["2v2"].totalPlayersRequired}, found ${matchedTickets.length})`);
+    logger.info(
+      `[${serviceName}]: Not enough valid tickets for a 2v2 match (need ${MATCH_RULES["2v2"].totalPlayersRequired}, found ${matchedTickets.length})`,
+    );
     return false;
   }
   catch (error) {
@@ -175,7 +178,13 @@ export async function createTeams(tickets: RedisMatchTicket[]): Promise<RedisTea
   const shuffled = tickets.slice();
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    [
+      shuffled[i],
+      shuffled[j],
+    ] = [
+      shuffled[j],
+      shuffled[i],
+    ];
   }
 
   // 3. assign each party to team 0 or 1
@@ -186,7 +195,8 @@ export async function createTeams(tickets: RedisMatchTicket[]): Promise<RedisTea
     if (usedSlots[0] + size <= slotsPerTeam) {
       assignment.set(party, 0);
       usedSlots[0] += size;
-    } else {
+    }
+    else {
       assignment.set(party, 1);
       usedSlots[1] += size;
     }
@@ -196,7 +206,10 @@ export async function createTeams(tickets: RedisMatchTicket[]): Promise<RedisTea
 
   // 4. flatten into per-player entries
   const result: RedisTeamEntry[] = [];
-  for (const teamIndex of [0, 1] as const) {
+  for (const teamIndex of [
+    0,
+    1,
+  ] as const) {
     let idxInTeam = 0;
     for (const party of shuffled) {
       if (assignment.get(party) !== teamIndex) continue;
@@ -244,7 +257,7 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       ticket.players.map((player) => ({
         playerId: player.id,
         partyId: ticket.partyId,
-      }))
+      })),
     );
 
     // Store match data
@@ -267,7 +280,7 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       await redisMatchMakingComplete(
         matchId,
         ticket.matchmakingRequestId,
-        ticket.players.map((p) => p.id)
+        ticket.players.map((p) => p.id),
       );
       await redisGameServerInstanceReady(matchId, playerIds);
     }
@@ -295,7 +308,8 @@ async function checkQueues(): Promise<void> {
     if (made2v2Match) {
       logger.info(`[${serviceName}]: Successfully created matches in this cycle: 2v2=${made2v2Match}`);
     }
-  } catch (error) {
+  }
+  catch (error) {
     logger.error(`[${serviceName}]: Error checking queue: ${error}`);
   }
 }

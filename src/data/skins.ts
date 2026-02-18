@@ -597,7 +597,16 @@ export const ENABLED_SKINS = {
 
   // Nubia
   character_C027: {
-    Slugs: ["skin_C027_default", "skin_c027_s20", "skin_C027_s01", "skin_c027_s25", "skin_c027_s02", "skin_c027_s03", "skin_c027_s14", "c027_s04"],
+    Slugs: [
+      "skin_C027_default",
+      "skin_c027_s20",
+      "skin_C027_s01",
+      "skin_c027_s25",
+      "skin_c027_s02",
+      "skin_c027_s03",
+      "skin_c027_s14",
+      "c027_s04",
+    ],
   },
 
   // Samurai Jack
@@ -624,7 +633,14 @@ export const ENABLED_SKINS = {
 
   // Beetlejuice
   character_c024: {
-    Slugs: ["skin_c024_default", "skin_c024_s22", "skin_c024_s01", "skin_c024_s28", "skin_c024_s27", "skin_c024_s03"],
+    Slugs: [
+      "skin_c024_default",
+      "skin_c024_s22",
+      "skin_c024_s01",
+      "skin_c024_s28",
+      "skin_c024_s27",
+      "skin_c024_s03",
+    ],
   },
 
   // Raven
@@ -647,7 +663,14 @@ export const ENABLED_SKINS = {
 
   // Marceline/Top 1B
   character_C031: {
-    Slugs: ["skin_c031_s05", "skin_c031_s00", "c031_s02", "c031_s00", "c031_s03", "skin_c031_s05"],
+    Slugs: [
+      "skin_c031_s05",
+      "skin_c031_s00",
+      "c031_s02",
+      "c031_s00",
+      "c031_s03",
+      "skin_c031_s05",
+    ],
   },
 
   // Aquaman
@@ -672,7 +695,13 @@ export const ENABLED_SKINS = {
 
   // Lola
   character_c038: {
-    Slugs: ["C038", "skin_c038_s01", "skin_c038_s05", "skin_c038_s02", "skin_c038_s03", "skin_c038_s04"],
+    Slugs: [
+      "C038",
+      "skin_c038_s01",
+      "skin_c038_s05",
+      "skin_c038_s02",
+      "skin_c038_s03",
+      "skin_c038_s04",
+    ],
   },
 };
-

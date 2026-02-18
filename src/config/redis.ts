@@ -100,7 +100,7 @@ export interface RedisTeamEntry {
   ip: string;
 }
 
-export interface MVS_NOTIFICATION { }
+export interface MVS_NOTIFICATION {}
 
 export interface ON_MATCH_MAKER_STARTED_NOTIFICATION extends MVS_NOTIFICATION {
   party_size: number;
@@ -186,7 +186,7 @@ const MATCH_KEY = (containerMatchId: string) => `match:${containerMatchId}`;
 const MATCH_PERKS_KEY = (containerMatchId: string) => `${MATCH_KEY(containerMatchId)}:perks`;
 const MATCH_PERKS_PLAYER_KEY = (containerMatchId: string, playerId: string) => `${MATCH_KEY(containerMatchId)}:perks:${playerId}`;
 
-export async function redisCreatePartyLobby() { }
+export async function redisCreatePartyLobby() {}
 
 export async function redisGetGamePort(matchId: string) {
   const matchStr = await redisClient.get(MATCH_KEY(matchId));
@@ -276,9 +276,9 @@ export async function redisAddPlayerConnection(playerId: string, ip: string, jwt
 }
 
 export async function redisSetPlayerConnectionCosmetics(playerId: string, cosmetics: Cosmetics) {
-  let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${playerId}`) as unknown as RedisPlayerConnection;
+  let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${playerId}`)) as unknown as RedisPlayerConnection;
   let ip = rPlayerConnectionByID.current_ip;
-  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${ip}`) as unknown as RedisPlayerConnection;
+  let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
 
   const cosmeticStringObj: Record<string, string> = {};
   for (const [
@@ -290,7 +290,6 @@ export async function redisSetPlayerConnectionCosmetics(playerId: string, cosmet
 
   await redisClient.hSet(`connections:${playerId}:cosmetics`, cosmeticStringObj);
   await redisClient.hSet(`connections:${ip}:cosmetics`, cosmeticStringObj);
-
 }
 
 export async function redisSetPlayerConnectionByID(playerId: string, connection: RedisPlayerConnection) {
@@ -402,7 +401,7 @@ export async function redisGameServerInstanceReady(containerMatchId: string, pla
     containerMatchId,
     playerIds,
     resultId: ObjectID().toHexString(),
-    rollbackPort: await redisGetGamePort(containerMatchId) || GAME_SERVER_PORT,
+    rollbackPort: (await redisGetGamePort(containerMatchId)) || GAME_SERVER_PORT,
   };
   await redisClient.publish(GAME_SERVER_INSTANCE_READY_CHANNEL, JSON.stringify(notification));
 }
@@ -450,8 +449,10 @@ export async function redisGetAllLockedPerks(containerMatchId: string) {
     var matchmakingRequest = ticket.matchmakingRequestId;
 
     for (const player of ticket.players) {
-      var rPlayerConnectionByID = await redisClient.hGetAll(`connections:${player.id}`) as unknown as RedisPlayerConnection;
-      logger.error(`[${serviceName}]: Canceling matchmaking for player ${player.id} with name ${rPlayerConnectionByID.username} and IP ${rPlayerConnectionByID.current_ip}, matchmaking request ${matchmakingRequest} due to an error retrieving locked perks`);
+      var rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${player.id}`)) as unknown as RedisPlayerConnection;
+      logger.error(
+        `[${serviceName}]: Canceling matchmaking for player ${player.id} with name ${rPlayerConnectionByID.username} and IP ${rPlayerConnectionByID.current_ip}, matchmaking request ${matchmakingRequest} due to an error retrieving locked perks`,
+      );
       cancelMatchmaking(player.id, matchmakingRequest);
     }
   }
@@ -491,4 +492,3 @@ export async function redisDeleteConnectionKeysByIp(ip: string): Promise<void> {
 export async function redisDeleteConnectionKeysById(playerId: string): Promise<void> {
   await redisDeleteKeysByPattern(`connections`, `${playerId}`);
 }
-

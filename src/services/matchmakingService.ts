@@ -24,7 +24,7 @@ export async function queueMatch(
   playerIds: string[],
   partyId: string,
   matchmakingRequestId: string,
-  matchType: MATCH_TYPES
+  matchType: MATCH_TYPES,
 ): Promise<void> {
   try {
     // Create a match ticket
@@ -44,7 +44,7 @@ export async function queueMatch(
             skill: 0,
             ip: playerConfig.ip,
           };
-        })
+        }),
       ),
     };
     // Publish a message that a party has been queued
@@ -52,10 +52,11 @@ export async function queueMatch(
 
     logger.info(
       `Party (${partyId}) matchmakingRequestId(${matchmakingRequestId}) has been added to ${matchType} matchmaking queue. Players (${playerIds.join(
-        ","
-      )})`
+        ",",
+      )})`,
     );
-  } catch (error) {
+  }
+  catch (error) {
     logger.error(`Error queueing player: ${error}`);
     throw error;
   }

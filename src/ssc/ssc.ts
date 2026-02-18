@@ -1,6 +1,13 @@
 import { logger } from "../config/logger";
 import express, { Request, Response } from "express";
-import { RedisPlayer, redisUpdatePlayerLoadout, RedisPlayerConnection, redisSetPlayerConnectionByID, redisClient, redisSetPlayerConnectionCosmetics } from "../config/redis";
+import {
+  RedisPlayer,
+  redisUpdatePlayerLoadout,
+  RedisPlayerConnection,
+  redisSetPlayerConnectionByID,
+  redisClient,
+  redisSetPlayerConnectionCosmetics,
+} from "../config/redis";
 import { Cosmetics, CosmeticsModel, TauntSlotsClass } from "../database/Cosmetics";
 import { getEquippedCosmetics } from "../services/cosmeticsService";
 import env from "../env/env";
@@ -52,16 +59,16 @@ export async function set_lock_lobby_loadout(req: Request, res: Response<Lock_Lo
 
   let ip = req.ip!.replace(/^::ffff:/, "");
 
-  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${ip}`) as unknown as RedisPlayerConnection;
+  let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
     logger.warn(`[${serviceName}]: No Redis player connection found for IP ${ip}, cannot set loadout.`);
   }
-  let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`) as unknown as RedisPlayerConnection;
+  let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`)) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
     logger.warn(`[${serviceName}]: No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
   }
 
-  let rPlayerCosmetics = await getEquippedCosmetics(rPlayerConnectionByID.id) as Cosmetics;
+  let rPlayerCosmetics = (await getEquippedCosmetics(rPlayerConnectionByID.id)) as Cosmetics;
 
   let player = await PlayerTesterModel.findOne({ ip });
   if (!player) {
@@ -89,7 +96,8 @@ export async function set_lock_lobby_loadout(req: Request, res: Response<Lock_Lo
 
   await redisSetPlayerConnectionCosmetics(aID, rPlayerCosmetics);
 
-  let badChar: boolean = body.Loadout.Character === "character_Meeseeks" ||
+  let badChar: boolean =
+    body.Loadout.Character === "character_Meeseeks" ||
     body.Loadout.Character === "Meeseeks" ||
     body.Loadout.Character === "character_supershaggy" ||
     body.Loadout.Character === "supershaggy" ||
@@ -99,7 +107,9 @@ export async function set_lock_lobby_loadout(req: Request, res: Response<Lock_Lo
     body.Loadout.Character === "C022";
 
   if (badChar) {
-    logger.info(`[${serviceName}]: Rejected attempt to set loadout to a disabled character during loadout lock for AccountId ${aID}: ${body.Loadout.Character}`);
+    logger.info(
+      `[${serviceName}]: Rejected attempt to set loadout to a disabled character during loadout lock for AccountId ${aID}: ${body.Loadout.Character}`,
+    );
     return;
   }
 
@@ -239,13 +249,16 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
   }
 
   const loadout = { Character: character, Skin: variant };
-  logger.info(`[${serviceName}]: Received request to create party lobby for AccountId ${aID} with character: ${loadout.Character} and IP: ${ip}`);
+  logger.info(
+    `[${serviceName}]: Received request to create party lobby for AccountId ${aID} with character: ${loadout.Character} and IP: ${ip}`,
+  );
 
   if (ip === "127.0.0.1") {
     ip = env.LOCAL_PUBLIC_IP;
   }
 
-  let badChar: boolean = loadout.Character === "character_Meeseeks" ||
+  let badChar: boolean =
+    loadout.Character === "character_Meeseeks" ||
     loadout.Character === "Meeseeks" ||
     loadout.Character === "character_supershaggy" ||
     loadout.Character === "supershaggy" ||
@@ -254,7 +267,9 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
 
   // Default to Shaggy if a disabled character is attempted to be set
   if (badChar) {
-    logger.info(`[${serviceName}]: Rejected attempt to set loadout to a disabled character during lobby creation for AccountId ${aID}: ${loadout.Character}`);
+    logger.info(
+      `[${serviceName}]: Rejected attempt to set loadout to a disabled character during lobby creation for AccountId ${aID}: ${loadout.Character}`,
+    );
     loadout.Character = "character_shaggy";
     loadout.Skin = "skin_shaggy_default";
   }
@@ -263,16 +278,16 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
   //const newLobby = await createLobby(account.id, lobbyMode);
   const newLobby = await createLobby(aID, lobbyMode);
 
-  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${ip}`) as unknown as RedisPlayerConnection;
+  let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
     logger.warn(`[${serviceName}]: No Redis player connection found for IP ${ip}, cannot set loadout.`);
   }
-  let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`) as unknown as RedisPlayerConnection;
+  let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`)) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
     logger.warn(`[${serviceName}]: No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
   }
 
-  let rPlayerCosmetics = await getEquippedCosmetics(rPlayerConnectionByID.id) as Cosmetics;
+  let rPlayerCosmetics = (await getEquippedCosmetics(rPlayerConnectionByID.id)) as Cosmetics;
   await redisSetPlayerConnectionCosmetics(aID, rPlayerCosmetics);
 
   await redisUpdatePlayerLoadout(aID, { character: character, skin: variant, ip: ip, profileIcon: profileIcon } as RedisPlayer);
@@ -373,7 +388,6 @@ export interface SET_LOBBY_MODE_REQ {
 }
 
 export async function handle_ssc_set_lobby_mode(req: Request<{}, {}, SET_LOBBY_MODE_REQ, {}>, res: Response) {
-
   logger.info(`[${serviceName}]: Received set_lobby_mode request:\n`);
   KitchenSink.TryInspectRequestVerbose(req);
 

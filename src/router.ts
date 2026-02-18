@@ -13,7 +13,7 @@ interface MVSParams {
 const router = express.Router();
 
 router.put("/ssc/invoke/equip_taunt", (req: Request, res: Response) => {
-  equip_taunt(req,res);
+  equip_taunt(req, res);
 });
 
 router.put("/ssc/invoke/set_profile_icon", (req: Request, res: Response) => {
@@ -392,7 +392,7 @@ router.put("/ssc/invoke/toast_player", (req: Request<{}, {}, {}, {}>, res: Respo
 });
 
 router.post(/\/virtual_commerce\/purchases\/.{24}\/toasts_gleamium/, (req: Request<{}, {}, {}, {}>, res: Response) => {
-//router.post("/virtual_commerce/purchases/697fa194ce48c5be8a71abf4/toasts_gleamium", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  //router.post("/virtual_commerce/purchases/697fa194ce48c5be8a71abf4/toasts_gleamium", (req: Request<{}, {}, {}, {}>, res: Response) => {
   // @ts-ignore TODO : implementation. Remove comment once implemented`
   h.handleCommerce_purchases_toasts_gleamium(req, res);
 });

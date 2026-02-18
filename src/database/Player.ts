@@ -53,8 +53,17 @@ export class Player {
   matches!: Matches;
 
   public static flatten(player: Player, result: Record<any, any> = {}): Record<any, any> {
-    for (let [key, value] of Object.entries(player) as Entries<Player>) {
-      if (!["inventory", "server_data", "matches"].includes(key)) {
+    for (let [
+      key,
+      value,
+    ] of Object.entries(player) as Entries<Player>) {
+      if (
+        ![
+          "inventory",
+          "server_data",
+          "matches",
+        ].includes(key)
+      ) {
         result[key] = value;
       }
     }

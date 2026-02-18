@@ -44,10 +44,9 @@ export async function execRollbackProcessAsync(port: number): Promise<void> {
   });
 }
 
-
 // export function startRollbackProcess(port: number): void {
 //   const args = [`${port}`];
-  
+
 //   const options: SpawnOptions = {
 //     // detached: true,
 //     // stdio: "ignore", // Ignore stdio to run in the background
@@ -60,7 +59,7 @@ export async function execRollbackProcessAsync(port: number): Promise<void> {
 // export async function startRollbackProcessAsync(port: number): Promise<void> {
 //   return new Promise((resolve, reject) => {
 //     const args = [` ${port}`];
-    
+
 //     const options: SpawnOptions = {
 //       detached: true,
 //       stdio: "ignore", // Ignore stdio to run in the background

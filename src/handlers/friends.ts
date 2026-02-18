@@ -12,7 +12,10 @@ export async function handleFriends_me(req: Request<{}, {}, {}, MVSQueries.Frien
         account: {
           public_id: "p7dccfc3279da4d40a80eb09085696d48",
           username: "KappaPingWarrior",
-          avatar: { name: "MultiVersus Jake", image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-jake.jpg" },
+          avatar: {
+            name: "MultiVersus Jake",
+            image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-jake.jpg",
+          },
           presence_state: 0,
         },
       },
@@ -72,7 +75,10 @@ export async function handleFriends_me(req: Request<{}, {}, {}, MVSQueries.Frien
         account: {
           public_id: "p25ebcabd41634b39b1b8708ae35b536e",
           username: "TwitchTheFinnMain",
-          avatar: { name: "MultiVersus Finn", image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-finn.jpg" },
+          avatar: {
+            name: "MultiVersus Finn",
+            image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-finn.jpg",
+          },
           presence_state: 0,
         },
       },
@@ -81,7 +87,10 @@ export async function handleFriends_me(req: Request<{}, {}, {}, MVSQueries.Frien
         account: {
           public_id: "pd5014a5e42754af9b8b036886e0b3e00",
           username: "000rico",
-          avatar: { name: "MultiVersus Arya", image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-arya.jpg" },
+          avatar: {
+            name: "MultiVersus Arya",
+            image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-arya.jpg",
+          },
           presence_state: 0,
         },
       },
@@ -132,7 +141,10 @@ export async function handleFriends_me(req: Request<{}, {}, {}, MVSQueries.Frien
         account: {
           public_id: "pc8608ac6ff124c05ac6af4fc69c83bf5",
           username: "Mohawk048",
-          avatar: { name: "MultiVersus Arya", image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-arya.jpg" },
+          avatar: {
+            name: "MultiVersus Arya",
+            image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-arya.jpg",
+          },
           presence_state: 0,
         },
       },
@@ -153,7 +165,10 @@ export async function handleFriends_me(req: Request<{}, {}, {}, MVSQueries.Frien
         account: {
           public_id: "p1b75a7330b4142628bf4bc85b0b4bc00",
           username: "Skemor787",
-          avatar: { name: "MultiVersus Finn", image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-finn.jpg" },
+          avatar: {
+            name: "MultiVersus Finn",
+            image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-finn.jpg",
+          },
           presence_state: 0,
         },
       },
@@ -273,7 +288,10 @@ export async function handleFriends_me(req: Request<{}, {}, {}, MVSQueries.Frien
         account: {
           public_id: "p5e498def514a4c8f8883d5c23fbab11b",
           username: "FatpacsBBC",
-          avatar: { name: "MultiVersus Jake", image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-jake.jpg" },
+          avatar: {
+            name: "MultiVersus Jake",
+            image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-jake.jpg",
+          },
           presence_state: 0,
         },
       },
@@ -313,7 +331,7 @@ export async function handleFriends_me(req: Request<{}, {}, {}, MVSQueries.Frien
 
 export async function handleFriends_me_invitations_incoming(
   req: Request<{}, {}, {}, MVSQueries.Friends_me_invitations_incoming_QUERY>,
-  res: Response
+  res: Response,
 ) {
   res.send({
     total: 36,
@@ -355,7 +373,10 @@ export async function handleFriends_me_invitations_incoming(
         account: {
           public_id: "p0118072876f84338a8cf27991702cdb9",
           username: "RUNN3Ro1",
-          avatar: { name: "MultiVersus Finn", image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-finn.jpg" },
+          avatar: {
+            name: "MultiVersus Finn",
+            image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-finn.jpg",
+          },
           presence_state: 0,
         },
         state: "open",
@@ -369,7 +390,10 @@ export async function handleFriends_me_invitations_incoming(
         account: {
           public_id: "pee2e6179f5ce4f7a9ff22559d9b529c4",
           username: "itstrickybabyy",
-          avatar: { name: "MultiVersus Jake", image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-jake.jpg" },
+          avatar: {
+            name: "MultiVersus Jake",
+            image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-jake.jpg",
+          },
           presence_state: 0,
         },
         state: "open",
@@ -594,7 +618,10 @@ export async function handleFriends_me_invitations_incoming(
         account: {
           public_id: "pd78d674e73414296a400a67085bae7b5",
           username: "BASSGAWDSTOLEHER",
-          avatar: { name: "MultiVersus Arya", image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-arya.jpg" },
+          avatar: {
+            name: "MultiVersus Arya",
+            image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-arya.jpg",
+          },
           presence_state: 0,
         },
         state: "open",
@@ -608,7 +635,10 @@ export async function handleFriends_me_invitations_incoming(
         account: {
           public_id: "pa7edb1ae4a72424581e2c1e8aaa90ae1",
           username: "Veteranohacker",
-          avatar: { name: "MultiVersus Arya", image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-arya.jpg" },
+          avatar: {
+            name: "MultiVersus Arya",
+            image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-arya.jpg",
+          },
           presence_state: 0,
         },
         state: "open",
@@ -701,7 +731,10 @@ export async function handleFriends_me_invitations_incoming(
         account: {
           public_id: "p77ee627bd1464a30a24d58dcbbb80398",
           username: "poptue1242",
-          avatar: { name: "MultiVersus Finn", image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-finn.jpg" },
+          avatar: {
+            name: "MultiVersus Finn",
+            image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-finn.jpg",
+          },
           presence_state: 0,
         },
         state: "open",
@@ -822,7 +855,10 @@ export async function handleFriends_me_invitations_incoming(
         account: {
           public_id: "pa3eae10471614b69a61213562ad13246",
           username: "KOBLowkey",
-          avatar: { name: "MultiVersus Jake", image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-jake.jpg" },
+          avatar: {
+            name: "MultiVersus Jake",
+            image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-jake.jpg",
+          },
           presence_state: 0,
         },
         state: "open",
@@ -866,7 +902,7 @@ export async function handleFriends_me_invitations_incoming(
 
 export async function handleFriends_me_invitations_outgoing(
   req: Request<{}, {}, {}, MVSQueries.Friends_me_invitations_outgoing_QUERY>,
-  res: Response
+  res: Response,
 ) {
   res.send({
     total: 1,

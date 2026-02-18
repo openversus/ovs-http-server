@@ -1652,8 +1652,7 @@ export async function start() {
 
   logger.info(`[${serviceName}]: Loading Skins`);
   for (const char of Object.keys(ENABLED_SKINS)) {
-    if (isDisabledChar(char))
-    {
+    if (isDisabledChar(char)) {
       logger.info(`[${serviceName}]: Skipping skins for disabled char: ${char}`);
       continue;
     }
@@ -1683,10 +1682,9 @@ export async function start() {
     }
   }
 
-    logger.info(`[${serviceName}]: Loading Taunts`);
+  logger.info(`[${serviceName}]: Loading Taunts`);
   for (const char of Object.keys(TAUNTS_DATA)) {
-    if (isDisabledChar(char))
-    {
+    if (isDisabledChar(char)) {
       logger.info(`[${serviceName}]: Skipping taunts for disabled char: ${char}`);
       continue;
     }
@@ -1707,7 +1705,7 @@ export async function start() {
             },
           },
           { upsert: true, new: true },
-        ).exec();        
+        ).exec();
       }
       catch (error) {
         logger.error(`[${serviceName}]: Error processing taunt: ${taunt}. Error: ${error}`);

@@ -5,7 +5,7 @@ import {
   redisSetPlayerConnectionByID,
   redisSetPlayerConnectionByIp,
   RedisPlayerConnection,
-  RedisOnGameModeUpdatedNotification
+  RedisOnGameModeUpdatedNotification,
 } from "../config/redis";
 import { logger } from "../config/logger";
 import { getEquippedCosmetics } from "./cosmeticsService";
@@ -36,7 +36,6 @@ interface Lobby {
 }
 
 export async function createLobby(accountId: string, lobbyMode: LOBBY_MODES = LOBBY_MODES.ONE_V_ONE): Promise<Lobby> {
-
   const lobbyId = ObjectID().toHexString();
   const newLobby: Lobby = {
     id: lobbyId,
@@ -54,7 +53,7 @@ export async function createLobby(accountId: string, lobbyMode: LOBBY_MODES = LO
 
   logger.info(`[${serviceName}]: Creating party lobby for ${accountId} - matchLobbyId:${lobbyId}`);
 
-  let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${accountId}`) as unknown as RedisPlayerConnection;
+  let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${accountId}`)) as unknown as RedisPlayerConnection;
   rPlayerConnectionByID.lobby_id = lobbyId;
   await redisSetPlayerConnectionByID(accountId, rPlayerConnectionByID);
 
@@ -62,7 +61,6 @@ export async function createLobby(accountId: string, lobbyMode: LOBBY_MODES = LO
 }
 
 export async function changeLobbyMode(ownerId: string, lobbyId: string, newMode: LOBBY_MODES) {
-
   logger.info(`[${serviceName}]: Received changeLobbyMode request (ownerid, lobbyid, newmode): ${ownerId}, ${lobbyId}, ${newMode}`);
 
   const lobby = await redisClient.hGetAll(`player:${ownerId}:lobby:${lobbyId}`);
@@ -84,9 +82,9 @@ export async function changeLobbyMode(ownerId: string, lobbyId: string, newMode:
   await redisClient.publish(ON_LOBBY_MODE_UPDATED, JSON.stringify(notification));
   logger.trace(`[${serviceName}]: Changing party lobby for ${lobbyId} - to ${newMode}`);
 
-  let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${ownerId}`) as unknown as RedisPlayerConnection;
+  let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${ownerId}`)) as unknown as RedisPlayerConnection;
   let rPlayerIP = rPlayerConnectionByID.current_ip;
-  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${rPlayerIP}`) as unknown as RedisPlayerConnection;
+  let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${rPlayerIP}`)) as unknown as RedisPlayerConnection;
 
   let rPlayerConnectionValues = Object.values(rPlayerConnectionByID);
   let allConnections = await redisClient.keys(`connections:*`);
@@ -103,10 +101,10 @@ export async function changeLobbyMode(ownerId: string, lobbyId: string, newMode:
     KitchenSink.TryInspect(rPlayerConnectionValues);
 
     logger.info("Connections via KitchenSink by ID: ");
-    KitchenSink.TryInspect(rPlayerConnectionByID)
+    KitchenSink.TryInspect(rPlayerConnectionByID);
 
     logger.info("All Connections via KitchenSink: ");
-    KitchenSink.TryInspect(allConnections)
+    KitchenSink.TryInspect(allConnections);
   }
 
   if (lobbyId && lobbyId !== "undefined" && lobbyId !== rPlayerConnectionByID.lobby_id) {

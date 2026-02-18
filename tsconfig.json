@@ -2,7 +2,7 @@
   "compilerOptions": {
     // "module": "ESNext",
     "module": "nodenext",
-     "moduleResolution": "nodenext",
+    "moduleResolution": "nodenext",
     // "target": "ES2022",
     "target": "es2024",
     // "jsx": "react",

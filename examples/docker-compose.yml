@@ -20,6 +20,7 @@ services:
       - mongo_data:/data/db
 
     # The host portion of the port mapping below is absent for a reason.
+    #
     # You don't need to (and should not) expose this to the Internet
     # under normal (nearly all) circumstances. The only valid case where
     # this would not be true is if you're running Mongo or Redis on a

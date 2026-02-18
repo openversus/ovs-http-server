@@ -1,7 +1,6 @@
 import ObjectID from "bson-objectid";
 import { getAllAssets, getAssetsByType } from "../loadAssets";
 
-
 export function unlockAllPerks(accountId: string) {
   return getAssetsByType("MvsPerkHsda").map((perk) => {
     const characterMap = Object.fromEntries(

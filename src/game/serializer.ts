@@ -1,7 +1,12 @@
 import { Buffer } from "buffer";
 import { Header as ServerHeader, MessageType as ServerMsgType } from "./udpServerMessage";
 
-const PlayerConfigValues = [0, 257, 512, 769];
+const PlayerConfigValues = [
+  0,
+  257,
+  512,
+  769,
+];
 
 /**
  * Serialize a server message header + payload into a Buffer using big-endian encoding.
@@ -174,5 +179,8 @@ export function serializeServerMessage(header: ServerHeader, data: any, maxPlaye
       payloadBuf = Buffer.alloc(0);
   }
 
-  return Buffer.concat([headerBuf, payloadBuf]);
+  return Buffer.concat([
+    headerBuf,
+    payloadBuf,
+  ]);
 }

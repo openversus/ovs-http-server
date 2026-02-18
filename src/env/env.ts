@@ -6,7 +6,7 @@ configDotenv({ path: ".env" });
 const env = cleanEnv(process.env, {
   BANNED_NAMES_FILE: str({ default: "../data/banned_names.txt" }),
   CIDR_BANS_FILE: str({ default: "../data/cidr_bans.txt" }),
-  DATA_ASSET_TOKEN : str(),
+  DATA_ASSET_TOKEN: str(),
   EMULATE_P2: num({ default: 0 }),
   FORCE_CHANGE_NAMES_FILE: str({ default: "../data/force_change_names.txt" }),
   GAME_DOMAIN: str(),

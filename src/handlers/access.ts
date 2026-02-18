@@ -46,7 +46,7 @@ async function deleteStaticAccess(req: express.Request) {
 async function generateStaticAccess(req: express.Request) {
   logger.info(`[${serviceName}]: In generateStaticAccess, received request to generate access. \n`);
   KitchenSink.TryInspectRequestVerbose(req);
-  
+
   let tempIp = "";
   try {
     tempIp = req.ip!.replace(/^::ffff:/, "");
@@ -115,7 +115,7 @@ async function generateStaticAccess(req: express.Request) {
     logger.info(`[${serviceName}]: Redis connection by player ID: ${JSON.stringify(rPlayerConnectionByID)}`);
 
     logger.info(`[${serviceName}]: Connections via KitchenSink by ID: `);
-    KitchenSink.TryInspect(rPlayerConnectionByID)
+    KitchenSink.TryInspect(rPlayerConnectionByID);
   }
 
   return {
@@ -992,7 +992,7 @@ export async function handleAccess(req: Request<{}, {}, ACCESS_REQ, {}>, res: Re
   // // const parsedTicket = parseAppTicket(ticket, true);
   // // logger.info("Unencrypted parsed ticket is:\n");
   // // logger.info(parsedTicket);
-  
+
   // // const decryptedAppTicketswk = parseEncryptedAppTicket(ticket, swk);
   // const decryptedAppTicketswk = parseEncryptedAppTicket(base64Buffer, swk);
   // logger.info("Decrypted ticket with swk is:\n");

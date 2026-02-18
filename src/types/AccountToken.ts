@@ -24,14 +24,14 @@ export class AccountToken implements IAccountToken {
   // account: AccountToken;
 
   constructor() {
-    this.public_id = '';
-    this.wb_network_id = '';
-    this.id = '';
-    this.profile_id = '';
-    this.username = '';
-    this.hydraUsername = '';
-    this.current_ip = '';
-    this.lobby_id = '';
+    this.public_id = "";
+    this.wb_network_id = "";
+    this.id = "";
+    this.profile_id = "";
+    this.username = "";
+    this.hydraUsername = "";
+    this.current_ip = "";
+    this.lobby_id = "";
     // this.token = this;
     // this.account = this;
   }

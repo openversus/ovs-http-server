@@ -3,7 +3,6 @@ import { logger } from "../config/logger";
 import { PlayerTesterModel } from "../database/PlayerTester";
 
 export class NameGenerator {
-
   lowerBounds: number;
   upperBounds: number;
   prefix: string;
@@ -18,10 +17,10 @@ export class NameGenerator {
     this.name = "";
   }
 
-  Generate(): string
-  Generate(prefix: string): string
-  Generate(lowerBounds: number, upperBounds: number): string
-  Generate(lowerBounds: number, upperBounds: number, prefix: string): string
+  Generate(): string;
+  Generate(prefix: string): string;
+  Generate(lowerBounds: number, upperBounds: number): string;
+  Generate(lowerBounds: number, upperBounds: number, prefix: string): string;
   Generate(): string {
     switch (arguments.length) {
       case 0:
@@ -62,14 +61,6 @@ export class NameGenerator {
     return !existingName;
   }
 }
-
-
-
-
-
-
-
-
 
 // import { randomInt } from "crypto";
 // import { logger } from "../config/logger";

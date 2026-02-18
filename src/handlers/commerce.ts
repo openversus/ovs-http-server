@@ -671,7 +671,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["playstation", "bundle"],
+        tags: [
+          "playstation",
+          "bundle",
+        ],
         reward_actions: [],
         items: [
           {
@@ -1305,7 +1308,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["xbox", "bundle"],
+        tags: [
+          "xbox",
+          "bundle",
+        ],
         reward_actions: [],
         items: [
           {
@@ -1353,7 +1359,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["twitch", "match_toasts"],
+        tags: [
+          "twitch",
+          "match_toasts",
+        ],
         reward_actions: [],
         items: [
           {
@@ -1387,7 +1396,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["twitch", "profile_icon"],
+        tags: [
+          "twitch",
+          "profile_icon",
+        ],
         reward_actions: [],
         items: [
           {
@@ -1421,7 +1433,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["twitch", "ring_out_vfx"],
+        tags: [
+          "twitch",
+          "ring_out_vfx",
+        ],
         reward_actions: [],
         items: [
           {
@@ -1455,7 +1470,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["twitch", "banner"],
+        tags: [
+          "twitch",
+          "banner",
+        ],
         reward_actions: [],
         items: [
           {
@@ -1489,7 +1507,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["playstation", "bundle"],
+        tags: [
+          "playstation",
+          "bundle",
+        ],
         reward_actions: [],
         items: [
           {
@@ -1580,7 +1601,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["xbox", "bundle"],
+        tags: [
+          "xbox",
+          "bundle",
+        ],
         reward_actions: [],
         items: [
           {
@@ -1628,7 +1652,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["xbox", "bundle"],
+        tags: [
+          "xbox",
+          "bundle",
+        ],
         reward_actions: [],
         items: [
           {
@@ -1676,7 +1703,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["playstation", "bundle"],
+        tags: [
+          "playstation",
+          "bundle",
+        ],
         reward_actions: [],
         items: [
           {
@@ -2586,7 +2616,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["character-special", "season-1", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "character-special",
+          "season-1",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -2730,7 +2767,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["playstation", "starterpack", "xbox"],
+        tags: [
+          "playstation",
+          "starterpack",
+          "xbox",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -2874,7 +2915,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["starterpack", "playstation", "xbox"],
+        tags: [
+          "starterpack",
+          "playstation",
+          "xbox",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -3018,7 +3063,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["starterpack", "playstation", "xbox"],
+        tags: [
+          "starterpack",
+          "playstation",
+          "xbox",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -3158,7 +3207,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["bundle", "xbox"],
+        tags: [
+          "bundle",
+          "xbox",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -3190,7 +3242,12 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["bundle", "playstation", "mvp-pack", "season-1"],
+        tags: [
+          "bundle",
+          "playstation",
+          "mvp-pack",
+          "season-1",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -3511,7 +3568,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["gleamiumpack", "steam", "deprecated"],
+        tags: [
+          "gleamiumpack",
+          "steam",
+          "deprecated",
+        ],
         reward_actions: [],
         items: [
           {
@@ -3587,7 +3648,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["gleamiumpack", "steam", "deprecated"],
+        tags: [
+          "gleamiumpack",
+          "steam",
+          "deprecated",
+        ],
         reward_actions: [],
         items: [
           {
@@ -3663,7 +3728,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["gleamiumpack", "steam", "deprecated"],
+        tags: [
+          "gleamiumpack",
+          "steam",
+          "deprecated",
+        ],
         reward_actions: [],
         items: [
           {
@@ -3739,7 +3808,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["gleamiumpack", "steam", "deprecated"],
+        tags: [
+          "gleamiumpack",
+          "steam",
+          "deprecated",
+        ],
         reward_actions: [],
         items: [
           {
@@ -3922,7 +3995,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["starterpack", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "starterpack",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -4066,7 +4146,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["bundle", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "bundle",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -4210,7 +4297,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["starterpack", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "starterpack",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -4354,7 +4448,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["bundle", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "bundle",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -4498,7 +4599,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["starterpack", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "starterpack",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -4642,7 +4750,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["bundle", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "bundle",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -4786,7 +4901,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["starterpack", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "starterpack",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -4930,7 +5052,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["bundle", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "bundle",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -5074,7 +5203,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["starterpack", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "starterpack",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -5218,7 +5354,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["bundle", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "bundle",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -5362,7 +5505,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["starterpack", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "starterpack",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -5506,7 +5656,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["bundle", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "bundle",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -5650,7 +5807,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["starterpack", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "starterpack",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -5794,7 +5958,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["bundle", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "bundle",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -5938,7 +6109,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["character-special", "season-2", "steam", "xbox", "playstation", "egs"],
+        tags: [
+          "character-special",
+          "season-2",
+          "steam",
+          "xbox",
+          "playstation",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -6232,7 +6410,13 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["bundle", "playstation", "season-2", "mvp-pack", "xbox"],
+        tags: [
+          "bundle",
+          "playstation",
+          "season-2",
+          "mvp-pack",
+          "xbox",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -6264,7 +6448,13 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["bundle", "playstation", "season-2", "mvp-pack", "xbox"],
+        tags: [
+          "bundle",
+          "playstation",
+          "season-2",
+          "mvp-pack",
+          "xbox",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -6831,7 +7021,12 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["bundle", "mvp-pack", "xbox", "season-3"],
+        tags: [
+          "bundle",
+          "mvp-pack",
+          "xbox",
+          "season-3",
+        ],
         reward_actions: [],
         items: [
           {
@@ -6874,7 +7069,12 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["bundle", "playstation", "mvp-pack", "season-3"],
+        tags: [
+          "bundle",
+          "playstation",
+          "mvp-pack",
+          "season-3",
+        ],
         reward_actions: [],
         items: [
           {
@@ -6963,7 +7163,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["bundle", "steam", "xbox", "playstation", "season-3", "egs"],
+        tags: [
+          "bundle",
+          "steam",
+          "xbox",
+          "playstation",
+          "season-3",
+          "egs",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -7107,7 +7314,13 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["playstation", "xbox", "steam", "egs", "season-3"],
+        tags: [
+          "playstation",
+          "xbox",
+          "steam",
+          "egs",
+          "season-3",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -7354,7 +7567,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["season-4", "playstation", "xbox", "steam", "egs", "bundle"],
+        tags: [
+          "season-4",
+          "playstation",
+          "xbox",
+          "steam",
+          "egs",
+          "bundle",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -7494,7 +7714,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["season-4", "steam", "egs", "playstation", "xbox", "bundle"],
+        tags: [
+          "season-4",
+          "steam",
+          "egs",
+          "playstation",
+          "xbox",
+          "bundle",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -7638,7 +7865,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: false,
         allow_free_purchase: false,
-        tags: ["season-4", "playstation", "xbox", "steam", "egs", "bundle"],
+        tags: [
+          "season-4",
+          "playstation",
+          "xbox",
+          "steam",
+          "egs",
+          "bundle",
+        ],
         reward_actions: [],
         items: [],
         created_at: {
@@ -7778,7 +8012,12 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: true,
         allow_free_purchase: false,
-        tags: ["season-4", "playstation", "xbox", "mvp-pack"],
+        tags: [
+          "season-4",
+          "playstation",
+          "xbox",
+          "mvp-pack",
+        ],
         reward_actions: [],
         items: [
           {
@@ -8400,7 +8639,12 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
         available_for_purchase: true,
         purchase_once: true,
         allow_free_purchase: false,
-        tags: ["season-4", "playstation", "xbox", "mvp-pack"],
+        tags: [
+          "season-4",
+          "playstation",
+          "xbox",
+          "mvp-pack",
+        ],
         reward_actions: [],
         items: [
           {
@@ -8507,7 +8751,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
           options: {
             conditions: {},
             operations: [
-              { cmd: "set", path: "server_data.FoundersPack1", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.FoundersPack1",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
             ],
           },
         },
@@ -8551,7 +8799,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
           options: {
             conditions: {},
             operations: [
-              { cmd: "set", path: "server_data.FoundersPack1", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.FoundersPack1",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
             ],
           },
         },
@@ -8637,7 +8889,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
           options: {
             conditions: {},
             operations: [
-              { cmd: "set", path: "server_data.FoundersPack2", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.FoundersPack2",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
             ],
           },
         },
@@ -8689,7 +8945,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
                 path: "server_data.founderpackcoolnameflag",
                 update_value: { source_type: "constant", source_options: { constant_value: true } },
               },
-              { cmd: "set", path: "server_data.FoundersPack3", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.FoundersPack3",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
             ],
           },
         },
@@ -8738,7 +8998,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
           options: {
             conditions: {},
             operations: [
-              { cmd: "set", path: "server_data.FoundersPack2", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.FoundersPack2",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
             ],
           },
         },
@@ -8832,7 +9096,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
                 path: "server_data.founderpackcoolnameflag",
                 update_value: { source_type: "constant", source_options: { constant_value: true } },
               },
-              { cmd: "set", path: "server_data.FoundersPack3", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.FoundersPack3",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
             ],
           },
         },
@@ -8915,7 +9183,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["playstation", "bundle"],
+      tags: [
+        "playstation",
+        "bundle",
+      ],
       reward_actions: [],
       items: [
         { inventory_item_slug: "ring_out_vfx_dark_matter", quantity: 1, currency_source_slug: "default", proxy_quantity: false },
@@ -8998,7 +9269,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
           options: {
             conditions: {},
             operations: [
-              { cmd: "set", path: "server_data.FoundersPack1", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.FoundersPack1",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
               {
                 cmd: "set",
                 path: "server_data.FoundersPack1_steam",
@@ -9036,7 +9311,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
           options: {
             conditions: {},
             operations: [
-              { cmd: "set", path: "server_data.FoundersPack2", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.FoundersPack2",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
               {
                 cmd: "set",
                 path: "server_data.FoundersPack2_steam",
@@ -9082,7 +9361,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
                 path: "server_data.founderpackcoolnameflag",
                 update_value: { source_type: "constant", source_options: { constant_value: true } },
               },
-              { cmd: "set", path: "server_data.FoundersPack3", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.FoundersPack3",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
               {
                 cmd: "set",
                 path: "server_data.FoundersPack3_steam",
@@ -9125,7 +9408,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
           options: {
             conditions: {},
             operations: [
-              { cmd: "set", path: "server_data.FoundersPack1", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.FoundersPack1",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
             ],
           },
         },
@@ -9168,7 +9455,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
           options: {
             conditions: {},
             operations: [
-              { cmd: "set", path: "server_data.FoundersPack2", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.FoundersPack2",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
             ],
           },
         },
@@ -9219,7 +9510,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
                 path: "server_data.founderpackcoolnameflag",
                 update_value: { source_type: "constant", source_options: { constant_value: true } },
               },
-              { cmd: "set", path: "server_data.FoundersPack3", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.FoundersPack3",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
             ],
           },
         },
@@ -9259,7 +9554,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["xbox", "bundle"],
+      tags: [
+        "xbox",
+        "bundle",
+      ],
       reward_actions: [],
       items: [
         { inventory_item_slug: "ring_out_vfx_dark_matter", quantity: 1, proxy_quantity: false },
@@ -9292,7 +9590,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["twitch", "match_toasts"],
+      tags: [
+        "twitch",
+        "match_toasts",
+      ],
       reward_actions: [],
       items: [{ inventory_item_slug: "match_toasts", quantity: 10, proxy_quantity: false }],
       data: {},
@@ -9317,7 +9618,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["twitch", "profile_icon"],
+      tags: [
+        "twitch",
+        "profile_icon",
+      ],
       reward_actions: [],
       items: [{ inventory_item_slug: "profile_icon_halloween_2022_Scoobtober", quantity: 1, proxy_quantity: false }],
       data: {},
@@ -9342,7 +9646,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["twitch", "ring_out_vfx"],
+      tags: [
+        "twitch",
+        "ring_out_vfx",
+      ],
       reward_actions: [],
       items: [{ inventory_item_slug: "ring_out_vfx_halloween_2022", quantity: 1, proxy_quantity: false }],
       data: {},
@@ -9367,7 +9674,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["twitch", "banner"],
+      tags: [
+        "twitch",
+        "banner",
+      ],
       reward_actions: [],
       items: [{ inventory_item_slug: "banner_scoobtober", quantity: 1, proxy_quantity: false }],
       data: {},
@@ -9392,7 +9702,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["playstation", "bundle"],
+      tags: [
+        "playstation",
+        "bundle",
+      ],
       reward_actions: [],
       items: [
         { inventory_item_slug: "ring_out_vfx_lotus_blossom", quantity: 1, currency_source_slug: "default", proxy_quantity: false },
@@ -9467,7 +9780,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["xbox", "bundle"],
+      tags: [
+        "xbox",
+        "bundle",
+      ],
       reward_actions: [],
       items: [
         { inventory_item_slug: "ring_out_vfx_lotus_blossom", quantity: 1, proxy_quantity: false },
@@ -9500,7 +9816,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["xbox", "bundle"],
+      tags: [
+        "xbox",
+        "bundle",
+      ],
       reward_actions: [],
       items: [
         { inventory_item_slug: "ring_out_vfx_lightning_ball", quantity: 1, proxy_quantity: false },
@@ -9533,7 +9852,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["playstation", "bundle"],
+      tags: [
+        "playstation",
+        "bundle",
+      ],
       reward_actions: [],
       items: [
         { inventory_item_slug: "ring_out_vfx_lightning_ball", quantity: 1, currency_source_slug: "default", proxy_quantity: false },
@@ -9616,7 +9938,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
           options: {
             conditions: {},
             operations: [
-              { cmd: "set", path: "server_data.StarterPack2", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.StarterPack2",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
               {
                 cmd: "set",
                 path: "server_data.StarterPack2_steam",
@@ -9654,7 +9980,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
           options: {
             conditions: {},
             operations: [
-              { cmd: "set", path: "server_data.StarterPack1", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.StarterPack1",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
               {
                 cmd: "set",
                 path: "server_data.StarterPack1_steam",
@@ -9692,7 +10022,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
           options: {
             conditions: {},
             operations: [
-              { cmd: "set", path: "server_data.StarterPack3", update_value: { source_type: "constant", source_options: { constant_value: true } } },
+              {
+                cmd: "set",
+                path: "server_data.StarterPack3",
+                update_value: { source_type: "constant", source_options: { constant_value: true } },
+              },
               {
                 cmd: "set",
                 path: "server_data.StarterPack3_steam",
@@ -10280,7 +10614,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["character-special", "season-1", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "character-special",
+        "season-1",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -10417,7 +10758,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["playstation", "starterpack", "xbox"],
+      tags: [
+        "playstation",
+        "starterpack",
+        "xbox",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -10554,7 +10899,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["starterpack", "playstation", "xbox"],
+      tags: [
+        "starterpack",
+        "playstation",
+        "xbox",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -10691,7 +11040,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["starterpack", "playstation", "xbox"],
+      tags: [
+        "starterpack",
+        "playstation",
+        "xbox",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -10828,7 +11181,10 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["bundle", "xbox"],
+      tags: [
+        "bundle",
+        "xbox",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -10857,7 +11213,12 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["bundle", "playstation", "mvp-pack", "season-1"],
+      tags: [
+        "bundle",
+        "playstation",
+        "mvp-pack",
+        "season-1",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -11128,7 +11489,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["gleamiumpack", "steam", "deprecated"],
+      tags: [
+        "gleamiumpack",
+        "steam",
+        "deprecated",
+      ],
       reward_actions: [],
       items: [{ inventory_item_slug: "gleamium", quantity: 450, currency_source_slug: "paid", proxy_quantity: false }],
       data: {},
@@ -11194,7 +11559,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["gleamiumpack", "steam", "deprecated"],
+      tags: [
+        "gleamiumpack",
+        "steam",
+        "deprecated",
+      ],
       reward_actions: [],
       items: [{ inventory_item_slug: "gleamium", quantity: 1000, currency_source_slug: "paid", proxy_quantity: false }],
       data: {},
@@ -11260,7 +11629,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["gleamiumpack", "steam", "deprecated"],
+      tags: [
+        "gleamiumpack",
+        "steam",
+        "deprecated",
+      ],
       reward_actions: [],
       items: [{ inventory_item_slug: "gleamium", quantity: 2200, currency_source_slug: "paid", proxy_quantity: false }],
       data: {},
@@ -11326,7 +11699,11 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["gleamiumpack", "steam", "deprecated"],
+      tags: [
+        "gleamiumpack",
+        "steam",
+        "deprecated",
+      ],
       reward_actions: [],
       items: [{ inventory_item_slug: "gleamium", quantity: 6000, currency_source_slug: "paid", proxy_quantity: false }],
       data: {},
@@ -11460,7 +11837,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["starterpack", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "starterpack",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -11597,7 +11981,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["bundle", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "bundle",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -11734,7 +12125,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["starterpack", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "starterpack",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -11871,7 +12269,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["bundle", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "bundle",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -12008,7 +12413,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["starterpack", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "starterpack",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -12145,7 +12557,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["bundle", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "bundle",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -12282,7 +12701,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["starterpack", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "starterpack",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -12419,7 +12845,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["bundle", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "bundle",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -12556,7 +12989,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["starterpack", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "starterpack",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -12693,7 +13133,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["bundle", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "bundle",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -12830,7 +13277,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["starterpack", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "starterpack",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -12967,7 +13421,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["bundle", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "bundle",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -13104,7 +13565,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["starterpack", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "starterpack",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -13241,7 +13709,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["bundle", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "bundle",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -13378,7 +13853,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["character-special", "season-2", "steam", "xbox", "playstation", "egs"],
+      tags: [
+        "character-special",
+        "season-2",
+        "steam",
+        "xbox",
+        "playstation",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -13664,7 +14146,13 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["bundle", "playstation", "season-2", "mvp-pack", "xbox"],
+      tags: [
+        "bundle",
+        "playstation",
+        "season-2",
+        "mvp-pack",
+        "xbox",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -13693,7 +14181,13 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["bundle", "playstation", "season-2", "mvp-pack", "xbox"],
+      tags: [
+        "bundle",
+        "playstation",
+        "season-2",
+        "mvp-pack",
+        "xbox",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -14174,7 +14668,12 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["bundle", "mvp-pack", "xbox", "season-3"],
+      tags: [
+        "bundle",
+        "mvp-pack",
+        "xbox",
+        "season-3",
+      ],
       reward_actions: [],
       items: [
         { inventory_item_slug: "emote_reindog_pop", quantity: 1, proxy_quantity: false },
@@ -14206,7 +14705,12 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["bundle", "playstation", "mvp-pack", "season-3"],
+      tags: [
+        "bundle",
+        "playstation",
+        "mvp-pack",
+        "season-3",
+      ],
       reward_actions: [],
       items: [
         { inventory_item_slug: "emote_reindog_pop", quantity: 1, proxy_quantity: false },
@@ -14280,7 +14784,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["bundle", "steam", "xbox", "playstation", "season-3", "egs"],
+      tags: [
+        "bundle",
+        "steam",
+        "xbox",
+        "playstation",
+        "season-3",
+        "egs",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -14417,7 +14928,13 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["playstation", "xbox", "steam", "egs", "season-3"],
+      tags: [
+        "playstation",
+        "xbox",
+        "steam",
+        "egs",
+        "season-3",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -14629,7 +15146,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["season-4", "playstation", "xbox", "steam", "egs", "bundle"],
+      tags: [
+        "season-4",
+        "playstation",
+        "xbox",
+        "steam",
+        "egs",
+        "bundle",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -14766,7 +15290,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["season-4", "steam", "egs", "playstation", "xbox", "bundle"],
+      tags: [
+        "season-4",
+        "steam",
+        "egs",
+        "playstation",
+        "xbox",
+        "bundle",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -14903,7 +15434,14 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: false,
       allow_free_purchase: false,
-      tags: ["season-4", "playstation", "xbox", "steam", "egs", "bundle"],
+      tags: [
+        "season-4",
+        "playstation",
+        "xbox",
+        "steam",
+        "egs",
+        "bundle",
+      ],
       reward_actions: [],
       items: [],
       data: {},
@@ -15040,7 +15578,12 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: true,
       allow_free_purchase: false,
-      tags: ["season-4", "playstation", "xbox", "mvp-pack"],
+      tags: [
+        "season-4",
+        "playstation",
+        "xbox",
+        "mvp-pack",
+      ],
       reward_actions: [],
       items: [
         { inventory_item_slug: "ring_out_vfx_taz_dynamite", quantity: 1, proxy_quantity: false },
@@ -15611,7 +16154,12 @@ export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQuerie
       available_for_purchase: true,
       purchase_once: true,
       allow_free_purchase: false,
-      tags: ["season-4", "playstation", "xbox", "mvp-pack"],
+      tags: [
+        "season-4",
+        "playstation",
+        "xbox",
+        "mvp-pack",
+      ],
       reward_actions: [],
       items: [
         { inventory_item_slug: "taunt_c029_fishfood", quantity: 1, proxy_quantity: false },

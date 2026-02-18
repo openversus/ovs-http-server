@@ -35,30 +35,30 @@ export function GetReqIP(req: Request | Request<{}, {}, {}, {}> | Request<{}, {}
   return null;
 }
 
-export function DecodeClientToken(req: Request<{}, {}, {}, {}>): IAccountToken
-export function DecodeClientToken(req: Request<{}, {}, {}, any>): IAccountToken
+export function DecodeClientToken(req: Request<{}, {}, {}, {}>): IAccountToken;
+export function DecodeClientToken(req: Request<{}, {}, {}, any>): IAccountToken;
 export function DecodeClientToken(req: any): IAccountToken {
   let rawToken = req.headers[HYDRA_ACCESS_TOKEN] as string;
   let decodedToken = decodeToken(rawToken);
   return decodedToken;
 }
 
-export function GetIDFromToken(req: Request<{}, {}, {}, {}>): string
-export function GetIDFromToken(req: Request<{}, {}, {}, any>): string
+export function GetIDFromToken(req: Request<{}, {}, {}, {}>): string;
+export function GetIDFromToken(req: Request<{}, {}, {}, any>): string;
 export function GetIDFromToken(req: any): string {
   let decodedToken = DecodeClientToken(req);
   return decodedToken.id;
 }
 
-export function GetIPFromToken(req: Request<{}, {}, {}, {}>): string
-export function GetIPFromToken(req: Request<{}, {}, {}, any>): string
+export function GetIPFromToken(req: Request<{}, {}, {}, {}>): string;
+export function GetIPFromToken(req: Request<{}, {}, {}, any>): string;
 export function GetIPFromToken(req: any): string {
   let decodedToken = DecodeClientToken(req);
   return decodedToken.current_ip;
 }
 
-export async function GetPlayerFromToken(req: Request<{}, {}, {}, {}>): Promise<PlayerTester>
-export async function GetPlayerFromToken(req: Request<{}, {}, {}, any>): Promise<PlayerTester>
+export async function GetPlayerFromToken(req: Request<{}, {}, {}, {}>): Promise<PlayerTester>;
+export async function GetPlayerFromToken(req: Request<{}, {}, {}, any>): Promise<PlayerTester>;
 export async function GetPlayerFromToken(req: any): Promise<PlayerTester> {
   let decodedToken = DecodeClientToken(req);
   let account = decodedToken;
@@ -70,7 +70,8 @@ export async function GetPlayerFromToken(req: any): Promise<PlayerTester> {
       player = foundPlayer;
       logger.info(`Found player for id ${account.id} with IP ${account.current_ip}, getting inventory.`);
     }
-  } catch (error) {
+  }
+  catch (error) {
     logger.warn(`No player found for id ${account.id}, cannot get inventory.`);
   }
 

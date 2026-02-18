@@ -77,7 +77,7 @@ export class ServerData {
   public static flatten<P extends string>(
     serverData: ServerData,
     prefix: P,
-    result: Record<any, any> = {}
+    result: Record<any, any> = {},
   ): {
     [K in keyof ServerData as `${P}.${K}`]: ServerData[K];
   } {

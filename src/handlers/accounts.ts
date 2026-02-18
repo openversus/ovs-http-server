@@ -36,7 +36,8 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "server_data.LastLogoutTime": "2023-06-24T05:24:48.683Z",
       "server_data.RestedXP": 290,
       "server_data.ProfileIcon.Slug": "profile_icon_wb_sd_fredstyle",
-      "server_data.ProfileIcon.AssetPath": "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_WB_SD_FredStyle.ProfileIcon_WB_SD_FredStyle",
+      "server_data.ProfileIcon.AssetPath":
+        "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_WB_SD_FredStyle.ProfileIcon_WB_SD_FredStyle",
       "server_data.Characters.character_shaggy.Mastery.CurrentXP": 4547,
       "server_data.Characters.character_shaggy.Mastery.Level": 14,
       "server_data.Characters.character_jake.Mastery.CurrentXP": 170895,
@@ -129,7 +130,11 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "identity.alternate.wb_network": [{ id: "p199851c1135345b5a5a40554ac1d69c0", username: "GIRTHHOG", avatar: null }],
       "identity.alternate.xb1": [{ username: "GIRTH HOG", avatar: null }],
       "identity.alternate.steam": [
-        { id: "76561194748187148", username: "GIRTH HOG", avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg" },
+        {
+          id: "76561194748187148",
+          username: "GIRTH HOG",
+          avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg",
+        },
       ],
       "identity.alternate.twitch": [{ username: "GIRTH_HOG", avatar: null }],
       "wb_account.completed": true,
@@ -147,7 +152,8 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "server_data.LastLogoutTime": "2023-04-26T02:31:51.572Z",
       "server_data.RestedXP": 290,
       "server_data.ProfileIcon.Slug": "CN_AT_ProfileIcon_PartyGod",
-      "server_data.ProfileIcon.AssetPath": "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/CN_AT_ProfileIcon_PartyGod.CN_AT_ProfileIcon_PartyGod",
+      "server_data.ProfileIcon.AssetPath":
+        "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/CN_AT_ProfileIcon_PartyGod.CN_AT_ProfileIcon_PartyGod",
       "server_data.Characters.character_creature.Mastery.CurrentXP": 5690,
       "server_data.Characters.character_creature.Mastery.Level": 34,
       "server_data.Characters.character_wonder_woman.Mastery.CurrentXP": 164,
@@ -399,7 +405,8 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "server_data.LastLogoutTime": "2022-10-01T07:40:59.256Z",
       "server_data.RestedXP": 300,
       "server_data.ProfileIcon.Slug": "profile_icon_capstone_stripe",
-      "server_data.ProfileIcon.AssetPath": "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_Capstone_Stripe.ProfileIcon_Capstone_Stripe",
+      "server_data.ProfileIcon.AssetPath":
+        "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_Capstone_Stripe.ProfileIcon_Capstone_Stripe",
       "server_data.Characters.character_bugs_bunny.Mastery.CurrentXP": 666,
       "server_data.Characters.character_bugs_bunny.Mastery.Level": 10,
       "server_data.Characters.character_shaggy.Mastery.CurrentXP": 212,
@@ -457,7 +464,11 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "identity.alternate.ps4": [{ username: "Maukract", avatar: null }],
       "identity.alternate.xb1": [{ username: "PreppieSnail42", avatar: null }],
       "identity.alternate.steam": [
-        { id: "76561194691004180", username: "mau92576", avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg" },
+        {
+          id: "76561194691004180",
+          username: "mau92576",
+          avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg",
+        },
       ],
       "identity.alternate.twitch": [{ username: "maucrakt", avatar: null }],
       "wb_account.completed": true,
@@ -733,7 +744,8 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "data.LastPlayedCharacterSlug": "character_harleyquinn",
       "server_data.Level": 34,
       "server_data.CurrentXP": 32962,
-      "server_data.ProfileIcon.AssetPath": "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_DC_BAT_Harley_1.ProfileIcon_DC_BAT_Harley_1",
+      "server_data.ProfileIcon.AssetPath":
+        "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_DC_BAT_Harley_1.ProfileIcon_DC_BAT_Harley_1",
       "server_data.ProfileIcon.Slug": "profile_icon_dc_bat_harley_1",
       "server_data.LastLogoutTime": "2023-06-25T04:56:57.122Z",
       "server_data.LastLoginTime": "Sun Jun 25 2023 04:23:55 GMT+0000 (Coordinated Universal Time)",
@@ -1509,7 +1521,11 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "identity.alternate.ps4": [{ username: "TTVSora_MVS", avatar: null }],
       "identity.alternate.xb1": [{ username: "TTVSoraMVS", avatar: null }],
       "identity.alternate.steam": [
-        { id: "76561195289062580", username: "TTV-SoraMVS", avatar: "https://avatars.steamstatic.com/3f5e9daea59216d7fe13df4e031d3537580e5e21.jpg" },
+        {
+          id: "76561195289062580",
+          username: "TTV-SoraMVS",
+          avatar: "https://avatars.steamstatic.com/3f5e9daea59216d7fe13df4e031d3537580e5e21.jpg",
+        },
       ],
       "identity.alternate.discord": [{ username: "sora_102305_23580", avatar: null }],
       "identity.alternate.twitch": [{ username: "sora_mvs", avatar: null }],
@@ -1630,7 +1646,11 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "identity.alternate.wb_network": [{ id: "p439d5240688045aaaf3af823204e4ef9", username: "TheJarJar", avatar: null }],
       "identity.alternate.ps4": [{ username: "D0oMMaker00", avatar: null }],
       "identity.alternate.steam": [
-        { id: "76561194849722315", username: "djkharris08", avatar: "https://avatars.steamstatic.com/0ee23458ba9539affca118e663abaff451f366a7.jpg" },
+        {
+          id: "76561194849722315",
+          username: "djkharris08",
+          avatar: "https://avatars.steamstatic.com/0ee23458ba9539affca118e663abaff451f366a7.jpg",
+        },
       ],
       "identity.alternate.twitch": [{ username: "d0ommaker00_", avatar: null }],
       "wb_account.completed": true,
@@ -1948,7 +1968,11 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "identity.alternate.wb_network": [{ id: "p89ea17b0416f410abe718aa16ead6da0", username: "lR34L1TYI", avatar: null }],
       "identity.alternate.xb1": [{ username: "l R34L1TY I", avatar: null }],
       "identity.alternate.steam": [
-        { id: "76561194940975004", username: "juarezjsoto", avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg" },
+        {
+          id: "76561194940975004",
+          username: "juarezjsoto",
+          avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg",
+        },
       ],
       "wb_account.completed": true,
       "wb_account.email_verified": true,
@@ -2060,7 +2084,11 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "identity.alternate.ps4": [{ username: "TTVREDDDUM", avatar: null }],
       "identity.alternate.xb1": [{ username: "Y0 SPIDERMAN", avatar: null }],
       "identity.alternate.steam": [
-        { id: "76561193825791297", username: "TTVREDDDUM", avatar: "https://avatars.steamstatic.com/0e00a328abc9a7c46e42635e09c1143c8b1d6d5e.jpg" },
+        {
+          id: "76561193825791297",
+          username: "TTVREDDDUM",
+          avatar: "https://avatars.steamstatic.com/0e00a328abc9a7c46e42635e09c1143c8b1d6d5e.jpg",
+        },
       ],
       "identity.alternate.twitch": [{ username: "redddum", avatar: null }],
       "identity.alternate.epic": [{ username: "TTVREDDDUM", avatar: null }],
@@ -2176,7 +2204,11 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "identity.default_username": true,
       "identity.alternate.wb_network": [{ id: "p35700613b42848e1ad34cd226e1cab4d", username: "Dre93", avatar: null }],
       "identity.alternate.steam": [
-        { id: "76561193733398795", username: "doubleaa93", avatar: "https://avatars.steamstatic.com/c9180f93ac892fa7d078f5946239d049e987e3b6.jpg" },
+        {
+          id: "76561193733398795",
+          username: "doubleaa93",
+          avatar: "https://avatars.steamstatic.com/c9180f93ac892fa7d078f5946239d049e987e3b6.jpg",
+        },
       ],
       "identity.alternate.twitch": [{ username: "aescudero93", avatar: null }],
       "wb_account.completed": true,
@@ -2478,7 +2510,8 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "server_data.LastLogoutTime": "2023-06-06T20:49:03.248Z",
       "server_data.RestedXP": 300,
       "server_data.ProfileIcon.Slug": "profile_icon_wb_sd_shaggy_1",
-      "server_data.ProfileIcon.AssetPath": "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_WB_SD_Shaggy_1.ProfileIcon_WB_SD_Shaggy_1",
+      "server_data.ProfileIcon.AssetPath":
+        "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_WB_SD_Shaggy_1.ProfileIcon_WB_SD_Shaggy_1",
       "server_data.Characters.character_finn.Mastery.CurrentXP": 5,
       "server_data.Characters.character_finn.Mastery.Level": 16,
       "server_data.Characters.character_wonder_woman.Mastery.CurrentXP": 1159,
@@ -2648,7 +2681,11 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "identity.alternate.ps4": [{ username: "Daffy1-", avatar: null }],
       "identity.alternate.google": [{ username: null, avatar: null }],
       "identity.alternate.steam": [
-        { id: "76561195159012974", username: "ElijahDxffy", avatar: "https://avatars.steamstatic.com/ea3f04ad3a4e3ef47cd92aaa117cba68788a7150.jpg" },
+        {
+          id: "76561195159012974",
+          username: "ElijahDxffy",
+          avatar: "https://avatars.steamstatic.com/ea3f04ad3a4e3ef47cd92aaa117cba68788a7150.jpg",
+        },
       ],
       "identity.alternate.twitch": [{ username: "Daffy_Mv", avatar: null }],
       "identity.alternate.epic": [{ username: "ElijahDaffy", avatar: null }],
@@ -3217,7 +3254,11 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "identity.alternate.ps4": [{ username: "DuurttLangg", avatar: null }],
       "identity.alternate.xb1": [{ username: "LinkedYeti22841", avatar: null }],
       "identity.alternate.steam": [
-        { id: "76561194015032317", username: "DuurtLang", avatar: "https://avatars.steamstatic.com/8208182315c077a1eadd2483b9d8dad74f1723e4.jpg" },
+        {
+          id: "76561194015032317",
+          username: "DuurtLang",
+          avatar: "https://avatars.steamstatic.com/8208182315c077a1eadd2483b9d8dad74f1723e4.jpg",
+        },
       ],
       "identity.alternate.twitch": [{ username: "DuurtLangs", avatar: null }],
       "wb_account.completed": true,
@@ -3384,7 +3425,8 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "server_data.LastLoginTime": "Sat Jun 17 2023 17:39:17 GMT+0000 (Coordinated Universal Time)",
       "server_data.LastLogoutTime": "2023-06-17T17:53:11.084Z",
       "server_data.RestedXP": 300,
-      "server_data.ProfileIcon.AssetPath": "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_Capstone_Velma.ProfileIcon_Capstone_Velma",
+      "server_data.ProfileIcon.AssetPath":
+        "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_Capstone_Velma.ProfileIcon_Capstone_Velma",
       "server_data.ProfileIcon.Slug": "profile_icon_capstone_velma",
       "server_data.Characters.character_taz.Mastery.CurrentXP": 459,
       "server_data.Characters.character_taz.Mastery.Level": 13,
@@ -3604,7 +3646,8 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "server_data.LastLogoutTime": "2023-01-11T05:24:40.058Z",
       "server_data.RestedXP": 300,
       "server_data.ProfileIcon.Slug": "profile_icon_wb_sd_shaggy_1",
-      "server_data.ProfileIcon.AssetPath": "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_WB_SD_Shaggy_1.ProfileIcon_WB_SD_Shaggy_1",
+      "server_data.ProfileIcon.AssetPath":
+        "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_WB_SD_Shaggy_1.ProfileIcon_WB_SD_Shaggy_1",
       "server_data.Characters.character_wonder_woman.Mastery.CurrentXP": 1490,
       "server_data.Characters.character_wonder_woman.Mastery.Level": 20,
       "server_data.Characters.character_arya.Mastery.CurrentXP": 4325,
@@ -4373,7 +4416,11 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "identity.alternate.wb_network": [{ id: "pfe53bc121e484aa1a32f59574d8c1297", username: "NewFreezah", avatar: null }],
       "identity.alternate.ps4": [{ username: "NewFreezah", avatar: null }],
       "identity.alternate.steam": [
-        { id: "76561193974748982", username: "NewFreezah", avatar: "https://avatars.steamstatic.com/6bd859f28b1536f02eacf5a806735ff835104e23.jpg" },
+        {
+          id: "76561193974748982",
+          username: "NewFreezah",
+          avatar: "https://avatars.steamstatic.com/6bd859f28b1536f02eacf5a806735ff835104e23.jpg",
+        },
       ],
       "identity.alternate.twitch": [{ username: "Mudbutt2000", avatar: null }],
       "wb_account.completed": true,
@@ -4448,7 +4495,11 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "identity.default_username": true,
       "identity.alternate.wb_network": [{ id: "p9c57d2ae80244ba1b9fed38ecd659103", username: "PsychicMidget69", avatar: null }],
       "identity.alternate.steam": [
-        { id: "76561193900046875", username: "Psycho Man", avatar: "https://avatars.steamstatic.com/5c3d14052cc252763bd4007a450909185ebcc1c0.jpg" },
+        {
+          id: "76561193900046875",
+          username: "Psycho Man",
+          avatar: "https://avatars.steamstatic.com/5c3d14052cc252763bd4007a450909185ebcc1c0.jpg",
+        },
       ],
       "identity.alternate.twitch": [{ username: "Psychotic_Maniac", avatar: null }],
       "wb_account.completed": true,
@@ -4959,7 +5010,8 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "server_data.LastLogoutTime": "2022-12-10T04:26:35.051Z",
       "server_data.RestedXP": 300,
       "server_data.ProfileIcon.Slug": "profile_icon_capstone_c023A",
-      "server_data.ProfileIcon.AssetPath": "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_Capstone_C023A.ProfileIcon_Capstone_C023A",
+      "server_data.ProfileIcon.AssetPath":
+        "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_Capstone_C023A.ProfileIcon_Capstone_C023A",
       "server_data.Characters.character_jake.Mastery.CurrentXP": 354,
       "server_data.Characters.character_jake.Mastery.Level": 6,
       "server_data.Characters.character_finn.Mastery.CurrentXP": 640,
@@ -5116,7 +5168,11 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "identity.alternate.wb_network": [{ id: "p061711fe7f104c39b781596fcc9b893b", username: "BiscuitBoy", avatar: null }],
       "identity.alternate.ps4": [{ username: "realBiscuitBoy", avatar: null }],
       "identity.alternate.steam": [
-        { id: "76561193980188934", username: "BiscuitBoy", avatar: "https://avatars.steamstatic.com/4662a47275c022a76ec07507ff777c31f531e64e.jpg" },
+        {
+          id: "76561193980188934",
+          username: "BiscuitBoy",
+          avatar: "https://avatars.steamstatic.com/4662a47275c022a76ec07507ff777c31f531e64e.jpg",
+        },
       ],
       "identity.alternate.twitch": [{ username: "realbiscuitboy", avatar: null }],
       "wb_account.completed": true,
@@ -5292,7 +5348,11 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "identity.alternate.wb_network": [{ id: "p7889ece1a9e24a1d92abbe92c418b93d", username: "Hindex", avatar: null }],
       "identity.alternate.ps4": [{ username: "Hindexs", avatar: null }],
       "identity.alternate.steam": [
-        { id: "76561195171616185", username: "Hin", avatar: "https://avatars.akamai.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg" },
+        {
+          id: "76561195171616185",
+          username: "Hin",
+          avatar: "https://avatars.akamai.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg",
+        },
       ],
       "identity.alternate.twitch": [{ username: "Hindexs", avatar: null }],
       "wb_account.completed": true,
@@ -5859,7 +5919,11 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       "identity.default_username": true,
       "identity.alternate.wb_network": [{ id: "pad851be948bc4e6a92cbdfec1146bf91", username: "SaffronSmall683", avatar: null }],
       "identity.alternate.steam": [
-        { id: "76561193961042669", username: "yusuke.atami", avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg" },
+        {
+          id: "76561193961042669",
+          username: "yusuke.atami",
+          avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg",
+        },
       ],
       "wb_account.completed": true,
       points: 0,

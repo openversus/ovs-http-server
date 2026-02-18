@@ -8,7 +8,7 @@ import {
   updateCosmeticsRingoutVfx,
   updateCosmeticsStatTrackerSlot,
   updateCosmeticsTauntSlot,
-  updateProfileIcon
+  updateProfileIcon,
 } from "../services/cosmeticsService";
 import * as SharedTypes from "../types/shared-types";
 import * as AuthUtils from "../utils/auth";
@@ -48,7 +48,7 @@ export async function equip_taunt(req: Request, res: Response) {
   const body = req.body as Taunts_REQ;
   try {
     await updateCosmeticsTauntSlot(account.id, body.CharacterSlug, body.TauntSlotIndex, body.TauntSlug);
-    logger.info(account.id, body.CharacterSlug, body.TauntSlotIndex, body.TauntSlug)
+    logger.info(account.id, body.CharacterSlug, body.TauntSlotIndex, body.TauntSlug);
     res.send({
       body: req.body,
       metadata: null,
@@ -71,7 +71,7 @@ export async function equip_taunt(req: Request, res: Response) {
       }
     }
 
-    res.send({})
+    res.send({});
   }
 }
 
@@ -103,7 +103,7 @@ export async function equip_stat_tracker(req: Request, res: Response) {
       }
     }
 
-    res.send({})
+    res.send({});
   }
 }
 
@@ -137,7 +137,7 @@ export async function equip_announce_pack(req: Request, res: Response) {
       }
     }
 
-    res.send({})
+    res.send({});
   }
 }
 
@@ -171,12 +171,11 @@ export async function equip_ringout_vfx(req: Request, res: Response) {
       }
     }
 
-    res.send({})
+    res.send({});
   }
 }
 
 export async function equip_banner(req: Request, res: Response) {
-
   let account = AuthUtils.DecodeClientToken(req);
   //const account = req.token;
   const body = req.body as Banner_REQ;
@@ -206,10 +205,9 @@ export async function equip_banner(req: Request, res: Response) {
       }
     }
 
-    res.send({})
+    res.send({});
   }
 }
-
 
 export async function set_profile_icon(req: Request, res: Response) {
   let account = AuthUtils.DecodeClientToken(req);
@@ -244,6 +242,6 @@ export async function set_profile_icon(req: Request, res: Response) {
       }
     }
 
-    res.send({})
+    res.send({});
   }
 }

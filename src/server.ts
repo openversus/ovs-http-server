@@ -12,7 +12,7 @@ import { generate_hiss } from "./handlers/hiss_amalgation_get";
 import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch } from "./config/redis";
 import { GAME_SERVER_PORT } from "./game/udp";
 import { sscRouter } from "./ssc/routes";
-import {  getCurrentCRC, LoadConfig, MATCHMAKING_CRC } from "./data/config";
+import { getCurrentCRC, LoadConfig, MATCHMAKING_CRC } from "./data/config";
 import { PlayerTester, PlayerTesterModel } from "./database/PlayerTester";
 import { RegExpMatcher, TextCensor, englishDataset, englishRecommendedTransformers, asteriskCensorStrategy } from "obscenity";
 import env from "./env/env";
@@ -20,17 +20,11 @@ import { syncRouter } from "./dataAssetSync";
 import { loadAssets } from "./loadAssets";
 import * as SharedTypes from "./types/shared-types";
 import { isParameter } from "typescript";
-import * as nodeutil from "node:util"
+import * as nodeutil from "node:util";
 import * as KitchenSink from "./utils/garbagecan";
 import * as AuthUtils from "./utils/auth";
 import { AccountToken, IAccountToken } from "./types/AccountToken";
-import {
-  isNameBanned,
-  isNameForceChange,
-  stringContainsBannedName,
-  stringContainsForceChangeName,
-  banIP
-} from "./services/banService";
+import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { NameGenerator } from "./utils/namegeneration";
 
 const serviceName: string = "Server";
@@ -58,7 +52,6 @@ process.on("warning", (e) => {
   logger.warn(`[${serviceName}]: ${e.stack}`);
 });
 
-
 app.use(express.json());
 app.use(express.urlencoded());
 app.get("/global_configuration_types/eula/global_configurations/*", (req, res, next) => {
@@ -66,7 +59,6 @@ app.get("/global_configuration_types/eula/global_configurations/*", (req, res, n
 });
 
 app.use(syncRouter);
-
 
 app.get("/namechange", async (req, res) => {
   try {
@@ -123,7 +115,9 @@ app.post("/namechange", async (req, res, next) => {
     let ip = req.ip!.replace(/^::ffff:/, "");
     let player = await PlayerTesterModel.findOne({ ip });
     if (!player) {
-      logger.warn(`[${serviceName}]: No player found for IP ${ip} during name change POST. This should not happen since the GET route creates a player if one doesn't exist.`);
+      logger.warn(
+        `[${serviceName}]: No player found for IP ${ip} during name change POST. This should not happen since the GET route creates a player if one doesn't exist.`,
+      );
     }
     logger.info(req.body);
     let { name } = req.body;
@@ -138,13 +132,23 @@ app.post("/namechange", async (req, res, next) => {
     }
 
     if (stringContainsBannedName(name)) {
-      res.json(`The name ${name} contains racial slurs, hate speech, or another banned term which is not welcome in the OVS community. You are now permanently banned from participating in matches held on OVS servers. If you think this is an error, please join the OVS Discord server at https://discord.gg/ez3Ve7eTvk and ping one of the admins.`);
-      banIP(ip, player ? player.profile_id.toString() : "Unknown Player ID", player ? player.name : "Unknown Old Name", name, "Banned name used");
+      res.json(
+        `The name ${name} contains racial slurs, hate speech, or another banned term which is not welcome in the OVS community. You are now permanently banned from participating in matches held on OVS servers. If you think this is an error, please join the OVS Discord server at https://discord.gg/ez3Ve7eTvk and ping one of the admins.`,
+      );
+      banIP(
+        ip,
+        player ? player.profile_id.toString() : "Unknown Player ID",
+        player ? player.name : "Unknown Old Name",
+        name,
+        "Banned name used",
+      );
       return;
     }
 
     if (stringContainsForceChangeName(name)) {
-      res.json(`The name ${name} contains a term which is not permitted in a player name. Your name has not been changed. Please refresh the page and choose a new name. If you think this is an error, please join the OVS Discord server at https://discord.gg/ez3Ve7eTvk and ping one of the admins.`);
+      res.json(
+        `The name ${name} contains a term which is not permitted in a player name. Your name has not been changed. Please refresh the page and choose a new name. If you think this is an error, please join the OVS Discord server at https://discord.gg/ez3Ve7eTvk and ping one of the admins.`,
+      );
       return;
     }
 

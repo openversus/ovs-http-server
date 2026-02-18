@@ -39,10 +39,12 @@ syncRouter.post("/syncAsset", async (req, res) => {
         },
       },
       { upsert: true, new: true },
-    ).exec().then(()=>{
-      loadAssets();
-      UpdateCrc();
-    });
+    )
+      .exec()
+      .then(() => {
+        loadAssets();
+        UpdateCrc();
+      });
     res.sendStatus(200);
   }
   catch (e) {

@@ -4,7 +4,7 @@ import { GAME_MODES_CONFIG } from "../data/gameModes";
 import { GEMS_CONFIG } from "../data/gems";
 import { GEMS_BUFF_CONFIG } from "../data/gemsBuffs";
 import { INVENTORY_DEFINITIONS } from "../data/inventoryDefs";
-import { MAP_ROATATIONS } from "../data/maps";
+import { MAP_ROTATIONS } from "../data/maps";
 import { MILESTONE_REWARDS } from "../data/milestones";
 import { MISSION_CONTAINER } from "../data/missionContainers";
 import { MISSION_CONTROLLERS } from "../data/missionControllers";
@@ -31,7 +31,7 @@ export function generate_hiss() {
           _hydra_compressed: EVENT_QUEUE_CONFIG,
         },
         "map-rotations": {
-          _hydra_compressed: MAP_ROATATIONS,
+          _hydra_compressed: MAP_ROTATIONS,
         },
         "milestone-reward-tracks": {
           _hydra_compressed: MILESTONE_REWARDS,

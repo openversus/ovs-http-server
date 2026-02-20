@@ -131,6 +131,7 @@ export interface RedisPlayerConnection extends AccountToken {
   profileIcon?: string;
   character?: string;
   skin?: string;
+  GameplayPreferences: number;
 }
 
 type RedisStatTrackerEntry = [statKey: string, statValue: number];

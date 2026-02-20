@@ -1659,6 +1659,12 @@ export async function start() {
     for (const skin of ENABLED_SKINS[char as keyof typeof ENABLED_SKINS].Slugs) {
       const t = INVENTORY_DEFINITIONS[skin as keyof typeof INVENTORY_DEFINITIONS];
 
+      if (!t)
+      {
+        logger.info(`[${serviceName}]: No inventory definition for skin: ${skin}`);
+        continue;
+      }
+
       const def = t?.data as Data;
       try {
         const doc = await DataAssetModel.findOneAndUpdate(
@@ -1678,7 +1684,7 @@ export async function start() {
       catch (error) {
         logger.error(`[${serviceName}]: Error processing skin: ${skin}. Error: ${error}`);
       }
-      if (!t) logger.info(`[${serviceName}]: ${skin}`);
+
     }
   }
 
@@ -1691,6 +1697,12 @@ export async function start() {
     for (const taunt of TAUNTS_DATA[char as keyof typeof TAUNTS_DATA].Slugs) {
       const t = INVENTORY_DEFINITIONS[taunt as keyof typeof INVENTORY_DEFINITIONS];
 
+      if (!t)
+      {
+        logger.info(`[${serviceName}]: No inventory definition for taunt: ${taunt}`);
+        continue;
+      }
+
       const def = t?.data as Data;
       try {
         const doc = await DataAssetModel.findOneAndUpdate(
@@ -1698,7 +1710,7 @@ export async function start() {
           {
             $set: {
               slug: taunt,
-              assetType: "UTauntData",
+              assetType: "TauntData",
               character_slug: char,
               enabled: true,
               assetPath: def ? def.AssetPath : "",
@@ -1710,11 +1722,41 @@ export async function start() {
       catch (error) {
         logger.error(`[${serviceName}]: Error processing taunt: ${taunt}. Error: ${error}`);
       }
-
-      if (!t) logger.info(`[${serviceName}]: ${taunt}`);
     }
   }
 
   logger.info(`[${serviceName}]: END`);
 }
+
+let shuttingDown = false;
+function fatal(err: any, origin: string) {
+  
+  if (shuttingDown)
+  {
+    return;
+  }
+  
+  shuttingDown = true;
+
+  logger.error(`[${serviceName}]: [FATAL] ${origin}: ${err?.stack || err}`);
+  process.exit(1); // non-zero => Docker treats it as failure and restart policy applies
+}
+
+process.on("uncaughtException", (reason, promise) => {
+  console.error(`[${serviceName}] Unhandled Exception at:`, promise, "reason:", reason);
+  // Print full stack trace
+  if (reason instanceof Error) {
+    fatal(reason, "uncaughtException");
+  }
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error(`[${serviceName}] Unhandled Rejection at:`, promise, "reason:", reason);
+  // Print full stack trace
+  if (reason instanceof Error) {
+    fatal(reason, "unhandledRejection");
+  }
+  process.exit(1);
+});
 start();

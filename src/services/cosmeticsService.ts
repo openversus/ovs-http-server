@@ -3,6 +3,7 @@ import { redisGetEquippedCosmetics, redisSaveEquippedCosmetics as redisSaveEquip
 import { Cosmetics, CosmeticsModel, TauntSlotsClass, defaultTaunts } from "../database/Cosmetics";
 import { PlayerTesterModel, PlayerTester } from "../database/PlayerTester";
 import { getAllTauntsByChar, getAssetsByType } from "../loadAssets";
+import { ITaunt, getAllTaunts, getTauntsByChar } from "../data/taunts";
 
 const serviceName = "Services.Cosmetics";
 

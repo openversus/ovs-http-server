@@ -7,9 +7,15 @@ import {
   perks_set_page,
   set_lock_lobby_loadout,
   set_perks_absent,
+  handle_ssc_update_player_preferences,
+  // handleSsc_invoke_game_install
 } from "./ssc";
 
 export const sscRouter = express.Router();
+
+// sscRouter.put("//ssc/invoke/game_install", async (req: Request, res: Response) => {
+//   await handleSsc_invoke_game_install(req, res);
+// });
 
 sscRouter.put("/ssc/invoke/lock_lobby_loadout", (req: Request, res: Response) => {
   logger.info(req.body);
@@ -34,6 +40,10 @@ sscRouter.put("/ssc/invoke/create_party_lobby", async (req: Request, res: Respon
 
 sscRouter.put("/ssc/invoke/set_mode_for_lobby", async (req: Request, res: Response) => {
   await handle_ssc_set_lobby_mode(req, res);
+});
+
+sscRouter.put("/ssc/invoke/update_player_preferences", async (req: Request, res: Response) => {
+  await handle_ssc_update_player_preferences(req, res);
 });
 
 sscRouter.put("/ssc/invoke/create_custom_game_lobby", async (req: Request, res: Response) => {

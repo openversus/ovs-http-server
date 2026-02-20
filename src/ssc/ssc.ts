@@ -7,6 +7,7 @@ import {
   redisSetPlayerConnectionByID,
   redisClient,
   redisSetPlayerConnectionCosmetics,
+  redisSetPlayerConnectionByIp,
 } from "../config/redis";
 import { Cosmetics, CosmeticsModel, TauntSlotsClass } from "../database/Cosmetics";
 import { getEquippedCosmetics } from "../services/cosmeticsService";
@@ -21,6 +22,7 @@ import * as AuthUtils from "../utils/auth";
 import * as KitchenSink from "../utils/garbagecan";
 import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
+// import { IGameInstall } from "../types/shared-types";
 
 const serviceName = "SSC.SSC";
 
@@ -234,7 +236,7 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
 
   let ip = req.ip!.replace(/^::ffff:/, "");
   let player = await PlayerTesterModel.findOne({ ip });
-  const aID = player ? player.id : account.id;
+  const aID = account?.id ?? player?.id; //player ? player.id : account.id;
 
   let character = "";
   let variant = "";
@@ -291,6 +293,7 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
   await redisSetPlayerConnectionCosmetics(aID, rPlayerCosmetics);
 
   await redisUpdatePlayerLoadout(aID, { character: character, skin: variant, ip: ip, profileIcon: profileIcon } as RedisPlayer);
+  //const GameplayPreferences: number = rPlayerConnectionByID.GameplayPreferences as number ?? 964;
   res.send({
     body: {
       lobby: {
@@ -316,7 +319,8 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
         LeaderID: aID,
         LobbyType: 0,
         ReadyPlayers: {},
-        PlayerGameplayPreferences: { [aID]: 544 },
+        //PlayerGameplayPreferences: { [aID]: 544 },
+        PlayerGameplayPreferences: { [aID]: (rPlayerConnectionByID.GameplayPreferences as number) ?? 964 },
         PlayerAutoPartyPreferences: { [aID]: false },
         GameVersion: env.GAME_VERSION,
         HissCrc: 1167552915,
@@ -399,4 +403,128 @@ export async function handle_ssc_set_lobby_mode(req: Request<{}, {}, SET_LOBBY_M
     metadata: null,
     return_code: 0,
   });
+}
+
+export async function handle_ssc_update_player_preferences(req: Request<{}, {}, {}, {}>, res: Response) {
+  const account = AuthUtils.DecodeClientToken(req);
+  let ip = account.current_ip;
+
+  logger.info("Received update player prefs request, headers:\n")
+  if (req.headers)
+  {
+    KitchenSink.TryInspectVerbose(req.headers);
+  }
+
+  logger.info("Received update player prefs request, body:\n")
+  if (req.body)
+  {
+    KitchenSink.TryInspectVerbose(req.body);
+  }
+
+  let updatedPrefs = req.body as IUpdatePlayerPrefs;
+  let updateGameplayPrefs = updatedPrefs.GameplayPreferences as number;
+  try {
+    await PlayerTesterModel.findOneAndUpdate( { ip }, { GameplayPreferences: (updateGameplayPrefs as number) } , { upsert: true, new: true } );
+    logger.info(`[${serviceName}]: Updated GameplayPreferences to ${updateGameplayPrefs} for player with IP ${ip}`);  
+  }
+  catch (error) {
+    logger.error(`[${serviceName}]: Error updating GameplayPreferences for player with IP ${ip}, error: ${error}`);
+  }
+
+  try {
+    let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
+    rPlayerConnectionByIP.GameplayPreferences = (updateGameplayPrefs as number) ?? 964;
+    await redisSetPlayerConnectionByIp(ip, rPlayerConnectionByIP);
+    let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`)) as unknown as RedisPlayerConnection;
+    rPlayerConnectionByID.GameplayPreferences = (updateGameplayPrefs as number) ?? 964;
+    await redisSetPlayerConnectionByID(rPlayerConnectionByID.id, rPlayerConnectionByID);
+
+    logger.info(`[${serviceName}]: Updated GameplayPreferences in Redis to ${updateGameplayPrefs} for player with IP ${ip} and ID ${rPlayerConnectionByIP.id}`);
+  }
+  catch (error) {
+    logger.error(`[${serviceName}]: Error updating GameplayPreferences in Redis for player with IP ${ip}, error: ${error}`);
+  }
+
+  res.status(200).send({ body: {}, metadata: null, return_code: 0 });
+}
+
+// export async function handleSsc_invoke_game_install(req: Request<{}, {}, {}, {}>, res: Response) {
+//   logger.info(`[${serviceName}]: Received invoke_game_install request:\n`);
+//   KitchenSink.TryInspectRequestVerbose(req);
+
+//   const account = AuthUtils.DecodeClientToken(req);
+//   const aID = account.id;
+//   let ip = account.current_ip;
+
+//   try {
+//     let gameInstall: IGameInstall = req.body as IGameInstall;
+//     let mongoPlayer = await PlayerTesterModel.findOne({ ip });
+
+//     if (mongoPlayer)
+//     {
+//       mongoPlayer.game_install = gameInstall;
+//       mongoPlayer.platform_id = gameInstall.account_platform_id;
+//       mongoPlayer.platform_name = gameInstall.platform_name;
+//       mongoPlayer.hydra_public_id = gameInstall.hydra_public_id;
+//       await mongoPlayer.save();
+//       logger.info(`[${serviceName}]: Updated game install info for Player ID ${aID} with IP ${ip} and name ${mongoPlayer.name ?? gameInstall.user_name ?? "Unknown"}`);
+//     }
+//   }
+//   catch (error) {
+//     logger.error(`[${serviceName}]: Error parsing game install data from request body for account ${aID}, error: ${error}`);
+//   }
+  
+//   res.status(200).send({ body: {}, metadata: null, return_code: 0 });
+// }
+
+export interface IUpdatePlayerPrefs {
+  AutoPartyPreference: boolean;
+  /**
+   *
+   * 1
+   *
+   */
+  CrossplayPreference: number;
+  /**
+   *
+   * 544
+   *
+   */
+  GameplayPreferences: number;
+  /**
+   *
+   * 1914377025
+   *
+   */
+  HissCrc: number;
+  /**
+   *
+   * 67ead64959521e4ff6c1eabb
+   *
+   */
+  LobbyId: string;
+  /**
+   *
+   * party_lobby
+   *
+   */
+  LobbyTemplate: string;
+  /**
+   *
+   * 67ead64959521e4ff6c1eabb
+   *
+   */
+  MatchID: string;
+  /**
+   *
+   * PC
+   *
+   */
+  Platform: string;
+  /**
+   *
+   * CLIENT:2FAE7-Retail DATA:4CF442B2 PERKS:1
+   *
+   */
+  Version: string;
 }

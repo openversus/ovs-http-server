@@ -7,6 +7,7 @@ export interface IAccountToken {
   hydraUsername: string;
   current_ip: string;
   lobby_id: string;
+  GameplayPreferences: number;
   // token: AccountToken;
   // account: AccountToken;
 }
@@ -20,6 +21,7 @@ export class AccountToken implements IAccountToken {
   hydraUsername: string;
   current_ip: string;
   lobby_id: string;
+  GameplayPreferences: number;
   // token: AccountToken;
   // account: AccountToken;
 
@@ -32,6 +34,7 @@ export class AccountToken implements IAccountToken {
     this.hydraUsername = "";
     this.current_ip = "";
     this.lobby_id = "";
+    this.GameplayPreferences = 964;
     // this.token = this;
     // this.account = this;
   }

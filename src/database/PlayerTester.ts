@@ -16,11 +16,26 @@ export class PlayerTester {
   @prop({ required: true, unique: true })
   public ip!: string;
 
+  // @prop({ required: false, unique: true })
+  // public game_install!: SharedTypes.IGameInstall;
+
+  // @prop({ required: false, unique: true })
+  // public platform_id!: string;
+
+  // @prop({ required: false, unique: true })
+  // public platform_name!: string;
+
+  // @prop({ required: false, unique: true })
+  // public hydra_public_id!: string;
+
   @prop({ required: false, unique: true, default: () => defaultToken })
   public token!: SharedTypes.IAccountToken;
 
   @prop({ required: false, unique: true, default: () => defaultToken })
   public account!: SharedTypes.IAccountToken;
+
+  @prop({ required: false, unique: false, default: 964 })
+  public GameplayPreferences!: number;
 
   // MongoDB will auto-generate _id for each document
   @prop({ default: () => new mongoose.Types.ObjectId(), unique: true })

@@ -7,7 +7,10 @@ import {
   redisGetPlayerPerk,
   redisLockPerks,
   redisPublishAllPerksLocked,
-  RedisPlayerConnection
+  RedisPlayerConnection,
+  redisUpdatePlayerKey,
+  redisSetPlayerConnectionByID,
+  redisSetPlayerConnectionByIp,
 } from "../config/redis";
 import {  getCurrentCRC, MATCHMAKING_CRC } from "../data/config";
 import { PerkPagesModel } from "../database/PerkPages";
@@ -58090,10 +58093,52 @@ export async function handleSsc_invoke_set_ready_for_lobby(req: Request<{}, {}, 
 
   const account = AuthUtils.DecodeClientToken(req);
   const aID = account.id || req.token.id;
-  const hydraUsername = account.hydraUsername || req.token.hydraUsername;
-  const playerUsername = account.username || req.token.username;
-  const wb_network_id = account.wb_network_id || req.token.wb_network_id;
-  const profile_id = account.profile_id || req.token.profile_id;
+
+  let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${aID}`) as unknown as RedisPlayerConnection;
+  if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
+    logger.warn(`[${serviceName}]: No Redis player connection found for player ID ${aID}, cannot set loadout.`);
+  }
+
+  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${rPlayerConnectionByID.current_ip}`) as unknown as RedisPlayerConnection;
+  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
+    logger.warn(`[${serviceName}]: No Redis player connection found for IP ${rPlayerConnectionByID.current_ip}, cannot set loadout.`);
+  }
+
+  // let ip = rPlayerConnectionByID.current_ip;
+  // let GameplayPreferences = req.body.GameplayPreferences as number;
+
+  // logger.info(`Incoming GameplayPreferences is ${GameplayPreferences}`);
+  // logger.info(`Existing GameplayPreferences is ${rPlayerConnectionByID.GameplayPreferences}`);
+
+  // rPlayerConnectionByID.GameplayPreferences = GameplayPreferences;
+  // rPlayerConnectionByIP.GameplayPreferences = GameplayPreferences;
+  // await redisSetPlayerConnectionByID(aID, rPlayerConnectionByID);
+  // await redisSetPlayerConnectionByIp(ip, rPlayerConnectionByIP);
+
+  // rPlayerConnectionByID = await redisClient.hGetAll(`connections:${aID}`) as unknown as RedisPlayerConnection;
+  // const UpdatedPrefs = rPlayerConnectionByID.GameplayPreferences as unknown as number || 969;
+  // logger.info(`Updated GameplayPreferences is ${UpdatedPrefs}`);
+
+  // try {
+  //   let playerObject = await PlayerTesterModel.findOne({ ip });
+  //   if (playerObject && GameplayPreferences !== playerObject.GameplayPreferences)
+  //   {
+  //     playerObject.GameplayPreferences = GameplayPreferences;
+  //     await playerObject.save();
+  //     //await redisClient.hSet(`connections:${aID}`, 'GameplayPreferences', GameplayPreferences.toString());
+  //     //await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, 'GameplayPreferences', GameplayPreferences.toString());
+  //     logger.info(`[${serviceName}]: Updated GameplayPreferences for player ${account.id} to ${GameplayPreferences}`);
+  //   }
+  // }
+  // catch (error)
+  // {
+  //   logger.error(`Could not retrieve player information for Player ID ${aID} with name ${rPlayerConnectionByID.username} and IP ${rPlayerConnectionByID.current_ip} to update GameplayPreferences. Error: ${error}`);
+  // }
+
+  const hydraUsername = account.hydraUsername || rPlayerConnectionByID.hydraUsername || req.token.hydraUsername;
+  const playerUsername = account.username || rPlayerConnectionByID.username || req.token.username;
+  const wb_network_id = account.wb_network_id || rPlayerConnectionByID.wb_network_id || req.token.wb_network_id;
+  const profile_id = account.profile_id || rPlayerConnectionByID.profile_id || req.token.profile_id;
 
   logger.info(`\n\n[${serviceName}]: Will send to client: MatchID ${req.body.MatchID}, PlayerID ${aID}, Ready true, bAllPlayersReady true\n\n`);
 
@@ -58105,13 +58150,28 @@ export async function handleSsc_invoke_set_ready_for_lobby(req: Request<{}, {}, 
 }
 
 export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}, {}, {}, {}>, res: Response) {
+  logger.info("Received end of match stats, body:\n");
+  if (req.body)
+  {
+    KitchenSink.TryInspectVerbose(req.body);
+  }
   res.send({ body: {}, metadata: null, return_code: 0 });
 }
 
 export async function handleSsc_invoke_toast_player(req: Request<{}, {}, {}, {}>, res: Response) {
+  logger.info("Received toast player request, headers:\n")
+  if (req.headers)
+  {
+    KitchenSink.TryInspectVerbose(req.headers);
+  }
+
+  logger.info("Received toast player request, body:\n")
+  if (req.body)
+  {
+    KitchenSink.TryInspectVerbose(req.body);
+  }
   res.send({ body: {}, metadata: null, return_code: 0 });
 }
-
 export interface Ssc_invoke_set_ready_for_lobby_REQUEST {
   AutoPartyPreference: boolean;
   /**

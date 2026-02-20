@@ -67,7 +67,7 @@ async function generateStaticAccess(req: express.Request) {
     var nameGenerator = new NameGenerator();
     const randomName = nameGenerator.Generate("OpenVersus_");
     // generate a random name like OpenVersus_1247112554154
-    player = new PlayerTesterModel({ ip, name: randomName });
+    player = new PlayerTesterModel({ ip, name: randomName, GameplayPreferences: 964 });
     try {
       await player.save();
       logger.info(`[${serviceName}]: No player found for IP ${ip}. Created new player with id ${player.id} and name ${randomName}.`);
@@ -94,6 +94,7 @@ async function generateStaticAccess(req: express.Request) {
     username: player.name,
     current_ip: ip,
     lobby_id: "",
+    GameplayPreferences: player.GameplayPreferences ?? 964,
   };
   player.token = account;
   player.account = account;
@@ -195,6 +196,10 @@ async function generateStaticAccess(req: express.Request) {
         LastPlayedCharacterSlug: "character_C018",
       },
       server_data: {
+        FoundersPack3: true,
+        FoundersPack3_steam: true,
+        founderpackcoolnameflag: true,
+        closed_alpha_battlepass_completed: true,
         LastLogoutTime: "2023-03-14T17:44:29.198Z",
         RestedXP: 300,
         ProfileIcon: {
@@ -375,6 +380,10 @@ async function generateStaticAccess(req: express.Request) {
         MostRecentlyViewedCurrentRiftSeason: "Season:SeasonFour",
       },
       server_data: {
+        FoundersPack3: true,
+        FoundersPack3_steam: true,
+        founderpackcoolnameflag: true,
+        closed_alpha_battlepass_completed: true,
         debug_all_unlocked: 0,
         Level: 1,
         CurrentXP: 0,

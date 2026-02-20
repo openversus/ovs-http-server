@@ -27,6 +27,13 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
   const wb_network_id = account.wb_network_id;
   const profile_id = account.profile_id;
 
+  let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${aID}`)) as unknown as RedisPlayerConnection;
+  if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
+    logger.warn(`[${serviceName}]: No Redis player connection found for player ID ${aID}, cannot set loadout.`);
+  }
+
+  //const GameplayPreferences: number = rPlayerConnectionByID.GameplayPreferences as number ?? 964;
+
   res.send({
     updated_at: { _hydra_unix_date: 1742265244 },
     created_at: { _hydra_unix_date: 1742265244 },
@@ -66,7 +73,8 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
       LeaderID: aID,
       LobbyType: 0,
       ReadyPlayers: {},
-      PlayerGameplayPreferences: { [aID]: 544 },
+      //PlayerGameplayPreferences: { [aID]: 544 },
+      PlayerGameplayPreferences: { [aID]: Number(rPlayerConnectionByID.GameplayPreferences) ?? 964 },
       PlayerAutoPartyPreferences: { [aID]: false },
       GameVersion: env.GAME_VERSION,
       HissCrc: 1167552915,
@@ -241,7 +249,13 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
       allowed_buckets: ["Any"],
       allowed_buckets_relaxed: ["Any"],
     },
-    server_data: null,
+    //server_data: null,
+    server_data: {
+        FoundersPack3: true,
+        FoundersPack3_steam: true,
+        founderpackcoolnameflag: true,
+        closed_alpha_battlepass_completed: true,
+    },
     criteria_slug: "1v1-retail",
     cluster: req.body.data.MultiplayParams.MultiplayClusterSlug,
     players_connection_info: {
@@ -259,7 +273,13 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
         last_inbox_read: null,
         points: null,
         data: {},
-        server_data: {},
+        //server_data: {},
+        server_data: {
+          FoundersPack3: true,
+          FoundersPack3_steam: true,
+          founderpackcoolnameflag: true,
+          closed_alpha_battlepass_completed: true,
+        },
         private_data: {},
         server_owner_data: {},
         inventory: {},

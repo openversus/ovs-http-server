@@ -7,6 +7,7 @@ import { decodeToken } from "./middleware/auth";
 //import { AccountToken } from "./handlers";
 import * as SharedTypes from "./types/shared-types";
 import * as RollbackProcess from "./utils/processes";
+import * as KitchenSink from "./utils/garbagecan";
 //import { exec, spawn, spawnSync, SpawnOptions } from "child_process";
 
 import {
@@ -512,12 +513,19 @@ export class WebSocketService {
 
     for (let i = 0; i < notification.players.length; i++) {
       const player = notification.players[i];
-      const rPlayerByConnectionId = (await redisClient.hGetAll(`connections:${player.playerId}`)) as unknown as RedisPlayerConnection;
+      //const rPlayerByConnectionId = (await redisClient.hGetAll(`connections:${player.playerId}`)) as unknown as RedisPlayerConnection;
+      const rPlayerConnectionByID = await redisClient.hGetAll(`connections:${player.playerId}`) as unknown as RedisPlayerConnection;
       const playerLoadout = playerLoadouts[i];
       const playerConfig = playerConfigs[i];
-      const profileIcon = rPlayerByConnectionId.profileIcon || "profile_icon_default_gold";
-      const character = rPlayerByConnectionId.character || "character_jason";
-      const skin = rPlayerByConnectionId.skin || "skin_jason_000";
+      const profileIcon = rPlayerConnectionByID.profileIcon ?? "profile_icon_default_gold";
+      const character = rPlayerConnectionByID.character ?? "character_jason";
+      const skin = rPlayerConnectionByID.skin ?? "skin_jason_000";
+      const GameplayPreferences: number = Number(rPlayerConnectionByID.GameplayPreferences) || 964;
+
+      logger.info(
+        `[${serviceName}]: Building config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} for match ${notification.matchId}, GameplayPreferences: ${GameplayPreferences}`,
+      );
+      //const GameplayPreferences = playerMongoObject?.GameplayPreferences || 964;
 
       try {
         // // Parse Taunts if it's a string (from Redis)
@@ -565,7 +573,8 @@ export class WebSocketService {
           bAutoPartyPreference: false,
           Gems: [],
           PartyMember: null,
-          GameplayPreferences: 964,
+          //GameplayPreferences: 964,
+          GameplayPreferences: GameplayPreferences,
           BotDifficultyMax: 0,
           bIsBot: false,
           RankedDivision: null,
@@ -576,9 +585,9 @@ export class WebSocketService {
           WinStreak: null,
           RankedTier: null,
           Handicap: 0,
-          RingoutVfx: playerConfig.RingoutVfx || "ring_out_vfx_default",
+          RingoutVfx: playerConfig.RingoutVfx ?? "ring_out_vfx_default",
           Character: character,
-          Banner: playerConfig.Banner || "banner_default",
+          Banner: playerConfig.Banner ?? "banner_default",
           StatTrackers: [
             [
               statTrackerSlots[0],
@@ -596,15 +605,18 @@ export class WebSocketService {
           Perks: [],
           PlayerIndex: player.playerIndex,
           PartyId: player.partyId,
-          Username: { default: rPlayerByConnectionId.username || "Player" },
+          // Username: { default: rPlayerConnectionByID.username || "Player" },
+          Username: {},
           Buffs: [],
           Skin: skin,
           BotDifficultyMin: 0,
         };
+
+        logger.info(`[${serviceName}]: Successfully created player config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} for match ${notification.matchId}`);
       }
       catch (error) {
         logger.error(
-          `[${serviceName}]: Error creating player config for player ${player.playerId} with IP ${rPlayerByConnectionId.current_ip} and name ${rPlayerByConnectionId.username ?? "unknown"} : ${JSON.stringify(error)}`,
+          `[${serviceName}]: Error creating player config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} : ${JSON.stringify(error)}`,
         );
         // logger.error(`[${serviceName}]: Character: ${character}, PlayerConfig.Taunts: ${JSON.stringify(playerConfig.Taunts)}`);
         // logger.error(`[${serviceName}]: PlayerConfig.StatTrackers: ${JSON.stringify(playerConfig.StatTrackers)}`);
@@ -622,7 +634,8 @@ export class WebSocketService {
           bAutoPartyPreference: false,
           Gems: [],
           PartyMember: null,
-          GameplayPreferences: 964,
+          //GameplayPreferences: 964,
+          GameplayPreferences: GameplayPreferences,
           BotDifficultyMax: 0,
           bIsBot: false,
           RankedDivision: null,
@@ -653,7 +666,8 @@ export class WebSocketService {
           Perks: [],
           PlayerIndex: player.playerIndex,
           PartyId: player.partyId,
-          Username: { default: rPlayerByConnectionId.username || "Player" },
+//          Username: { default: rPlayerConnectionByID.username || "Player" },
+          Username: {},
           Buffs: [],
           Skin: skin,
           BotDifficultyMin: 0,
@@ -746,6 +760,9 @@ export class WebSocketService {
       //     BotDifficultyMin: 0,
       //   };
       // }
+      logger.info(
+        `[${serviceName}]: Prepared player config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} for match ${notification.matchId}, GameplayPreferences: ${Players[player.playerId].GameplayPreferences}`,
+      );
     }
 
     // Create the message to send to the players
@@ -804,6 +821,9 @@ export class WebSocketService {
       header: "",
       cmd: "update",
     };
+
+    logger.info("Message is: ");
+    KitchenSink.TryInspect(message);
 
     // Send the message to each player in the match
     for (const player of notification.players) {

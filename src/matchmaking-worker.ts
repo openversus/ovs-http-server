@@ -23,6 +23,7 @@ import { randomUUID, randomInt } from "crypto";
 import env from "./env/env";
 
 const serviceName = "MatchmakingWorker";
+const logPrefix = `[${serviceName}]:`;
 const CHECK_INTERVAL_MS = 2000;
 
 const MATCH_RULES = {

@@ -7,14 +7,14 @@ import {
   RedisPlayerConnection,
   RedisOnGameModeUpdatedNotification,
 } from "../config/redis";
-import { logger } from "../config/logger";
+import { logger, logwrapper, BE_VERBOSE } from "../config/logger";
 import { getEquippedCosmetics } from "./cosmeticsService";
 import * as SharedTypes from "../types/shared-types";
 import env from "../env/env";
 import * as KitchenSink from "../utils/garbagecan";
 
 const serviceName = "Services.Lobby";
-const BE_VERBOSE = env.VERBOSE_LOGGING === 1 ? true : false;
+const logPrefix = `[${serviceName}]:`;
 
 export enum LOBBY_MODES {
   ONE_V_ONE = "1v1",

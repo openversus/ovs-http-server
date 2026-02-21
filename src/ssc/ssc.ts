@@ -25,6 +25,7 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 // import { IGameInstall } from "../types/shared-types";
 
 const serviceName = "SSC.SSC";
+const logPrefix = `[${serviceName}]:`;
 
 interface Lock_Lobby_Loadout_REQ {
   AutoPartyPreference: boolean;

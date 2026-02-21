@@ -7,6 +7,7 @@ import { configurationModel } from "./Configuration";
 import { logger } from "../config/logger";
 
 const serviceName: string = "Database.Client";
+const logPrefix = `[${serviceName}]:`;
 
 export async function connect() {
   await mongoose.connect(env.MONGODB_URI);

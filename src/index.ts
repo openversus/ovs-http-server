@@ -10,6 +10,7 @@ import { startRedis } from "./config/redis";
 import { start } from "./server";
 
 const serviceName: string = "Index";
+const logPrefix = `[${serviceName}]:`;
 
 process.on("uncaughtException", (reason, promise) => {
   console.error(`[${serviceName}] Uncaught Exception at:`, promise, "reason:", reason);

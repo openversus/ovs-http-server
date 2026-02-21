@@ -7,6 +7,7 @@ import path from "path";
 import env from "./env/env";
 
 const serviceName: string = "WebSocketStart";
+const logPrefix = `[${serviceName}]:`;
 
 process.on("uncaughtException", (reason, promise) => {
   console.error(`[${serviceName}] Uncaught Exception at:`, promise, "reason:", reason);

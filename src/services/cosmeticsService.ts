@@ -6,6 +6,7 @@ import { getAllTauntsByChar, getAssetsByType } from "../loadAssets";
 import { ITaunt, getAllTaunts, getTauntsByChar } from "../data/taunts";
 
 const serviceName = "Services.Cosmetics";
+const logPrefix = `[${serviceName}]:`;
 
 function mergeCosmetics(cosmetics: Cosmetics): Cosmetics {
   const mergedTaunts: Record<string, TauntSlotsClass> = {};

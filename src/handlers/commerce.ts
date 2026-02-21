@@ -5,6 +5,7 @@ import { stat } from "node:fs";
 import * as KitchenSink from "../utils/garbagecan";
 
 const serviceName = "Handlers.Commerce";
+const logPrefix = `[${serviceName}]:`;
 
 export async function handleCommerce_products(req: Request<{}, {}, {}, MVSQueries.Commerce_products_QUERY>, res: Response) {
   if (req.query.partial_response) {

@@ -10,6 +10,7 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { num } from "envalid";
 
 const serviceName: string = "Config.Redis";
+const logPrefix = `[${serviceName}]:`;
 
 const redisConfig = {
   username: env.REDIS_USERNAME,

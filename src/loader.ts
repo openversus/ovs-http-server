@@ -6,6 +6,7 @@ import { DataAssetModel } from "./database/DataAssets";
 import { disabledCharacters, isDisabledChar, isEnabledChar } from "./utils/garbagecan";
 
 const serviceName = "Loader";
+const logPrefix = `[${serviceName}]:`;
 
 const CHARACTER_SLUGS = [
   // "character_supershaggy",

@@ -4,6 +4,7 @@ import { HydraDecoder, HydraEncoder } from "mvs-dump";
 export const HYDRA_CONTENT_TYPE = "application/x-ag-binary";
 
 const serviceName = "Middleware.HydraParser";
+const logPrefix = `[${serviceName}]:`;
 
 export const hydraDecoderMiddleware = <T>(req: Request, res: Response, next: NextFunction) => {
   //@ts-ignore

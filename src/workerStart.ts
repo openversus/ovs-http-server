@@ -3,6 +3,7 @@ import { startRedis } from "./config/redis";
 import { startMatchMakingWorker } from "./matchmaking-worker";
 
 const serviceName: string = "MatchmakingWorker";
+const logPrefix = `[${serviceName}]:`;
 
 process.on("uncaughtException", (reason, promise) => {
   console.error(`[${serviceName}] Uncaught Exception at:`, promise, "reason:", reason);

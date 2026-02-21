@@ -5,6 +5,7 @@ import { Types } from "mongoose";
 import ObjectID from "bson-objectid";
 
 const serviceName: string = "Database.Cosmetics";
+const logPrefix = `[${serviceName}]:`;
 
 export interface IDefaultTaunts {
   [character: string]: {

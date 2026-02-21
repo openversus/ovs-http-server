@@ -1,4 +1,4 @@
-import { logger } from "../config/logger";
+import { logger, logwrapper, BE_VERBOSE } from "../config/logger";
 import express, { Request, Response } from "express";
 import { redisClient, RedisPlayerConnection, redisSetPlayerConnectionCosmetics, redisGetPlayer, redisGetPlayers } from "../config/redis";
 import { Cosmetics, CosmeticsModel, TauntSlotsClass } from "../database/Cosmetics";
@@ -15,7 +15,7 @@ import * as AuthUtils from "../utils/auth";
 import * as KitchenSink from "../utils/garbagecan";
 
 const serviceName = "Handlers.Matches";
-const BE_VERBOSE: boolean = env.VERBOSE_LOGGING === 0 ? false : true;
+const logPrefix = `[${serviceName}]:`;
 
 export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Response) {
   //const account = req.token;

@@ -27,6 +27,9 @@ import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { NameGenerator } from "./utils/namegeneration";
 
+// HTML Rendering
+const handlebars = require("handlebars");
+
 const serviceName: string = "Server";
 const BE_VERBOSE = env.VERBOSE_LOGGING === 1 ? true : false;
 
@@ -60,6 +63,11 @@ app.get("/global_configuration_types/eula/global_configurations/*", (req, res, n
 
 app.use(syncRouter);
 
+// HTML File Setup
+const filePath = path.join(__dirname, "static/name_change.html");
+const source = fs.readFileSync(filePath, "utf8");
+const template = handlebars.compile(source);
+
 app.get("/namechange", async (req, res) => {
   try {
     let ip = req.ip!.replace(/^::ffff:/, "");
@@ -79,29 +87,14 @@ app.get("/namechange", async (req, res) => {
     logger.info(`[${serviceName}]: Name change requested for IP ${ip} with current name "${player.name}"`);
     logger.info(`[${serviceName}]: Name change Player document before: ${JSON.stringify(player)}`);
 
-    // Render a simple HTML form
-    // Will be replaced by the sick name change form that brettlyc from the Discord server created
-    // I would just put it here now, but I want to make sure his name gets the commit
-    res.send(`
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Edit Player</title>
-      </head>
-      <body>
-        <h1>Edit Player: ${player.name}</h1>
-        <form action="/namechange" method="POST">
-          <label>
-            Name:
-            <input maxlength="24" type="text" id="name" name="name" value="${player.name}" />
-          </label>
-          <button type="submit">Save</button>
-        </form>
-      </body>
-      </html>
-    `);
+    // HTML Replacement by brettlyc
+    const html = template({
+      currentUsername: player.name,
+      error: null,
+      success: null
+    });
+
+    res.send(html);
   }
   catch (e) {
     logger.error(`[${serviceName}]: Error in route /namechange GET: ${e}`);
@@ -112,6 +105,7 @@ app.get("/namechange", async (req, res) => {
 // POST /namechange - update or create player by IP
 app.post("/namechange", async (req, res, next) => {
   try {
+    let error = null;
     let ip = req.ip!.replace(/^::ffff:/, "");
     let player = await PlayerTesterModel.findOne({ ip });
     if (!player) {
@@ -127,29 +121,22 @@ app.post("/namechange", async (req, res, next) => {
     }
 
     if (name.length === 0 || stringIsOnlyWhitespace(name)) {
-      res.json("Blank or whitespace-only names are not permitted.");
-      return;
+        error = "Blank or whitespace-only names are not permitted.";
     }
 
     if (stringContainsBannedName(name)) {
-      res.json(
-        `The name ${name} contains racial slurs, hate speech, or another banned term which is not welcome in the OVS community. You are now permanently banned from participating in matches held on OVS servers. If you think this is an error, please join the OVS Discord server at https://discord.gg/ez3Ve7eTvk and ping one of the admins.`,
-      );
-      banIP(
+        error = `The name ${name} contains racial slurs, hate speech, or another banned term which is not welcome in the OVS community. You are now permanently banned from participating in matches held on OVS servers. If you think this is an error, please join the OVS Discord server at https://discord.gg/ez3Ve7eTvk and ping one of the admins.`;
+        banIP(
         ip,
         player ? player.profile_id.toString() : "Unknown Player ID",
         player ? player.name : "Unknown Old Name",
         name,
         "Banned name used",
       );
-      return;
     }
 
     if (stringContainsForceChangeName(name)) {
-      res.json(
-        `The name ${name} contains a term which is not permitted in a player name. Your name has not been changed. Please refresh the page and choose a new name. If you think this is an error, please join the OVS Discord server at https://discord.gg/ez3Ve7eTvk and ping one of the admins.`,
-      );
-      return;
+      error = `The name ${name} contains a term which is not permitted in a player name. Your name has not been changed. Please refresh the page and choose a new name. If you think this is an error, please join the OVS Discord server at https://discord.gg/ez3Ve7eTvk and ping one of the admins.`;
     }
 
     if (name.length > 24) {
@@ -157,11 +144,22 @@ app.post("/namechange", async (req, res, next) => {
     }
 
     // Upsert the player's name based on IP
-    const matches = matcher.getAllMatches(name);
-    const filtered = censor.applyTo(name, matches);
-    await PlayerTesterModel.findOneAndUpdate({ ip }, { name: filtered.substring(0, 24) }, { upsert: true, new: true });
-    // Redirect back to the form
-    res.redirect(`/namechange`);
+    let filtered;
+    if(!error) {
+      const matches = matcher.getAllMatches(name);
+      filtered = censor.applyTo(name, matches);
+      await PlayerTesterModel.findOneAndUpdate({ ip }, { name: filtered.substring(0, 24).trim() }, { upsert: true, new: true });
+    }
+
+    // HTML Replacement by brettlyc
+    const html = template({
+      currentUsername: error ? player?.name : name,
+      error: error,
+      success: true
+    });
+
+    res.send(html);
+
     logger.info(`[${serviceName}]: Name change for IP ${ip} to "${name}" (filtered: "${filtered}")`);
     if (player) {
       logger.info(`[${serviceName}]: Name change Player document after update: ${JSON.stringify(player)}`);

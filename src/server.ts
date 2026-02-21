@@ -155,7 +155,7 @@ app.post("/namechange", async (req, res, next) => {
     const html = template({
       currentUsername: error ? player?.name : name,
       error: error,
-      success: true
+      success: !error
     });
 
     res.send(html);

@@ -58,7 +58,7 @@ export async function queueMatch(
   }
   catch (error) {
     logger.error(`Error queueing player: ${error}`);
-    throw error;
+    await cancelMatchmaking(partyLeaderId, matchmakingRequestId);
   }
 }
 

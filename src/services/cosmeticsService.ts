@@ -261,12 +261,11 @@ export async function getEquippedCosmetics(accountId: string) {
       cosmetics = (await CosmeticsModel.findById(accountId).lean()) as Cosmetics;
 
       if (!cosmetics) {
-        throw new Error(`Failed to create or retrieve cosmetics for account ${accountId}`);
+        logger.error(`[${serviceName}]: Failed to create or retrieve cosmetics for account ${accountId}`);
       }
     }
     catch (error) {
       logger.error(`[${serviceName}]: Error creating cosmetics for account ${accountId}:`, error);
-      throw error;
     }
   }
 

@@ -397,4 +397,9 @@ router.post(/\/virtual_commerce\/purchases\/.{24}\/toasts_gleamium/, (req: Reque
   h.handleCommerce_purchases_toasts_gleamium(req, res);
 });
 
+router.get("/images/:image", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  // @ts-ignore TODO : implementation. Remove comment once implemented`
+  h.handleImages(req, res);
+});
+
 export default router;

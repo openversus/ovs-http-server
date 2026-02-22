@@ -38,7 +38,7 @@
           position: fixed;
           inset: 0;
           z-index: -2;
-          background-image: url("https://images7.alphacoders.com/137/1372338.jpeg");
+          background-image: url("images/name_change_background.jpeg");
           background-size: cover;
           background-position: center;
           background-repeat: no-repeat;
@@ -346,7 +346,7 @@
       }
   </style>
   <script>
-    const gifs = ["https://media1.giphy.com/media/v1.Y2lkPTZjMDliOTUybTh5NDM1YnkzZzY5YzU3ejJwcWllbzkwMTVnamhnMjJjZzMyM2IzZSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/MnXcSHFZwPiRr6Kjrg/200w.gif", "https://media1.giphy.com/media/cXiKMqT4aiTtYjnf8E/200.gif", "https://media2.giphy.com/media/oy8nsdQ16oxuAcjyz4/200w.gif", "https://media.tenor.com/CyfdVqDgO0QAAAAM/multiversus-bugs-bunny.gif"]
+    const gifs = ["images/200w.webp", "images/200.webp", "images/200w2.webp", "images/multiversus-bugs-bunny.gif"]
     setInterval(() => {
       const gifElement = document.getElementById("gif")
       gifElement.src = gifs[Math.floor(Math.random() * gifs.length)]
@@ -361,10 +361,10 @@
   <section class="main_container animate__animated animate__fadeIn">
     <div class="content">
       <div class="top">
-        <img src="https://i.postimg.cc/QdJLyrVB/Open-Versus.png" class="logo" alt="OpenVersus Logo"/>
+        <img src="images/OpenVersus_logo.png" class="logo" alt="OpenVersus Logo"/>
         <div>
           <h1 class="panelTitle">Change Your Name</h1>
-          <p class="subline">Anything inappropriate will result in a permanent ban. :)</p>
+          <p class="subline">Names containing racial slurs, hate speech, or similar will result in an <b><i>automated</i></b> and <b>permanent</b> ban. :)</p>
           <div class="chips">
             <div class="chip blue animate__animated animate__fadeIn halfSecond"><span>Welcome Back</span></div>
             <div class="chip orange animate__animated animate__fadeIn animate__delay-1s"><span>Keep It Respectful</span></div>
@@ -404,7 +404,7 @@
           </div>
         </div>
         <div class="hud-right">
-          <img id="gif" src="https://media1.giphy.com/media/cXiKMqT4aiTtYjnf8E/200.gif" class="hud-img"/>
+          <img id="gif" src="images/multiversus-bugs-bunny.gif" class="hud-img"/>
         </div>
       </div>
     </div>

@@ -16248,8 +16248,8 @@ export async function handleCommerce_steam_mtx_user_info_me(req: Request<{}, {},
 }
 
 export async function handleCommerce_purchases_toasts_gleamium(req: Request<{}, {}, {}, {}>, res: Response) {
-  logger.info(`[${serviceName}]: Called handleCommerce_purchases_toasts_gleamium`);
-  logger.info(`[${serviceName}]: Request object: \n`);
+  logger.info(`${logPrefix} Called handleCommerce_purchases_toasts_gleamium`);
+  logger.info(`${logPrefix} Request object: \n`);
   KitchenSink.TryInspectRequestVerbose(req);
 
   res.statusCode = 200;

@@ -37,11 +37,11 @@ export const redisClient = createClient(redisConfig);
 export async function startRedis() {
   // Set up event handlers
   redisClient.on("connect", () => {
-    logger.info(`[${serviceName}]: Connected to Redis`);
+    logger.info(`${logPrefix} Connected to Redis`);
   });
 
   redisClient.on("error", (err) => {
-    logger.error(`[${serviceName}]: Redis error: ${err}`);
+    logger.error(`${logPrefix} Redis error: ${err}`);
   });
 
   await redisClient.connect();
@@ -54,8 +54,8 @@ export function initRedisSubscriber() {
   if (!redisSub) {
     redisSub = redisClient.duplicate();
     redisSub.connect();
-    redisSub.on("connect", (err) => logger.info(`[${serviceName}]: Connected to SUB Redis`));
-    redisSub.on("error", (err) => logger.error(`[${serviceName}]: SUB Redis error: ${err}`));
+    redisSub.on("connect", (err) => logger.info(`${logPrefix} Connected to SUB Redis`));
+    redisSub.on("error", (err) => logger.error(`${logPrefix} SUB Redis error: ${err}`));
   }
   return redisSub;
 }
@@ -242,7 +242,7 @@ export async function redisPopMatchTicketsFromQueue(queueType: string, tickets: 
   const multi = redisClient.multi();
   for (const ticket of tickets) {
     multi.lRem(queueType, 0, JSON.stringify(ticket));
-    logger.info(`[${serviceName}]: Removed ticket ${ticket.partyId} from ${queueType} queue for match`);
+    logger.info(`${logPrefix} Removed ticket ${ticket.partyId} from ${queueType} queue for match`);
   }
   await multi.exec();
 }
@@ -360,7 +360,7 @@ export async function redisPublisdEndOfMatch(playerIds: string[], matchId: strin
     playersIds: playerIds,
     matchId,
   };
-  logger.trace(`[${serviceName}]: Publishing ON_END_OF_MATCH`);
+  logger.trace(`${logPrefix} Publishing ON_END_OF_MATCH`);
   await redisClient.publish(ON_END_OF_MATCH, JSON.stringify(notification));
 }
 
@@ -411,7 +411,7 @@ export async function redisGameServerInstanceReady(containerMatchId: string, pla
 export async function redisPublishAllPerksLocked(containerMatchId: string, playerIds: string[]) {
   const notification: RedisAllPerksLockedNotification = { containerMatchId, playerIds };
   await redisClient.publish(ALL_PERKS_LOCKED_CHANNEL, JSON.stringify(notification));
-  logger.info(`[${serviceName}]: All perks locked ${containerMatchId}, players, (${playerIds.join(",")})`);
+  logger.info(`${logPrefix} All perks locked ${containerMatchId}, players, (${playerIds.join(",")})`);
 }
 
 export async function redisGetPlayerPerk(containerMatchId: string, playerId: string) {
@@ -443,7 +443,7 @@ export async function redisGetAllLockedPerks(containerMatchId: string) {
     }
   }
 
-  logger.error(`[${serviceName}]: Failed to get all locked perks for match ${containerMatchId}`);
+  logger.error(`${logPrefix} Failed to get all locked perks for match ${containerMatchId}`);
   const redisMatch = JSON.parse(matchStr || "") as RedisMatch;
 
   for (let numberOfTickets = 0; numberOfTickets < redisMatch.tickets.length; numberOfTickets++) {
@@ -475,11 +475,11 @@ export async function redisDeleteKeysByPattern(prefix: string, pattern: string):
 
     if (keys.length > 0) {
       await redisClient.del(keys);
-      logger.info(`[${serviceName}]: Deleted keys: ${keys.join(", ")}`);
+      logger.info(`${logPrefix} Deleted keys: ${keys.join(", ")}`);
     }
   } while (cursor !== 0);
 
-  logger.info(`[${serviceName}]: All keys matching "${query}" have been deleted.`);
+  logger.info(`${logPrefix} All keys matching "${query}" have been deleted.`);
 }
 
 export async function redisDeletePlayerKeys(playerId: string): Promise<void> {

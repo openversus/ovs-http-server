@@ -57,18 +57,18 @@ export interface Lock_Lobby_Loadout_RES_BODY {
 }
 
 export async function set_lock_lobby_loadout(req: Request, res: Response<Lock_Lobby_Loadout_RES>) {
-  logger.info(`[${serviceName}]: Received set_lock_lobby_loadout request, body is: \n`);
+  logger.info(`${logPrefix} Received set_lock_lobby_loadout request, body is: \n`);
   KitchenSink.TryInspectRequest(req.body);
 
   let ip = req.ip!.replace(/^::ffff:/, "");
 
   let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.warn(`[${serviceName}]: No Redis player connection found for IP ${ip}, cannot set loadout.`);
+    logger.warn(`${logPrefix} No Redis player connection found for IP ${ip}, cannot set loadout.`);
   }
   let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`)) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
-    logger.warn(`[${serviceName}]: No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
+    logger.warn(`${logPrefix} No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
   }
 
   let rPlayerCosmetics = (await getEquippedCosmetics(rPlayerConnectionByID.id)) as Cosmetics;
@@ -76,15 +76,15 @@ export async function set_lock_lobby_loadout(req: Request, res: Response<Lock_Lo
   let player = await PlayerTesterModel.findOne({ ip });
   if (!player) {
     //player = await PlayerTesterModel.findOne({ _id: new Types.ObjectId(account.id) });
-    logger.warn(`[${serviceName}]: No player found for IP ${ip}, cannot set lobby loadout.`);
+    logger.warn(`${logPrefix} No player found for IP ${ip}, cannot set lobby loadout.`);
 
     if (rPlayerConnectionByID && rPlayerConnectionByID.id) {
-      logger.info(`[${serviceName}]: Attempting to find player by ID ${rPlayerConnectionByID.id} as fallback.`);
+      logger.info(`${logPrefix} Attempting to find player by ID ${rPlayerConnectionByID.id} as fallback.`);
     }
 
     player = await PlayerTesterModel.findOne({ _id: new Types.ObjectId(rPlayerConnectionByID.id) });
     if (!player) {
-      logger.info(`[${serviceName}]: No player found for ID ${rPlayerConnectionByID.id}, cannot set lobby loadout.`);
+      logger.info(`${logPrefix} No player found for ID ${rPlayerConnectionByID.id}, cannot set lobby loadout.`);
       return;
     }
   }
@@ -130,7 +130,7 @@ export async function set_lock_lobby_loadout(req: Request, res: Response<Lock_Lo
     ).exec();
   }
   catch (err) {
-    logger.error(`[${serviceName}]: Error saving character and last-used variant for player ${aID}, error: ${err}`);
+    logger.error(`${logPrefix} Error saving character and last-used variant for player ${aID}, error: ${err}`);
   }
 
   res.send({
@@ -180,10 +180,10 @@ export async function perks_set_page(req: Request, res: Response) {
     account_id = account.id;
   }
   catch (error) {
-    logger.error(`[${serviceName}]: Error getting account ID`, error);
+    logger.error(`${logPrefix} Error getting account ID`, error);
     // logger.info("Req is: ", req);
-    logger.info(`[${serviceName}]: Req.body is: `, req.body);
-    logger.info(`[${serviceName}]: Req.token is: `, req.token);
+    logger.info(`${logPrefix} Req.body is: `, req.body);
+    logger.info(`${logPrefix} Req.token is: `, req.token);
     res.status(400).send({
       body: {
         message: "Invalid account ID",
@@ -214,7 +214,7 @@ export async function perks_set_page(req: Request, res: Response) {
     ).exec();
   }
   catch (err) {
-    logger.error(`[${serviceName}]: Error saving perks for account ${account_id}, error: ${err}`);
+    logger.error(`${logPrefix} Error saving perks for account ${account_id}, error: ${err}`);
     res.status(500).send({
       body: {
         message: "Error saving perks",
@@ -283,11 +283,11 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
 
   let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.warn(`[${serviceName}]: No Redis player connection found for IP ${ip}, cannot set loadout.`);
+    logger.warn(`${logPrefix} No Redis player connection found for IP ${ip}, cannot set loadout.`);
   }
   let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`)) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
-    logger.warn(`[${serviceName}]: No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
+    logger.warn(`${logPrefix} No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
   }
 
   let rPlayerCosmetics = (await getEquippedCosmetics(rPlayerConnectionByID.id)) as Cosmetics;
@@ -369,7 +369,7 @@ export async function handleSsc_invoke_perks_get_all_pages(req: Request<{}, {}, 
       });
     })
     .catch((e) => {
-      logger.error(`[${serviceName}]: Error fetching perk pages for account ${accountId}, error: ${e}`);
+      logger.error(`${logPrefix} Error fetching perk pages for account ${accountId}, error: ${e}`);
       res.send({
         body: {
           perk_pages: {},
@@ -393,7 +393,7 @@ export interface SET_LOBBY_MODE_REQ {
 }
 
 export async function handle_ssc_set_lobby_mode(req: Request<{}, {}, SET_LOBBY_MODE_REQ, {}>, res: Response) {
-  logger.info(`[${serviceName}]: Received set_lobby_mode request:\n`);
+  logger.info(`${logPrefix} Received set_lobby_mode request:\n`);
   KitchenSink.TryInspectRequestVerbose(req);
 
   const account = AuthUtils.DecodeClientToken(req);
@@ -426,10 +426,10 @@ export async function handle_ssc_update_player_preferences(req: Request<{}, {}, 
   let updateGameplayPrefs = updatedPrefs.GameplayPreferences as number;
   try {
     await PlayerTesterModel.findOneAndUpdate( { ip }, { GameplayPreferences: (updateGameplayPrefs as number) } , { upsert: true, new: true } );
-    logger.info(`[${serviceName}]: Updated GameplayPreferences to ${updateGameplayPrefs} for player with IP ${ip}`);  
+    logger.info(`${logPrefix} Updated GameplayPreferences to ${updateGameplayPrefs} for player with IP ${ip}`);  
   }
   catch (error) {
-    logger.error(`[${serviceName}]: Error updating GameplayPreferences for player with IP ${ip}, error: ${error}`);
+    logger.error(`${logPrefix} Error updating GameplayPreferences for player with IP ${ip}, error: ${error}`);
   }
 
   try {
@@ -440,17 +440,17 @@ export async function handle_ssc_update_player_preferences(req: Request<{}, {}, 
     rPlayerConnectionByID.GameplayPreferences = (updateGameplayPrefs as number) ?? 964;
     await redisSetPlayerConnectionByID(rPlayerConnectionByID.id, rPlayerConnectionByID);
 
-    logger.info(`[${serviceName}]: Updated GameplayPreferences in Redis to ${updateGameplayPrefs} for player with IP ${ip} and ID ${rPlayerConnectionByIP.id}`);
+    logger.info(`${logPrefix} Updated GameplayPreferences in Redis to ${updateGameplayPrefs} for player with IP ${ip} and ID ${rPlayerConnectionByIP.id}`);
   }
   catch (error) {
-    logger.error(`[${serviceName}]: Error updating GameplayPreferences in Redis for player with IP ${ip}, error: ${error}`);
+    logger.error(`${logPrefix} Error updating GameplayPreferences in Redis for player with IP ${ip}, error: ${error}`);
   }
 
   res.status(200).send({ body: {}, metadata: null, return_code: 0 });
 }
 
 // export async function handleSsc_invoke_game_install(req: Request<{}, {}, {}, {}>, res: Response) {
-//   logger.info(`[${serviceName}]: Received invoke_game_install request:\n`);
+//   logger.info(`${logPrefix} Received invoke_game_install request:\n`);
 //   KitchenSink.TryInspectRequestVerbose(req);
 
 //   const account = AuthUtils.DecodeClientToken(req);
@@ -468,11 +468,11 @@ export async function handle_ssc_update_player_preferences(req: Request<{}, {}, 
 //       mongoPlayer.platform_name = gameInstall.platform_name;
 //       mongoPlayer.hydra_public_id = gameInstall.hydra_public_id;
 //       await mongoPlayer.save();
-//       logger.info(`[${serviceName}]: Updated game install info for Player ID ${aID} with IP ${ip} and name ${mongoPlayer.name ?? gameInstall.user_name ?? "Unknown"}`);
+//       logger.info(`${logPrefix} Updated game install info for Player ID ${aID} with IP ${ip} and name ${mongoPlayer.name ?? gameInstall.user_name ?? "Unknown"}`);
 //     }
 //   }
 //   catch (error) {
-//     logger.error(`[${serviceName}]: Error parsing game install data from request body for account ${aID}, error: ${error}`);
+//     logger.error(`${logPrefix} Error parsing game install data from request body for account ${aID}, error: ${error}`);
 //   }
   
 //   res.status(200).send({ body: {}, metadata: null, return_code: 0 });

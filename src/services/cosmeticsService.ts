@@ -38,7 +38,7 @@ export async function updateCosmeticsBanner(accountId: string, newBanner: string
   var proxyBanner: string | null = await getEquippedCosmetics(accountId).then((cosmetics) => (cosmetics ? cosmetics.Banner : null));
 
   if (!proxyBanner || undefined === proxyBanner) {
-    logger.info(`[${serviceName}]: Setting default banner for AccountId ${accountId} during banner update because no banner was equipped.`);
+    logger.info(`${logPrefix} Setting default banner for AccountId ${accountId} during banner update because no banner was equipped.`);
     proxyBanner = "default_banner";
   }
   else {
@@ -46,7 +46,7 @@ export async function updateCosmeticsBanner(accountId: string, newBanner: string
   }
 
   if (!newBanner || undefined === newBanner || newBanner === "") {
-    logger.warn(`[${serviceName}]: Invalid banner provided, defaulting to "default_banner" during banner update.`);
+    logger.warn(`${logPrefix} Invalid banner provided, defaulting to "default_banner" during banner update.`);
     proxyBanner = "default_banner";
   }
   else {
@@ -90,7 +90,7 @@ export async function updateCosmeticsRingoutVfx(accountId: string, newRingoutVfx
   }
 
   if (!newRingoutVfx || undefined === newRingoutVfx || newRingoutVfx === "") {
-    logger.warn(`[${serviceName}]: Invalid RingoutVfx provided, defaulting to "ring_out_vfx_default" during RingoutVfx update.`);
+    logger.warn(`${logPrefix} Invalid RingoutVfx provided, defaulting to "ring_out_vfx_default" during RingoutVfx update.`);
     proxyRingoutVfx = "ring_out_vfx_default";
   }
   else {
@@ -180,8 +180,8 @@ export async function updateCosmeticsTauntSlot(accountId: string, character: str
 
 export async function getEquippedCosmetics(accountId: string) {
   if (!accountId || undefined === accountId || accountId === "") {
-    logger.error(`[${serviceName}]: Invalid accountId provided to getEquippedCosmetics`);
-    logger.error(`[${serviceName}]: Stack trace for invalid accountId:`);
+    logger.error(`${logPrefix} Invalid accountId provided to getEquippedCosmetics`);
+    logger.error(`${logPrefix} Stack trace for invalid accountId:`);
     console.trace();
   }
 
@@ -262,11 +262,11 @@ export async function getEquippedCosmetics(accountId: string) {
       cosmetics = (await CosmeticsModel.findById(accountId).lean()) as Cosmetics;
 
       if (!cosmetics) {
-        logger.error(`[${serviceName}]: Failed to create or retrieve cosmetics for account ${accountId}`);
+        logger.error(`${logPrefix} Failed to create or retrieve cosmetics for account ${accountId}`);
       }
     }
     catch (error) {
-      logger.error(`[${serviceName}]: Error creating cosmetics for account ${accountId}:`, error);
+      logger.error(`${logPrefix} Error creating cosmetics for account ${accountId}:`, error);
     }
   }
 

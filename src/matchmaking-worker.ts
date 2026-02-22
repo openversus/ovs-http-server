@@ -40,13 +40,13 @@ const MATCH_RULES = {
 };
 
 export function startMatchMakingWorker(): void {
-  logger.info(`[${serviceName}]: Starting matchmaking worker...`);
+  logger.info(`${logPrefix} Starting matchmaking worker...`);
   // Run the first check immediately
   checkQueues();
   // Then set up interval to check regularly
   setInterval(checkQueues, CHECK_INTERVAL_MS);
 
-  logger.info(`[${serviceName}]: Matchmaking worker started, checking queue every ${CHECK_INTERVAL_MS}ms`);
+  logger.info(`${logPrefix} Matchmaking worker started, checking queue every ${CHECK_INTERVAL_MS}ms`);
 }
 
 // Process 1v1 matchmaking queue
@@ -59,7 +59,7 @@ async function process1v1Queue(): Promise<boolean> {
       return false; // Not enough tickets to make a match
     }
 
-    logger.info(`[${serviceName}]: Found ${tickets.length} tickets in 1v1 queue, attempting to create a match`);
+    logger.info(`${logPrefix} Found ${tickets.length} tickets in 1v1 queue, attempting to create a match`);
 
     // Parse ticket data from queue
     const matchedTickets: RedisMatchTicket[] = [];
@@ -76,7 +76,7 @@ async function process1v1Queue(): Promise<boolean> {
         }
       }
       catch (error) {
-        logger.error(`[${serviceName}]: Error parsing ticket in 1v1 queue: ${error}`);
+        logger.error(`${logPrefix} Error parsing ticket in 1v1 queue: ${error}`);
         // Continue to next ticket
       }
     }
@@ -92,7 +92,7 @@ async function process1v1Queue(): Promise<boolean> {
         return true;
       }
       catch (error) {
-        logger.error(`[${serviceName}]: Error removing matched tickets from queue: ${error}`);
+        logger.error(`${logPrefix} Error removing matched tickets from queue: ${error}`);
         return false; // If we can't remove them, we can't proceed
       }
     }
@@ -103,7 +103,7 @@ async function process1v1Queue(): Promise<boolean> {
     return false;
   }
   catch (error) {
-    logger.error(`[${serviceName}]: Error processing 1v1 queue: ${error}`);
+    logger.error(`${logPrefix} Error processing 1v1 queue: ${error}`);
     return false;
   }
 }
@@ -118,7 +118,7 @@ async function process2v2Queue(): Promise<boolean> {
       return false; // Not enough tickets to make a match
     }
 
-    logger.info(`[${serviceName}]: Found ${tickets.length} tickets in 2v2 queue, attempting to create a match`);
+    logger.info(`${logPrefix} Found ${tickets.length} tickets in 2v2 queue, attempting to create a match`);
 
     // Parse ticket data from queue
     const matchedTickets: RedisMatchTicket[] = [];
@@ -133,7 +133,7 @@ async function process2v2Queue(): Promise<boolean> {
         }
       }
       catch (error) {
-        logger.error(`[${serviceName}]: Error parsing ticket in 2v2 queue: ${error}`);
+        logger.error(`${logPrefix} Error parsing ticket in 2v2 queue: ${error}`);
         // Continue to next ticket
       }
     }
@@ -149,7 +149,7 @@ async function process2v2Queue(): Promise<boolean> {
         return true;
       }
       catch (error) {
-        logger.error(`[${serviceName}]: Error removing matched tickets from queue: ${error}`);
+        logger.error(`${logPrefix} Error removing matched tickets from queue: ${error}`);
         return false; // If we can't remove them, we can't proceed
       }
     }
@@ -160,7 +160,7 @@ async function process2v2Queue(): Promise<boolean> {
     return false;
   }
   catch (error) {
-    logger.error(`[${serviceName}]: Error processing 2v2 queue: ${error}`);
+    logger.error(`${logPrefix} Error processing 2v2 queue: ${error}`);
     return false;
   }
 }
@@ -171,7 +171,7 @@ export async function createTeams(tickets: RedisMatchTicket[]): Promise<RedisTea
   const totalPlayers = tickets.reduce((sum, t) => sum + t.players.length, 0);
   if (totalPlayers % 2 !== 0) {
     //throw new Error("Need an even number of total players");
-    logger.warn(`[${serviceName}]: Total players is odd (${totalPlayers}), one player will be left without a team`);
+    logger.warn(`${logPrefix} Total players is odd (${totalPlayers}), one player will be left without a team`);
   }
   const slotsPerTeam = totalPlayers / 2;
 
@@ -286,10 +286,10 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       await redisGameServerInstanceReady(matchId, playerIds);
     }
 
-    logger.info(`[${serviceName}]: Created ${matchType} match ${match.resultId} with ${totalPlayers} players across ${tickets.length} tickets`);
+    logger.info(`${logPrefix} Created ${matchType} match ${match.resultId} with ${totalPlayers} players across ${tickets.length} tickets`);
   }
   catch (error) {
-    logger.error(`[${serviceName}]: Error creating match: ${error}`);
+    logger.error(`${logPrefix} Error creating match: ${error}`);
   }
 }
 
@@ -303,14 +303,14 @@ async function checkQueues(): Promise<void> {
     const made2v2Match = await process2v2Queue();
 
     if (made1v1Match) {
-      logger.info(`[${serviceName}]: Successfully created matches in this cycle: 1v1=${made1v1Match}`);
+      logger.info(`${logPrefix} Successfully created matches in this cycle: 1v1=${made1v1Match}`);
     }
 
     if (made2v2Match) {
-      logger.info(`[${serviceName}]: Successfully created matches in this cycle: 2v2=${made2v2Match}`);
+      logger.info(`${logPrefix} Successfully created matches in this cycle: 2v2=${made2v2Match}`);
     }
   }
   catch (error) {
-    logger.error(`[${serviceName}]: Error checking queue: ${error}`);
+    logger.error(`${logPrefix} Error checking queue: ${error}`);
   }
 }

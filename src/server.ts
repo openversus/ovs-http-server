@@ -1,4 +1,4 @@
-import { logger } from "./config/logger";
+import { logger, logwrapper, BE_VERBOSE } from "./config/logger";
 import express from "express";
 import router from "./router";
 import { hydraDecoderMiddleware } from "./middleware/hydraParser";
@@ -28,7 +28,7 @@ import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContai
 import { NameGenerator } from "./utils/namegeneration";
 
 const serviceName: string = "Server";
-const BE_VERBOSE = env.VERBOSE_LOGGING === 1 ? true : false;
+const logPrefix = `[${serviceName}]:`;
 
 const matcher = new RegExpMatcher({
   ...englishDataset.build(),
@@ -49,7 +49,7 @@ const USE_INTERNAL_ROLLBACK_CPP = env.USE_INTERNAL_ROLLBACK_CPP === 1 ? true : f
 const stringIsOnlyWhitespace = (string: string): boolean => string.trim().length === 0;
 
 process.on("warning", (e) => {
-  logger.warn(`[${serviceName}]: ${e.stack}`);
+  logger.warn(`${logPrefix} ${e.stack}`);
 });
 
 app.use(express.json());
@@ -72,12 +72,12 @@ app.get("/namechange", async (req, res) => {
     if (!player) {
       var randomName = NameGenerator.NewName();
       player = new PlayerTesterModel({ ip, name: randomName });
-      logger.info(`[${serviceName}]: No player found for IP ${ip}. Creating new player with name "${randomName}" for IP ${ip}.`);
+      logger.info(`${logPrefix} No player found for IP ${ip}. Creating new player with name "${randomName}" for IP ${ip}.`);
       await player.save();
     }
 
-    logger.info(`[${serviceName}]: Name change requested for IP ${ip} with current name "${player.name}"`);
-    logger.info(`[${serviceName}]: Name change Player document before: ${JSON.stringify(player)}`);
+    logger.info(`${logPrefix} Name change requested for IP ${ip} with current name "${player.name}"`);
+    logwrapper.verbose(`${logPrefix} Name change Player document before: ${JSON.stringify(player)}`);
 
     // Render a simple HTML form
     // Will be replaced by the sick name change form that brettlyc from the Discord server created
@@ -104,35 +104,39 @@ app.get("/namechange", async (req, res) => {
     `);
   }
   catch (e) {
-    logger.error(`[${serviceName}]: Error in route /namechange GET: ${e}`);
+    logger.error(`${logPrefix} Error in route /namechange GET: ${e}`);
     res.send("");
   }
 });
 
 // POST /namechange - update or create player by IP
 app.post("/namechange", async (req, res, next) => {
+  if (!req.body) {
+    res.status(400).send("Name is required");
+    return;
+  }
   try {
     let ip = req.ip!.replace(/^::ffff:/, "");
     let player = await PlayerTesterModel.findOne({ ip });
     if (!player) {
       logger.warn(
-        `[${serviceName}]: No player found for IP ${ip} during name change POST. This should not happen since the GET route creates a player if one doesn't exist.`,
+        `${logPrefix} No player found for IP ${ip} during name change POST. This should not happen since the GET route creates a player if one doesn't exist.`,
       );
     }
-    logger.info(req.body);
+    logwrapper.verbose(`${logPrefix} ${JSON.stringify(req.body)}`);
     let { name } = req.body;
     if (typeof ip !== "string" || typeof name !== "string") {
-      res.json("ERROR");
+      res.status(400).send("Invalid IP or name format");
       return;
     }
 
     if (name.length === 0 || stringIsOnlyWhitespace(name)) {
-      res.json("Blank or whitespace-only names are not permitted.");
+      res.status(403).send("Blank or whitespace-only names are not permitted.");
       return;
     }
 
     if (stringContainsBannedName(name)) {
-      res.json(
+      res.status(403).send(
         `The name ${name} contains racial slurs, hate speech, or another banned term which is not welcome in the OVS community. You are now permanently banned from participating in matches held on OVS servers. If you think this is an error, please join the OVS Discord server at https://discord.gg/ez3Ve7eTvk and ping one of the admins.`,
       );
       banIP(
@@ -146,7 +150,7 @@ app.post("/namechange", async (req, res, next) => {
     }
 
     if (stringContainsForceChangeName(name)) {
-      res.json(
+      res.status(403).send(
         `The name ${name} contains a term which is not permitted in a player name. Your name has not been changed. Please refresh the page and choose a new name. If you think this is an error, please join the OVS Discord server at https://discord.gg/ez3Ve7eTvk and ping one of the admins.`,
       );
       return;
@@ -162,22 +166,45 @@ app.post("/namechange", async (req, res, next) => {
     await PlayerTesterModel.findOneAndUpdate({ ip }, { name: filtered.substring(0, 24) }, { upsert: true, new: true });
     // Redirect back to the form
     res.redirect(`/namechange`);
-    logger.info(`[${serviceName}]: Name change for IP ${ip} to "${name}" (filtered: "${filtered}")`);
+    logger.info(`${logPrefix} Name change for IP ${ip} to "${name}" (filtered: "${filtered}")`);
     if (player) {
-      logger.info(`[${serviceName}]: Name change Player document after update: ${JSON.stringify(player)}`);
+      logwrapper.verbose(`${logPrefix} Name change Player document after update: ${JSON.stringify(player)}`);
     }
   }
   catch (e) {
-    logger.error(`[${serviceName}]: Error in route /namechange POST: ${e}`);
+    logger.error(`${logPrefix} Error in route /namechange POST: ${e}`);
     res.send("");
   }
 });
 
 app.post("/ovs_register", async (req, res, next) => {
-  logger.info(`[${serviceName}]: OVS GET REGISTRY call from rollback server`);
+  logger.info(`${logPrefix} OVS GET REGISTRY called`);
+
+  if (!req.body)
+  {
+    logger.info(`${logPrefix} Invalid OVS GET REGISTRY call with missing body`);
+    res.send("");
+    return;
+  }
+
   const body = req.body;
+  if (!body.matchId || !body.key) {
+    logger.info(`${logPrefix} Invalid OVS GET REGISTRY call with missing matchId or key`);
+    res.send("");
+    return;
+  }
+  logwrapper.verbose(`${logPrefix} OVS GET REGISTRY body: ${JSON.stringify(body)}`);
+  
+  let rollbackHostname: string = "Unknown";
+  if (body.hostname)
+  {
+    rollbackHostname = body.hostname;
+  }
+  logger.info(`${logPrefix} OVS GET REGISTRY call for MatchID: ${body.matchId} from rollback server: ${rollbackHostname}`);
+
   const config = await redisGetMatchConfig(body.matchId);
-  if (!config || !config.matchKey || !body || !body.key || config.matchKey !== body.key) {
+  if (!config || !config.matchKey || config.matchKey !== body.key) {
+    logger.info(`${logPrefix} Invalid OVS GET REGISTRY call with invalid match config or key mismatch`);
     res.send("");
     return;
   }
@@ -196,17 +223,36 @@ app.post("/ovs_register", async (req, res, next) => {
 });
 
 app.post("/ovs_end_match", async (req, res, next) => {
-  logger.info(`[${serviceName}]: OVS END MATCH call from rollback server`);
-  const body = req.body;
-  const config = await redisGetMatchConfig(body.matchId);
-
-  if (!config || !config.matchKey || !body || !body.key || config.matchKey !== body.key) {
+  logger.info(`${logPrefix} OVS END MATCH call from rollback server`);
+  if (!req.body)
+  {
+    logger.info(`${logPrefix} Invalid OVS END MATCH call with missing body`);
     res.send("");
     return;
   }
-  if (BE_VERBOSE) {
-    logger.info(`[${serviceName}]: OVS END MATCH body: ${JSON.stringify(body)}`);
+
+  const body = req.body;
+  if (!body.matchId || !body.key) {
+    logger.info(`${logPrefix} Invalid OVS END MATCH call with missing matchId or key`);
+    res.send("");
+    return;
   }
+  logwrapper.verbose(`${logPrefix} OVS END MATCH body: ${JSON.stringify(body)}`);
+  
+  let rollbackHostname: string = "Unknown";
+  if (body.hostname)
+  {
+    rollbackHostname = body.hostname;
+  }
+  logger.info(`${logPrefix} OVS END MATCH call for MatchID: ${body.matchId} from rollback server: ${rollbackHostname}`);
+
+  const config = await redisGetMatchConfig(body.matchId);
+  if (!config || !config.matchKey || config.matchKey !== body.key) {
+    res.send("");
+    return;
+  }
+  
+  logwrapper.verbose(`${logPrefix} OVS END MATCH body: ${JSON.stringify(body)}`);
   if (config) {
     await redisPublisdEndOfMatch(
       config.players.map((p) => p.playerId),
@@ -218,7 +264,7 @@ app.post("/ovs_end_match", async (req, res, next) => {
 
 // Being kept for backwards compatibility with older OVS versions, can be removed eventually
 app.post("/mvsi_register", async (req, res, next) => {
-  logger.info(`[${serviceName}]: GET REGISTRY call from rollback server`);
+  logger.info(`${logPrefix} GET REGISTRY call from rollback server`);
   const body = req.body;
   const config = await redisGetMatchConfig(body.matchId);
   if (!config || !config.matchKey || !body || !body.key || config.matchKey !== body.key) {
@@ -264,12 +310,12 @@ app.use(hydraTokenMiddleware);
 app.use(router);
 app.use(sscRouter);
 app.get("/ssc/invoke/hiss_amalgamation", (req, res, next) => {
-  logger.info(`[${serviceName}]: Missing Crc, sending fresh one`);
+  logger.info(`${logPrefix} Missing Crc, sending fresh one`);
   res.send(generate_hiss());
 });
 
 app.use((req, res, next) => {
-  logger.info(`[${serviceName}]: NOT IMPLEMENTED - ${req.method} ${req.url}\n`);
+  logger.info(`${logPrefix} NOT IMPLEMENTED - ${req.method} ${req.url}\n`);
   KitchenSink.TryInspectRequestVerbose(req);
 
   res.send({ body: { Crc: getCurrentCRC(), MatchmakingCrc: MATCHMAKING_CRC }, metadata: null, return_code: 200 });
@@ -291,6 +337,6 @@ export async function start() {
   }
 
   MVSHTTPServer.listen(port, "0.0.0.0", () => {
-    logger.info(`[${serviceName}]: OVS Server running on ${port}`);
+    logger.info(`${logPrefix} OVS Server running on ${port}`);
   });
 }

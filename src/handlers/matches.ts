@@ -29,7 +29,7 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
 
   let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${aID}`)) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
-    logger.warn(`[${serviceName}]: No Redis player connection found for player ID ${aID}, cannot set loadout.`);
+    logger.warn(`${logPrefix} No Redis player connection found for player ID ${aID}, cannot set loadout.`);
   }
 
   //const GameplayPreferences: number = rPlayerConnectionByID.GameplayPreferences as number ?? 964;
@@ -190,10 +190,10 @@ export interface MATCH_MAKING_REQUEST {
 export async function handleMatches_matchmaking_1v1_retail_request(req: Request<{}, {}, MATCH_MAKING_REQUEST, {}>, res: Response) {
   // const account = req.token;
 
-  logger.info(`[${serviceName}]: Received 1v1 retail matchmaking request`);
+  logger.info(`${logPrefix} Received 1v1 retail matchmaking request`);
 
   if (BE_VERBOSE) {
-    logger.info(`[${serviceName}]: Request is: \n`);
+    logger.info(`${logPrefix} Request is: \n`);
     KitchenSink.TryInspectRequestVerbose(req);
   }
 
@@ -201,7 +201,7 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
 
   let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${account.id}`) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
-    logger.error(`[${serviceName}]: No Redis player connection found for player ID ${account.id}, this should not happen.`);
+    logger.error(`${logPrefix} No Redis player connection found for player ID ${account.id}, this should not happen.`);
   }
 
   const aID = rPlayerConnectionByID.id || account.id;
@@ -212,20 +212,20 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
 
   let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${rPlayerConnectionByID.current_ip}`) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.error(`[${serviceName}]: No Redis player connection found for IP ${rPlayerConnectionByID.current_ip}, this should not happen.`);
+    logger.error(`${logPrefix} No Redis player connection found for IP ${rPlayerConnectionByID.current_ip}, this should not happen.`);
   }
 
   let numCosmetics = await redisClient.keys(`player:${aID}:cosmetics`).then(keys => keys.length);
 
   if (numCosmetics === 0) {
-    logger.warn(`[${serviceName}]: No cosmetics found in Redis for AccountId ${account.id} during matchmaking. This should not happen, as cosmetics should be cached when the player equips a cosmetic. Creating default cosmetics for this account.`);
+    logger.warn(`${logPrefix} No cosmetics found in Redis for AccountId ${account.id} during matchmaking. This should not happen, as cosmetics should be cached when the player equips a cosmetic. Creating default cosmetics for this account.`);
     let rPlayerCosmetics = await getEquippedCosmetics(rPlayerConnectionByID.id) as Cosmetics;
     await redisSetPlayerConnectionCosmetics(aID, rPlayerCosmetics);
   }
 
   let playerLoadout = await redisGetPlayer(aID);
   if (!playerLoadout || !playerLoadout.character || !playerLoadout.skin) {
-    logger.error(`[${serviceName}]: No Redis player loadout found for player ID ${aID}, cannot matchmake.`);
+    logger.error(`${logPrefix} No Redis player loadout found for player ID ${aID}, cannot matchmake.`);
     return;
   }
 
@@ -328,7 +328,7 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   logger.info("Received 2v2 retail matchmaking request");
   
   if (BE_VERBOSE) {
-    logger.info(`[${serviceName}]: Request is: \n`)
+    logger.info(`${logPrefix} Request is: \n`)
     KitchenSink.TryInspectRequestVerbose(req);
   }
 
@@ -338,7 +338,7 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   
   let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${account.id}`) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
-    logger.error(`[${serviceName}]: No Redis player connection found for player ID ${account.id}, this should not happen.`);
+    logger.error(`${logPrefix} No Redis player connection found for player ID ${account.id}, this should not happen.`);
   }
 
   const aID = rPlayerConnectionByID.id || account.id;
@@ -349,20 +349,20 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
 
   let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${rPlayerConnectionByID.current_ip}`) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.error(`[${serviceName}]: No Redis player connection found for IP ${rPlayerConnectionByID.current_ip}, this should not happen.`);
+    logger.error(`${logPrefix} No Redis player connection found for IP ${rPlayerConnectionByID.current_ip}, this should not happen.`);
   }
 
   let numCosmetics = await redisClient.keys(`player:${aID}:cosmetics`).then(keys => keys.length);
 
   if (numCosmetics === 0) {
-    logger.warn(`[${serviceName}]: No cosmetics found in Redis for AccountId ${account.id} during matchmaking. This should not happen, as cosmetics should be cached when the player equips a cosmetic. Creating default cosmetics for this account.`);
+    logger.warn(`${logPrefix} No cosmetics found in Redis for AccountId ${account.id} during matchmaking. This should not happen, as cosmetics should be cached when the player equips a cosmetic. Creating default cosmetics for this account.`);
     let rPlayerCosmetics = await getEquippedCosmetics(rPlayerConnectionByID.id) as Cosmetics;
     await redisSetPlayerConnectionCosmetics(aID, rPlayerCosmetics);
   }
 
   let playerLoadout = await redisGetPlayer(aID);
   if (!playerLoadout || !playerLoadout.character || !playerLoadout.skin) {
-    logger.error(`[${serviceName}]: No Redis player loadout found for player ID ${aID}, cannot matchmake.`);
+    logger.error(`${logPrefix} No Redis player loadout found for player ID ${aID}, cannot matchmake.`);
     return;
   }
 

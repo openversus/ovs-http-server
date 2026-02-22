@@ -58,17 +58,17 @@ export async function equip_taunt(req: Request, res: Response) {
   }
   catch (err) {
     try {
-      logger.error(`[${serviceName}]: Error saving taunt ${body.TauntSlug} in index ${body.TauntSlotIndex} for ${account.id}: ${err}`);
+      logger.error(`${logPrefix} Error saving taunt ${body.TauntSlug} in index ${body.TauntSlotIndex} for ${account.id}: ${err}`);
     }
     catch (error) {
       try {
-        logger.error(`[${serviceName}]: Error saving taunt for ${account.id}: ${err}`);
-        logger.error(`[${serviceName}]: Additional inner error info: ${error}`);
+        logger.error(`${logPrefix} Error saving taunt for ${account.id}: ${err}`);
+        logger.error(`${logPrefix} Additional inner error info: ${error}`);
       }
       catch (finalerror) {
-        logger.error(`[${serviceName}]: Error saving taunt: ${err}`);
-        logger.error(`[${serviceName}]: Additional inner error info: ${error}`);
-        logger.error(`[${serviceName}]: Additional nested inner error info: ${finalerror}`);
+        logger.error(`${logPrefix} Error saving taunt: ${err}`);
+        logger.error(`${logPrefix} Additional inner error info: ${error}`);
+        logger.error(`${logPrefix} Additional nested inner error info: ${finalerror}`);
       }
     }
 
@@ -90,17 +90,17 @@ export async function equip_stat_tracker(req: Request, res: Response) {
   }
   catch (err) {
     try {
-      logger.error(`[${serviceName}]: Error saving stat tracker ${body.StatTrackerSlug} in index ${body.StatTrackerSlotIndex} for ${account.id}: ${err}`);
+      logger.error(`${logPrefix} Error saving stat tracker ${body.StatTrackerSlug} in index ${body.StatTrackerSlotIndex} for ${account.id}: ${err}`);
     }
     catch (error) {
       try {
-        logger.error(`[${serviceName}]: Error saving stat tracker for ${account.id}: ${err}`);
-        logger.error(`[${serviceName}]: Additional inner error info: ${error}`);
+        logger.error(`${logPrefix} Error saving stat tracker for ${account.id}: ${err}`);
+        logger.error(`${logPrefix} Additional inner error info: ${error}`);
       }
       catch (finalerror) {
-        logger.error(`[${serviceName}]: Error saving taunt: ${err}`);
-        logger.error(`[${serviceName}]: Additional inner error info: ${error}`);
-        logger.error(`[${serviceName}]: Additional nested inner error info: ${finalerror}`);
+        logger.error(`${logPrefix} Error saving taunt: ${err}`);
+        logger.error(`${logPrefix} Additional inner error info: ${error}`);
+        logger.error(`${logPrefix} Additional nested inner error info: ${finalerror}`);
       }
     }
 
@@ -124,17 +124,17 @@ export async function equip_announce_pack(req: Request, res: Response) {
   }
   catch (err) {
     try {
-      logger.error(`[${serviceName}]: Error saving announcer pack ${body.AnnouncerPackSlug} for ${account.id}: ${err}`);
+      logger.error(`${logPrefix} Error saving announcer pack ${body.AnnouncerPackSlug} for ${account.id}: ${err}`);
     }
     catch (error) {
       try {
-        logger.error(`[${serviceName}]: Error saving announcer pack for ${account.id}: ${err}`);
-        logger.error(`[${serviceName}]: Additional inner error info: ${error}`);
+        logger.error(`${logPrefix} Error saving announcer pack for ${account.id}: ${err}`);
+        logger.error(`${logPrefix} Additional inner error info: ${error}`);
       }
       catch (finalerror) {
-        logger.error(`[${serviceName}]: Error saving taunt: ${err}`);
-        logger.error(`[${serviceName}]: Additional inner error info: ${error}`);
-        logger.error(`[${serviceName}]: Additional nested inner error info: ${finalerror}`);
+        logger.error(`${logPrefix} Error saving taunt: ${err}`);
+        logger.error(`${logPrefix} Additional inner error info: ${error}`);
+        logger.error(`${logPrefix} Additional nested inner error info: ${finalerror}`);
       }
     }
 
@@ -158,17 +158,17 @@ export async function equip_ringout_vfx(req: Request, res: Response) {
   }
   catch (err) {
     try {
-      logger.error(`[${serviceName}]: Error saving ringout VFX ${body.RingoutVfxSlug} for ${account.id}: ${err}`);
+      logger.error(`${logPrefix} Error saving ringout VFX ${body.RingoutVfxSlug} for ${account.id}: ${err}`);
     }
     catch (error) {
       try {
-        logger.error(`[${serviceName}]: Error saving ringout VFX for ${account.id}: ${err}`);
-        logger.error(`[${serviceName}]: Additional inner error info: ${error}`);
+        logger.error(`${logPrefix} Error saving ringout VFX for ${account.id}: ${err}`);
+        logger.error(`${logPrefix} Additional inner error info: ${error}`);
       }
       catch (finalerror) {
-        logger.error(`[${serviceName}]: Error saving taunt: ${err}`);
-        logger.error(`[${serviceName}]: Additional inner error info: ${error}`);
-        logger.error(`[${serviceName}]: Additional nested inner error info: ${finalerror}`);
+        logger.error(`${logPrefix} Error saving taunt: ${err}`);
+        logger.error(`${logPrefix} Additional inner error info: ${error}`);
+        logger.error(`${logPrefix} Additional nested inner error info: ${finalerror}`);
       }
     }
 
@@ -192,17 +192,17 @@ export async function equip_banner(req: Request, res: Response) {
   }
   catch (err) {
     try {
-      logger.error(`[${serviceName}]: Error saving banner ${body.BannerSlug} for ${account.id}: ${err}`);
+      logger.error(`${logPrefix} Error saving banner ${body.BannerSlug} for ${account.id}: ${err}`);
     }
     catch (error) {
       try {
-        logger.error(`[${serviceName}]: Error saving banner for ${account.id}: ${err}`);
-        logger.error(`[${serviceName}]: Additional inner error info: ${error}`);
+        logger.error(`${logPrefix} Error saving banner for ${account.id}: ${err}`);
+        logger.error(`${logPrefix} Additional inner error info: ${error}`);
       }
       catch (finalerror) {
-        logger.error(`[${serviceName}]: Error saving banner: ${err}`);
-        logger.error(`[${serviceName}]: Additional inner error info: ${error}`);
-        logger.error(`[${serviceName}]: Additional nested inner error info: ${finalerror}`);
+        logger.error(`${logPrefix} Error saving banner: ${err}`);
+        logger.error(`${logPrefix} Additional inner error info: ${error}`);
+        logger.error(`${logPrefix} Additional nested inner error info: ${finalerror}`);
       }
     }
 
@@ -229,17 +229,17 @@ export async function set_profile_icon(req: Request, res: Response) {
   }
   catch (err) {
     try {
-      logger.error(`[${serviceName}]: Error saving profile icon ${body.Slug} for ${account.id}: ${err}`);
+      logger.error(`${logPrefix} Error saving profile icon ${body.Slug} for ${account.id}: ${err}`);
     }
     catch (error) {
       try {
-        logger.error(`[${serviceName}]: Error saving profile icon for ${account.id}: ${err}`);
-        logger.error(`[${serviceName}]: Additional inner error info: ${error}`);
+        logger.error(`${logPrefix} Error saving profile icon for ${account.id}: ${err}`);
+        logger.error(`${logPrefix} Additional inner error info: ${error}`);
       }
       catch (finalerror) {
-        logger.error(`[${serviceName}]: Error saving profile icon: ${err}`);
-        logger.error(`[${serviceName}]: Additional inner error info: ${error}`);
-        logger.error(`[${serviceName}]: Additional nested inner error info: ${finalerror}`);
+        logger.error(`${logPrefix} Error saving profile icon: ${err}`);
+        logger.error(`${logPrefix} Additional inner error info: ${error}`);
+        logger.error(`${logPrefix} Additional nested inner error info: ${finalerror}`);
       }
     }
 

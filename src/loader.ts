@@ -1482,9 +1482,9 @@ interface Data {
 
 export async function start() {
   await connect();
-  logger.info(`[${serviceName}]: Connected to Mongo`);
+  logger.info(`${logPrefix} Connected to Mongo`);
 
-  logger.info(`[${serviceName}]: Loading Emotes`);
+  logger.info(`${logPrefix} Loading Emotes`);
   for (const emote of emotes) {
     const def = INVENTORY_DEFINITIONS[emote as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1502,7 +1502,7 @@ export async function start() {
     ).exec();
   }
 
-  logger.info(`[${serviceName}]: Loading Banners`);
+  logger.info(`${logPrefix} Loading Banners`);
   for (const banner of banners) {
     const def = INVENTORY_DEFINITIONS[banner as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1520,7 +1520,7 @@ export async function start() {
     ).exec();
   }
 
-  logger.info(`[${serviceName}]: Loading ringouts`);
+  logger.info(`${logPrefix} Loading ringouts`);
   for (const ringout of ringouts) {
     const def = INVENTORY_DEFINITIONS[ringout as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1538,7 +1538,7 @@ export async function start() {
     ).exec();
   }
 
-  logger.info(`[${serviceName}]: Loading profile icons`);
+  logger.info(`${logPrefix} Loading profile icons`);
   for (const pf_icon of profiles_icons) {
     const def = INVENTORY_DEFINITIONS[pf_icon as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1556,7 +1556,7 @@ export async function start() {
     ).exec();
   }
 
-  logger.info(`[${serviceName}]: Loading announcer packs`);
+  logger.info(`${logPrefix} Loading announcer packs`);
   for (const ap of announcer_packs) {
     const def = INVENTORY_DEFINITIONS[ap as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1574,7 +1574,7 @@ export async function start() {
     ).exec();
   }
 
-  logger.info(`[${serviceName}]: Loading stat trackers`);
+  logger.info(`${logPrefix} Loading stat trackers`);
   for (const statTracker of stats) {
     const def = INVENTORY_DEFINITIONS[statTracker as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1593,7 +1593,7 @@ export async function start() {
     ).exec();
   }
 
-  logger.info(`[${serviceName}]: Loading gems`);
+  logger.info(`${logPrefix} Loading gems`);
   for (const gem of gems) {
     const def = INVENTORY_DEFINITIONS[gem as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1611,7 +1611,7 @@ export async function start() {
     ).exec();
   }
 
-  logger.info(`[${serviceName}]: Loading perks`);
+  logger.info(`${logPrefix} Loading perks`);
   for (const perk of perks) {
     const def = INVENTORY_DEFINITIONS[perk as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1631,7 +1631,7 @@ export async function start() {
     ).exec();
   }
 
-  logger.info(`[${serviceName}]: Loading chars`);
+  logger.info(`${logPrefix} Loading chars`);
   for (const char of CHARACTER_SLUGS) {
     const def = INVENTORY_DEFINITIONS[char as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     const doc = await DataAssetModel.findOneAndUpdate(
@@ -1651,10 +1651,10 @@ export async function start() {
     ).exec();
   }
 
-  logger.info(`[${serviceName}]: Loading Skins`);
+  logger.info(`${logPrefix} Loading Skins`);
   for (const char of Object.keys(ENABLED_SKINS)) {
     if (isDisabledChar(char)) {
-      logger.info(`[${serviceName}]: Skipping skins for disabled char: ${char}`);
+      logger.info(`${logPrefix} Skipping skins for disabled char: ${char}`);
       continue;
     }
     for (const skin of ENABLED_SKINS[char as keyof typeof ENABLED_SKINS].Slugs) {
@@ -1662,7 +1662,7 @@ export async function start() {
 
       if (!t)
       {
-        logger.info(`[${serviceName}]: No inventory definition for skin: ${skin}`);
+        logger.info(`${logPrefix} No inventory definition for skin: ${skin}`);
         continue;
       }
 
@@ -1683,16 +1683,16 @@ export async function start() {
         ).exec();
       }
       catch (error) {
-        logger.error(`[${serviceName}]: Error processing skin: ${skin}. Error: ${error}`);
+        logger.error(`${logPrefix} Error processing skin: ${skin}. Error: ${error}`);
       }
 
     }
   }
 
-  logger.info(`[${serviceName}]: Loading Taunts`);
+  logger.info(`${logPrefix} Loading Taunts`);
   for (const char of Object.keys(TAUNTS_DATA)) {
     if (isDisabledChar(char)) {
-      logger.info(`[${serviceName}]: Skipping taunts for disabled char: ${char}`);
+      logger.info(`${logPrefix} Skipping taunts for disabled char: ${char}`);
       continue;
     }
     for (const taunt of TAUNTS_DATA[char as keyof typeof TAUNTS_DATA].Slugs) {
@@ -1700,7 +1700,7 @@ export async function start() {
 
       if (!t)
       {
-        logger.info(`[${serviceName}]: No inventory definition for taunt: ${taunt}`);
+        logger.info(`${logPrefix} No inventory definition for taunt: ${taunt}`);
         continue;
       }
 
@@ -1721,12 +1721,12 @@ export async function start() {
         ).exec();
       }
       catch (error) {
-        logger.error(`[${serviceName}]: Error processing taunt: ${taunt}. Error: ${error}`);
+        logger.error(`${logPrefix} Error processing taunt: ${taunt}. Error: ${error}`);
       }
     }
   }
 
-  logger.info(`[${serviceName}]: END`);
+  logger.info(`${logPrefix} END`);
 }
 
 let shuttingDown = false;
@@ -1739,7 +1739,7 @@ function fatal(err: any, origin: string) {
   
   shuttingDown = true;
 
-  logger.error(`[${serviceName}]: [FATAL] ${origin}: ${err?.stack || err}`);
+  logger.error(`${logPrefix} [FATAL] ${origin}: ${err?.stack || err}`);
   process.exit(1); // non-zero => Docker treats it as failure and restart policy applies
 }
 

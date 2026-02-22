@@ -1,9 +1,7 @@
-import { logger } from "../config/logger";
+import { logger, logwrapper, BE_VERBOSE } from "../config/logger";
 import * as nodeutil from "node:util";
 import * as AuthUtils from "./auth";
 import env from "../env/env";
-
-const BE_VERBOSE: boolean = env.VERBOSE_LOGGING === 0 ? false : true;
 
 export function TryInspectRequestVerbose(req: any, depth: number = 4, showHidden: boolean = false, colors: boolean = true): void {
   if (BE_VERBOSE) {
@@ -12,51 +10,77 @@ export function TryInspectRequestVerbose(req: any, depth: number = 4, showHidden
 }
 
 export function TryInspectRequest(req: any, depth: number = 4, showHidden: boolean = false, colors: boolean = true): void {
-  if (req.ip) {
-    logger.info("Request IP: ", req.ip);
+  try {
+    if (req.ip) {
+      logger.info(`Request IP: ${req.ip}`);
+    }
+  }
+  catch (error) {
+    logger.info(`Failed to inspect request IP: ${error}`);
   }
 
-  if (req.statusCode) {
-    logger.info("Response Status Code: ", req.statusCode);
+  try {
+    if (req.statusCode) {
+      logger.info(`Response Status Code: ${req.statusCode}`);
+    }
+  } catch (error) {}
+
+  try {
+    if (req.statusMessage) {
+      logger.info(`Response Status Message: ${req.statusMessage}`);
+    }
+  } catch (error) {}
+
+  try {
+    if (req.protocol) {
+      logger.info(`Protocol: ${req.protocol}`);
+    }
+  } catch (error) {}
+
+  try {
+    if (req.headers) {
+      logger.info(`Headers: `);
+      TryInspect(req.headers);
+    }
+  }
+  catch (error) {
+    logger.info(`Failed to inspect request headers: ${error}`);
   }
 
-  if (req.statusMessage) {
-    logger.info("Response Status Message: ", req.statusMessage);
-  }
+  try {
+    if (req.body) {
+      logger.info("\nBody: ");
+      TryInspect(req.body);
+    }
+  } catch (error) {}
 
-  if (req.protocol) {
-    logger.info("Protocol: ", req.protocol);
-  }
+  try {
+    if (req.params) {
+      logger.info("\nParams: ");
+      TryInspect(req.params);
+    }
+  } catch (error) {}
 
-  if (req.headers) {
-    logger.info("Headers: ");
-    TryInspect(req.headers);
-  }
+  try {
+    if (req.query) {
+      logger.info("\nQuery: ");
+      TryInspect(req.query);
+    }
+  } catch (error) {}
 
-  if (req.body) {
-    logger.info("\nBody: ");
-    TryInspect(req.body);
-  }
+  try {
+    if (req.path) {
+      logger.info("\nPath: ");
+      TryInspect(req.path);
+    }
+  } catch (error) {}
 
-  if (req.params) {
-    logger.info("\nParams: ");
-    TryInspect(req.params);
-  }
-
-  if (req.query) {
-    logger.info("\nQuery: ");
-    TryInspect(req.query);
-  }
-
-  if (req.path) {
-    logger.info("\nPath: ");
-    TryInspect(req.path);
-  }
-
-  if (req.token) {
-    logger.info("\nToken: ");
-    TryInspect(req.token);
-  }
+  try {
+    if (req.token) {
+      logger.info("\nToken: ");
+      TryInspect(req.token);
+    }
+  } catch (error) {}
 
   if (req.headers && req.headers["x-hydra-access-token"]) {
     logger.info("\nHydra Acces Token: ");

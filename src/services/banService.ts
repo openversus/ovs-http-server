@@ -13,13 +13,13 @@ const ForceChangeNamesFile: string = env.FORCE_CHANGE_NAMES_FILE || "../data/for
 
 function syncReadFile(filename: string = IPBansFile): string[] {
   var bans: string = "";
-  logger.info(`[${serviceName}]: Reading bans from ${filename}...`);
+  logger.info(`${logPrefix} Reading bans from ${filename}...`);
 
   try {
     bans = readFileSync(join(__dirname, filename), "utf-8");
   }
   catch (error) {
-    logger.error(`[${serviceName}]: Error reading bans from ${filename}:`, error);
+    logger.error(`${logPrefix} Error reading bans from ${filename}:`, error);
     return [];
   }
 
@@ -42,7 +42,7 @@ function syncReadFile(filename: string = IPBansFile): string[] {
     }
   }
 
-  logger.info(`[${serviceName}]: Bans file loaded. Total bans from ${filename}: ${arr.length}`);
+  logger.info(`${logPrefix} Bans file loaded. Total bans from ${filename}: ${arr.length}`);
 
   return arr;
 }
@@ -53,10 +53,10 @@ function syncWriteFile(filename: string, data: string | Array<string>): void {
     readFileSync(filePath, "utf-8"); // Make sure the file exists
     const updatedData = Array.isArray(data) ? data.join("\n") + "\n" : data + "\n";
     appendFileSync(filePath, updatedData, "utf-8");
-    logger.info(`[${serviceName}]: Successfully wrote to ${filename}`);
+    logger.info(`${logPrefix} Successfully wrote to ${filename}`);
   }
   catch (error) {
-    logger.error(`[${serviceName}]: Error writing to ${filename}, error: ${JSON.stringify(error)}`);
+    logger.error(`${logPrefix} Error writing to ${filename}, error: ${JSON.stringify(error)}`);
   }
 }
 
@@ -148,10 +148,10 @@ export function banIP(
   const bans = getBans();
   if (!bans.includes(ipAddress)) {
     syncWriteFile(IPBansFile, banEntry);
-    logger.info(`[${serviceName}]: IP Address ${ipAddress} has been banned and written to IP Bans File: ${IPBansFile}`);
+    logger.info(`${logPrefix} IP Address ${ipAddress} has been banned and written to IP Bans File: ${IPBansFile}`);
   }
   else {
-    logger.info(`[${serviceName}]: IP Address ${ipAddress} is already in the bans list.`);
+    logger.info(`${logPrefix} IP Address ${ipAddress} is already in the bans list.`);
   }
 }
 

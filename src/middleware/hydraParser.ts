@@ -9,12 +9,12 @@ const logPrefix = `[${serviceName}]:`;
 export const hydraDecoderMiddleware = <T>(req: Request, res: Response, next: NextFunction) => {
   //@ts-ignore
   if (req.batch) {
-    //logger.info(`[${serviceName}]: BATCHED_URL: ${req.url}`);
+    //logger.info(`${logPrefix} BATCHED_URL: ${req.url}`);
     next();
     return;
   }
   else {
-    //logger.info(`[${serviceName}]: URL: ${req.url}`);
+    //logger.info(`${logPrefix} URL: ${req.url}`);
   }
 
   if (req.headers["content-type"] === HYDRA_CONTENT_TYPE) {
@@ -35,7 +35,7 @@ export const hydraDecoderMiddleware = <T>(req: Request, res: Response, next: Nex
       }
       catch (e) {
         // If parsing fails, handle the error or set req.body to an empty object
-        logger.error(`[${serviceName}]: Parsing failed ${e}`);
+        logger.error(`${logPrefix} Parsing failed ${e}`);
         req.body = {};
       }
       next(); // Call next to move to the next middleware or route handler

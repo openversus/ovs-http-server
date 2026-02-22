@@ -42,7 +42,7 @@ export async function handleProfiles_id_inventory(req: Request<{}, {}, {}, MVSQu
     
     let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${ip}`) as unknown as RedisPlayerConnection;
     const aID = rPlayerConnectionByIP.id || account.id;
-    logger.info(`[${serviceName}]: Inventory request for account ${aID} with IP ${ip}`);
+    logger.info(`${logPrefix} Inventory request for account ${aID} with IP ${ip}`);
 
     //res.send([...unlockAll(account.id), GleamiumData]);
 
@@ -65,7 +65,7 @@ export async function handleProfiles_bulk(req: Request<{}, {}, { ids: string[] }
     res.send(response);
     return;
   }
-  logger.info(`[${serviceName}]: Other profile request`);
+  logger.info(`${logPrefix} Other profile request`);
   res.send([
     {
       updated_at: {

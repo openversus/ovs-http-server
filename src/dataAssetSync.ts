@@ -18,10 +18,10 @@ interface SYNC_ASSET {
   oldSlug: string;
 }
 syncRouter.post("/syncAsset", async (req, res) => {
-  logger.info(`[${serviceName}]: Trying syncAsset`);
+  logger.info(`${logPrefix} Trying syncAsset`);
   try {
     if (undefined !== req.headers["authorization"] && !req.headers["authorization"] && req.headers["authorization"] !== "") {
-      logger.debug(`[${serviceName}]: Received DATA_ASSET_TOKEN ${req.headers["authorization"]}`);
+      logger.debug(`${logPrefix} Received DATA_ASSET_TOKEN ${req.headers["authorization"]}`);
     }
     if (req.headers["authorization"] !== `Bearer ${env.DATA_ASSET_TOKEN}`) {
       res.sendStatus(403);

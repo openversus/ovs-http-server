@@ -36,6 +36,6 @@ startRedis().then(() => {
   // Start the HTTP server on port 3000
   const PORT = env.WEBSOCKET_PORT || 3000;
   server.listen(PORT, () => {
-    logger.info(`[${serviceName}]: WebSocket server is listening on port ${PORT}`);
+    logger.info(`${logPrefix} WebSocket server is listening on port ${PORT}`);
   });
 });

@@ -8,7 +8,7 @@ import ky from "ky";
 import { HydraDecoder } from "mvs-dump";
 import { parseAppTicket, parseEncryptedAppTicket } from "steam-appticket";
 import env from "../env/env";
-import { logger } from "../config/logger";
+import { logger, logwrapper, BE_VERBOSE } from "../config/logger";
 import { PlayerTesterModel } from "../database/PlayerTester";
 import { getAssetsByType } from "../loadAssets";
 import * as SharedTypes from "../types/shared-types";
@@ -18,7 +18,7 @@ import { NameGenerator } from "../utils/namegeneration";
 import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
 
 const serviceName = "Handlers.Access";
-const BE_VERBOSE = env.VERBOSE_LOGGING === 1 ? true : false;
+const logPrefix = `[${serviceName}]:`;
 
 async function deleteStaticAccess(req: express.Request) {
   logger.info("In deleteStaticAccess, received request to delete access. \n");
@@ -39,12 +39,12 @@ async function deleteStaticAccess(req: express.Request) {
     return;
   }
 
-  logger.info(`[${serviceName}]: Player ${player.id} with name ${player.name} and IP ${ip} is disconnecting and will be removed from Redis.`);
+  logger.info(`${logPrefix} Player ${player.id} with name ${player.name} and IP ${ip} is disconnecting and will be removed from Redis.`);
   return;
 }
 
 async function generateStaticAccess(req: express.Request) {
-  logger.info(`[${serviceName}]: In generateStaticAccess, received request to generate access. \n`);
+  logger.info(`${logPrefix} In generateStaticAccess, received request to generate access. \n`);
   KitchenSink.TryInspectRequestVerbose(req);
 
   let tempIp = "";
@@ -52,7 +52,7 @@ async function generateStaticAccess(req: express.Request) {
     tempIp = req.ip!.replace(/^::ffff:/, "");
   }
   catch (error) {
-    logger.error(`[${serviceName}]: Error extracting IP from request: ${error}`);
+    logger.error(`${logPrefix} Error extracting IP from request: ${error}`);
     return;
   }
   let ip = tempIp;
@@ -70,10 +70,10 @@ async function generateStaticAccess(req: express.Request) {
     player = new PlayerTesterModel({ ip, name: randomName, GameplayPreferences: 964 });
     try {
       await player.save();
-      logger.info(`[${serviceName}]: No player found for IP ${ip}. Created new player with id ${player.id} and name ${randomName}.`);
+      logger.info(`${logPrefix} No player found for IP ${ip}. Created new player with id ${player.id} and name ${randomName}.`);
     }
     catch (error) {
-      logger.error(`[${serviceName}]: Error creating new player, error: ${error}`);
+      logger.error(`${logPrefix} Error creating new player, error: ${error}`);
       KitchenSink.TryInspect(error);
     }
   }
@@ -95,6 +95,7 @@ async function generateStaticAccess(req: express.Request) {
     current_ip: ip,
     lobby_id: "",
     GameplayPreferences: player.GameplayPreferences ?? 964,
+    // GameplayPreferences: Number(player.GameplayPreferences) ?? 964,
   };
   player.token = account;
   player.account = account;
@@ -103,20 +104,20 @@ async function generateStaticAccess(req: express.Request) {
     await player.save();
   }
   catch (error) {
-    logger.error(`[${serviceName}]: Error saving player after token/account creation: ${error}`);
+    logger.error(`${logPrefix} Error saving player after token/account creation: ${error}`);
   }
 
   const token = jwt.sign(account, SECRET);
-  logger.info(`[${serviceName}]: Player ${account.id} - ${account.username} connected; ws: ${ws}`);
+  logger.info(`${logPrefix} Player ${account.id} - ${account.username} connected; ws: ${ws}`);
 
   await Redis.redisAddPlayerConnection(player.id, ip, token, account);
 
   if (BE_VERBOSE) {
     let rPlayerConnectionByID = await Redis.redisClient.hGetAll(`connections:${player.id}`);
-    logger.info(`[${serviceName}]: Redis connection by player ID: ${JSON.stringify(rPlayerConnectionByID)}`);
+    logwrapper.verbose(`[${serviceName}]: Redis connection by player ID: ${JSON.stringify(rPlayerConnectionByID)}`);
 
-    logger.info(`[${serviceName}]: Connections via KitchenSink by ID: `);
-    KitchenSink.TryInspect(rPlayerConnectionByID);
+    logwrapper.verbose(`[${serviceName}]: Connections via KitchenSink by ID: `);
+    KitchenSink.TryInspectVerbose(rPlayerConnectionByID);
   }
 
   return {

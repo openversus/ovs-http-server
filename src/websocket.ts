@@ -47,7 +47,7 @@ import {
 import { Server } from "https";
 import { Server as HttpServer } from "http";
 import { GAME_SERVER_PORT } from "./game/udp";
-import { logger } from "./config/logger";
+import { logger, logwrapper, BE_VERBOSE } from "./config/logger";
 import { MVSTime } from "./utils/date";
 import ObjectID from "bson-objectid";
 import { RedisClientType } from "@redis/client";
@@ -56,6 +56,7 @@ import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./dat
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 
 const serviceName: string = "WebSocket";
+const logPrefix = `[${serviceName}]:`;
 
 export class WebSocketPlayer {
   init: boolean = false;
@@ -251,7 +252,7 @@ export class WebSocketService {
   setupSocketHandlers() {
     this.ws.on("connection", (ws, request) => {
       let ip = request.socket.remoteAddress!.replace(/^::ffff:/, "");
-      logger.info(`[${serviceName}]: Client with IP ${ip} connected`);
+      logger.info(`${logPrefix} Client with IP ${ip} connected`);
 
       const playerWS = new WebSocketPlayer(ws, ip!);
       ws.on("message", (message) => {
@@ -426,14 +427,14 @@ export class WebSocketService {
           continue;
         }
 
-        logger.info(`[${serviceName}]: Sent match notification to player ${matchPlayer.playerId} for match ${notification.matchId}`);
+        logger.info(`${logPrefix} Sent match notification to player ${matchPlayer.playerId} for match ${notification.matchId}`);
       }
     }
     try {
       this.handleSendGamePlayConfig(notification);
     }
     catch (error) {
-      logger.error(`[${serviceName}]: Error handling send gameplay config for match ${notification.matchId}, error: ${JSON.stringify(error)}`);
+      logger.error(`${logPrefix} Error handling send gameplay config for match ${notification.matchId}, error: ${JSON.stringify(error)}`);
     }
   }
 
@@ -534,7 +535,7 @@ export class WebSocketService {
         //   try {
         //     taunts = JSON.parse(taunts);
         //   } catch (e) {
-        //     logger.error(`[${serviceName}]: Failed to parse Taunts for player ${player.playerId}: ${e}`);
+        //     logger.error(`${logPrefix} Failed to parse Taunts for player ${player.playerId}: ${e}`);
         //     taunts = {};
         //   }
         // }
@@ -545,7 +546,7 @@ export class WebSocketService {
         //   try {
         //     statTrackers = JSON.parse(statTrackers);
         //   } catch (e) {
-        //     logger.error(`[${serviceName}]: Failed to parse StatTrackers for player ${player.playerId}: ${e}`);
+        //     logger.error(`${logPrefix} Failed to parse StatTrackers for player ${player.playerId}: ${e}`);
         //     statTrackers = { StatTrackerSlots: ["stat_tracking_bundle_default", "stat_tracking_bundle_default", "stat_tracking_bundle_default"] };
         //   }
         // }
@@ -612,14 +613,14 @@ export class WebSocketService {
           BotDifficultyMin: 0,
         };
 
-        logger.info(`[${serviceName}]: Successfully created player config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} for match ${notification.matchId}`);
+        logger.info(`${logPrefix} Successfully created player config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} for match ${notification.matchId}`);
       }
       catch (error) {
         logger.error(
           `[${serviceName}]: Error creating player config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} : ${JSON.stringify(error)}`,
         );
-        // logger.error(`[${serviceName}]: Character: ${character}, PlayerConfig.Taunts: ${JSON.stringify(playerConfig.Taunts)}`);
-        // logger.error(`[${serviceName}]: PlayerConfig.StatTrackers: ${JSON.stringify(playerConfig.StatTrackers)}`);
+        // logger.error(`${logPrefix} Character: ${character}, PlayerConfig.Taunts: ${JSON.stringify(playerConfig.Taunts)}`);
+        // logger.error(`${logPrefix} PlayerConfig.StatTrackers: ${JSON.stringify(playerConfig.StatTrackers)}`);
 
         // Create a minimal valid config as fallback
         Players[player.playerId] = {
@@ -823,7 +824,7 @@ export class WebSocketService {
     };
 
     logger.info("Message is: ");
-    KitchenSink.TryInspect(message);
+    KitchenSink.TryInspectVerbose(message);
 
     // Send the message to each player in the match
     for (const player of notification.players) {
@@ -974,7 +975,9 @@ export class WebSocketService {
           header: "",
           cmd: "profile-notification",
         };
-        logger.info(`[${serviceName}]: END OF MATCH WS: ${JSON.stringify(data)}`);
+        //logger.info(`${logPrefix} END OF MATCH WS: ${JSON.stringify(data)}`);
+        logger.info(`${logPrefix} Received End of Match for MatchID: ${client.matchConfig?.data.GameplayConfig.MatchId}`);
+        logwrapper.verbose(`[${serviceName}]: End of Match data for match: ${JSON.stringify(data)}`);
         client.send(data);
         setTimeout(() => {
           const data = {

@@ -1,7 +1,11 @@
-import { logger } from "../config/logger";
+import { logger, logwrapper } from "../config/logger";
+import env from "../env/env";
 import ObjectID from "bson-objectid";
 import { getAllAssets, getAssetsByType } from "../loadAssets";
 import { ITaunt, getAllTaunts, getTauntsByChar } from "./taunts";
+
+const serviceName: string = "Data.Characters";
+const logPrefix = `[${serviceName}]:`;
 
 export function unlockAllPerks(accountId: string) {
   return getAssetsByType("MvsPerkHsda").map((perk) => {
@@ -85,7 +89,7 @@ export function unlockAllCharacters(accountId: string) {
 
 export function unlockAllTaunts(accountId: string) {
   return getAllTaunts().map((taunt) => {
-    logger.info(`Unlocking taunt ${taunt} for account ${accountId}`);
+    logwrapper.verbose(`Unlocking taunt ${taunt} for account ${accountId}`);
     return {
       id: ObjectID().toHexString(),
       count: 1,

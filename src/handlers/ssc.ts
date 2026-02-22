@@ -1,4 +1,4 @@
-import { logger } from "../config/logger";
+import { BE_VERBOSE, logger } from "../config/logger";
 import { Request, Response } from "express";
 import { Types } from "mongoose";
 import {
@@ -25,6 +25,7 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 import * as KitchenSink from "../utils/garbagecan";
 
 const serviceName = "Handlers.SSC";
+const logPrefix = `[${serviceName}]:`;
 
 export async function handleSsc_invoke_attempt_daily_refresh(req: Request<{}, {}, {}, {}>, res: Response) {
   res.send({
@@ -312,7 +313,7 @@ export async function handleSsc_invoke_get_country_code(req: Request<{}, {}, {},
 
 export async function handleSsc_invoke_get_equipped_cosmetics(req: Request<{}, {}, {}, {}>, res: Response) {
   const account = req.token;
-  logger.info(`[${serviceName}]: Inside handleSsc_invoke_get_equipped_cosmetics`);
+  logger.info(`${logPrefix} Inside handleSsc_invoke_get_equipped_cosmetics`);
 
   //KitchenSink.TryInspect(req);
 
@@ -321,22 +322,22 @@ export async function handleSsc_invoke_get_equipped_cosmetics(req: Request<{}, {
 
   let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${ip}`) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.warn(`[${serviceName}]: No Redis player connection found for IP ${ip}, cannot set loadout.`);
+    logger.warn(`${logPrefix} No Redis player connection found for IP ${ip}, cannot set loadout.`);
   }
   let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
-    logger.warn(`[${serviceName}]: No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
+    logger.warn(`${logPrefix} No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
   }
 
   let rPlayerCosmetics = await getEquippedCosmetics(rPlayerConnectionByID.id) as Cosmetics;
 
   try {
-    logger.info(`[${serviceName}]: Player cosmetics: `);
-    KitchenSink.TryInspect(rPlayerCosmetics);
+    logger.info(`${logPrefix} Player cosmetics: `);
+    KitchenSink.TryInspectVerbose(rPlayerCosmetics);
   }
   catch (error) {
-    logger.warn(`[${serviceName}]: Could not serialize Cosmetics object`);
-    logger.error(`[${serviceName}]: ${JSON.stringify(error)}`);
+    logger.warn(`${logPrefix} Could not serialize Cosmetics object`);
+    logger.error(`${logPrefix} ${JSON.stringify(error)}`);
   }
 
   // let player = await PlayerTesterModel.findOne({ account_id: new Types.ObjectId(rPlayerConnectionByID.id) });
@@ -360,13 +361,13 @@ export async function handleSsc_invoke_get_equipped_cosmetics(req: Request<{}, {
       return_code: 0,
     };
 
-    logger.info(`[${serviceName}]: Message sent to client will be: ${JSON.stringify(message)}`);
+    logger.info(`${logPrefix} Message sent to client will be: ${JSON.stringify(message)}`);
 
     res.send(message);
   }
   catch (error) {
     //response.StatusCodes()
-    logger.error(`[${serviceName}]: ERROR GETTING COSMETICS`, error);
+    logger.error(`${logPrefix} ERROR GETTING COSMETICS`, error);
   }
 }
 
@@ -4794,7 +4795,7 @@ export async function handleSsc_invoke_get_or_create_mission_object(req: Request
 
 export async function handleSsc_invoke_hiss_amalgamation(req: Request<{}, {}, { Crc: number }, {}>, res: Response) {
   if (req.body.Crc !== getCurrentCRC()) {
-    logger.info(`[${serviceName}]: Crc: out of date , sending new`);
+    logger.info(`${logPrefix} Crc: out of date , sending new`);
     res.send(generate_hiss());
   } else {
     res.send({ body: { Crc: getCurrentCRC(), MatchmakingCrc: MATCHMAKING_CRC }, metadata: null, return_code: 304 });
@@ -57784,7 +57785,7 @@ export async function handleSsc_invoke_perks_lock(req: Request<{}, {}, Ssc_invok
   // const account = req.token;
 
   KitchenSink.TryInspectVerbose(req);
-  //logger.info(`[${serviceName}]: Perks Lock Request:\n`, req);
+  //logger.info(`${logPrefix} Perks Lock Request:\n`, req);
 
   const account = AuthUtils.DecodeClientToken(req);
   const aID = account.id || req.token.id;
@@ -58088,7 +58089,7 @@ export async function handleSsc_invoke_set_lobby_joinable(req: Request<{}, {}, {
 export async function handleSsc_invoke_set_ready_for_lobby(req: Request<{}, {}, Ssc_invoke_set_ready_for_lobby_REQUEST, {}>, res: Response) {
   // const account = req.token;
 
-  logger.info(`[${serviceName}]: invoke_set_ready_for_lobby request:\n`);
+  logger.info(`${logPrefix} invoke_set_ready_for_lobby request:\n`);
   KitchenSink.TryInspectRequestVerbose(req);
 
   const account = AuthUtils.DecodeClientToken(req);
@@ -58096,44 +58097,13 @@ export async function handleSsc_invoke_set_ready_for_lobby(req: Request<{}, {}, 
 
   let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${aID}`) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
-    logger.warn(`[${serviceName}]: No Redis player connection found for player ID ${aID}, cannot set loadout.`);
+    logger.warn(`${logPrefix} No Redis player connection found for player ID ${aID}, cannot set loadout.`);
   }
 
   let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${rPlayerConnectionByID.current_ip}`) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.warn(`[${serviceName}]: No Redis player connection found for IP ${rPlayerConnectionByID.current_ip}, cannot set loadout.`);
+    logger.warn(`${logPrefix} No Redis player connection found for IP ${rPlayerConnectionByID.current_ip}, cannot set loadout.`);
   }
-
-  // let ip = rPlayerConnectionByID.current_ip;
-  // let GameplayPreferences = req.body.GameplayPreferences as number;
-
-  // logger.info(`Incoming GameplayPreferences is ${GameplayPreferences}`);
-  // logger.info(`Existing GameplayPreferences is ${rPlayerConnectionByID.GameplayPreferences}`);
-
-  // rPlayerConnectionByID.GameplayPreferences = GameplayPreferences;
-  // rPlayerConnectionByIP.GameplayPreferences = GameplayPreferences;
-  // await redisSetPlayerConnectionByID(aID, rPlayerConnectionByID);
-  // await redisSetPlayerConnectionByIp(ip, rPlayerConnectionByIP);
-
-  // rPlayerConnectionByID = await redisClient.hGetAll(`connections:${aID}`) as unknown as RedisPlayerConnection;
-  // const UpdatedPrefs = rPlayerConnectionByID.GameplayPreferences as unknown as number || 969;
-  // logger.info(`Updated GameplayPreferences is ${UpdatedPrefs}`);
-
-  // try {
-  //   let playerObject = await PlayerTesterModel.findOne({ ip });
-  //   if (playerObject && GameplayPreferences !== playerObject.GameplayPreferences)
-  //   {
-  //     playerObject.GameplayPreferences = GameplayPreferences;
-  //     await playerObject.save();
-  //     //await redisClient.hSet(`connections:${aID}`, 'GameplayPreferences', GameplayPreferences.toString());
-  //     //await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, 'GameplayPreferences', GameplayPreferences.toString());
-  //     logger.info(`[${serviceName}]: Updated GameplayPreferences for player ${account.id} to ${GameplayPreferences}`);
-  //   }
-  // }
-  // catch (error)
-  // {
-  //   logger.error(`Could not retrieve player information for Player ID ${aID} with name ${rPlayerConnectionByID.username} and IP ${rPlayerConnectionByID.current_ip} to update GameplayPreferences. Error: ${error}`);
-  // }
 
   const hydraUsername = account.hydraUsername || rPlayerConnectionByID.hydraUsername || req.token.hydraUsername;
   const playerUsername = account.username || rPlayerConnectionByID.username || req.token.username;
@@ -58150,7 +58120,7 @@ export async function handleSsc_invoke_set_ready_for_lobby(req: Request<{}, {}, 
 }
 
 export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}, {}, {}, {}>, res: Response) {
-  logger.info("Received end of match stats, body:\n");
+  logger.info(`${logPrefix} Received end of match stats ${BE_VERBOSE ? ", body:" : ""}`);
   if (req.body)
   {
     KitchenSink.TryInspectVerbose(req.body);
@@ -58159,13 +58129,13 @@ export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}
 }
 
 export async function handleSsc_invoke_toast_player(req: Request<{}, {}, {}, {}>, res: Response) {
-  logger.info("Received toast player request, headers:\n")
+  logger.info(`${logPrefix} Received toast player request ${BE_VERBOSE ? ", headers:" : ""}`);
   if (req.headers)
   {
     KitchenSink.TryInspectVerbose(req.headers);
   }
 
-  logger.info("Received toast player request, body:\n")
+  logger.info(`${logPrefix} Received toast player request ${BE_VERBOSE ? ", body:" : ""}`);
   if (req.body)
   {
     KitchenSink.TryInspectVerbose(req.body);

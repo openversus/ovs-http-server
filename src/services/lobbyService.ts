@@ -51,7 +51,7 @@ export async function createLobby(accountId: string, lobbyMode: LOBBY_MODES = LO
     owner: newLobby.owner,
   });
 
-  logger.info(`[${serviceName}]: Creating party lobby for ${accountId} - matchLobbyId:${lobbyId}`);
+  logger.info(`${logPrefix} Creating party lobby for ${accountId} - matchLobbyId:${lobbyId}`);
 
   let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${accountId}`)) as unknown as RedisPlayerConnection;
   rPlayerConnectionByID.lobby_id = lobbyId;
@@ -61,15 +61,15 @@ export async function createLobby(accountId: string, lobbyMode: LOBBY_MODES = LO
 }
 
 export async function changeLobbyMode(ownerId: string, lobbyId: string, newMode: LOBBY_MODES) {
-  logger.info(`[${serviceName}]: Received changeLobbyMode request (ownerid, lobbyid, newmode): ${ownerId}, ${lobbyId}, ${newMode}`);
+  logger.info(`${logPrefix} Received changeLobbyMode request (ownerid, lobbyid, newmode): ${ownerId}, ${lobbyId}, ${newMode}`);
 
   const lobby = await redisClient.hGetAll(`player:${ownerId}:lobby:${lobbyId}`);
   if (!lobby.id) {
-    logger.error(`[${serviceName}]: Lobby not found for id: ${lobbyId}`);
+    logger.error(`${logPrefix} Lobby not found for id: ${lobbyId}`);
     return;
   }
   if (lobby.owner !== ownerId) {
-    logger.error(`[${serviceName}]: You are not the owner of this lobby`);
+    logger.error(`${logPrefix} You are not the owner of this lobby`);
     return;
   }
 
@@ -80,7 +80,7 @@ export async function changeLobbyMode(ownerId: string, lobbyId: string, newMode:
     modeString: newMode,
   };
   await redisClient.publish(ON_LOBBY_MODE_UPDATED, JSON.stringify(notification));
-  logger.trace(`[${serviceName}]: Changing party lobby for ${lobbyId} - to ${newMode}`);
+  logger.trace(`${logPrefix} Changing party lobby for ${lobbyId} - to ${newMode}`);
 
   let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${ownerId}`)) as unknown as RedisPlayerConnection;
   let rPlayerIP = rPlayerConnectionByID.current_ip;

@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1
 FROM node:24-trixie
 
+RUN apt update && \
+    apt install vim net-tools tcpdump -y && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy only production dependencies
@@ -9,6 +13,7 @@ RUN npm ci --omit=dev || npm install --omit=dev --legacy-peer-deps
 
 # Copy built files and any other needed files
 COPY build ./build
+COPY src/static ./build/src/static
 COPY scripts/ /startup/
 
 # Expose port (change if your app uses a different port)
@@ -21,9 +26,5 @@ EXPOSE 3000 8000 9102 41234/udp
 #
 COPY rollback-server ./
 COPY entrypoint.sh /entrypoint.sh
-
-RUN apt update && \
-    apt install vim net-tools tcpdump -y && \
-    rm -rf /var/lib/apt/lists/*
 
 ENTRYPOINT ["/entrypoint.sh"]

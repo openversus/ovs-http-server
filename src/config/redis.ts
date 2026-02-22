@@ -10,7 +10,7 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { num } from "envalid";
 
 const serviceName: string = "Config.Redis";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 const redisConfig = {
   username: env.REDIS_USERNAME,
@@ -453,7 +453,7 @@ export async function redisGetAllLockedPerks(containerMatchId: string) {
     for (const player of ticket.players) {
       var rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${player.id}`)) as unknown as RedisPlayerConnection;
       logger.error(
-        `[${serviceName}]: Canceling matchmaking for player ${player.id} with name ${rPlayerConnectionByID.username} and IP ${rPlayerConnectionByID.current_ip}, matchmaking request ${matchmakingRequest} due to an error retrieving locked perks`,
+        `${logPrefix} Canceling matchmaking for player ${player.id} with name ${rPlayerConnectionByID.username} and IP ${rPlayerConnectionByID.current_ip}, matchmaking request ${matchmakingRequest} due to an error retrieving locked perks`,
       );
       cancelMatchmaking(player.id, matchmakingRequest);
     }

@@ -4,7 +4,7 @@ import { join } from "path";
 import env from "../env/env";
 
 const serviceName = "Services.BanService";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 const IPBansFile: string = env.IP_BANS_FILE || "../data/bans.txt";
 const CIDRBansFile: string = env.CIDR_BANS_FILE || "../data/cidr_bans.txt";
@@ -156,5 +156,5 @@ export function banIP(
 }
 
 export function GetBanWarningMessage(ipAddress: string): string {
-  return `[${serviceName}]: A connection attempt from banned IP Address ${ipAddress} was denied.`;
+  return `${logPrefix} A connection attempt from banned IP Address ${ipAddress} was denied.`;
 }

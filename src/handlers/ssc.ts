@@ -1,4 +1,4 @@
-import { BE_VERBOSE, logger } from "../config/logger";
+import { BE_VERBOSE, logger, logwrapper } from "../config/logger";
 import { Request, Response } from "express";
 import { Types } from "mongoose";
 import {
@@ -25,7 +25,7 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 import * as KitchenSink from "../utils/garbagecan";
 
 const serviceName = "Handlers.SSC";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 export async function handleSsc_invoke_attempt_daily_refresh(req: Request<{}, {}, {}, {}>, res: Response) {
   res.send({
@@ -361,7 +361,7 @@ export async function handleSsc_invoke_get_equipped_cosmetics(req: Request<{}, {
       return_code: 0,
     };
 
-    logger.info(`${logPrefix} Message sent to client will be: ${JSON.stringify(message)}`);
+    logwrapper.verbose(`${logPrefix} Message sent to client will be: ${JSON.stringify(message)}`);
 
     res.send(message);
   }
@@ -58110,7 +58110,7 @@ export async function handleSsc_invoke_set_ready_for_lobby(req: Request<{}, {}, 
   const wb_network_id = account.wb_network_id || rPlayerConnectionByID.wb_network_id || req.token.wb_network_id;
   const profile_id = account.profile_id || rPlayerConnectionByID.profile_id || req.token.profile_id;
 
-  logger.info(`\n\n[${serviceName}]: Will send to client: MatchID ${req.body.MatchID}, PlayerID ${aID}, Ready true, bAllPlayersReady true\n\n`);
+  logger.info(`\n\n${logPrefix} Will send to client: MatchID ${req.body.MatchID}, PlayerID ${aID}, Ready true, bAllPlayersReady true\n\n`);
 
   res.send({
     body: { MatchID: req.body.MatchID, PlayerID: aID, Ready: true, bAllPlayersReady: true },

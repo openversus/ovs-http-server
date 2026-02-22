@@ -15,7 +15,7 @@ import * as AuthUtils from "../utils/auth";
 import * as KitchenSink from "../utils/garbagecan";
 
 const serviceName = "Handlers.Matches";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Response) {
   //const account = req.token;

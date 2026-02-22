@@ -6,7 +6,7 @@ import { loadAssets } from "./loadAssets";
 import { UpdateCrc } from "./data/config";
 
 const serviceName: string = "DataAssetSync";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 export const syncRouter = express.Router();
 
 interface SYNC_ASSET {

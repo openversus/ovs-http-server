@@ -31,7 +31,7 @@ import { NameGenerator } from "./utils/namegeneration";
 const handlebars = require("handlebars");
 
 const serviceName: string = "Server";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 const matcher = new RegExpMatcher({
   ...englishDataset.build(),
@@ -164,7 +164,7 @@ app.post("/namechange", async (req, res, next) => {
 
     res.send(html);
 
-    logger.info(`[${serviceName}]: Name change for IP ${ip} to "${name}" (filtered: "${filtered}")`);
+    logger.info(`${logPrefix} Name change for IP ${ip} to "${name}" (filtered: "${filtered}")`);
     if (player) {
       logwrapper.verbose(`${logPrefix} Name change Player document after update: ${JSON.stringify(player)}`);
     }

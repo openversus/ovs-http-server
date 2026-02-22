@@ -14,7 +14,7 @@ import * as SharedTypes from "../types/shared-types";
 import * as AuthUtils from "../utils/auth";
 
 const serviceName = "Handlers.Cosmetics";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 interface Profile_Icon_REQ {
   Slug: string;

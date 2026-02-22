@@ -6,7 +6,7 @@ import { getAllTauntsByChar, getAssetsByType } from "../loadAssets";
 import { ITaunt, getAllTaunts, getTauntsByChar } from "../data/taunts";
 
 const serviceName = "Services.Cosmetics";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 function mergeCosmetics(cosmetics: Cosmetics): Cosmetics {
   const mergedTaunts: Record<string, TauntSlotsClass> = {};
@@ -81,7 +81,7 @@ export async function updateCosmeticsRingoutVfx(accountId: string, newRingoutVfx
 
   if (!proxyRingoutVfx || undefined === proxyRingoutVfx) {
     logger.info(
-      `[${serviceName}]: Setting default RingoutVfx for AccountId ${accountId} during RingoutVfx update because no RingoutVfx was equipped.`,
+      `${logPrefix} Setting default RingoutVfx for AccountId ${accountId} during RingoutVfx update because no RingoutVfx was equipped.`,
     );
     proxyRingoutVfx = "ring_out_vfx_default";
   }
@@ -154,7 +154,7 @@ export async function updateCosmeticsTauntSlot(accountId: string, character: str
   }
   else {
     logger.warn(
-      `[${serviceName}]: No cached cosmetics found for AccountId ${accountId} during taunt slot update. This should not happen, as cosmetics should be cached when the player equips a taunt. Creating default cosmetics for this account.`,
+      `${logPrefix} No cached cosmetics found for AccountId ${accountId} during taunt slot update. This should not happen, as cosmetics should be cached when the player equips a taunt. Creating default cosmetics for this account.`,
     );
 
     const defaultCosmetics = new CosmeticsModel().toObject();
@@ -191,19 +191,19 @@ export async function getEquippedCosmetics(accountId: string) {
   if (cachedCosmetics) {
     if (!cachedCosmetics.Banner) {
       logger.info(
-        `[${serviceName}]: Setting default banner for AccountId ${accountId} during getEquippedCosmetics because no banner was equipped.`,
+        `${logPrefix} Setting default banner for AccountId ${accountId} during getEquippedCosmetics because no banner was equipped.`,
       );
       cachedCosmetics.Banner = "default_banner";
     }
     if (!cachedCosmetics.RingoutVfx) {
       logger.info(
-        `[${serviceName}]: Setting default RingoutVfx for AccountId ${accountId} during getEquippedCosmetics because no RingoutVfx was equipped.`,
+        `${logPrefix} Setting default RingoutVfx for AccountId ${accountId} during getEquippedCosmetics because no RingoutVfx was equipped.`,
       );
       cachedCosmetics.RingoutVfx = "ring_out_vfx_default";
     }
     if (!cachedCosmetics.StatTrackers) {
       logger.info(
-        `[${serviceName}]: Setting default StatTrackers for AccountId ${accountId} during getEquippedCosmetics because no StatTrackers were equipped.`,
+        `${logPrefix} Setting default StatTrackers for AccountId ${accountId} during getEquippedCosmetics because no StatTrackers were equipped.`,
       );
       cachedCosmetics.StatTrackers = {
         StatTrackerSlots: [
@@ -216,7 +216,7 @@ export async function getEquippedCosmetics(accountId: string) {
 
     if (!cachedCosmetics.Taunts) {
       logger.info(
-        `[${serviceName}]: Setting default Taunts for AccountId ${accountId} during getEquippedCosmetics because no Taunts were equipped.`,
+        `${logPrefix} Setting default Taunts for AccountId ${accountId} during getEquippedCosmetics because no Taunts were equipped.`,
       );
       //const defaultTaunts: Record<string, TauntSlotsClass> = {};
       // for (const character of getAssetsByType("CharacterData")) {

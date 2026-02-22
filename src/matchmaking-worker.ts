@@ -23,7 +23,7 @@ import { randomUUID, randomInt } from "crypto";
 import env from "./env/env";
 
 const serviceName = "MatchmakingWorker";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 const CHECK_INTERVAL_MS = 2000;
 
 const MATCH_RULES = {
@@ -98,7 +98,7 @@ async function process1v1Queue(): Promise<boolean> {
     }
 
     logger.info(
-      `[${serviceName}]: Not enough valid tickets for a 1v1 match (need ${MATCH_RULES["1v1"].teamsRequired}, found ${matchedTickets.length})`,
+      `${logPrefix} Not enough valid tickets for a 1v1 match (need ${MATCH_RULES["1v1"].teamsRequired}, found ${matchedTickets.length})`,
     );
     return false;
   }
@@ -155,7 +155,7 @@ async function process2v2Queue(): Promise<boolean> {
     }
 
     logger.info(
-      `[${serviceName}]: Not enough valid tickets for a 2v2 match (need ${MATCH_RULES["2v2"].totalPlayersRequired}, found ${matchedTickets.length})`,
+      `${logPrefix} Not enough valid tickets for a 2v2 match (need ${MATCH_RULES["2v2"].totalPlayersRequired}, found ${matchedTickets.length})`,
     );
     return false;
   }

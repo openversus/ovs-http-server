@@ -5,7 +5,7 @@ import { getAllAssets, getAssetsByType } from "../loadAssets";
 import { ITaunt, getAllTaunts, getTauntsByChar } from "./taunts";
 
 const serviceName: string = "Data.Characters";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 export function unlockAllPerks(accountId: string) {
   return getAssetsByType("MvsPerkHsda").map((perk) => {

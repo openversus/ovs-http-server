@@ -18,7 +18,7 @@ import { NameGenerator } from "../utils/namegeneration";
 import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
 
 const serviceName = "Handlers.Access";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 async function deleteStaticAccess(req: express.Request) {
   logger.info("In deleteStaticAccess, received request to delete access. \n");
@@ -114,9 +114,9 @@ async function generateStaticAccess(req: express.Request) {
 
   if (BE_VERBOSE) {
     let rPlayerConnectionByID = await Redis.redisClient.hGetAll(`connections:${player.id}`);
-    logwrapper.verbose(`[${serviceName}]: Redis connection by player ID: ${JSON.stringify(rPlayerConnectionByID)}`);
+    logwrapper.verbose(`${logPrefix} Redis connection by player ID: ${JSON.stringify(rPlayerConnectionByID)}`);
 
-    logwrapper.verbose(`[${serviceName}]: Connections via KitchenSink by ID: `);
+    logwrapper.verbose(`${logPrefix} Connections via KitchenSink by ID: `);
     KitchenSink.TryInspectVerbose(rPlayerConnectionByID);
   }
 

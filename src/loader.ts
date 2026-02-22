@@ -6,7 +6,7 @@ import { DataAssetModel } from "./database/DataAssets";
 import { disabledCharacters, isDisabledChar, isEnabledChar } from "./utils/garbagecan";
 
 const serviceName = "Loader";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 const CHARACTER_SLUGS = [
   // "character_supershaggy",
@@ -1744,7 +1744,7 @@ function fatal(err: any, origin: string) {
 }
 
 process.on("uncaughtException", (reason, promise) => {
-  console.error(`[${serviceName}] Unhandled Exception at:`, promise, "reason:", reason);
+  console.error(`${logPrefix} Unhandled Exception at:`, promise, "reason:", reason);
   // Print full stack trace
   if (reason instanceof Error) {
     fatal(reason, "uncaughtException");
@@ -1753,7 +1753,7 @@ process.on("uncaughtException", (reason, promise) => {
 });
 
 process.on("unhandledRejection", (reason, promise) => {
-  console.error(`[${serviceName}] Unhandled Rejection at:`, promise, "reason:", reason);
+  console.error(`${logPrefix} Unhandled Rejection at:`, promise, "reason:", reason);
   // Print full stack trace
   if (reason instanceof Error) {
     fatal(reason, "unhandledRejection");

@@ -7,22 +7,22 @@ import path from "path";
 import env from "./env/env";
 
 const serviceName: string = "WebSocketStart";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 process.on("uncaughtException", (reason, promise) => {
-  console.error(`[${serviceName}] Uncaught Exception at:`, promise, "reason:", reason);
+  console.error(`${logPrefix} Uncaught Exception at:`, promise, "reason:", reason);
   // Print full stack trace
   if (reason instanceof Error) {
-    console.error(`[${serviceName}] Stack:`, reason.stack);
+    console.error(`${logPrefix} Stack:`, reason.stack);
   }
 //  process.exit(1);
 });
 
 process.on("unhandledRejection", (reason, promise) => {
-  console.error(`[${serviceName}] Unhandled Rejection at:`, promise, "reason:", reason);
+  console.error(`${logPrefix} Unhandled Rejection at:`, promise, "reason:", reason);
   // Print full stack trace
   if (reason instanceof Error) {
-    console.error(`[${serviceName}] Stack:`, reason.stack);
+    console.error(`${logPrefix} Stack:`, reason.stack);
   }
 //  process.exit(1);
 });

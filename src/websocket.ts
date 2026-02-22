@@ -56,7 +56,7 @@ import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./dat
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 
 const serviceName: string = "WebSocket";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 export class WebSocketPlayer {
   init: boolean = false;
@@ -213,7 +213,7 @@ export class WebSocketService {
     playerWS.sendRaw(buffer);
     this.clients.set(playerWS.account.id, playerWS);
     logger.info(
-      `[${serviceName}]: Player ${playerWS.account.id} with IP ${playerWS.ip} and name ${playerWS.account.username} connected to websocket`,
+      `${logPrefix} Player ${playerWS.account.id} with IP ${playerWS.ip} and name ${playerWS.account.username} connected to websocket`,
     );
   }
 
@@ -237,7 +237,7 @@ export class WebSocketService {
       redisDeletePlayerKeys(playerWS.account.id);
       redisDeleteConnectionKeysByIp(playerWS.ip);
       logger.info(
-        `[${serviceName}]: Player ${playerWS.account.id} with IP ${playerWS.ip} and name ${playerWS.account.username} disconnected from websocket`,
+        `${logPrefix} Player ${playerWS.account.id} with IP ${playerWS.ip} and name ${playerWS.account.username} disconnected from websocket`,
       );
     }
   }
@@ -271,7 +271,7 @@ export class WebSocketService {
 
       ws.on("error", (error) => {
         logger.error(
-          `[${serviceName}]: WebSocket error for player ${playerWS.account?.id ?? "unknown"} with IP ${playerWS.ip} and name ${playerWS.account?.username ?? "unknown"}, error: ${JSON.stringify(error)}`,
+          `${logPrefix} WebSocket error for player ${playerWS.account?.id ?? "unknown"} with IP ${playerWS.ip} and name ${playerWS.account?.username ?? "unknown"}, error: ${JSON.stringify(error)}`,
         );
       });
     });
@@ -280,7 +280,7 @@ export class WebSocketService {
   stopMatchTick(player: WebSocketPlayer) {
     if (player.matchTick) {
       logger.info(
-        `[${serviceName}]: Stopping matchtick for player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"}`,
+        `${logPrefix} Stopping matchtick for player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"}`,
       );
       clearInterval(player.matchTick);
       player.matchTick = undefined;
@@ -348,7 +348,7 @@ export class WebSocketService {
       client.matchTick = undefined;
       client.send(message);
       logger.trace(
-        `[${serviceName}]: Canceling matchmaking - ${client.account?.id ?? "unknown"} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} - matchmakingRequestId: ${matchmakingRequestId}`,
+        `${logPrefix} Canceling matchmaking - ${client.account?.id ?? "unknown"} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} - matchmakingRequestId: ${matchmakingRequestId}`,
       );
     }
   }
@@ -366,13 +366,13 @@ export class WebSocketService {
       }
       catch (error) {
         logger.error(
-          `[${serviceName}]: Error getting player from clients map for player ${matchPlayer.playerId} with IP ${matchPlayer.ip}, error: ${JSON.stringify(error)}`,
+          `${logPrefix} Error getting player from clients map for player ${matchPlayer.playerId} with IP ${matchPlayer.ip}, error: ${JSON.stringify(error)}`,
         );
       }
 
       if (!tempPlayer) {
         logger.error(
-          `[${serviceName}]: Could not find player ${matchPlayer.playerId} with IP ${matchPlayer.ip} to prepare match found notification for match ${notification.matchId}`,
+          `${logPrefix} Could not find player ${matchPlayer.playerId} with IP ${matchPlayer.ip} to prepare match found notification for match ${notification.matchId}`,
         );
         continue;
       }
@@ -384,24 +384,19 @@ export class WebSocketService {
         }
         catch (error) {
           logger.error(
-            `[${serviceName}]: Error stopping match tick for player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"}`,
+            `${logPrefix} Error stopping match tick for player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"}`,
             error,
           );
         }
 
-        //logger.info(player);
-
-        //const gameServerPort: Promise<number | undefined> = redisGetGamePort(notification.matchId).then(port => port) || GAME_SERVER_PORT;
-        //const gameServerPort = redisGetGamePort(notification.matchId).then(port => port);
         const gameServerPort = notification.rollbackPort || GAME_SERVER_PORT;
         logger.info(
-          `[${serviceName}]: Match ${notification.matchId} found for player ${player.account?.id ?? "unknown"}, sending match found notification with game server port ${gameServerPort}`,
+          `${logPrefix} Match ${notification.matchId} found for player ${player.account?.id ?? "unknown"}, sending match found notification with game server port ${gameServerPort}`,
         );
         const message = {
           data: {
             MatchKey: notification.matchKey,
             MatchID: notification.matchId,
-            //Port: gameServerPort || GAME_SERVER_PORT,
             Port: gameServerPort,
             template_id: "GameServerReadyNotification",
             IPAddress: player.ip === "127.0.0.1" ? "127.0.0.1" : arr[randomIndex],
@@ -416,13 +411,12 @@ export class WebSocketService {
           cmd: "update",
         };
 
-        //logger.info(player.account?.id, message);
         try {
           player.send(message);
         }
         catch (error) {
           logger.error(
-            `[${serviceName}]: Error sending match found notification to player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"} for match ${notification.matchId}, error: ${JSON.stringify(error)}`,
+            `${logPrefix} Error sending match found notification to player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"} for match ${notification.matchId}, error: ${JSON.stringify(error)}`,
           );
           continue;
         }
@@ -457,30 +451,13 @@ export class WebSocketService {
     //const playerConfigs = await redisGetAllPlayersEquippedCosmetics(playerIds);
     let playerConfigs: Cosmetics[] = [];
     for (const playerId of playerIds) {
-      // //const cosmetics = await getEquippedCosmetics(playerId);
-      // const cosmetics = await redisClient.hGetAll(`connections:${playerId}:cosmetics`) as unknown as Cosmetics;
-
-      // if (!cosmetics || !cosmetics.Banner) {
-      //   logger.warn(`No cosmetics found in Redis for player ID ${playerId} during gameplay config preparation. This should not happen, as cosmetics should be cached when the player equips a cosmetic. Creating default cosmetics for this account.`);
-      //   const dbCosmetics = await getEquippedCosmetics(playerId);
-      //   await redisSetPlayerConnectionCosmetics(playerId, dbCosmetics);
-      //   playerConfigs.push(dbCosmetics);
-      //   // let rPlayerCosmetics = await getEquippedCosmetics(playerId) as Cosmetics;
-      //   // await redisSetPlayerConnectionCosmetics(playerId, rPlayerCosmetics);
-      //   // playerConfigs.push(rPlayerCosmetics);
-      //   // continue;
-      // }
-      // else
-      // {
-      //   playerConfigs.push(cosmetics);
-      // }
 
       const rawCosmetics = await redisClient.hGetAll(`connections:${playerId}:cosmetics`);
       const matchPlayer = (await redisClient.hGetAll(`connections:${playerId}`)) as unknown as RedisPlayerConnection;
 
       if (!rawCosmetics || Object.keys(rawCosmetics).length === 0) {
         logger.warn(
-          `[${serviceName}]: No cosmetics found for player ${playerId} with IP ${matchPlayer.current_ip} and name ${matchPlayer.username ?? "unknown"} in Redis, fetching from database`,
+          `${logPrefix} No cosmetics found for player ${playerId} with IP ${matchPlayer.current_ip} and name ${matchPlayer.username ?? "unknown"} in Redis, fetching from database`,
         );
         const dbCosmetics = await getEquippedCosmetics(playerId);
         await redisSetPlayerConnectionCosmetics(playerId, dbCosmetics);
@@ -498,7 +475,7 @@ export class WebSocketService {
           }
           catch (e) {
             logger.error(
-              `[${serviceName}]: Failed to parse cosmetic field ${key} for player ${playerId} with IP ${matchPlayer.current_ip} and name ${matchPlayer.username ?? "unknown"}, error: ${JSON.stringify(e)}. This should not happen, as all cosmetics should be stored as JSON strings in Redis. Assigning default value for this field.`,
+              `${logPrefix} Failed to parse cosmetic field ${key} for player ${playerId} with IP ${matchPlayer.current_ip} and name ${matchPlayer.username ?? "unknown"}, error: ${JSON.stringify(e)}. This should not happen, as all cosmetics should be stored as JSON strings in Redis. Assigning default value for this field.`,
             );
             cosmetics[key as keyof Cosmetics] = value as any;
           }
@@ -514,7 +491,6 @@ export class WebSocketService {
 
     for (let i = 0; i < notification.players.length; i++) {
       const player = notification.players[i];
-      //const rPlayerByConnectionId = (await redisClient.hGetAll(`connections:${player.playerId}`)) as unknown as RedisPlayerConnection;
       const rPlayerConnectionByID = await redisClient.hGetAll(`connections:${player.playerId}`) as unknown as RedisPlayerConnection;
       const playerLoadout = playerLoadouts[i];
       const playerConfig = playerConfigs[i];
@@ -524,9 +500,8 @@ export class WebSocketService {
       const GameplayPreferences: number = Number(rPlayerConnectionByID.GameplayPreferences) || 964;
 
       logger.info(
-        `[${serviceName}]: Building config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} for match ${notification.matchId}, GameplayPreferences: ${GameplayPreferences}`,
+        `${logPrefix} Building config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} for match ${notification.matchId}, GameplayPreferences: ${GameplayPreferences}`,
       );
-      //const GameplayPreferences = playerMongoObject?.GameplayPreferences || 964;
 
       try {
         // // Parse Taunts if it's a string (from Redis)
@@ -574,7 +549,6 @@ export class WebSocketService {
           bAutoPartyPreference: false,
           Gems: [],
           PartyMember: null,
-          //GameplayPreferences: 964,
           GameplayPreferences: GameplayPreferences,
           BotDifficultyMax: 0,
           bIsBot: false,
@@ -606,7 +580,6 @@ export class WebSocketService {
           Perks: [],
           PlayerIndex: player.playerIndex,
           PartyId: player.partyId,
-          // Username: { default: rPlayerConnectionByID.username || "Player" },
           Username: {},
           Buffs: [],
           Skin: skin,
@@ -617,10 +590,8 @@ export class WebSocketService {
       }
       catch (error) {
         logger.error(
-          `[${serviceName}]: Error creating player config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} : ${JSON.stringify(error)}`,
+          `${logPrefix} Error creating player config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} : ${JSON.stringify(error)}`,
         );
-        // logger.error(`${logPrefix} Character: ${character}, PlayerConfig.Taunts: ${JSON.stringify(playerConfig.Taunts)}`);
-        // logger.error(`${logPrefix} PlayerConfig.StatTrackers: ${JSON.stringify(playerConfig.StatTrackers)}`);
 
         // Create a minimal valid config as fallback
         Players[player.playerId] = {
@@ -635,7 +606,6 @@ export class WebSocketService {
           bAutoPartyPreference: false,
           Gems: [],
           PartyMember: null,
-          //GameplayPreferences: 964,
           GameplayPreferences: GameplayPreferences,
           BotDifficultyMax: 0,
           bIsBot: false,
@@ -667,7 +637,6 @@ export class WebSocketService {
           Perks: [],
           PlayerIndex: player.playerIndex,
           PartyId: player.partyId,
-//          Username: { default: rPlayerConnectionByID.username || "Player" },
           Username: {},
           Buffs: [],
           Skin: skin,
@@ -675,94 +644,8 @@ export class WebSocketService {
         };
       }
 
-      // try {
-      //   logger.info(`Player ${player.playerId} ${player.playerIndex} selected ${playerLoadout.character}`);
-      //   Players[player.playerId] = {
-      //     AccountId: player.playerId,
-      //     Taunts: playerConfig.Taunts[playerLoadout.character].TauntSlots || ["", "", "", ""],
-      //     BotBehaviorOverride: "",
-      //     bAutoPartyPreference: false,
-      //     Gems: [],
-      //     PartyMember: null,
-      //     GameplayPreferences: 964,
-      //     BotDifficultyMax: 0,
-      //     bIsBot: false,
-      //     RankedDivision: null,
-      //     bUseCharacterDisplayName: false,
-      //     StartingDamage: 0,
-      //     TeamIndex: player.teamIndex,
-      //     //ProfileIcon: playerLoadouts[i].profileIcon,
-      //     ProfileIcon: profileIcon,
-      //     WinStreak: null,
-      //     RankedTier: null,
-      //     Handicap: 0,
-      //     RingoutVfx: playerConfig.RingoutVfx,
-      //     //Character: playerLoadout.character,
-      //     Character: character,
-      //     Banner: playerConfig.Banner,
-      //     StatTrackers: playerConfig.StatTrackers.StatTrackerSlots.map((s) => [s, 1]), // TODO: We should get this from database?
-      //     Perks: [],
-      //     PlayerIndex: player.playerIndex,
-      //     PartyId: player.partyId,
-      //     Username: {},
-      //     Buffs: [],
-      //     //Skin: playerLoadout.skin,
-      //     Skin: skin,
-      //     BotDifficultyMin: 0,
-      //   };
-      // }
-
-      // catch (error) {
-      //   let originalError = error instanceof Error ? error : new Error(String(error));
-      //   logger.error(`Error constructing PlayerConfig for player ${player.playerId}, assigning default config. Error: `);
-      //   try {
-      //     logger.error(originalError);
-      //   }
-      //   catch (error) {
-      //     try {
-      //       logger.error(JSON.stringify(originalError));
-      //     }
-      //     catch (error) {
-      //       logger.error("All attempts to print a simple error have failed, because JavaScript fucking sucks.");
-      //     }
-      //   }
-      //   logger.info(`Player ${player.playerId} ${player.playerIndex} selected ${playerLoadout.character}`);
-      //   Players[player.playerId] = {
-      //     AccountId: player.playerId,
-      //     //Taunts: ["", "", "", ""],
-      //     Taunts: defaultTaunts[playerLoadout.character]?.TauntSlots || ["", "", "", ""],
-      //     BotBehaviorOverride: "",
-      //     bAutoPartyPreference: false,
-      //     Gems: [],
-      //     PartyMember: null,
-      //     GameplayPreferences: 964,
-      //     BotDifficultyMax: 0,
-      //     bIsBot: false,
-      //     RankedDivision: null,
-      //     bUseCharacterDisplayName: false,
-      //     StartingDamage: 0,
-      //     TeamIndex: player.teamIndex,
-      //     ProfileIcon: playerLoadouts[i].profileIcon || "profile_icon_default_gold",
-      //     WinStreak: null,
-      //     RankedTier: null,
-      //     Handicap: 0,
-      //     RingoutVfx: playerConfig.RingoutVfx || "ring_out_vfx_default",
-      //     Character: playerLoadout.character,
-      //     Banner: playerConfig.Banner || "banner_default",
-      //     //StatTrackers: playerConfig.StatTrackers.StatTrackerSlots.map((s) => [s, 1]), // TODO: We should get this from database?
-      //     //StatTrackers: [["", 1], ["", 1], ["", 1]],
-      //     StatTrackers: [ [ "stat_tracking_bundle_default", 1 ], [ "stat_tracking_bundle_default", 1 ], [ "stat_tracking_bundle_default", 1 ] ],
-      //     Perks: [],
-      //     PlayerIndex: player.playerIndex,
-      //     PartyId: player.partyId,
-      //     Username: {},
-      //     Buffs: [],
-      //     Skin: playerLoadout.skin,
-      //     BotDifficultyMin: 0,
-      //   };
-      // }
       logger.info(
-        `[${serviceName}]: Prepared player config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} for match ${notification.matchId}, GameplayPreferences: ${Players[player.playerId].GameplayPreferences}`,
+        `${logPrefix} Prepared player config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} for match ${notification.matchId}, GameplayPreferences: ${Players[player.playerId].GameplayPreferences}`,
       );
     }
 
@@ -823,7 +706,7 @@ export class WebSocketService {
       cmd: "update",
     };
 
-    logger.info("Message is: ");
+    logwrapper.verbose("Message is: ");
     KitchenSink.TryInspectVerbose(message);
 
     // Send the message to each player in the match
@@ -833,7 +716,7 @@ export class WebSocketService {
         client.send(message);
         client.matchConfig = message;
         logger.info(
-          `[${serviceName}]: Sent gameplay config to player ${client.account?.id ?? "unknown"} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.matchId}`,
+          `${logPrefix} Sent gameplay config to player ${client.account?.id ?? "unknown"} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.matchId}`,
         );
       }
     }
@@ -852,7 +735,7 @@ export class WebSocketService {
           }
           else {
             logger.error(
-              `[${serviceName}]: Match Perks are incomplete!!! This should not really happen for player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"}`,
+              `${logPrefix} Match Perks are incomplete!!! This should not really happen for player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"}`,
             );
           }
         }
@@ -862,9 +745,9 @@ export class WebSocketService {
       const client = this.clients.get(playerId);
       if (client && client.matchConfig) {
         client.send(client.matchConfig);
-        logger.info(client.matchConfig.data.GameplayConfig.Players);
+        logwrapper.verbose(JSON.stringify(client.matchConfig.data.GameplayConfig.Players, null, 2));
         logger.info(
-          `[${serviceName}]: Sent all perks lock to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`,
+          `${logPrefix} Sent all perks lock to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`,
         );
       }
     }
@@ -878,7 +761,7 @@ export class WebSocketService {
 
       const gameServerPort = notification.rollbackPort || GAME_SERVER_PORT;
       logger.info(
-        `[${serviceName}]: Received game server instance ready for match ${notification.containerMatchId} and player ${playerId} with IP ${client?.ip ?? "unknown"} and name ${client?.account?.username ?? "unknown"}, sending game server info with port ${gameServerPort}`,
+        `${logPrefix} Received game server instance ready for match ${notification.containerMatchId} and player ${playerId} with IP ${client?.ip ?? "unknown"} and name ${client?.account?.username ?? "unknown"}, sending game server info with port ${gameServerPort}`,
       );
 
       const message = {
@@ -906,13 +789,13 @@ export class WebSocketService {
       // }).unref();
       if (client) {
         logger.info(
-          `[${serviceName}]: Sent game server instance ready to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`,
+          `${logPrefix} Sent game server instance ready to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`,
         );
         client.send(message);
       }
       else {
         logger.error(
-          `[${serviceName}]: Could not find player ${playerId} to send game server instance ready message for match ${notification.containerMatchId}`,
+          `${logPrefix} Could not find player ${playerId} to send game server instance ready message for match ${notification.containerMatchId}`,
         );
       }
     }
@@ -935,7 +818,7 @@ export class WebSocketService {
       };
       if (client) {
         logger.trace(
-          `[${serviceName}]: OnLobbyModeUpdated send to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for lobby ${notification.lobbyId} with mode ${notification.modeString}`,
+          `${logPrefix} OnLobbyModeUpdated send to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for lobby ${notification.lobbyId} with mode ${notification.modeString}`,
         );
         client.send(message);
       }
@@ -975,9 +858,8 @@ export class WebSocketService {
           header: "",
           cmd: "profile-notification",
         };
-        //logger.info(`${logPrefix} END OF MATCH WS: ${JSON.stringify(data)}`);
         logger.info(`${logPrefix} Received End of Match for MatchID: ${client.matchConfig?.data.GameplayConfig.MatchId}`);
-        logwrapper.verbose(`[${serviceName}]: End of Match data for match: ${JSON.stringify(data)}`);
+        logwrapper.verbose(`${logPrefix} End of Match data for match: ${JSON.stringify(data)}`);
         client.send(data);
         setTimeout(() => {
           const data = {

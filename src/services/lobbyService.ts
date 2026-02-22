@@ -14,7 +14,7 @@ import env from "../env/env";
 import * as KitchenSink from "../utils/garbagecan";
 
 const serviceName = "Services.Lobby";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 export enum LOBBY_MODES {
   ONE_V_ONE = "1v1",

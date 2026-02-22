@@ -25,7 +25,7 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 // import { IGameInstall } from "../types/shared-types";
 
 const serviceName = "SSC.SSC";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 interface Lock_Lobby_Loadout_REQ {
   AutoPartyPreference: boolean;
@@ -111,7 +111,7 @@ export async function set_lock_lobby_loadout(req: Request, res: Response<Lock_Lo
 
   if (badChar) {
     logger.info(
-      `[${serviceName}]: Rejected attempt to set loadout to a disabled character during loadout lock for AccountId ${aID}: ${body.Loadout.Character}`,
+      `${logPrefix} Rejected attempt to set loadout to a disabled character during loadout lock for AccountId ${aID}: ${body.Loadout.Character}`,
     );
     return;
   }
@@ -253,7 +253,7 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
 
   const loadout = { Character: character, Skin: variant };
   logger.info(
-    `[${serviceName}]: Received request to create party lobby for AccountId ${aID} with character: ${loadout.Character} and IP: ${ip}`,
+    `${logPrefix} Received request to create party lobby for AccountId ${aID} with character: ${loadout.Character} and IP: ${ip}`,
   );
 
   if (ip === "127.0.0.1") {
@@ -271,7 +271,7 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
   // Default to Shaggy if a disabled character is attempted to be set
   if (badChar) {
     logger.info(
-      `[${serviceName}]: Rejected attempt to set loadout to a disabled character during lobby creation for AccountId ${aID}: ${loadout.Character}`,
+      `${logPrefix} Rejected attempt to set loadout to a disabled character during lobby creation for AccountId ${aID}: ${loadout.Character}`,
     );
     loadout.Character = "character_shaggy";
     loadout.Skin = "skin_shaggy_default";

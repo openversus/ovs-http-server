@@ -3,7 +3,7 @@ import { logger } from "../config/logger";
 import * as path from "path";
 
 const serviceName = "Handlers.Images";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 export async function handleImages(req: Request<{ image: string }, {}, {}, {}>, res: Response) {
 

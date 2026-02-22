@@ -5,7 +5,7 @@ import { Types } from "mongoose";
 import ObjectID from "bson-objectid";
 
 const serviceName: string = "Database.Cosmetics";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 export interface IDefaultTaunts {
   [character: string]: {
@@ -320,23 +320,23 @@ class GemsClass {
 
 @pre<Cosmetics>("validate", function (next) {
   // Log every validation attempt for debugging
-  logger.info(`[${serviceName}] PRE-VALIDATE called for document with _id: ${this._id}, account_id: ${this.account_id}`);
+  logger.info(`${logPrefix} PRE-VALIDATE called for document with _id: ${this._id}, account_id: ${this.account_id}`);
 
   if (!this.account_id && this._id) {
-    logger.warn(`[${serviceName}] PRE-VALIDATE: account_id attribute is missing, setting it from _id: ${this._id}`);
+    logger.warn(`${logPrefix} PRE-VALIDATE: account_id attribute is missing, setting it from _id: ${this._id}`);
     this.account_id = this._id as any;
   }
 
   if (this.account_id && !this._id) {
-    logger.warn(`[${serviceName}] PRE-VALIDATE: _id attribute is missing, setting it from account_id: ${this.account_id}`);
+    logger.warn(`${logPrefix} PRE-VALIDATE: _id attribute is missing, setting it from account_id: ${this.account_id}`);
     this._id = new Types.ObjectId(this.account_id.toString());
   }
 
   // If BOTH are missing, this is a real error - log the stack trace
   if (!this.account_id && !this._id) {
-    logger.error(`[${serviceName}] PRE-VALIDATE ERROR: Both account_id and _id are missing!`);
-    logger.error(`[${serviceName}] Document fields: ${JSON.stringify(this.toObject(), null, 2)}`);
-    console.error(`[${serviceName}] CRITICAL: Stack trace where validation was triggered:`);
+    logger.error(`${logPrefix} PRE-VALIDATE ERROR: Both account_id and _id are missing!`);
+    logger.error(`${logPrefix} Document fields: ${JSON.stringify(this.toObject(), null, 2)}`);
+    console.error(`${logPrefix} CRITICAL: Stack trace where validation was triggered:`);
     console.trace();
   }
 
@@ -344,10 +344,10 @@ class GemsClass {
 })
 // Add pre('save') hook as well
 @pre<Cosmetics>("save", function (next) {
-  logger.info(`[${serviceName}] PRE-SAVE called for document with _id: ${this._id}, account_id: ${this.account_id}`);
+  logger.info(`${logPrefix} PRE-SAVE called for document with _id: ${this._id}, account_id: ${this.account_id}`);
 
   if (!this.account_id && this._id) {
-    logger.warn(`[${serviceName}] PRE-SAVE: account_id was missing, setting it from _id: ${this._id}`);
+    logger.warn(`${logPrefix} PRE-SAVE: account_id was missing, setting it from _id: ${this._id}`);
     this.account_id = this._id as any;
   }
 
@@ -359,17 +359,17 @@ class GemsClass {
   const options = (this as any).getOptions();
 
   // Log the operation
-  logger.info(`[${serviceName}] PRE-findOneAndUpdate called with upsert: ${options.upsert}`);
+  logger.info(`${logPrefix} PRE-findOneAndUpdate called with upsert: ${options.upsert}`);
 
   // If this is an upsert operation, ensure account_id is set
   if (options.upsert) {
     const filter = (this as any).getFilter();
-    logger.info(`[${serviceName}] PRE-findOneAndUpdate filter: ${JSON.stringify(filter)}`);
-    logger.info(`[${serviceName}] PRE-findOneAndUpdate update: ${JSON.stringify(update)}`);
+    logger.info(`${logPrefix} PRE-findOneAndUpdate filter: ${JSON.stringify(filter)}`);
+    logger.info(`${logPrefix} PRE-findOneAndUpdate update: ${JSON.stringify(update)}`);
 
     // If _id is in the filter and account_id is not being set, add it
     if (filter._id && !update.$set?.account_id && !update.$setOnInsert?.account_id) {
-      logger.warn(`[${serviceName}] PRE-findOneAndUpdate: Adding account_id to $setOnInsert from filter._id: ${filter._id}`);
+      logger.warn(`${logPrefix} PRE-findOneAndUpdate: Adding account_id to $setOnInsert from filter._id: ${filter._id}`);
       if (!update.$setOnInsert) {
         update.$setOnInsert = {};
       }
@@ -431,23 +431,23 @@ export const CosmeticsModel = getModelForClass(Cosmetics);
 
 // CosmeticsModel.schema.pre('validate', function(next) {
 //   // Log every validation attempt for debugging
-//   logger.info(`[${serviceName}] PRE-VALIDATE called for document with _id: ${this._id}, account_id: ${this.account_id}`);
+//   logger.info(`${logPrefix} PRE-VALIDATE called for document with _id: ${this._id}, account_id: ${this.account_id}`);
 
 //   if (!this.account_id && this._id) {
-//     logger.warn(`[${serviceName}] PRE-VALIDATE: account_id attribute is missing, setting it from _id: ${this._id}`);
+//     logger.warn(`${logPrefix} PRE-VALIDATE: account_id attribute is missing, setting it from _id: ${this._id}`);
 //     this.account_id = this._id as any;
 //   }
 
 //   if (this.account_id && !this._id) {
-//     logger.warn(`[${serviceName}] PRE-VALIDATE: _id attribute is missing, setting it from account_id: ${this.account_id}`);
+//     logger.warn(`${logPrefix} PRE-VALIDATE: _id attribute is missing, setting it from account_id: ${this.account_id}`);
 //     this._id = new Types.ObjectId(this.account_id.toString());
 //   }
 
 //   // If BOTH are missing, this is a real error - log the stack trace
 //   if (!this.account_id && !this._id) {
-//     logger.error(`[${serviceName}] PRE-VALIDATE ERROR: Both account_id and _id are missing!`);
-//     logger.error(`[${serviceName}] Document fields: ${JSON.stringify(this.toObject(), null, 2)}`);
-//     console.error(`[${serviceName}] CRITICAL: Stack trace where validation was triggered:`);
+//     logger.error(`${logPrefix} PRE-VALIDATE ERROR: Both account_id and _id are missing!`);
+//     logger.error(`${logPrefix} Document fields: ${JSON.stringify(this.toObject(), null, 2)}`);
+//     console.error(`${logPrefix} CRITICAL: Stack trace where validation was triggered:`);
 //     console.trace();
 //   }
 
@@ -456,19 +456,19 @@ export const CosmeticsModel = getModelForClass(Cosmetics);
 
 // CosmeticsModel.schema.pre('validate', function(next) {
 //   if (!this.account_id && this._id) {
-//     logger.warn(`[${serviceName}] PRE-VALIDATE: account_id attribute is missing, setting it from _id: ${this._id}`);
+//     logger.warn(`${logPrefix} PRE-VALIDATE: account_id attribute is missing, setting it from _id: ${this._id}`);
 //     this.account_id = this._id as any;
 //   }
 
 //   if (this.account_id && !this._id) {
-//     logger.warn(`[${serviceName}] PRE-VALIDATE: _id attribute is missing, setting it from account_id: ${this.account_id}`);
+//     logger.warn(`${logPrefix} PRE-VALIDATE: _id attribute is missing, setting it from account_id: ${this.account_id}`);
 //     this._id = new Types.ObjectId(this.account_id.toString());
 //   }
 
 //   if (!this.account_id && !this._id) {
-//     logger.error(`[${serviceName}] PRE-VALIDATE ERROR: Both account_id and _id are missing!`);
-//     logger.error(`[${serviceName}] Document fields: ${JSON.stringify(this.toObject(), null, 2)}`);
-//     console.trace(`[${serviceName}] Full stack trace: ${new Error().stack}`);
+//     logger.error(`${logPrefix} PRE-VALIDATE ERROR: Both account_id and _id are missing!`);
+//     logger.error(`${logPrefix} Document fields: ${JSON.stringify(this.toObject(), null, 2)}`);
+//     console.trace(`${logPrefix} Full stack trace: ${new Error().stack}`);
 //   }
 
 //   next();
@@ -476,7 +476,7 @@ export const CosmeticsModel = getModelForClass(Cosmetics);
 
 // CosmeticsModel.schema.pre('save', function(next) {
 //   if (!this.account_id && this._id) {
-//     logger.warn(`[${serviceName}] PRE-SAVE: account_id was missing, setting it from _id: ${this._id}`);
+//     logger.warn(`${logPrefix} PRE-SAVE: account_id was missing, setting it from _id: ${this._id}`);
 //     this.account_id = this._id;
 //   }
 

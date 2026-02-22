@@ -15,7 +15,7 @@ import { isIPv4Address } from "../utils/garbagecan";
 import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 
 const serviceName = "Handlers.Profiles";
-const logPrefix = `[${serviceName}]:`;
+const logPrefix: string = `[${serviceName}]:`;
 
 export async function handleProfiles_id_inventory(req: Request<{}, {}, {}, MVSQueries.Profiles_id_inventory_QUERY>, res: Response) {
     const account = AuthUtils.DecodeClientToken(req);

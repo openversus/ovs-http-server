@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Copy only production dependencies
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev || npm install --omit=dev --legacy-peer-deps
 
 # Copy built files and any other needed files
 COPY build ./build

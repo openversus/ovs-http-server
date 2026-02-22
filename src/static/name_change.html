@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="es-ES">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpenVersus - Change Your Name</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fugaz+One&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+  <style>
+      :root {
+          --mv-blue: #1f6feb;
+          --mv-blue-dark: #0040a5;
+          --mv-orange: #ff7500;
+          --mv-orange-dark: #ff4d00;
+          --ink: #343434;
+          --card: rgba(255, 255, 255, 0.92);
+          --card2: rgba(255, 255, 255, 0.85);
+          --shadow: rgba(0, 0, 0, 0.28) 0px 19px 38px, rgba(0, 0, 0, 0.20) 0px 15px 12px;
+          --skew: -12deg;
+          --radius: 18px;
+      }
+      * {
+          box-sizing: border-box;
+      }
+      html, body {
+          height: 100%;
+      }
+      body {
+          margin: 0;
+          font-family: "Fugaz One", Arial, sans-serif;
+          overflow: hidden;
+          color: var(--ink);
+          background: #000;
+      }
+      .background {
+          position: fixed;
+          inset: 0;
+          z-index: -2;
+          background-image: url("images/name_change_background.jpeg");
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
+          transform: scale(1.03);
+      }
+      .background::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          backdrop-filter: blur(6px);
+          background: rgba(10, 12, 20, 0.20);
+      }
+      .main_wrapper {
+          min-height: 100%;
+          display: grid;
+          place-items: center;
+          padding: 24px 14px;
+      }
+      .main_container {
+          width: min(860px, 100%);
+          background: linear-gradient(180deg, var(--card), var(--card2));
+          border-radius: var(--radius);
+          box-shadow: var(--shadow);
+          padding: 22px;
+          position: relative;
+          overflow: hidden;
+      }
+      .main_container::before {
+          content: "";
+          position: absolute;
+          inset: -60px;
+          background: linear-gradient(115deg,
+          transparent 0%,
+          transparent 45%,
+          rgba(255, 117, 0, 0.10) 45%,
+          rgba(255, 117, 0, 0.10) 52%,
+          transparent 52%,
+          transparent 100%),
+          linear-gradient(115deg,
+                  transparent 0%,
+                  transparent 62%,
+                  rgba(31, 111, 235, 0.10) 62%,
+                  rgba(31, 111, 235, 0.10) 69%,
+                  transparent 69%,
+                  transparent 100%);
+          pointer-events: none;
+          opacity: 0.85;
+      }
+      .content {
+          position: relative;
+          display: grid;
+          gap: 18px;
+      }
+      .top {
+          display: grid;
+          grid-template-columns: 170px 1fr;
+          gap: 18px;
+          align-items: center;
+      }
+      .logo {
+          width: 100%;
+          max-width: 170px;
+          border-radius: 14px;
+          display: block;
+          box-shadow: 0 10px 0 rgba(0, 0, 0, 0.10);
+      }
+      .panelTitle {
+          margin: 0;
+          font-size: clamp(22px, 3vw, 32px);
+          line-height: 1;
+          background: linear-gradient(0deg, var(--mv-orange-dark), #ff8825);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          font-weight: 900;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+      }
+      .subline {
+          margin: 8px 0 0;
+          font-family: Helvetica, Arial, sans-serif;
+          color: rgba(20, 20, 20, 0.70);
+          font-size: 14px;
+      }
+      .chips {
+          margin-top: 10px;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+      }
+      .chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 7px 12px;
+          border: 2px solid var(--ink);
+          box-shadow: 0 6px 0 rgba(0, 0, 0, 0.10);
+          background: #fff;
+          font-family: Helvetica, Arial, sans-serif;
+          font-weight: 800;
+          font-size: 12px;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          transform: skewX(-6deg);
+      }
+      .chip span {
+          transform: skewX(6deg);
+      }
+      .chip.blue {
+          background: rgba(31, 111, 235, 0.12);
+          border-color: var(--mv-blue-dark);
+      }
+      .chip.orange {
+          background: rgba(255, 117, 0, 0.12);
+          border-color: var(--mv-orange);
+      }
+      form {
+          margin: 0;
+      }
+      .formRow {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 14px;
+          align-items: center;
+      }
+      .skew-input-wrap {
+          display: block;
+          transform: skewX(var(--skew));
+          background: #ffffff;
+          border: 3px solid var(--mv-orange);
+          box-shadow: 0 8px 0 rgba(0, 0, 0, 0.15);
+          padding: 0;
+      }
+      .skew-input {
+          width: 100%;
+          transform: skewX(calc(var(--skew) * -1));
+          background: transparent;
+          border: none;
+          padding: 14px 18px;
+          font-size: 18px;
+          font-weight: 900;
+          color: var(--ink);
+          outline: none;
+          font-family: Helvetica, Arial, sans-serif;
+          letter-spacing: 0.01em;
+      }
+      .skew-input::placeholder {
+          color: rgba(0, 0, 0, 0.45);
+      }
+      .skew-input-wrap:focus-within {
+          box-shadow: 0 10px 0 rgba(0, 0, 0, 0.18),
+          0 0 0 5px rgba(31, 111, 235, 0.25);
+      }
+      .mv-btn-wrap {
+          display: inline-block;
+          transform: skewX(var(--skew));
+          background: var(--mv-blue);
+          border: 3px solid var(--ink);
+          box-shadow: 0 8px 0 rgba(0, 0, 0, 0.15);
+          border-radius: 0;
+          padding: 0;
+          cursor: pointer;
+          white-space: nowrap;
+      }
+      .mv-btn {
+          transform: skewX(calc(var(--skew) * -1));
+          background: transparent;
+          border: none;
+          padding: 14px 26px;
+          font-size: 18px;
+          font-weight: 1000;
+          text-transform: uppercase;
+          color: #ffffff;
+          letter-spacing: 0.06em;
+          cursor: pointer;
+          font-family: Helvetica, Arial, sans-serif;
+      }
+      .mv-btn-wrap:hover {
+          box-shadow: 0 10px 0 rgba(0, 0, 0, 0.18);
+          filter: brightness(1.08);
+      }
+      .mv-btn-wrap:active {
+          transform: skewX(var(--skew)) translateY(2px);
+          box-shadow: 0 6px 0 rgba(0, 0, 0, 0.15);
+      }
+      .hud {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          align-items: end;
+          gap: 20px;
+          padding: 16px 16px;
+          border: 3px solid #979797;
+          background: #fff;
+          box-shadow: 0 10px 0 rgba(0, 0, 0, 0.10);
+      }
+      .hud-left {
+          display: grid;
+          gap: 10px;
+      }
+      .hud-right {
+          display: flex;
+          justify-content: flex-end;
+          align-items: end;
+      }
+      .hud-img {
+          width: 140px;
+          height: 140px;
+          border-radius: 12px;
+      }
+      .hudTitle {
+          margin: 0;
+          font-size: 22px;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          background: linear-gradient(0deg, var(--mv-orange-dark), #ff8825);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+      }
+      .current_name {
+          margin: 0;
+          font-size: 20px;
+          color: #3b3b3b;
+          font-family: Helvetica, Arial, sans-serif;
+          font-weight: 900;
+          word-break: break-word;
+      }
+      .mv-tip-wrap {
+          width: fit-content;
+          max-width: 100%;
+          transform: skewX(var(--skew));
+          background: var(--mv-blue);
+          border: 3px solid var(--mv-blue-dark);
+          box-shadow: 0 8px 0 rgba(0, 0, 0, 0.15);
+          border-radius: 0;
+          padding: 0;
+          margin-top: 4px;
+          font-family: Helvetica, Arial, sans-serif;
+          justify-self: start;
+      }
+      .red {
+          background: indianred;
+          border: 3px solid darkred;
+      }
+      .green {
+          background: mediumseagreen;
+          border: 3px solid darkgreen;
+      }
+      .mv-tip {
+          transform: skewX(calc(var(--skew) * -1));
+          color: #ffffff;
+          font-size: 14px;
+          font-weight: 900;
+          padding: 12px 18px;
+          letter-spacing: 0.02em;
+          line-height: 1.2;
+          white-space: normal;
+      }
+      .halfSecond {
+          animation-delay: 0.5s;
+      }
+      .secondAndHalf {
+          animation-delay: 1.5s;
+      }
+      .createdBy {
+          position: fixed;
+          bottom: 0px;
+          right: 10px;
+          color: #fff;
+          font-size: 12px;
+          font-family: Helvetica, Arial, sans-serif;
+          font-weight: 900;
+          letter-spacing: 0.06em;
+      }
+      .logoBy {
+          position: fixed;
+          bottom: 0px;
+          left: 10px;
+          color: #fff;
+          font-size: 12px;
+          font-family: Helvetica, Arial, sans-serif;
+          font-weight: 900;
+          letter-spacing: 0.06em;
+      }
+      @media (max-width: 760px) {
+          .top {
+              grid-template-columns: 1fr;
+              justify-items: center;
+              text-align: center;
+          }
+          .logo {
+              max-width: 140px;
+          }
+          .chips {
+              justify-content: center;
+          }
+          .mv-tip-wrap {
+              justify-self: center;
+          }
+          .formRow {
+              grid-template-columns: 1fr;
+          }
+          .mv-btn-wrap {
+              width: fit-content;
+              justify-self: center;
+          }
+      }
+  </style>
+  <script>
+    const gifs = ["images/200w.webp", "images/200.webp", "images/200w2.webp", "images/multiversus-bugs-bunny.gif"]
+    setInterval(() => {
+      const gifElement = document.getElementById("gif")
+      gifElement.src = gifs[Math.floor(Math.random() * gifs.length)]
+    }, 3000)
+  </script>
+</head>
+<body>
+<h1 class="createdBy">Webpage by brettlyc</h1>
+<h1 class="logoBy">Logo by thefoggy</h1>
+<section class="background"></section>
+<div class="main_wrapper">
+  <section class="main_container animate__animated animate__fadeIn">
+    <div class="content">
+      <div class="top">
+        <img src="images/OpenVersus_logo.png" class="logo" alt="OpenVersus Logo"/>
+        <div>
+          <h1 class="panelTitle">Change Your Name</h1>
+          <p class="subline">Names containing racial slurs, hate speech, or similar will result in an <b><i>automated</i></b> and <b>permanent</b> ban. :)</p>
+          <div class="chips">
+            <div class="chip blue animate__animated animate__fadeIn halfSecond"><span>Welcome Back</span></div>
+            <div class="chip orange animate__animated animate__fadeIn animate__delay-1s"><span>Keep It Respectful</span></div>
+          </div>
+        </div>
+      </div>
+      <form class="animate__animated animate__fadeInDown halfSecond" action="/namechange" method="POST">
+        <div class="formRow">
+          <div class="skew-input-wrap">
+            <input class="skew-input" type="text" placeholder="Something Cool..." name="name"/>
+          </div>
+          <div class="mv-btn-wrap">
+            <button class="mv-btn" type="submit">Change</button>
+          </div>
+        </div>
+        {{#if error}}
+        <div class="mv-tip-wrap red">
+          <div class="mv-tip">Error: {{ error }}
+          </div>
+        </div>
+        {{/if}}
+        {{#if success}}
+        <div class="mv-tip-wrap green">
+          <div class="mv-tip">Sweet! Your name has been changed.
+          </div>
+        </div>
+        {{/if}}
+      </form>
+      <div class="hud animate__animated animate__fadeInUp animate__delay-1s">
+        <div class="hud-left">
+          <h2 class="hudTitle">Your Current Username</h2>
+          <p class="current_name">{{currentUsername}}</p>
+          <div class="mv-tip-wrap">
+            <div class="mv-tip">Tip: You have to restart your game after changing to see your new
+              username.
+            </div>
+          </div>
+        </div>
+        <div class="hud-right">
+          <img id="gif" src="images/multiversus-bugs-bunny.gif" class="hud-img"/>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

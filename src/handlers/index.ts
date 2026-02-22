@@ -14,3 +14,4 @@ export * from "./profiles";
 export * from "./sessions";
 export * from "./social";
 export * from "./ssc";
+export * from "./images";

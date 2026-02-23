@@ -648,35 +648,6 @@ export async function redisCleanupPlayerLobby(playerId: string): Promise<void> {
   logger.info(`${logPrefix} Cleaned up lobby data for disconnected player ${playerId}`);
 }
 
-// --- Pending Party Invites (for DLL polling) ---
-
-export interface RedisPendingInvite {
-  inviterAccountId: string;
-  inviterUsername: string;
-  invitedAccountId: string;
-  lobbyId: string;
-  createdAt: number;
-}
-
-export async function redisSavePendingInvite(invitedPlayerId: string, invite: RedisPendingInvite): Promise<void> {
-  const EX = 60; // 60 second expiry — invite expires if not accepted
-  await redisClient.set(`pending_invite:${invitedPlayerId}`, JSON.stringify(invite), { EX });
-  logger.info(`${logPrefix} Saved pending invite for ${invitedPlayerId} from ${invite.inviterUsername}`);
-}
-
-export async function redisGetPendingInvite(invitedPlayerId: string): Promise<RedisPendingInvite | null> {
-  const data = await redisClient.get(`pending_invite:${invitedPlayerId}`);
-  if (data) {
-    return JSON.parse(data) as RedisPendingInvite;
-  }
-  return null;
-}
-
-export async function redisDeletePendingInvite(invitedPlayerId: string): Promise<void> {
-  await redisClient.del(`pending_invite:${invitedPlayerId}`);
-  logger.info(`${logPrefix} Deleted pending invite for ${invitedPlayerId}`);
-}
-
 // --- Party Key (web-based party join) ---
 
 export interface RedisPartyKeyData {

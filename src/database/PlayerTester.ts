@@ -52,6 +52,9 @@ export class PlayerTester {
 
   @prop({ default: "skin_shaggy_default" })
   public variant!: string;
+
+  @prop({ default: "" })
+  public party_key!: string;
 }
 
 export const PlayerTesterModel = getModelForClass(PlayerTester);

@@ -9,7 +9,7 @@ import * as path from "path";
 import { hydraTokenMiddleware } from "./middleware/auth";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
-import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch } from "./config/redis";
+import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisAddOnlinePlayer, redisRemoveOnlinePlayer, redisGetOnlinePlayers, RedisPlayerConnection, redisGetLobbyState, redisSaveLobbyState, redisPublishPlayerJoinedLobby, ON_LOBBY_MODE_UPDATED, RedisOnGameModeUpdatedNotification, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey } from "./config/redis";
 import { GAME_SERVER_PORT } from "./game/udp";
 import { sscRouter } from "./ssc/routes";
 import { getCurrentCRC, LoadConfig, MATCHMAKING_CRC } from "./data/config";
@@ -26,12 +26,13 @@ import * as AuthUtils from "./utils/auth";
 import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { NameGenerator } from "./utils/namegeneration";
+import { initAccelByteLobbyWs } from "./accelByteLobbyWs";
 
 // HTML Rendering
 const handlebars = require("handlebars");
 
 const serviceName: string = "Server";
-const logPrefix: string = `[${serviceName}]:`;
+const logPrefix = `[${serviceName}]:`;
 
 const matcher = new RegExpMatcher({
   ...englishDataset.build(),
@@ -63,10 +64,158 @@ app.get("/global_configuration_types/eula/global_configurations/*", (req, res, n
 
 app.use(syncRouter);
 
+// ============================================================
+// Test / Debug: Fake player endpoints (no auth required)
+// ============================================================
+import ObjectID from "bson-objectid";
+
+const FAKE_PLAYER_ID = "aaaaaaaaaaaaaaaaaaaaaaaa";
+const FAKE_PLAYER_IP = "10.99.99.99";
+const FAKE_PLAYER_USERNAME = "TestDummy_Player2";
+const FAKE_PLAYER_PUBLIC_ID = "pfake00000000000000000000000000001";
+
+app.post("/test/fake-player", async (req, res) => {
+  try {
+    const fakeProfileId = ObjectID().toHexString();
+    const fakeConnection: Record<string, string> = {
+      id: FAKE_PLAYER_ID,
+      public_id: FAKE_PLAYER_PUBLIC_ID,
+      wb_network_id: FAKE_PLAYER_ID,
+      profile_id: fakeProfileId,
+      username: FAKE_PLAYER_USERNAME,
+      hydraUsername: FAKE_PLAYER_USERNAME,
+      current_ip: FAKE_PLAYER_IP,
+      lobby_id: "",
+      GameplayPreferences: "964",
+      character: "character_shaggy",
+      skin: "skin_shaggy_default",
+      profileIcon: "profile_icon_default_gold",
+    };
+
+    await redisClient.hSet(`connections:${FAKE_PLAYER_ID}`, fakeConnection);
+    await redisClient.hSet(`connections:${FAKE_PLAYER_IP}`, fakeConnection);
+
+    // Also set up the player loadout key that redisGetPlayer reads
+    await redisClient.hSet(`player:${FAKE_PLAYER_ID}`, {
+      character: "character_shaggy",
+      skin: "skin_shaggy_default",
+      ip: FAKE_PLAYER_IP,
+      profileIcon: "profile_icon_default_gold",
+      status: "online",
+    });
+
+    await redisAddOnlinePlayer(FAKE_PLAYER_ID);
+
+    logger.info(`${logPrefix} Fake player "${FAKE_PLAYER_USERNAME}" (${FAKE_PLAYER_ID}) added to online players`);
+    res.json({
+      status: "ok",
+      message: `Fake player "${FAKE_PLAYER_USERNAME}" is now online`,
+      playerId: FAKE_PLAYER_ID,
+      ip: FAKE_PLAYER_IP,
+    });
+  } catch (e) {
+    logger.error(`${logPrefix} Error creating fake player: ${e}`);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.delete("/test/fake-player", async (req, res) => {
+  try {
+    await redisRemoveOnlinePlayer(FAKE_PLAYER_ID);
+    await redisClient.del(`connections:${FAKE_PLAYER_ID}`);
+    await redisClient.del(`connections:${FAKE_PLAYER_IP}`);
+    await redisClient.del(`player:${FAKE_PLAYER_ID}`);
+
+    logger.info(`${logPrefix} Fake player "${FAKE_PLAYER_USERNAME}" removed from online players`);
+    res.json({
+      status: "ok",
+      message: `Fake player "${FAKE_PLAYER_USERNAME}" is now offline`,
+    });
+  } catch (e) {
+    logger.error(`${logPrefix} Error removing fake player: ${e}`);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.get("/test/online-players", async (req, res) => {
+  try {
+    const onlineIds = await redisGetOnlinePlayers();
+    const players: any[] = [];
+    for (const id of onlineIds) {
+      const conn = await redisClient.hGetAll(`connections:${id}`) as unknown as RedisPlayerConnection;
+      players.push({
+        id,
+        username: conn?.username || conn?.hydraUsername || "Unknown",
+        ip: conn?.current_ip || "Unknown",
+      });
+    }
+    res.json({ count: players.length, players });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.post("/test/fake-accept-invite/:lobbyId", async (req, res) => {
+  try {
+    const lobbyId = req.params.lobbyId;
+    const lobby = await redisGetLobbyState(lobbyId);
+
+    if (!lobby) {
+      res.status(404).json({ error: `Lobby ${lobbyId} not found in Redis` });
+      return;
+    }
+
+    // Add fake player to the lobby
+    if (!lobby.playerIds.includes(FAKE_PLAYER_ID)) {
+      lobby.playerIds.push(FAKE_PLAYER_ID);
+      await redisSaveLobbyState(lobbyId, lobby);
+    }
+
+    // Notify via the full lobby update channel
+    await redisPublishPlayerJoinedLobby({
+      lobbyId,
+      ownerId: lobby.ownerId,
+      joinedPlayerId: FAKE_PLAYER_ID,
+      joinedPlayerUsername: FAKE_PLAYER_USERNAME,
+      allPlayerIds: lobby.playerIds,
+      mode: lobby.mode || "1v1",
+    });
+
+    // Also fire OnLobbyModeUpdated — we know the client handles this template
+    // and it should trigger a lobby state refresh
+    const lobbyModeNotification: RedisOnGameModeUpdatedNotification = {
+      lobbyId,
+      playersIds: lobby.playerIds,
+      modeString: lobby.mode || "1v1",
+    };
+    await redisClient.publish(ON_LOBBY_MODE_UPDATED, JSON.stringify(lobbyModeNotification));
+
+    logger.info(`${logPrefix} Fake player "${FAKE_PLAYER_USERNAME}" accepted invite and joined lobby ${lobbyId}`);
+    res.json({
+      status: "ok",
+      message: `Fake player "${FAKE_PLAYER_USERNAME}" joined lobby ${lobbyId}`,
+      lobby: {
+        id: lobbyId,
+        owner: lobby.ownerId,
+        players: lobby.playerIds,
+      },
+    });
+  } catch (e) {
+    logger.error(`${logPrefix} Error fake-accepting invite: ${e}`);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ============================================================
+
 // HTML File Setup
 const filePath = path.join(__dirname, "static/name_change.html");
 const source = fs.readFileSync(filePath, "utf8");
 const template = handlebars.compile(source);
+
+const partyFilePath = path.join(__dirname, "static/party.html");
+const partySource = fs.readFileSync(partyFilePath, "utf8");
+const partyTemplate = handlebars.compile(partySource);
 
 app.get("/namechange", async (req, res) => {
   try {
@@ -164,7 +313,7 @@ app.post("/namechange", async (req, res, next) => {
 
     res.send(html);
 
-    logger.info(`${logPrefix} Name change for IP ${ip} to "${name}" (filtered: "${filtered}")`);
+    logger.info(`[${serviceName}]: Name change for IP ${ip} to "${name}" (filtered: "${filtered}")`);
     if (player) {
       logwrapper.verbose(`${logPrefix} Name change Player document after update: ${JSON.stringify(player)}`);
     }
@@ -302,6 +451,161 @@ app.post("/mvsi_end_match", async (req, res, next) => {
   }
 });
 
+// ============================================================
+// Party Web Page — Join parties via shareable key
+// ============================================================
+
+app.get("/party", async (req, res) => {
+  try {
+    const ip = req.ip!.replace(/^::ffff:/, "");
+    let player = await PlayerTesterModel.findOne({ ip });
+    const username = player?.name || "Unknown";
+    const currentKey = player?.party_key || "";
+
+    const html = partyTemplate({
+      username,
+      currentKey,
+      error: null,
+      success: null,
+    });
+    res.send(html);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /party: ${e}`);
+    res.status(500).send("Error loading party page");
+  }
+});
+
+app.post("/party/set-key", async (req, res) => {
+  try {
+    const ip = req.ip!.replace(/^::ffff:/, "");
+    let player = await PlayerTesterModel.findOne({ ip });
+    if (!player) {
+      res.send(partyTemplate({ username: "Unknown", currentKey: "", error: "You must be connected to the game first.", success: null }));
+      return;
+    }
+
+    const newKey = (req.body.key || "").trim();
+
+    // Validate key
+    if (!newKey || newKey.length < 3) {
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "Key must be at least 3 characters.", success: null }));
+      return;
+    }
+    if (newKey.length > 20) {
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "Key must be 20 characters or less.", success: null }));
+      return;
+    }
+    if (!/^[a-zA-Z0-9_\-]+$/.test(newKey)) {
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "Key can only contain letters, numbers, underscores, and dashes.", success: null }));
+      return;
+    }
+
+    // Check if key is already taken by another player
+    const existingKeyData = await redisGetPartyKey(newKey);
+    if (existingKeyData && existingKeyData.playerId !== player.id) {
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "That key is already taken by another player.", success: null }));
+      return;
+    }
+
+    // Delete old key from Redis if changing
+    const oldKey = player.party_key;
+    if (oldKey && oldKey.toLowerCase() !== newKey.toLowerCase()) {
+      await redisDeletePartyKey(oldKey);
+    }
+
+    // Save new key to MongoDB
+    player.party_key = newKey;
+    await player.save();
+
+    // Update Redis connection hashes
+    await redisClient.hSet(`connections:${player.id}`, { party_key: newKey });
+    await redisClient.hSet(`connections:${ip}`, { party_key: newKey });
+
+    // Save party key lookup in Redis (lobbyId from current lobby or empty)
+    const conn = await redisGetPlayerConnectionByIp(ip);
+    const currentLobbyId = conn?.lobby_id || "";
+    await redisSavePartyKey(newKey, { playerId: player.id, lobbyId: currentLobbyId, username: player.name });
+
+    logger.info(`${logPrefix} Player ${player.name} (${ip}) set party key to "${newKey}"`);
+    res.send(partyTemplate({ username: player.name, currentKey: newKey, error: null, success: `Party key set to "${newKey}"!` }));
+  } catch (e) {
+    logger.error(`${logPrefix} Error in POST /party/set-key: ${e}`);
+    res.status(500).send("Error setting party key");
+  }
+});
+
+app.post("/party/join", async (req, res) => {
+  try {
+    const ip = req.ip!.replace(/^::ffff:/, "");
+    let player = await PlayerTesterModel.findOne({ ip });
+    if (!player) {
+      res.send(partyTemplate({ username: "Unknown", currentKey: "", error: "You must be connected to the game first.", success: null }));
+      return;
+    }
+
+    const joinKey = (req.body.key || "").trim();
+    if (!joinKey) {
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "Please enter a party key.", success: null }));
+      return;
+    }
+
+    // Look up the party key in Redis
+    const keyData = await redisGetPartyKey(joinKey);
+    if (!keyData) {
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `No player found with party key "${joinKey}". They must be in-game.`, success: null }));
+      return;
+    }
+
+    // Can't join your own party
+    if (keyData.playerId === player.id) {
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "That's your own party key!", success: null }));
+      return;
+    }
+
+    const lobbyId = keyData.lobbyId;
+    if (!lobbyId) {
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `${keyData.username} doesn't have an active lobby yet. They need to be in-game.`, success: null }));
+      return;
+    }
+
+    // Get the lobby state
+    const lobby = await redisGetLobbyState(lobbyId);
+    if (!lobby) {
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `${keyData.username}'s lobby is no longer active. They may need to restart their game.`, success: null }));
+      return;
+    }
+
+    // Check if already in this lobby
+    if (lobby.playerIds.includes(player.id)) {
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `You're already in ${keyData.username}'s lobby!`, success: null }));
+      return;
+    }
+
+    // Add the joining player to the lobby and force 2v2 mode
+    lobby.playerIds.push(player.id);
+    if (lobby.playerIds.length >= 2) {
+      lobby.mode = "2v2";
+    }
+    await redisSaveLobbyState(lobbyId, lobby);
+    await redisSavePlayerLobby(player.id, lobbyId);
+
+    // Trigger lobby rejoin for ALL players (force-closes WebSocket, game reconnects with updated roster)
+    for (const pid of lobby.playerIds) {
+      const rejoinNotification: RedisLobbyRejoinNotification = {
+        playerId: pid,
+        lobbyId,
+      };
+      await redisPublishLobbyRejoin(rejoinNotification);
+    }
+
+    logger.info(`${logPrefix} Player ${player.name} (${ip}) joined ${keyData.username}'s lobby ${lobbyId} via party key "${joinKey}". Players: ${lobby.playerIds.join(", ")}`);
+    res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: null, success: `Joined ${keyData.username}'s party! Check your game.` }));
+  } catch (e) {
+    logger.error(`${logPrefix} Error in POST /party/join: ${e}`);
+    res.status(500).send("Error joining party");
+  }
+});
+
 app.use(hydraDecoderMiddleware);
 app.use(hydraTokenMiddleware);
 
@@ -310,6 +614,19 @@ app.use(sscRouter);
 app.get("/ssc/invoke/hiss_amalgamation", (req, res, next) => {
   logger.info(`${logPrefix} Missing Crc, sending fresh one`);
   res.send(generate_hiss());
+});
+
+// Notification endpoints — the game binary has /accounts/me/notifications/ paths
+// The game may poll for pending notifications (e.g. party invites)
+app.get("/accounts/me/notifications", async (req, res) => {
+  logger.info(`${logPrefix} GET /accounts/me/notifications requested`);
+  // Return empty notifications array — invites are delivered via WebSocket
+  res.send({ notifications: [], total: 0 });
+});
+
+app.get("/accounts/me/notifications/bulk", async (req, res) => {
+  logger.info(`${logPrefix} GET /accounts/me/notifications/bulk requested`);
+  res.send({ notifications: [], total: 0 });
 });
 
 app.use((req, res, next) => {
@@ -337,4 +654,9 @@ export async function start() {
   MVSHTTPServer.listen(port, "0.0.0.0", () => {
     logger.info(`${logPrefix} OVS Server running on ${port}`);
   });
+
+  // Initialize AccelByte Lobby WebSocket service on the same HTTP server
+  // This handles WebSocket upgrades to /lobby/ for party invites, friends, etc.
+  initAccelByteLobbyWs(MVSHTTPServer);
+  logger.info(`${logPrefix} AccelByte Lobby WebSocket initialized on HTTP server (port ${port})`);
 }

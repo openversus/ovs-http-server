@@ -10,7 +10,7 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { num } from "envalid";
 
 const serviceName: string = "Config.Redis";
-const logPrefix: string = `[${serviceName}]:`;
+const logPrefix = `[${serviceName}]:`;
 
 const redisConfig = {
   username: env.REDIS_USERNAME,
@@ -29,6 +29,7 @@ export const ON_LOBBY_MODE_UPDATED = "OnLobbyModeUpdated";
 export const ON_MATCH_MAKER_STARTED_CHANNEL = "party:queued";
 export const ON_CANCEL_MATCHMAKING = "matchmaking:cancel";
 export const ON_END_OF_MATCH = "match:end";
+export const LOBBY_REJOIN_CHANNEL = "lobby:rejoin";
 
 export type RedisClient = RedisClientType<redis.RedisModules, redis.RedisFunctions, redis.RedisScripts>;
 
@@ -453,7 +454,7 @@ export async function redisGetAllLockedPerks(containerMatchId: string) {
     for (const player of ticket.players) {
       var rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${player.id}`)) as unknown as RedisPlayerConnection;
       logger.error(
-        `${logPrefix} Canceling matchmaking for player ${player.id} with name ${rPlayerConnectionByID.username} and IP ${rPlayerConnectionByID.current_ip}, matchmaking request ${matchmakingRequest} due to an error retrieving locked perks`,
+        `[${serviceName}]: Canceling matchmaking for player ${player.id} with name ${rPlayerConnectionByID.username} and IP ${rPlayerConnectionByID.current_ip}, matchmaking request ${matchmakingRequest} due to an error retrieving locked perks`,
       );
       cancelMatchmaking(player.id, matchmakingRequest);
     }
@@ -493,4 +494,221 @@ export async function redisDeleteConnectionKeysByIp(ip: string): Promise<void> {
 
 export async function redisDeleteConnectionKeysById(playerId: string): Promise<void> {
   await redisDeleteKeysByPattern(`connections`, `${playerId}`);
+}
+
+// --- Online Players Tracking ---
+
+const ONLINE_PLAYERS_SET = "online_players";
+
+export async function redisAddOnlinePlayer(playerId: string): Promise<void> {
+  await redisClient.sAdd(ONLINE_PLAYERS_SET, playerId);
+  logger.info(`${logPrefix} Added player ${playerId} to online players set`);
+}
+
+export async function redisRemoveOnlinePlayer(playerId: string): Promise<void> {
+  await redisClient.sRem(ONLINE_PLAYERS_SET, playerId);
+  logger.info(`${logPrefix} Removed player ${playerId} from online players set`);
+}
+
+export async function redisGetOnlinePlayers(): Promise<string[]> {
+  return await redisClient.sMembers(ONLINE_PLAYERS_SET);
+}
+
+// --- Party Invites ---
+
+export const PARTY_INVITE_CHANNEL = "party:invite";
+
+export interface RedisPartyInviteNotification {
+  inviterAccountId: string;
+  inviterUsername: string;
+  invitedAccountId: string;
+  matchId: string;
+  lobbyId: string;
+}
+
+export async function redisPublishPartyInvite(notification: RedisPartyInviteNotification): Promise<void> {
+  await redisClient.publish(PARTY_INVITE_CHANNEL, JSON.stringify(notification));
+  logger.info(`${logPrefix} Published party invite from ${notification.inviterAccountId} to ${notification.invitedAccountId} for match ${notification.matchId}`);
+}
+
+// --- Lobby State ---
+
+export const PLAYER_JOINED_LOBBY_CHANNEL = "lobby:player_joined";
+
+export interface RedisLobbyState {
+  lobbyId: string;
+  ownerId: string;
+  ownerUsername: string;
+  mode: string;
+  playerIds: string[];
+  createdAt: number;
+}
+
+export interface RedisPlayerJoinedLobbyNotification {
+  lobbyId: string;
+  ownerId: string;
+  joinedPlayerId: string;
+  joinedPlayerUsername: string;
+  allPlayerIds: string[];
+  mode: string;
+}
+
+export async function redisSaveLobbyState(lobbyId: string, state: RedisLobbyState): Promise<void> {
+  const EX = 60 * 60; // 1 hour expiry
+  await redisClient.set(`lobby:${lobbyId}`, JSON.stringify(state), { EX });
+  logger.info(`${logPrefix} Saved lobby state for ${lobbyId} with players: ${state.playerIds.join(", ")}`);
+}
+
+export async function redisGetLobbyState(lobbyId: string): Promise<RedisLobbyState | null> {
+  const data = await redisClient.get(`lobby:${lobbyId}`);
+  if (data) {
+    return JSON.parse(data) as RedisLobbyState;
+  }
+  return null;
+}
+
+export async function redisPublishPlayerJoinedLobby(notification: RedisPlayerJoinedLobbyNotification): Promise<void> {
+  await redisClient.publish(PLAYER_JOINED_LOBBY_CHANNEL, JSON.stringify(notification));
+  logger.info(`${logPrefix} Published player joined lobby: ${notification.joinedPlayerId} joined ${notification.lobbyId}`);
+}
+
+export interface RedisLobbyRejoinNotification {
+  playerId: string;  // The player who needs to rejoin (owner/Player 1)
+  lobbyId: string;
+}
+
+export async function redisPublishLobbyRejoin(notification: RedisLobbyRejoinNotification): Promise<void> {
+  await redisClient.publish(LOBBY_REJOIN_CHANNEL, JSON.stringify(notification));
+  logger.info(`${logPrefix} Published lobby rejoin request for player ${notification.playerId} lobby ${notification.lobbyId}`);
+}
+
+// --- Lobby Redirects ---
+// When player B is force-joined into player A's lobby, we store a redirect
+// so that when player B's client fetches their lobby, they get player A's lobby instead
+export async function redisSaveLobbyRedirect(fromLobbyId: string, toLobbyId: string): Promise<void> {
+  const EX = 60 * 60; // 1 hour expiry
+  await redisClient.set(`lobby_redirect:${fromLobbyId}`, toLobbyId, { EX });
+  logger.info(`${logPrefix} Saved lobby redirect: ${fromLobbyId} -> ${toLobbyId}`);
+}
+
+export async function redisGetLobbyRedirect(lobbyId: string): Promise<string | null> {
+  return await redisClient.get(`lobby_redirect:${lobbyId}`);
+}
+
+// Store which lobby a player is currently in (so we can redirect their match fetches)
+export async function redisSavePlayerLobby(playerId: string, lobbyId: string): Promise<void> {
+  const EX = 60 * 60;
+  await redisClient.set(`player_lobby:${playerId}`, lobbyId, { EX });
+  logger.info(`${logPrefix} Player ${playerId} is now in lobby ${lobbyId}`);
+}
+
+export async function redisGetPlayerLobby(playerId: string): Promise<string | null> {
+  return await redisClient.get(`player_lobby:${playerId}`);
+}
+
+export async function redisDeletePlayerLobby(playerId: string): Promise<void> {
+  await redisClient.del(`player_lobby:${playerId}`);
+  logger.info(`${logPrefix} Deleted player_lobby for ${playerId}`);
+}
+
+export async function redisDeleteLobbyState(lobbyId: string): Promise<void> {
+  await redisClient.del(`lobby:${lobbyId}`);
+  logger.info(`${logPrefix} Deleted lobby state for ${lobbyId}`);
+}
+
+// Clean up a player's lobby data on disconnect.
+// Removes them from the lobby's player list, deletes their player_lobby key,
+// and if the lobby is now empty, deletes the lobby state entirely.
+export async function redisCleanupPlayerLobby(playerId: string): Promise<void> {
+  const lobbyId = await redisGetPlayerLobby(playerId);
+  if (!lobbyId) return;
+
+  // Remove player_lobby mapping
+  await redisDeletePlayerLobby(playerId);
+
+  // Remove player from the lobby state
+  const lobbyState = await redisGetLobbyState(lobbyId);
+  if (lobbyState) {
+    lobbyState.playerIds = lobbyState.playerIds.filter(pid => pid !== playerId);
+    if (lobbyState.playerIds.length === 0) {
+      // Lobby is empty, delete it
+      await redisDeleteLobbyState(lobbyId);
+    } else {
+      // Save updated lobby without this player
+      await redisSaveLobbyState(lobbyId, lobbyState);
+    }
+  }
+
+  // Also clean up any lobby redirects
+  const redirect = await redisGetLobbyRedirect(lobbyId);
+  if (redirect) {
+    await redisClient.del(`lobby_redirect:${lobbyId}`);
+  }
+
+  logger.info(`${logPrefix} Cleaned up lobby data for disconnected player ${playerId}`);
+}
+
+// --- Pending Party Invites (for DLL polling) ---
+
+export interface RedisPendingInvite {
+  inviterAccountId: string;
+  inviterUsername: string;
+  invitedAccountId: string;
+  lobbyId: string;
+  createdAt: number;
+}
+
+export async function redisSavePendingInvite(invitedPlayerId: string, invite: RedisPendingInvite): Promise<void> {
+  const EX = 60; // 60 second expiry — invite expires if not accepted
+  await redisClient.set(`pending_invite:${invitedPlayerId}`, JSON.stringify(invite), { EX });
+  logger.info(`${logPrefix} Saved pending invite for ${invitedPlayerId} from ${invite.inviterUsername}`);
+}
+
+export async function redisGetPendingInvite(invitedPlayerId: string): Promise<RedisPendingInvite | null> {
+  const data = await redisClient.get(`pending_invite:${invitedPlayerId}`);
+  if (data) {
+    return JSON.parse(data) as RedisPendingInvite;
+  }
+  return null;
+}
+
+export async function redisDeletePendingInvite(invitedPlayerId: string): Promise<void> {
+  await redisClient.del(`pending_invite:${invitedPlayerId}`);
+  logger.info(`${logPrefix} Deleted pending invite for ${invitedPlayerId}`);
+}
+
+// --- Party Key (web-based party join) ---
+
+export interface RedisPartyKeyData {
+  playerId: string;
+  lobbyId: string;
+  username: string;
+}
+
+export async function redisSavePartyKey(key: string, data: RedisPartyKeyData): Promise<void> {
+  const EX = 60 * 60; // 1 hour TTL
+  await redisClient.set(`party_key:${key.toLowerCase()}`, JSON.stringify(data), { EX });
+  logger.info(`${logPrefix} Saved party key "${key}" for player ${data.playerId} (${data.username})`);
+}
+
+export async function redisGetPartyKey(key: string): Promise<RedisPartyKeyData | null> {
+  const data = await redisClient.get(`party_key:${key.toLowerCase()}`);
+  if (data) {
+    return JSON.parse(data) as RedisPartyKeyData;
+  }
+  return null;
+}
+
+export async function redisDeletePartyKey(key: string): Promise<void> {
+  await redisClient.del(`party_key:${key.toLowerCase()}`);
+  logger.info(`${logPrefix} Deleted party key "${key}"`);
+}
+
+export async function redisUpdatePartyKeyLobby(key: string, lobbyId: string): Promise<void> {
+  const existing = await redisGetPartyKey(key);
+  if (existing) {
+    existing.lobbyId = lobbyId;
+    await redisSavePartyKey(key, existing);
+    logger.info(`${logPrefix} Updated party key "${key}" lobbyId to ${lobbyId}`);
+  }
 }

@@ -1,8 +1,10 @@
 import express, { Request, Response } from "express";
 import { MVSQueries } from "../interfaces/queries_types";
+import { redisClient, redisGetOnlinePlayers, RedisPlayerConnection } from "../config/redis";
+import { logger } from "../config/logger";
 
 export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MVSQueries.Accounts_wb_network_bulk_QUERY>, res: Response) {
-  res.send([
+  const staticAccounts = [
     {
       updated_at: { _hydra_unix_date: 1738799895 },
       created_at: { _hydra_unix_date: 1658510618 },
@@ -6134,5 +6136,67 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
       presence_state: 0,
       presence: "offline",
     },
-  ]);
+  ];
+
+  // === HIDDEN: Online players in accounts disabled until DLL change is made ===
+  /*
+  try {
+    const onlinePlayerIds = await redisGetOnlinePlayers();
+    for (const playerId of onlinePlayerIds) {
+      const conn = (await redisClient.hGetAll(`connections:${playerId}`)) as unknown as RedisPlayerConnection;
+      if (!conn || !conn.id) continue;
+
+      const publicId = conn.public_id || playerId;
+      // Skip if this public_id already exists in the static list
+      const alreadyExists = staticAccounts.some((a: any) => a.public_id === publicId);
+      if (alreadyExists) continue;
+
+      staticAccounts.push({
+        updated_at: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
+        created_at: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
+        deleted: false,
+        orphaned: false,
+        orphaned_reason: null,
+        public_id: publicId,
+        "identity.avatar": "https://s3.amazonaws.com/wb-agora-hydra-ugc-dokken/identicons/identicon.540.png",
+        "identity.default_username": false,
+        "identity.alternate.wb_network": [{ id: publicId, username: conn.username || conn.hydraUsername || "Unknown", avatar: null }],
+        "identity.alternate.steam": [
+          {
+            id: "76561190000000000",
+            username: conn.username || conn.hydraUsername || "Unknown",
+            avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg",
+          },
+        ],
+        "wb_account.completed": true,
+        "wb_account.email_verified": true,
+        points: 0,
+        state: "normal",
+        wbplay_data_synced: false,
+        wbplay_identity: null,
+        locale: "en-US",
+        "data.EULAAcceptTimestamp": Math.floor(Date.now() / 1000),
+        "data.EULAAcceptVersion": 5,
+        "data.LastLoginPlatform": "EPlatform::PC",
+        "data.LastPlayedCharacterSlug": "character_shaggy",
+        "server_data.LastLoginTime": new Date().toISOString(),
+        "server_data.OpenBeta": true,
+        "server_data.LastLoginPlatform": "PC",
+        "server_data.ProfileIcon.Slug": "profile_icon_default_gold",
+        "server_data.ProfileIcon.AssetPath": "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_Default_Gold.ProfileIcon_Default_Gold",
+        "server_data.CurrentXP": 0,
+        "server_data.Level": 1,
+        id: conn.id,
+        "identity.username": conn.hydraUsername || conn.username || "Unknown",
+        connections: [],
+        presence_state: 1,
+        presence: "online",
+      } as any);
+    }
+  } catch (err) {
+    logger.error(`[Handlers.Accounts]: Error appending online players to accounts bulk: ${err}`);
+  }
+  */
+
+  res.send(staticAccounts);
 }

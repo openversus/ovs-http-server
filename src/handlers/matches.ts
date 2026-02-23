@@ -1,6 +1,18 @@
 import { logger, logwrapper, BE_VERBOSE } from "../config/logger";
 import express, { Request, Response } from "express";
-import { redisClient, RedisPlayerConnection, redisSetPlayerConnectionCosmetics, redisGetPlayer, redisGetPlayers } from "../config/redis";
+import {
+  redisClient,
+  RedisPlayerConnection,
+  redisSetPlayerConnectionCosmetics,
+  redisGetPlayer,
+  redisGetPlayers,
+  redisGetLobbyState,
+  redisSaveLobbyState,
+  redisPublishPlayerJoinedLobby,
+  RedisPlayerJoinedLobbyNotification,
+  redisGetLobbyRedirect,
+  redisGetPlayerLobby,
+} from "../config/redis";
 import { Cosmetics, CosmeticsModel, TauntSlotsClass } from "../database/Cosmetics";
 import { getEquippedCosmetics } from "../services/cosmeticsService";
 import { MVSQueries } from "../interfaces/queries_types";
@@ -8,18 +20,16 @@ import ObjectID from "bson-objectid";
 import { randomUUID } from "crypto";
 import { MVSTime } from "../utils/date";
 import env from "../env/env";
-import { cancelMatchmaking, MATCH_TYPES, queueMatch } from "../services/matchmakingService";
+import { cancelMatchmaking, cancelMatchmakingForAll, MATCH_TYPES, queueMatch } from "../services/matchmakingService";
 import * as SharedTypes from "../types/shared-types";
 import { HYDRA_ACCESS_TOKEN, SECRET, decodeToken } from "../middleware/auth";
 import * as AuthUtils from "../utils/auth";
 import * as KitchenSink from "../utils/garbagecan";
 
 const serviceName = "Handlers.Matches";
-const logPrefix: string = `[${serviceName}]:`;
+const logPrefix = `[${serviceName}]:`;
 
 export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Response) {
-  //const account = req.token;
-
   const account = AuthUtils.DecodeClientToken(req);
   const aID = account.id;
   const hydraUsername = account.hydraUsername;
@@ -32,8 +42,215 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
     logger.warn(`${logPrefix} No Redis player connection found for player ID ${aID}, cannot set loadout.`);
   }
 
-  //const GameplayPreferences: number = rPlayerConnectionByID.GameplayPreferences as number ?? 964;
+  // Check if this is a join to an existing lobby
+  let matchId = (req as any).params?.id;
 
+  // Check for lobby redirect (player was force-joined into another lobby)
+  const redirectedLobbyId = matchId ? await redisGetLobbyRedirect(matchId) : null;
+  if (redirectedLobbyId) {
+    logger.info(`${logPrefix} Lobby redirect: ${matchId} -> ${redirectedLobbyId} for player ${aID}`);
+    matchId = redirectedLobbyId;
+  }
+
+  // Also check if the player has been assigned to a different lobby
+  const playerLobbyId = await redisGetPlayerLobby(aID);
+  if (playerLobbyId && playerLobbyId !== matchId) {
+    const playerLobby = await redisGetLobbyState(playerLobbyId);
+    if (playerLobby && playerLobby.playerIds.includes(aID) && playerLobby.ownerId !== aID) {
+      logger.info(`${logPrefix} Player ${aID} was force-joined into lobby ${playerLobbyId}, redirecting from ${matchId}`);
+      matchId = playerLobbyId;
+    }
+  }
+
+  const existingLobby = matchId ? await redisGetLobbyState(matchId) : null;
+
+  if (existingLobby && existingLobby.ownerId !== aID) {
+    // This is a JOIN — player is accepting an invite to an existing lobby
+    logger.info(`${logPrefix} Player ${aID} (${playerUsername}) joining existing lobby ${matchId} owned by ${existingLobby.ownerId}`);
+
+    // Add joining player to lobby state
+    if (!existingLobby.playerIds.includes(aID)) {
+      existingLobby.playerIds.push(aID);
+      await redisSaveLobbyState(matchId, existingLobby);
+    }
+
+    // Get owner's connection data for the response
+    const ownerConn = (await redisClient.hGetAll(`connections:${existingLobby.ownerId}`)) as unknown as RedisPlayerConnection;
+    const ownerLoadout = await redisGetPlayer(existingLobby.ownerId);
+
+    // Build Teams with both players
+    const teams: any[] = [
+      {
+        TeamIndex: 0,
+        Players: {
+          [existingLobby.ownerId]: {
+            Account: { id: existingLobby.ownerId },
+            JoinedAt: { _hydra_unix_date: MVSTime(new Date(existingLobby.createdAt)) },
+            BotSettingSlug: "",
+            LobbyPlayerIndex: 0,
+            CrossplayPreference: 1,
+          },
+          [aID]: {
+            Account: { id: aID },
+            JoinedAt: { _hydra_unix_date: MVSTime(new Date()) },
+            BotSettingSlug: "",
+            LobbyPlayerIndex: 1,
+            CrossplayPreference: 1,
+          },
+        },
+        Length: 2,
+      },
+      { TeamIndex: 1, Players: {}, Length: 0 },
+      { TeamIndex: 2, Players: {}, Length: 0 },
+      { TeamIndex: 3, Players: {}, Length: 0 },
+      { TeamIndex: 4, Players: {}, Length: 0 },
+    ];
+
+    const ownerCharacter = ownerLoadout?.character || "character_shaggy";
+    const ownerSkin = ownerLoadout?.skin || "skin_shaggy_default";
+    const joinerCharacter = rPlayerConnectionByID?.character || "character_shaggy";
+    const joinerSkin = rPlayerConnectionByID?.skin || "skin_shaggy_default";
+
+    // Notify the lobby owner that someone joined
+    const joinNotification: RedisPlayerJoinedLobbyNotification = {
+      lobbyId: matchId,
+      ownerId: existingLobby.ownerId,
+      joinedPlayerId: aID,
+      joinedPlayerUsername: playerUsername || hydraUsername || "Unknown",
+      allPlayerIds: existingLobby.playerIds,
+      mode: existingLobby.mode || "1v1",
+    };
+    await redisPublishPlayerJoinedLobby(joinNotification);
+
+    res.send({
+      updated_at: { _hydra_unix_date: MVSTime(new Date()) },
+      created_at: { _hydra_unix_date: MVSTime(new Date(existingLobby.createdAt)) },
+      account_id: null,
+      completion_time: null,
+      name: "white-green-wind-breeze-OS5dF",
+      state: "open",
+      access_level: "public",
+      origin: "client",
+      rand: Math.random(),
+      winning_team: [],
+      win: [],
+      loss: [],
+      draw: null,
+      arbitration: null,
+      data: {},
+      server_data: {
+        Teams: teams,
+        LeaderID: existingLobby.ownerId,
+        LobbyType: 0,
+        ReadyPlayers: {},
+        PlayerGameplayPreferences: {
+          [existingLobby.ownerId]: Number(ownerConn?.GameplayPreferences) || 964,
+          [aID]: Number(rPlayerConnectionByID?.GameplayPreferences) || 964,
+        },
+        PlayerAutoPartyPreferences: { [existingLobby.ownerId]: false, [aID]: false },
+        GameVersion: env.GAME_VERSION,
+        HissCrc: 1167552915,
+        Platforms: { [existingLobby.ownerId]: "PC", [aID]: "PC" },
+        AllMultiplayParams: {
+          "1": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252499", MultiplayRegionId: "" },
+          "2": {
+            MultiplayClusterSlug: "ec2-us-east-1-dokken",
+            MultiplayProfileId: "1252922",
+            MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682",
+          },
+          "3": { MultiplayClusterSlug: "", MultiplayProfileId: "1252925", MultiplayRegionId: "" },
+          "4": {
+            MultiplayClusterSlug: "ec2-us-east-1-dokken",
+            MultiplayProfileId: "1252928",
+            MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682",
+          },
+        },
+        LockedLoadouts: {
+          [existingLobby.ownerId]: { Character: ownerCharacter, Skin: ownerSkin },
+          [aID]: { Character: joinerCharacter, Skin: joinerSkin },
+        },
+        ModeString: existingLobby.mode || "1v1",
+        IsLobbyJoinable: true,
+      },
+      players: {
+        all: [
+          {
+            account_id: existingLobby.ownerId,
+            source: {},
+            state: "join",
+            data: {},
+            identity: {
+              username: ownerConn?.hydraUsername || existingLobby.ownerUsername,
+              avatar: "https://s3.amazonaws.com/wb-agora-hydra-ugc-dokken/identicons/identicon.584.png",
+              default_username: true,
+              personal_data: {},
+              alternate: {
+                wb_network: [{ id: ownerConn?.wb_network_id || existingLobby.ownerId, username: ownerConn?.username || existingLobby.ownerUsername, avatar: null, email: null }],
+                steam: [{ id: "76561195177950873", username: ownerConn?.username || existingLobby.ownerUsername, avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg", email: null }],
+              },
+              usernames: [
+                { auth: "hydra", username: ownerConn?.hydraUsername || existingLobby.ownerUsername },
+                { auth: "steam", username: ownerConn?.username || existingLobby.ownerUsername },
+                { auth: "wb_network", username: ownerConn?.username || existingLobby.ownerUsername },
+              ],
+              platforms: ["steam"],
+              current_platform: "steam",
+              is_cross_platform: false,
+            },
+          },
+          {
+            account_id: aID,
+            source: {},
+            state: "join",
+            data: {},
+            identity: {
+              username: hydraUsername,
+              avatar: "https://s3.amazonaws.com/wb-agora-hydra-ugc-dokken/identicons/identicon.584.png",
+              default_username: true,
+              personal_data: {},
+              alternate: {
+                wb_network: [{ id: wb_network_id, username: playerUsername, avatar: null, email: null }],
+                steam: [{ id: "76561195177950873", username: playerUsername, avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg", email: null }],
+              },
+              usernames: [
+                { auth: "hydra", username: hydraUsername },
+                { auth: "steam", username: playerUsername },
+                { auth: "wb_network", username: playerUsername },
+              ],
+              platforms: ["steam"],
+              current_platform: "steam",
+              is_cross_platform: false,
+            },
+          },
+        ],
+        current: [existingLobby.ownerId, aID],
+        count: 2,
+      },
+      matchmaking: null,
+      cluster: "ec2-us-east-1-dokken",
+      last_warning_time: null,
+      template: {
+        type: "async",
+        name: "party_lobby",
+        slug: "party_lobby",
+        min_players: 2,
+        max_players: 2,
+        game_server_integration_enabled: false,
+        game_server_config: null,
+        created_at: { _hydra_unix_date: MVSTime(new Date()) },
+        updated_at: { _hydra_unix_date: MVSTime(new Date()) },
+        data: {},
+        id: ObjectID().toHexString(),
+      },
+      criteria: { slug: null },
+      shortcode: null,
+      id: matchId,
+      access: "public",
+    });
+    return;
+  }
+
+  // Default: new lobby / solo lobby (original behavior)
   res.send({
     updated_at: { _hydra_unix_date: 1742265244 },
     created_at: { _hydra_unix_date: 1742265244 },
@@ -73,7 +290,6 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
       LeaderID: aID,
       LobbyType: 0,
       ReadyPlayers: {},
-      //PlayerGameplayPreferences: { [aID]: 544 },
       PlayerGameplayPreferences: { [aID]: Number(rPlayerConnectionByID.GameplayPreferences) ?? 964 },
       PlayerAutoPartyPreferences: { [aID]: false },
       GameVersion: env.GAME_VERSION,
@@ -192,12 +408,23 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
 
   logger.info(`${logPrefix} Received 1v1 retail matchmaking request`);
 
+  // If the player's lobby has 2+ players, force 2v2 instead of 1v1
+  const preCheckAccount = AuthUtils.DecodeClientToken(req);
+  const preCheckLobbyId = await redisGetPlayerLobby(preCheckAccount.id);
+  if (preCheckLobbyId) {
+    const preCheckLobby = await redisGetLobbyState(preCheckLobbyId);
+    if (preCheckLobby && preCheckLobby.playerIds.length >= 2) {
+      logger.info(`${logPrefix} Lobby ${preCheckLobbyId} has ${preCheckLobby.playerIds.length} players, redirecting 1v1 request to 2v2 handler`);
+      return handleMatches_matchmaking_2v2_retail_request(req, res);
+    }
+  }
+
   if (BE_VERBOSE) {
     logger.info(`${logPrefix} Request is: \n`);
     KitchenSink.TryInspectRequestVerbose(req);
   }
 
-  const account = AuthUtils.DecodeClientToken(req);
+  const account = preCheckAccount;
 
   let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${account.id}`) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
@@ -369,7 +596,58 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   await redisClient.hSet(`connections:${aID}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
   await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
 
+  // Look up the lobby to include ALL players in matchmaking, not just the requester
+  const lobbyId = await redisGetPlayerLobby(aID);
+  const lobbyState = lobbyId ? await redisGetLobbyState(lobbyId) : null;
+  const allPlayerIds = lobbyState ? lobbyState.playerIds : [aID];
+
+  logger.info(`${logPrefix} 2v2 matchmaking: lobby ${lobbyId}, all players: ${allPlayerIds.join(", ")}`);
+
+  // Ensure all lobby players' loadouts are cached in Redis
+  for (const pid of allPlayerIds) {
+    if (pid === aID) continue; // Already done above
+    const pLoadout = await redisGetPlayer(pid);
+    if (pLoadout) {
+      const pConn = await redisClient.hGetAll(`connections:${pid}`) as unknown as RedisPlayerConnection;
+      if (pConn?.current_ip) {
+        await redisClient.hSet(`connections:${pid}`, { character: pLoadout.character, skin: pLoadout.skin, profileIcon: pLoadout.profileIcon });
+        await redisClient.hSet(`connections:${pConn.current_ip}`, { character: pLoadout.character, skin: pLoadout.skin, profileIcon: pLoadout.profileIcon });
+      }
+    }
+  }
+
   const newMatchId = ObjectID().toHexString();
+
+  // Build players_connection_info, player_connections, players, and recently_played for ALL lobby players
+  const playersConnectionInfo: any = {};
+  const playerConnections: any = {};
+  const playersObj: any = {};
+  const recentlyPlayed: any = {};
+
+  for (const pid of allPlayerIds) {
+    const pConn = await redisClient.hGetAll(`connections:${pid}`) as unknown as RedisPlayerConnection;
+    playersConnectionInfo[pid] = {
+      game_server_region_data: [{ region_id: "19c465a7-f21f-11ea-a5e3-0954f48c5682", latency: 0.04791003838181496 }],
+    };
+    playerConnections[pid] = [randomUUID()];
+    playersObj[pid] = {
+      id: pConn?.profile_id || profile_id,
+      updated_at: null,
+      account_id: pid,
+      created_at: null,
+      last_login: null,
+      last_inbox_read: null,
+      points: null,
+      data: {},
+      cross_match_results: {},
+      notifications: {},
+      aggregates: {},
+      calculations: {},
+      files: [],
+      random_distribution: null,
+    };
+    recentlyPlayed[pid] = [];
+  }
 
   const data = {
     id: newMatchId,
@@ -383,7 +661,7 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
       crossplay_buckets: ["All", "PC"],
       version: env.GAME_VERSION,
       matchmaking_rating: 724.7928014055103,
-      player_count: 1,
+      player_count: allPlayerIds.length,
       double_character_key: "character_TODO_SAME_CHAR_IN_SAME_TEAM",
       rp: 0,
       allowed_buckets: ["Any"],
@@ -392,40 +670,15 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
     server_data: null,
     criteria_slug: "2v2-retail",
     cluster: req.body.data.MultiplayParams.MultiplayClusterSlug,
-    players_connection_info: {
-      [aID]: {
-        game_server_region_data: [{ region_id: "19c465a7-f21f-11ea-a5e3-0954f48c5682", latency: 0.04791003838181496 }],
-      },
-    },
-    player_connections: {
-      [aID]: [randomUUID()],
-    },
-    players: {
-      [aID]: {
-        id: profile_id,
-        updated_at: null,
-        account_id: aID,
-        created_at: null,
-        last_login: null,
-        last_inbox_read: null,
-        points: null,
-        data: {},
-        cross_match_results: {},
-        notifications: {},
-        aggregates: {},
-        calculations: {},
-        files: [],
-        random_distribution: null,
-      },
-    },
+    players_connection_info: playersConnectionInfo,
+    player_connections: playerConnections,
+    players: playersObj,
     groups: [1],
     relationships: [],
-    recently_played: {
-      [aID]: [],
-    },
+    recently_played: recentlyPlayed,
     from_match: req.body.match,
     reuse_match: false,
-    party_id: null,
+    party_id: lobbyId || null,
     state: 2,
     user_rule_config: [],
     game_server: {
@@ -446,12 +699,17 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
 
   res.send(data);
 
-  await queueMatch(aID, [aID], data.from_match, data.id, MATCH_TYPES.TWO_V_TWO);
+  await queueMatch(aID, allPlayerIds, data.from_match, data.id, MATCH_TYPES.TWO_V_TWO);
 }
 
 export async function handle_cancel_matchmaking(req: Request<{ id: string }, {}, {}, {}>, res: Response) {
   const account = AuthUtils.DecodeClientToken(req);
   const aID = account.id;
 
-  await cancelMatchmaking(aID, req.params.id);
+  // Cancel matchmaking for ALL players in the lobby, not just the requester
+  const lobbyId = await redisGetPlayerLobby(aID);
+  const lobbyState = lobbyId ? await redisGetLobbyState(lobbyId) : null;
+  const allPlayerIds = lobbyState ? lobbyState.playerIds : [aID];
+
+  await cancelMatchmakingForAll(allPlayerIds, req.params.id);
 }

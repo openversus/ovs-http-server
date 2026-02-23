@@ -18,7 +18,7 @@ import { NameGenerator } from "../utils/namegeneration";
 import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
 
 const serviceName = "Handlers.Access";
-const logPrefix: string = `[${serviceName}]:`;
+const logPrefix = `[${serviceName}]:`;
 
 async function deleteStaticAccess(req: express.Request) {
   logger.info("In deleteStaticAccess, received request to delete access. \n");
@@ -112,11 +112,18 @@ async function generateStaticAccess(req: express.Request) {
 
   await Redis.redisAddPlayerConnection(player.id, ip, token, account);
 
+  // Cache party key in Redis connection hash + party_key lookup
+  if (player.party_key) {
+    await Redis.redisClient.hSet(`connections:${player.id}`, { party_key: player.party_key });
+    await Redis.redisClient.hSet(`connections:${ip}`, { party_key: player.party_key });
+    await Redis.redisSavePartyKey(player.party_key, { playerId: player.id, lobbyId: "", username: player.name });
+  }
+
   if (BE_VERBOSE) {
     let rPlayerConnectionByID = await Redis.redisClient.hGetAll(`connections:${player.id}`);
-    logwrapper.verbose(`${logPrefix} Redis connection by player ID: ${JSON.stringify(rPlayerConnectionByID)}`);
+    logwrapper.verbose(`[${serviceName}]: Redis connection by player ID: ${JSON.stringify(rPlayerConnectionByID)}`);
 
-    logwrapper.verbose(`${logPrefix} Connections via KitchenSink by ID: `);
+    logwrapper.verbose(`[${serviceName}]: Connections via KitchenSink by ID: `);
     KitchenSink.TryInspectVerbose(rPlayerConnectionByID);
   }
 

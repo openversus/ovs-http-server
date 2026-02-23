@@ -529,8 +529,15 @@ export async function handle_ssc_set_lobby_mode(req: Request<{}, {}, SET_LOBBY_M
 
   const account = AuthUtils.DecodeClientToken(req);
   const aID = account.id;
-  const lobbyId = req.body.LobbyId;
+  // LobbyId from the client token is never populated — look it up from Redis instead
+  const lobbyId = await redisGetPlayerLobby(aID);
   const newMode = req.body.ModeString as LOBBY_MODES;
+
+  if (!lobbyId) {
+    logger.warn(`${logPrefix} set_lobby_mode: No lobby found in Redis for player ${aID}`);
+    res.status(200).json({});
+    return;
+  }
 
   await changeLobbyMode(aID, lobbyId, newMode);
 

@@ -69,3 +69,12 @@ export async function cancelMatchmaking(accountId: string, matchmakingId: string
   };
   await redisClient.publish(ON_CANCEL_MATCHMAKING, JSON.stringify(notification));
 }
+
+export async function cancelMatchmakingForAll(playerIds: string[], matchmakingId: string) {
+  const notification: RedisCancelMatchMakingNotification = {
+    playersIds: playerIds,
+    matchmakingId,
+  };
+  await redisClient.publish(ON_CANCEL_MATCHMAKING, JSON.stringify(notification));
+  logger.info(`Canceling matchmaking ${matchmakingId} for all players: ${playerIds.join(", ")}`);
+}

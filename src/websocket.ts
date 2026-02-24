@@ -54,6 +54,9 @@ import {
   redisCleanupPlayerLobby,
   redisGetPlayerLobby,
   redisGetLobbyState,
+  redisDeleteLobbyState,
+  redisDeletePlayerLobby,
+  redisPublishLobbyRejoin,
 } from "./config/redis";
 import { Server } from "https";
 import { Server as HttpServer } from "http";
@@ -258,7 +261,7 @@ export class WebSocketService {
     }, 20000);
   }
 
-  handleDisconnect(playerWS: WebSocketPlayer) {
+  async handleDisconnect(playerWS: WebSocketPlayer) {
     if (playerWS && playerWS.account) {
       const playerId = playerWS.account.id;
 
@@ -273,6 +276,41 @@ export class WebSocketService {
         // Don't remove from online_players, don't clean up lobby, don't delete keys
         // The game will reconnect and go through the full init flow
         return;
+      }
+
+      // Check if this player was in a multi-player lobby — if so, disband the party
+      // so remaining players aren't stuck with a ghost teammate
+      try {
+        const lobbyId = await redisGetPlayerLobby(playerId);
+        if (lobbyId) {
+          const lobbyState = await redisGetLobbyState(lobbyId);
+          if (lobbyState && lobbyState.playerIds.length > 1) {
+            const otherPlayerIds = lobbyState.playerIds.filter(pid => pid !== playerId);
+            logger.info(
+              `[${serviceName}]: Player ${playerId} disconnected from multi-player lobby ${lobbyId} — disbanding party. Remaining players: ${otherPlayerIds.join(", ")}`,
+            );
+
+            // Delete the entire lobby
+            await redisDeleteLobbyState(lobbyId);
+
+            // Clear player_lobby for ALL players (including the disconnected one)
+            for (const pid of lobbyState.playerIds) {
+              await redisDeletePlayerLobby(pid);
+            }
+
+            // Force-rejoin remaining players so they get fresh solo lobbies
+            for (const pid of otherPlayerIds) {
+              const rejoinNotification: RedisLobbyRejoinNotification = {
+                playerId: pid,
+                lobbyId,
+              };
+              await redisPublishLobbyRejoin(rejoinNotification);
+              logger.info(`[${serviceName}]: Triggered lobby rejoin for remaining player ${pid} after party disband`);
+            }
+          }
+        }
+      } catch (err) {
+        logger.error(`[${serviceName}]: Error disbanding party for disconnected player ${playerId}: ${err}`);
       }
 
       playerWS.deleted = true;
@@ -312,8 +350,8 @@ export class WebSocketService {
         }
       });
 
-      ws.on("close", () => {
-        this.handleDisconnect(playerWS);
+      ws.on("close", async () => {
+        await this.handleDisconnect(playerWS);
       });
 
       ws.on("error", (error) => {

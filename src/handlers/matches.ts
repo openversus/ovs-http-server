@@ -603,6 +603,18 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
 
   logger.info(`${logPrefix} 2v2 matchmaking: lobby ${lobbyId}, all players: ${allPlayerIds.join(", ")}`);
 
+  // Verify all lobby players are still connected (have active Redis connection data)
+  // Prevents queuing with a disconnected/crashed teammate
+  for (const pid of allPlayerIds) {
+    if (pid === aID) continue; // Requester is obviously connected
+    const pConn = await redisClient.hGetAll(`connections:${pid}`) as unknown as RedisPlayerConnection;
+    if (!pConn || !pConn.id) {
+      logger.warn(`${logPrefix} 2v2 matchmaking: Player ${pid} has no active connection — cannot queue with disconnected teammate`);
+      res.status(200).json({ error: "Not all party members are connected" });
+      return;
+    }
+  }
+
   // Ensure all lobby players' loadouts are cached in Redis
   for (const pid of allPlayerIds) {
     if (pid === aID) continue; // Already done above
@@ -712,4 +724,12 @@ export async function handle_cancel_matchmaking(req: Request<{ id: string }, {},
   const allPlayerIds = lobbyState ? lobbyState.playerIds : [aID];
 
   await cancelMatchmakingForAll(allPlayerIds, req.params.id);
+
+  // Reset ready state for all lobby players so they can re-ready after cancel
+  if (lobbyState) {
+    lobbyState.readyPlayerIds = [];
+    await redisSaveLobbyState(lobbyId!, lobbyState);
+  }
+
+  res.send({ body: {}, metadata: null, return_code: 0 });
 }

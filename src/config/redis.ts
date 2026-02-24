@@ -541,6 +541,7 @@ export interface RedisLobbyState {
   ownerUsername: string;
   mode: string;
   playerIds: string[];
+  readyPlayerIds?: string[];  // Players who have readied up — empty/undefined means nobody ready
   createdAt: number;
 }
 

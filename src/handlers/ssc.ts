@@ -1,4 +1,4 @@
-import { BE_VERBOSE, logger, logwrapper } from "../config/logger";
+import { BE_VERBOSE, logger } from "../config/logger";
 import { Request, Response } from "express";
 import { Types } from "mongoose";
 import {
@@ -11,6 +11,9 @@ import {
   redisUpdatePlayerKey,
   redisSetPlayerConnectionByID,
   redisSetPlayerConnectionByIp,
+  redisGetPlayerLobby,
+  redisGetLobbyState,
+  redisSaveLobbyState,
 } from "../config/redis";
 import {  getCurrentCRC, MATCHMAKING_CRC } from "../data/config";
 import { PerkPagesModel } from "../database/PerkPages";
@@ -25,7 +28,7 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 import * as KitchenSink from "../utils/garbagecan";
 
 const serviceName = "Handlers.SSC";
-const logPrefix: string = `[${serviceName}]:`;
+const logPrefix = `[${serviceName}]:`;
 
 export async function handleSsc_invoke_attempt_daily_refresh(req: Request<{}, {}, {}, {}>, res: Response) {
   res.send({
@@ -361,7 +364,7 @@ export async function handleSsc_invoke_get_equipped_cosmetics(req: Request<{}, {
       return_code: 0,
     };
 
-    logwrapper.verbose(`${logPrefix} Message sent to client will be: ${JSON.stringify(message)}`);
+    logger.info(`${logPrefix} Message sent to client will be: ${JSON.stringify(message)}`);
 
     res.send(message);
   }
@@ -58087,8 +58090,6 @@ export async function handleSsc_invoke_set_lobby_joinable(req: Request<{}, {}, {
 }
 
 export async function handleSsc_invoke_set_ready_for_lobby(req: Request<{}, {}, Ssc_invoke_set_ready_for_lobby_REQUEST, {}>, res: Response) {
-  // const account = req.token;
-
   logger.info(`${logPrefix} invoke_set_ready_for_lobby request:\n`);
   KitchenSink.TryInspectRequestVerbose(req);
 
@@ -58100,20 +58101,40 @@ export async function handleSsc_invoke_set_ready_for_lobby(req: Request<{}, {}, 
     logger.warn(`${logPrefix} No Redis player connection found for player ID ${aID}, cannot set loadout.`);
   }
 
-  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${rPlayerConnectionByID.current_ip}`) as unknown as RedisPlayerConnection;
-  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.warn(`${logPrefix} No Redis player connection found for IP ${rPlayerConnectionByID.current_ip}, cannot set loadout.`);
+  // Track ready state in lobby
+  const lobbyId = await redisGetPlayerLobby(aID);
+  const lobbyState = lobbyId ? await redisGetLobbyState(lobbyId) : null;
+  const isReady = req.body.Ready !== false; // default to true if not explicitly false
+
+  let bAllPlayersReady = true;
+
+  if (lobbyState && lobbyState.playerIds.length > 1) {
+    // Multi-player lobby: track who has readied
+    if (!lobbyState.readyPlayerIds) {
+      lobbyState.readyPlayerIds = [];
+    }
+
+    if (isReady) {
+      if (!lobbyState.readyPlayerIds.includes(aID)) {
+        lobbyState.readyPlayerIds.push(aID);
+      }
+    } else {
+      // Player is unreadying
+      lobbyState.readyPlayerIds = lobbyState.readyPlayerIds.filter(pid => pid !== aID);
+    }
+
+    await redisSaveLobbyState(lobbyId!, lobbyState);
+
+    bAllPlayersReady = lobbyState.playerIds.every(pid => lobbyState.readyPlayerIds!.includes(pid));
+    logger.info(`${logPrefix} set_ready_for_lobby: Player ${aID} ${isReady ? "readied" : "unreadied"}. Ready players: [${lobbyState.readyPlayerIds.join(", ")}] | All ready: ${bAllPlayersReady}`);
+  } else {
+    // Solo lobby: always all ready
+    bAllPlayersReady = isReady;
+    logger.info(`${logPrefix} set_ready_for_lobby: Solo player ${aID} ${isReady ? "readied" : "unreadied"}`);
   }
 
-  const hydraUsername = account.hydraUsername || rPlayerConnectionByID.hydraUsername || req.token.hydraUsername;
-  const playerUsername = account.username || rPlayerConnectionByID.username || req.token.username;
-  const wb_network_id = account.wb_network_id || rPlayerConnectionByID.wb_network_id || req.token.wb_network_id;
-  const profile_id = account.profile_id || rPlayerConnectionByID.profile_id || req.token.profile_id;
-
-  logger.info(`\n\n${logPrefix} Will send to client: MatchID ${req.body.MatchID}, PlayerID ${aID}, Ready true, bAllPlayersReady true\n\n`);
-
   res.send({
-    body: { MatchID: req.body.MatchID, PlayerID: aID, Ready: true, bAllPlayersReady: true },
+    body: { MatchID: req.body.MatchID, PlayerID: aID, Ready: isReady, bAllPlayersReady },
     metadata: null,
     return_code: 0,
   });

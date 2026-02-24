@@ -23,7 +23,7 @@ import { randomUUID, randomInt } from "crypto";
 import env from "./env/env";
 
 const serviceName = "MatchmakingWorker";
-const logPrefix: string = `[${serviceName}]:`;
+const logPrefix = `[${serviceName}]:`;
 const CHECK_INTERVAL_MS = 2000;
 
 const MATCH_RULES = {
@@ -98,7 +98,7 @@ async function process1v1Queue(): Promise<boolean> {
     }
 
     logger.info(
-      `${logPrefix} Not enough valid tickets for a 1v1 match (need ${MATCH_RULES["1v1"].teamsRequired}, found ${matchedTickets.length})`,
+      `[${serviceName}]: Not enough valid tickets for a 1v1 match (need ${MATCH_RULES["1v1"].teamsRequired}, found ${matchedTickets.length})`,
     );
     return false;
   }
@@ -114,48 +114,49 @@ async function process2v2Queue(): Promise<boolean> {
     // Get all tickets in the queue
     const tickets = await redisGetMatchTickets(MATCH_TYPES.TWO_V_TWO);
 
-    if (tickets.length < MATCH_RULES["2v2"].totalPlayersRequired) {
-      return false; // Not enough tickets to make a match
+    // Count total players across all tickets (a party of 2 is 1 ticket with 2 players)
+    const totalPlayersInQueue = tickets.reduce((sum, t) => sum + t.players.length, 0);
+
+    if (totalPlayersInQueue < MATCH_RULES["2v2"].totalPlayersRequired) {
+      return false; // Not enough players to make a match
     }
 
-    logger.info(`${logPrefix} Found ${tickets.length} tickets in 2v2 queue, attempting to create a match`);
+    logger.info(`${logPrefix} Found ${tickets.length} tickets (${totalPlayersInQueue} players) in 2v2 queue, attempting to create a match`);
 
-    // Parse ticket data from queue
+    // Accumulate tickets until we have enough players (4)
+    // Supports: 2+2 (2 tickets), 2+1+1 (3 tickets), 1+1+1+1 (4 tickets)
     const matchedTickets: RedisMatchTicket[] = [];
+    let matchedPlayerCount = 0;
     for (const ticket of tickets) {
       try {
-        // Only solo tickets
         matchedTickets.push(ticket);
+        matchedPlayerCount += ticket.players.length;
 
-        // If we have enough tickets, stop looking
-        if (matchedTickets.length === MATCH_RULES["2v2"].totalPlayersRequired) {
+        if (matchedPlayerCount >= MATCH_RULES["2v2"].totalPlayersRequired) {
           break;
         }
       }
       catch (error) {
         logger.error(`${logPrefix} Error parsing ticket in 2v2 queue: ${error}`);
-        // Continue to next ticket
       }
     }
 
-    // Check if we have enough tickets for a match
-    if (matchedTickets.length === MATCH_RULES["2v2"].totalPlayersRequired) {
-      // Remove matched tickets from queue
+    // Check if we have enough players for a match
+    if (matchedPlayerCount >= MATCH_RULES["2v2"].totalPlayersRequired) {
       try {
         await redisPopMatchTicketsFromQueue(MATCH_TYPES.TWO_V_TWO, matchedTickets);
 
-        // Create a match with these tickets
         await createMatch(matchedTickets, "2v2");
         return true;
       }
       catch (error) {
         logger.error(`${logPrefix} Error removing matched tickets from queue: ${error}`);
-        return false; // If we can't remove them, we can't proceed
+        return false;
       }
     }
 
     logger.info(
-      `${logPrefix} Not enough valid tickets for a 2v2 match (need ${MATCH_RULES["2v2"].totalPlayersRequired}, found ${matchedTickets.length})`,
+      `[${serviceName}]: Not enough players for a 2v2 match (need ${MATCH_RULES["2v2"].totalPlayersRequired}, found ${matchedPlayerCount})`,
     );
     return false;
   }

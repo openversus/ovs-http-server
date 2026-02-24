@@ -128,17 +128,6 @@ export async function set_lock_lobby_loadout(req: Request, res: Response<Lock_Lo
     ip = env.LOCAL_PUBLIC_IP;
   }
 
-  // Changing character/skin means this player is no longer "ready"
-  const lobbyId = await redisGetPlayerLobby(aID);
-  if (lobbyId) {
-    const lobbyState = await redisGetLobbyState(lobbyId);
-    if (lobbyState && lobbyState.readyPlayerIds && lobbyState.readyPlayerIds.includes(aID)) {
-      lobbyState.readyPlayerIds = lobbyState.readyPlayerIds.filter(pid => pid !== aID);
-      await redisSaveLobbyState(lobbyId, lobbyState);
-      logger.info(`${logPrefix} set_lock_lobby_loadout: Player ${aID} changed character — removed from ready list`);
-    }
-  }
-
   await redisSetPlayerConnectionCosmetics(aID, rPlayerCosmetics);
 
   let badChar: boolean =
@@ -573,13 +562,6 @@ export async function handle_ssc_set_lobby_mode(req: Request<{}, {}, SET_LOBBY_M
 
   // Look up the full lobby state from Redis so we can return all players
   const lobbyState = await redisGetLobbyState(lobbyId);
-
-  // Mode change resets everyone's ready state
-  if (lobbyState && lobbyState.readyPlayerIds && lobbyState.readyPlayerIds.length > 0) {
-    lobbyState.readyPlayerIds = [];
-    await redisSaveLobbyState(lobbyId, lobbyState);
-    logger.info(`${logPrefix} set_lobby_mode: Reset ready state for all players in lobby ${lobbyId}`);
-  }
 
   if (lobbyState && lobbyState.playerIds.length > 1) {
     // Multi-player lobby: return full lobby data so the game client updates its UI

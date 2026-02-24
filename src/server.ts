@@ -9,7 +9,7 @@ import * as path from "path";
 import { hydraTokenMiddleware } from "./middleware/auth";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
-import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey } from "./config/redis";
+import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby } from "./config/redis";
 import { GAME_SERVER_PORT } from "./game/udp";
 import { sscRouter } from "./ssc/routes";
 import { getCurrentCRC, LoadConfig, MATCHMAKING_CRC } from "./data/config";
@@ -435,6 +435,29 @@ app.post("/party/join", async (req, res) => {
     if (lobby.playerIds.includes(player.id)) {
       res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `You're already in ${keyData.username}'s lobby!`, success: null }));
       return;
+    }
+
+    // Block if target player is already in a party (lobby has 2+ players)
+    if (lobby.playerIds.length >= 2) {
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `${keyData.username} is already in a party with someone else.`, success: null }));
+      return;
+    }
+
+    // Block if target player is in a match or searching for one
+    const targetStatus = await redisClient.hGet(`player:${keyData.playerId}`, "status");
+    if (targetStatus === "queued") {
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `${keyData.username} is currently searching for a match. They need to cancel first.`, success: null }));
+      return;
+    }
+
+    // Block if the JOINING player is already in a party with someone else
+    const joinerLobbyId = await redisGetPlayerLobby(player.id);
+    if (joinerLobbyId) {
+      const joinerLobby = await redisGetLobbyState(joinerLobbyId);
+      if (joinerLobby && joinerLobby.playerIds.length >= 2) {
+        res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "You're already in a party. Leave your current party first.", success: null }));
+        return;
+      }
     }
 
     // Add the joining player to the lobby and force 2v2 mode

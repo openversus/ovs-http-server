@@ -725,11 +725,5 @@ export async function handle_cancel_matchmaking(req: Request<{ id: string }, {},
 
   await cancelMatchmakingForAll(allPlayerIds, req.params.id);
 
-  // Reset ready state for all lobby players so they can re-ready after cancel
-  if (lobbyState) {
-    lobbyState.readyPlayerIds = [];
-    await redisSaveLobbyState(lobbyId!, lobbyState);
-  }
-
   res.send({ body: {}, metadata: null, return_code: 0 });
 }

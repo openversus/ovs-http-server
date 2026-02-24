@@ -123,29 +123,31 @@ async function process2v2Queue(): Promise<boolean> {
 
     logger.info(`${logPrefix} Found ${tickets.length} tickets (${totalPlayersInQueue} players) in 2v2 queue, attempting to create a match`);
 
-    // Accumulate tickets until we have enough players (4)
-    // Supports: 2+2 (2 tickets), 2+1+1 (3 tickets), 1+1+1+1 (4 tickets)
-    const matchedTickets: RedisMatchTicket[] = [];
-    let matchedPlayerCount = 0;
-    for (const ticket of tickets) {
-      try {
-        matchedTickets.push(ticket);
-        matchedPlayerCount += ticket.players.length;
+    // Split tickets into duos and solos (preserving FIFO order within each group)
+    const duos = tickets.filter((t) => t.players.length >= 2);
+    const solos = tickets.filter((t) => t.players.length === 1);
 
-        if (matchedPlayerCount >= MATCH_RULES["2v2"].totalPlayersRequired) {
-          break;
-        }
-      }
-      catch (error) {
-        logger.error(`${logPrefix} Error parsing ticket in 2v2 queue: ${error}`);
-      }
+    let matchedTickets: RedisMatchTicket[] | null = null;
+
+    // Priority 1: Two duos (2+2) — ideal match, don't let solos block them
+    if (duos.length >= 2) {
+      matchedTickets = [duos[0], duos[1]];
+      logger.info(`${logPrefix} Matched 2+2 (two duo parties)`);
+    }
+    // Priority 2: One duo + two solos (2+1+1)
+    else if (duos.length >= 1 && solos.length >= 2) {
+      matchedTickets = [duos[0], solos[0], solos[1]];
+      logger.info(`${logPrefix} Matched 2+1+1 (one duo + two solos)`);
+    }
+    // Priority 3: Four solos (1+1+1+1)
+    else if (solos.length >= 4) {
+      matchedTickets = [solos[0], solos[1], solos[2], solos[3]];
+      logger.info(`${logPrefix} Matched 1+1+1+1 (four solos)`);
     }
 
-    // Check if we have enough players for a match
-    if (matchedPlayerCount >= MATCH_RULES["2v2"].totalPlayersRequired) {
+    if (matchedTickets) {
       try {
         await redisPopMatchTicketsFromQueue(MATCH_TYPES.TWO_V_TWO, matchedTickets);
-
         await createMatch(matchedTickets, "2v2");
         return true;
       }
@@ -156,7 +158,7 @@ async function process2v2Queue(): Promise<boolean> {
     }
 
     logger.info(
-      `[${serviceName}]: Not enough players for a 2v2 match (need ${MATCH_RULES["2v2"].totalPlayersRequired}, found ${matchedPlayerCount})`,
+      `[${serviceName}]: Not enough players for a 2v2 match (need ${MATCH_RULES["2v2"].totalPlayersRequired}, found ${totalPlayersInQueue} — ${duos.length} duo(s), ${solos.length} solo(s))`,
     );
     return false;
   }
@@ -216,7 +218,7 @@ export async function createTeams(tickets: RedisMatchTicket[]): Promise<RedisTea
     for (const party of shuffled) {
       if (assignment.get(party) !== teamIndex) continue;
       for (const player of party.players) {
-        const playerIndex = teamIndex * slotsPerTeam + idxInTeam;
+        const playerIndex = idxInTeam * 2 + teamIndex;
         const isHost = playerIndex === randomHost;
         result.push({
           playerId: player.id,

@@ -449,6 +449,10 @@ app.post("/party/join", async (req, res) => {
       res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `${keyData.username} is currently searching for a match. They need to cancel first.`, success: null }));
       return;
     }
+    if (targetStatus === "in_match") {
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `${keyData.username} is currently in a match. Wait for them to finish.`, success: null }));
+      return;
+    }
 
     // Block if the JOINING player is already in a party with someone else
     const joinerLobbyId = await redisGetPlayerLobby(player.id);

@@ -11,6 +11,8 @@ import {
   redisUpdatePlayerKey,
   redisSetPlayerConnectionByID,
   redisSetPlayerConnectionByIp,
+  redisGetPlayerLobby,
+  redisGetLobbyState,
 } from "../config/redis";
 import {  getCurrentCRC, MATCHMAKING_CRC } from "../data/config";
 import { PerkPagesModel } from "../database/PerkPages";
@@ -58098,10 +58100,17 @@ export async function handleSsc_invoke_set_ready_for_lobby(req: Request<{}, {}, 
     logger.warn(`${logPrefix} No Redis player connection found for player ID ${aID}, cannot set loadout.`);
   }
 
-  logger.info(`${logPrefix} set_ready_for_lobby: Player ${aID} readied up`);
+  // Check if this player is the lobby host or not
+  // Non-host players should NOT get bAllPlayersReady=true, otherwise the client
+  // locks them in with no way to unready. Only the host needs it to start matchmaking.
+  const lobbyId = await redisGetPlayerLobby(aID);
+  const lobbyState = lobbyId ? await redisGetLobbyState(lobbyId) : null;
+  const isHost = !lobbyState || lobbyState.ownerId === aID;
+
+  logger.info(`${logPrefix} set_ready_for_lobby: Player ${aID} readied up (host: ${isHost})`);
 
   res.send({
-    body: { MatchID: req.body.MatchID, PlayerID: aID, Ready: true, bAllPlayersReady: true },
+    body: { MatchID: req.body.MatchID, PlayerID: aID, Ready: true, bAllPlayersReady: isHost },
     metadata: null,
     return_code: 0,
   });

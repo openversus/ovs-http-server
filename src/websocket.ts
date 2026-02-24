@@ -369,6 +369,10 @@ export class WebSocketService {
       );
       clearInterval(player.matchTick);
       player.matchTick = undefined;
+      // Match was found — mark as in_match so party join is still blocked
+      if (player.account?.id) {
+        redisUpdatePlayerStatus(player.account.id, "in_match");
+      }
     }
   }
 
@@ -432,6 +436,10 @@ export class WebSocketService {
       clearInterval(client.matchTick);
       client.matchTick = undefined;
       client.send(message);
+      // Clear the "queued" status so the player isn't stuck as searching
+      if (client.account?.id) {
+        redisUpdatePlayerStatus(client.account.id, "idle");
+      }
       logger.trace(
         `[${serviceName}]: Canceling matchmaking - ${client.account?.id ?? "unknown"} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} - matchmakingRequestId: ${matchmakingRequestId}`,
       );
@@ -1343,8 +1351,9 @@ export class WebSocketService {
         logwrapper.verbose(`[${serviceName}]: End of Match data for match: ${JSON.stringify(data)}`);
         client.send(data);
 
-        // Clear matchConfig since the match is over
+        // Clear matchConfig and status since the match is over
         client.matchConfig = undefined;
+        redisUpdatePlayerStatus(playerId, "idle");
 
         setTimeout(() => {
           const data = {

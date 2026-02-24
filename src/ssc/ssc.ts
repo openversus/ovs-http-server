@@ -88,7 +88,21 @@ export async function set_lock_lobby_loadout(req: Request, res: Response<Lock_Lo
     logger.warn(`${logPrefix} No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
   }
 
-  let rPlayerCosmetics = (await getEquippedCosmetics(rPlayerConnectionByID.id)) as Cosmetics;
+  // Try Redis cache first for cosmetics (avoids MongoDB timeout on Docker setups)
+  const rawCosmetics = await redisClient.hGetAll(`connections:${rPlayerConnectionByID.id}:cosmetics`);
+  let rPlayerCosmetics: Cosmetics;
+  if (rawCosmetics && Object.keys(rawCosmetics).length > 0) {
+    rPlayerCosmetics = {} as Cosmetics;
+    for (const [key, value] of Object.entries(rawCosmetics)) {
+      try {
+        rPlayerCosmetics[key as keyof Cosmetics] = JSON.parse(value as string);
+      } catch {
+        rPlayerCosmetics[key as keyof Cosmetics] = value as any;
+      }
+    }
+  } else {
+    rPlayerCosmetics = (await getEquippedCosmetics(rPlayerConnectionByID.id)) as Cosmetics;
+  }
 
   let player = await PlayerTesterModel.findOne({ ip });
   if (!player) {

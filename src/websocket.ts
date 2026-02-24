@@ -1357,6 +1357,18 @@ export class WebSocketService {
         // through end-of-match screens before disconnecting and reconnecting)
         setTimeout(() => {
           if (this.pendingRejoin.has(playerId)) {
+            // Check if the player is still connected — if so, they never disconnected,
+            // so just clear the flag without wiping data
+            const connectedClient = this.clients.get(playerId);
+            if (connectedClient) {
+              logger.info(
+                `[${serviceName}]: Post-match: Player ${playerId} is still connected — clearing pending rejoin flag (no cleanup needed)`,
+              );
+              this.pendingRejoin.delete(playerId);
+              return;
+            }
+
+            // Player actually disconnected and didn't reconnect — clean up
             logger.warn(
               `[${serviceName}]: Post-match: Player ${playerId} did not reconnect after match — cleaning up`,
             );

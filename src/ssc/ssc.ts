@@ -348,6 +348,11 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
           // (updated by set_lock_lobby_loadout), unlike PlayerTesterModel which may be stale
           const pLoadout = await redisGetPlayer(pid);
 
+          // Ensure cosmetics are cached in Redis for all lobby players
+          // (prevents MongoDB fallback timeout during match setup)
+          const pCosmetics = await getEquippedCosmetics(pid);
+          await redisSetPlayerConnectionCosmetics(pid, pCosmetics);
+
           rejoinPlayers[pid] = {
             Account: { id: pid },
             JoinedAt: { _hydra_unix_date: MVSTime(new Date(i === 0 ? myExistingLobby.createdAt : Date.now())) },

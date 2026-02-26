@@ -338,7 +338,7 @@ export async function redisUpdatePlayerKey(playerId: string, key: string, value:
 }
 
 export async function redisPushTicketToQueue(queueKey: string, data: RedisMatchTicket) {
-  await redisClient.lPush(queueKey, JSON.stringify(data));
+  await redisClient.rPush(queueKey, JSON.stringify(data));
 }
 
 export async function redisOnMatchMakerStarted(notification: ON_MATCH_MAKER_STARTED_NOTIFICATION) {

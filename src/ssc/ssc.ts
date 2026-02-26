@@ -348,6 +348,13 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
       } else {
         logger.info(`${logPrefix} REJOIN: Player ${aID} is already in multi-player lobby ${myExistingLobbyId}, returning existing lobby data`);
 
+        // Refresh TTLs on lobby state and player_lobby keys so they don't expire mid-session
+        // (both have 1hr TTL set at creation — without refresh, long sessions with many matches can silently expire them)
+        await redisSaveLobbyState(myExistingLobbyId, myExistingLobby);
+        for (const pid of myExistingLobby.playerIds) {
+          await redisSavePlayerLobby(pid, myExistingLobbyId);
+        }
+
         // Build the full lobby response with all current players
         const rejoinPlayers: any = {};
         const rejoinGameplayPrefs: any = {};

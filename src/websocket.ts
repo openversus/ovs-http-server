@@ -236,6 +236,16 @@ export class WebSocketService {
     playerWS.init = true;
     playerWS.account = decodedBody.account;
     playerWS.sendRaw(buffer);
+
+    // DIAGNOSTIC: Detect when a new WebSocket replaces an existing one (zombie detection)
+    const existingClient = this.clients.get(playerWS.account.id);
+    if (existingClient) {
+      logger.warn(
+        `[${serviceName}]: ZOMBIE-DIAG: Player ${playerWS.account.id} connecting with NEW WebSocket — replacing existing connection. ` +
+        `Old WS readyState=${existingClient.ws.readyState}, deleted=${existingClient.deleted}`,
+      );
+    }
+
     this.clients.set(playerWS.account.id, playerWS);
 
     // Clear pending rejoin flag if this is a reconnect after force-close
@@ -293,8 +303,17 @@ export class WebSocketService {
       // so remaining players aren't stuck with a ghost teammate
       try {
         const lobbyId = await redisGetPlayerLobby(playerId);
+        logger.info(
+          `[${serviceName}]: DISCONNECT-DIAG: Player ${playerId} disconnect handler running. ` +
+          `lobbyId=${lobbyId || "NONE"}, pendingRejoin=${this.pendingRejoin.has(playerId)}, ` +
+          `wsReadyState=${playerWS.ws.readyState}, deleted=${playerWS.deleted}`,
+        );
         if (lobbyId) {
           const lobbyState = await redisGetLobbyState(lobbyId);
+          logger.info(
+            `[${serviceName}]: DISCONNECT-DIAG: Player ${playerId} lobby ${lobbyId} state: ` +
+            `${lobbyState ? `playerIds=[${lobbyState.playerIds.join(",")}], mode=${(lobbyState as any).mode || "unknown"}` : "NULL (already deleted!)"}`,
+          );
           if (lobbyState && lobbyState.playerIds.length > 1) {
             const otherPlayerIds = lobbyState.playerIds.filter(pid => pid !== playerId);
             logger.info(

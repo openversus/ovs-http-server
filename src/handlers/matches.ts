@@ -601,6 +601,29 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   const lobbyState = lobbyId ? await redisGetLobbyState(lobbyId) : null;
   const allPlayerIds = lobbyState ? lobbyState.playerIds : [aID];
 
+  // DIAGNOSTIC: Log exactly what happened with lobby lookup so we can trace party drops
+  if (!lobbyId) {
+    logger.warn(
+      `${logPrefix} PARTY-DIAG: Player ${aID} (${playerUsername}) queued 2v2 but has NO player_lobby key — ` +
+      `falling back to SOLO queue. This means Redis lost the player_lobby mapping.`,
+    );
+  } else if (!lobbyState) {
+    logger.warn(
+      `${logPrefix} PARTY-DIAG: Player ${aID} (${playerUsername}) has player_lobby=${lobbyId} but lobby state is NULL — ` +
+      `the lobby: key was deleted while player_lobby: still exists. Falling back to SOLO queue.`,
+    );
+  } else if (lobbyState.playerIds.length === 1) {
+    logger.info(
+      `${logPrefix} PARTY-DIAG: Player ${aID} (${playerUsername}) is in lobby ${lobbyId} but ALONE (only player). ` +
+      `This is normal for solo queue.`,
+    );
+  } else {
+    logger.info(
+      `${logPrefix} PARTY-DIAG: Player ${aID} (${playerUsername}) is in lobby ${lobbyId} with full party: [${allPlayerIds.join(", ")}]. ` +
+      `Party intact, queuing as team.`,
+    );
+  }
+
   logger.info(`${logPrefix} 2v2 matchmaking: lobby ${lobbyId}, all players: ${allPlayerIds.join(", ")}`);
 
   // Verify all lobby players are still connected (have active Redis connection data)

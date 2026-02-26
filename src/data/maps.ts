@@ -1,22 +1,63 @@
+// export const maps1v1 = [
+//   "M001_V2",
+//   "M003_V1",
+//   "M003_V5",
+//   "M008_V2",
+//   "M009_V2",
+//   "M011_V3",
+//   "M011_V4",
+//   "M006_V3",
+//   "M015_V1",
+// ];
+
+// export const maps2v2 = [
+//   "M001",
+//   "M003_V3",
+//   "M003_V5",
+//   "M009_V1",
+//   "M011_V1",
+//   "M011_V2",
+//   "M006_V2",
+// ];
+
 export const maps1v1 = [
-  "M001_V2",
-  "M003_V1",
-  "M003_V5",
-  "M008_V2",
-  "M009_V2",
-  "M011_V3",
-  "M011_V4",
-  "M006_V3",
-  "M015_V1",
+  "M001_V2",    // (Batcave 1v1)
+  "M002_V2",    // (Treefort 1v1)
+  "M003_V1",    // (Trophy's Edge 1v1)
+  "M007_V2",    // (Water Tower Locked Door) 
+  "M008_V2",    // (Throne Room 1v1) 
+  "M009_V2",    // (Cromulons 1v1) 
+  "M011_V3",    // (Sky Arena 1v1) 
+  "M012_V2",    // (Titans Tower 1v1)
+  "M014_V2",    // (Midnight Showing 1v1) 
+  "M015_V2",    // (Townsville Destroyed) 
+  "M016_V3",    // (Dexters Lab 2 1v1) 
+  "M017_V1",    // (Back to the Past) 
+  "M018_V2",    // (Candy Kingdom 2) 
+  "M023_V2",    // (Rabbit Season 1v1) 
+  "MTS001_V1",  // (Space) 
+  "MTS003_V1",  // (Castle)
 ];
+
 export const maps2v2 = [
-  "M001",
-  "M003_V3",
-  "M003_V5",
-  "M009_V1",
-  "M011_V1",
-  "M011_V2",
-  "M006_V2",
+  "M002_V3",    // (Batcave)
+  "M003_V5",    // (Treefort 2)
+  "M001_V1",    // (Trophy's Edge Single Plat)
+  "M006_V2",    // (Scooby's No Roof) 
+  "M007_V1",    // (Water Tower)
+  "M008_V1",    // (Throne Room) 
+  "M009_V1",    // (Cromulons) 
+  "M010_V2",    // (The Court 2) 
+  "M011_V1",    // (Sky Arena)
+  "M012_V3",    // (Teen Titans 2) 
+  "M015_V1",    // (Townsville) 
+  "M016_V4",    // (Dexters Lab 3) 
+  "M017_V1",    // (Back to the Past) 
+  "M018_V1",    // (Candy Kingdom) 
+  "M023_V1",    // (Rabbit Season) 
+  "MTS001_V1",  // (Space) 
+  "MTS002_V3",  // (Beach Boat) 
+  "MTS003_V4",  // (Castle 3)
 ];
 
 export function getRandomMapByType(mode: string) {

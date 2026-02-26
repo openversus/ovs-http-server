@@ -265,6 +265,17 @@ export class WebSocketService {
     if (playerWS && playerWS.account) {
       const playerId = playerWS.account.id;
 
+      // If this connection is no longer the active one for this player, it's a zombie/stale
+      // connection (e.g. replaced by a reconnect). Ignore it entirely — don't clean up
+      // Redis data or disband the party, since the player is still actively connected.
+      const currentClient = this.clients.get(playerId);
+      if (currentClient && currentClient !== playerWS) {
+        logger.info(
+          `[${serviceName}]: Ignoring stale WebSocket close for player ${playerId} — newer connection is active`,
+        );
+        return;
+      }
+
       // If this player is pending rejoin (force-closed for lobby rejoin),
       // skip all cleanup so their lobby data stays intact for when they reconnect
       if (this.pendingRejoin.has(playerId)) {

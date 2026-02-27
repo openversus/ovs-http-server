@@ -330,9 +330,18 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
     if (myExistingLobby && myExistingLobby.playerIds.length > 1 && myExistingLobby.playerIds.includes(aID)) {
       // Validate that ALL other players in the lobby are actually online right now
       const currentOnlinePlayers = await redisGetOnlinePlayers();
-      const otherPlayersOnline = myExistingLobby.playerIds
-        .filter(pid => pid !== aID)
-        .every(pid => currentOnlinePlayers.includes(pid));
+      const otherPlayerIds = myExistingLobby.playerIds.filter(pid => pid !== aID);
+      const otherPlayersOnline = otherPlayerIds.every(pid => currentOnlinePlayers.includes(pid));
+
+      // DIAGNOSTIC: Always log the online status of all lobby members during REJOIN check
+      for (const pid of otherPlayerIds) {
+        const isOnline = currentOnlinePlayers.includes(pid);
+        logger.info(
+          `${logPrefix} REJOIN-DIAG: Player ${aID} checking lobby ${myExistingLobbyId} — ` +
+          `teammate ${pid} is ${isOnline ? "ONLINE" : "OFFLINE"} ` +
+          `(online_players set has ${currentOnlinePlayers.length} total members)`,
+        );
+      }
 
       if (!otherPlayersOnline) {
         // Stale lobby data — other players are not online. Clean up and fall through to normal path.

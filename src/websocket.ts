@@ -68,6 +68,7 @@ import { RedisClientType } from "@redis/client";
 import env from "./env/env";
 import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./database/Cosmetics";
 import { getEquippedCosmetics } from "./services/cosmeticsService";
+import { cancelMatchmakingForAll } from "./services/matchmakingService";
 
 const serviceName: string = "WebSocket";
 const logPrefix = `[${serviceName}]:`;
@@ -968,8 +969,24 @@ export class WebSocketService {
   async handleGameServerInstanceReady(notification: RedisGameServerInstanceReadyNotification) {
     let useCentralRollback = env.USE_INTERNAL_ROLLBACK === 1 ? true : false;
     let rollbackHost = useCentralRollback ? `${env.UDP_SERVER_IP}` : "127.0.0.1";
+    let playerClients: Record<string, WebSocketPlayer>[] = [];
+
     for (const playerId of notification.playerIds) {
       const client = this.clients.get(playerId);
+      if (!client)
+      {
+        logger.error(
+          `[${serviceName}]: Could not find player ${playerId} to send game server instance ready message for match ${notification.containerMatchId}, canceling matchmaking`,
+        );
+        cancelMatchmakingForAll(notification.playerIds, notification.containerMatchId);
+        return;
+      }
+
+      playerClients.push({ [playerId]: client });
+    }
+    for (const playerId of notification.playerIds) {
+      // const client = this.clients.get(playerId);
+      const client = playerClients.find(pc => pc[playerId])?.[playerId];
 
       const gameServerPort = notification.rollbackPort || GAME_SERVER_PORT;
       logger.info(

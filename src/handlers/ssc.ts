@@ -1,4 +1,4 @@
-import { BE_VERBOSE, logger } from "../config/logger";
+import { BE_VERBOSE, logger, logwrapper } from "../config/logger";
 import { Request, Response } from "express";
 import { Types } from "mongoose";
 import {
@@ -363,7 +363,7 @@ export async function handleSsc_invoke_get_equipped_cosmetics(req: Request<{}, {
       return_code: 0,
     };
 
-    logger.info(`${logPrefix} Message sent to client will be: ${JSON.stringify(message)}`);
+    logwrapper.verbose(`${logPrefix} Message sent to client will be: ${JSON.stringify(message)}`);
 
     res.send(message);
   }

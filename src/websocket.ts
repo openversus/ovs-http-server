@@ -860,6 +860,8 @@ export class WebSocketService {
     }
 
     // Create the message to send to the players
+
+    let stageHazards: boolean = notification.map.toLowerCase() === "PVE_03".toLowerCase() ? true : false;
     const message: GameNotification = {
       data: {
         MatchId: notification.matchId,
@@ -881,7 +883,7 @@ export class WebSocketService {
           bIsCustomGame: false,
           Players,
           CustomGameSettings: {
-            bHazardsEnabled: false,
+            bHazardsEnabled: stageHazards,
             bShieldsEnabled: true,
             MatchTime,
             NumRingouts,
@@ -892,7 +894,7 @@ export class WebSocketService {
             bDisplayTimer: true,
           },
           bIsCasualSpecial: false,
-          bAllowMapHazards: false,
+          bAllowMapHazards: stageHazards,
           RiftNodeAttunement: "Attunements:None",
           CountdownDisplay: "CountdownTypes:XvY",
           Cluster: "ec2-us-east-1-dokken",
@@ -916,7 +918,7 @@ export class WebSocketService {
       cmd: "update",
     };
 
-    logger.info("Message is: ");
+    logwrapper.verbose("Message is: ");
     KitchenSink.TryInspectVerbose(message);
 
     // Send the message to each player in the match
@@ -955,7 +957,7 @@ export class WebSocketService {
       const client = this.clients.get(playerId);
       if (client && client.matchConfig) {
         client.send(client.matchConfig);
-        logger.info(client.matchConfig.data.GameplayConfig.Players);
+        logwrapper.verbose(JSON.stringify(client.matchConfig.data.GameplayConfig.Players));
         logger.info(
           `[${serviceName}]: Sent all perks lock to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`,
         );

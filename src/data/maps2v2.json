@@ -1,0 +1,142 @@
+[
+  {
+    "M001": {
+      "id": "M001",
+      "name": "Batcave",
+      "enabled": true
+    }
+  },
+  {
+    "M002_V3": {
+      "id": "M002_V3",
+      "name": "Batcave",
+      "enabled": true
+    }
+  },
+  {
+    "M003_V5": {
+      "id": "M003_V5",
+      "name": "Treefort 2",
+      "enabled": true
+    }
+  },
+  {
+    "M001_V1": {
+      "id": "M001_V1",
+      "name": "Trophy's Edge Single Plat",
+      "enabled": true
+    }
+  },
+  {
+    "M006_V2": {
+      "id": "M006_V2",
+      "name": "Scooby's No Roof",
+      "enabled": true
+    }
+  },
+  {
+    "M007_V1": {
+      "id": "M007_V1",
+      "name": "Water Tower",
+      "enabled": true
+    }
+  },
+  {
+    "M008_V1": {
+      "id": "M008_V1",
+      "name": "Throne Room",
+      "enabled": true
+    }
+  },
+  {
+    "M009_V1": {
+      "id": "M009_V1",
+      "name": "Cromulons",
+      "enabled": true
+    }
+  },
+  {
+    "M010_V2": {
+      "id": "M010_V2",
+      "name": "The Court 2",
+      "enabled": false
+    }
+  },
+  {
+    "M011_V1": {
+      "id": "M011_V1",
+      "name": "Sky Arena",
+      "enabled": true
+    }
+  },
+  {
+    "M011_V2": {
+      "id": "M011_V2",
+      "name": "Sky Arena",
+      "enabled": true
+    }
+  },
+  {
+    "M012_V3": {
+      "id": "M012_V3",
+      "name": "Teen Titans 2",
+      "enabled": true
+    }
+  },
+  {
+    "M015_V1": {
+      "id": "M015_V1",
+      "name": "Townsville",
+      "enabled": true
+    }
+  },
+  {
+    "M016_V4": {
+      "id": "M016_V4",
+      "name": "Dexters Lab 3",
+      "enabled": true
+    }
+  },
+  {
+    "M017_V1": {
+      "id": "M017_V1",
+      "name": "Back to the Past",
+      "enabled": true
+    }
+  },
+  {
+    "M018_V2": {
+      "id": "M018_V2",
+      "name": "Candy Kingdom 2",
+      "enabled": true
+    }
+  },
+  {
+    "M023_V1": {
+      "id": "M023_V1",
+      "name": "Rabbit Season",
+      "enabled": true
+    }
+  },
+  {
+    "MTS001_V1": {
+      "id": "MTS001_V1",
+      "name": "Space",
+      "enabled": true
+    }
+  },
+  {
+    "MTS002_V3": {
+      "id": "MTS002_V3",
+      "name": "Beach Boat",
+      "enabled": false
+    }
+  },
+  {
+    "MTS003_V4": {
+      "id": "MTS003_V4",
+      "name": "Castle 3",
+      "enabled": true
+    }
+  }
+]

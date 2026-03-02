@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 
+function die
+{
+  local message=$1
+  [ -z "$message" ] && message="Died"
+  echo "${BASH_SOURCE[1]}: line ${BASH_LINENO[0]}: ${FUNCNAME[1]}: $message." >&2
+  exit 1
+}
+
 # Change this to your desired directory for storing OpenVersus
 # config files, environment files, and the docker-compose.yml file.
 # The config files you save in this directory are referenced as

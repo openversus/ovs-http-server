@@ -13,8 +13,9 @@ SOURCEDIR=$(pwd)
 
 if [ ! -d "$OVS_ROOT_DIR" ]; then
     mkdir -p "$OVS_ROOT_DIR" || die "Failed to create directory $OVS_ROOT_DIR"
-    cp -a "$SOURCEDIR/examples/*" "$OVS_ROOT_DIR/" || die "Failed to copy examples to $OVS_ROOT_DIR"
-    find "$OVS_ROOT_DIR" -type -f -iname '*.sh' -exec chmod ug+x {} \; || die "Failed to set execute permissions on shell scripts in $OVS_ROOT_DIR"
+    cd "${SOURCEDIR}/examples" || die "Failed to cd to exmaples directory"
+    cp -a . "$OVS_ROOT_DIR/" || die "Failed to copy examples to $OVS_ROOT_DIR"
+    find "$OVS_ROOT_DIR" -type f -iname '*.sh' -exec chmod ug+x {} \; || die "Failed to set execute permissions on shell scripts in $OVS_ROOT_DIR"
 
     echo "Created directory $OVS_ROOT_DIR and copied example configuration files. Please review and edit these files as needed before running this script again to build the Docker image."
 fi

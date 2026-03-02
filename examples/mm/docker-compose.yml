@@ -12,7 +12,7 @@ services:
           cpus: "2"
     env_file: .env
     entrypoint: ["/entrypoint-matchmaking.sh"]
-    image: openversus:maplist
+    image: openversus:latest
     networks:
       ovs:
         aliases:
@@ -20,8 +20,6 @@ services:
           - openversus-openversus-mm
           - openversus-mm
           - openversus_mm
-    ports:
-      - "4000:4000"
     restart: unless-stopped
     volumes:
       - /opt/docker/openversus/mm/entrypoint-matchmaking.sh:/entrypoint-matchmaking.sh

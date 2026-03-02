@@ -12,7 +12,7 @@ services:
           cpus: "2"
     env_file: .env
     entrypoint: ["/entrypoint-websocket.sh"]
-    image: openversus:maplist
+    image: openversus:latest
     networks:
       ovs:
         aliases:
@@ -21,7 +21,7 @@ services:
           - openversus-ws
           - openversus_ws
     ports:
-      - "4000:4000"
+      - "3000:3000"
     restart: unless-stopped
     volumes:
       - /opt/docker/openversus/ws/entrypoint-websocket.sh:/entrypoint-websocket.sh

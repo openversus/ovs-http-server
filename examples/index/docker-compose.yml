@@ -11,7 +11,7 @@ services:
         limits:
           cpus: "2"
     env_file: .env
-    image: openversus:maplist
+    image: openversus:latest
     networks:
       ovs:
         aliases:
@@ -19,8 +19,8 @@ services:
           - openversus-openversus
           - openversus
     ports:
-      - "9000:9000"
-      - "41235:41235/udp"
+      - "8000:8000"
+      - "41234:41234/udp"
     restart: unless-stopped
     volumes:
       - /opt/docker/openversus/index/entrypoint-index.sh:/entrypoint.sh

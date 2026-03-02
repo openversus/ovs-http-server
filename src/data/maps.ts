@@ -1,7 +1,8 @@
 import { logger, logwrapper } from "../config/logger"
-import { MAPFILES } from "../enums/maps"
+import MAPFILES from "../enums/maps"
 import { randomInt } from "crypto";
 import { readFileSync } from 'fs';
+import { join } from 'path';
 
 const serviceName: string = "Maps";
 const logPrefix: string = `[${serviceName}]:`;
@@ -11,15 +12,20 @@ export interface mapObject
   id: string;
   name: string;
   enabled: boolean;
+  hazards: boolean;
 }
 
 async function GetMapList(mapList: any): Promise<mapObject[]>
 {
   let maps: mapObject[];
 
+  logwrapper.verbose(`${logPrefix} Attempting to read map list from ${mapList}`);
+  logwrapper.verbose(`${logPrefix} __filename: ${__filename}`);
+  logwrapper.verbose(`${logPrefix} __dirname: ${__dirname}`);
   try{
     const data = readFileSync(mapList, 'utf-8');
-    maps = JSON.parse(data) as mapObject[];
+    const raw = JSON.parse(data) as Record<string, mapObject>[];
+    maps = raw.map(obj => Object.values(obj)[0]);
     return maps;
   }
   catch (error) {
@@ -28,8 +34,21 @@ async function GetMapList(mapList: any): Promise<mapObject[]>
   }
 }
 
-let all1v1Maps = GetMapList(MAPFILES.ALL_MAPS_1V1);
-let all2v2Maps = GetMapList(MAPFILES.ALL_MAPS_2V2);
+export async function Get1v1MapList(): Promise<mapObject[]>
+{
+  return await GetMapList(join(__dirname, MAPFILES.ALL_MAPS_1V1));
+}
+
+export async function Get2v2MapList(): Promise<mapObject[]>
+{
+  return await GetMapList(join(__dirname, MAPFILES.ALL_MAPS_2V2));
+}
+
+logwrapper.info(`${logPrefix} __dirname at init: ${__dirname}`);
+logwrapper.info(`${logPrefix} MAPFILES.ALL_MAPS_1V1: ${MAPFILES.ALL_MAPS_1V1}`);
+logwrapper.info(`${logPrefix} join result: ${join(__dirname, MAPFILES.ALL_MAPS_1V1)}`);
+let all1v1Maps = GetMapList(join(__dirname, MAPFILES.ALL_MAPS_1V1));
+let all2v2Maps = GetMapList(join(__dirname, MAPFILES.ALL_MAPS_2V2));
 
 export const originalMapList1v1 = [
   "M001_V2",
@@ -93,22 +112,23 @@ export const backupMapList2v2 = [
   "M016_V4",    // (Dexters Lab 3) 
   "M017_V1",    // (Back to the Past) 
   "M018_V2",    // (Candy Kingdom 2)
-  "M023_V1",    // (Rabbit Season) 
+  "M023_V1",    // (Rabbit Season)
   "MTS001_V1",  // (Space) 
   // "MTS002_V3",  // (Beach Boat) 
   "MTS003_V4",  // (Castle 3)
 ]
 
-export async function getRandomMapByType(mode: string): Promise<string> {
+export async function getRandomMapByType(mode: string, matchID: string): Promise<string> {
   let mapType: mapObject[] = [];
   let spicyChance: boolean = randomInt(1, 1000) == 69;
-  all1v1Maps = GetMapList(MAPFILES.ALL_MAPS_1V1);
-  all2v2Maps = GetMapList(MAPFILES.ALL_MAPS_2V2);
+  all1v1Maps = GetMapList(join(__dirname, MAPFILES.ALL_MAPS_1V1));
+  all2v2Maps = GetMapList(join(__dirname, MAPFILES.ALL_MAPS_2V2));
 
   if (mode === "1v1") {
     mapType = (await all1v1Maps).filter(map => map.enabled);
     if (spicyChance)
     {
+      logger.info(`${logPrefix} Spicy map chance hit for match ${matchID}! Returning PVE_03`);
       return "PVE_03";
     }
   }
@@ -123,14 +143,19 @@ export async function getRandomMapByType(mode: string): Promise<string> {
     logger.error(`${logPrefix} No enabled maps found for mode ${mode}`);
     if (mode === "2v2")
     {
-      return getRandomMap2v2();
+      var selectedMap = getRandomMap2v2();
+      logger.info(`${logPrefix} Selected map ${selectedMap} for MatchID ${matchID} and mode ${mode} from backup list`);
+      return selectedMap;
     }
     else {
-      return getRandomMap1v1();
+      var selectedMap = getRandomMap1v1();
+      logger.info(`${logPrefix} Selected map ${selectedMap} for MatchID ${matchID} and mode ${mode} from backup list`);
+      return selectedMap;
     }
   }
 
   var randomIndex = randomInt(0, mapType.length);
+  logger.info(`${logPrefix} Selected map ${mapType[randomIndex].id} for MatchID ${matchID} and mode ${mode} from map list`);
   return mapType[randomIndex].id;
 }
 

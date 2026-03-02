@@ -8,6 +8,7 @@ import { decodeToken } from "./middleware/auth";
 import * as SharedTypes from "./types/shared-types";
 import * as RollbackProcess from "./utils/processes";
 import * as KitchenSink from "./utils/garbagecan";
+import { Get1v1MapList, Get2v2MapList } from "./data/maps";
 //import { exec, spawn, spawnSync, SpawnOptions } from "child_process";
 
 import {
@@ -69,6 +70,7 @@ import env from "./env/env";
 import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./database/Cosmetics";
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 import { cancelMatchmakingForAll } from "./services/matchmakingService";
+import { join } from 'path';
 
 const serviceName: string = "WebSocket";
 const logPrefix = `[${serviceName}]:`;
@@ -453,6 +455,7 @@ export class WebSocketService {
       env.UDP_SERVER_IP2,
     ];
     const randomIndex = Math.floor(Math.random() * arr.length);
+    let notifiedPlayers: string[] = [];
     for (const matchPlayer of notification.players) {
       let tempPlayer = null;
       try {
@@ -473,8 +476,17 @@ export class WebSocketService {
 
       const player = tempPlayer;
       if (player) {
+        
         try {
+          if (player.account?.id &&
+            notifiedPlayers.length > 1 &&
+            notifiedPlayers.includes(player.account.id)
+          ) {
+              logger.warn(`[${serviceName}]: Player ${player.account.id} with IP ${player.ip} and name ${player.account.username} has already been notified for match ${notification.matchId}, skipping duplicate notification`);
+              continue;
+          }
           this.stopMatchTick(player);
+          notifiedPlayers.push(player.account?.id ?? "unknown");
         }
         catch (error) {
           logger.error(
@@ -862,7 +874,25 @@ export class WebSocketService {
 
     // Create the message to send to the players
 
-    let stageHazards: boolean = notification.map.toLowerCase() === "PVE_03".toLowerCase() ? true : false;
+    //let stageHazards: boolean = notification.map.toLowerCase() === "PVE_03".toLowerCase() ? true : false;
+    let all1v1Maps = await Get1v1MapList();
+    let all2v2Maps = await Get2v2MapList();
+
+    let stageHazards: boolean = false;
+
+    if (notification.map === "PVE_03") {
+      stageHazards = true;
+    }
+    else if (notification.mode === "2v2")
+    {
+      var hazardsEnabled: boolean = all2v2Maps.find(m => m.id === notification.map.toLowerCase())?.hazards ?? false;
+      stageHazards = hazardsEnabled;
+    }
+    else {
+      var hazardsEnabled: boolean = all1v1Maps.find(m => m.id === notification.map.toLowerCase())?.hazards ?? false;
+      stageHazards = hazardsEnabled;
+    }
+
     const message: GameNotification = {
       data: {
         MatchId: notification.matchId,
@@ -984,8 +1014,19 @@ export class WebSocketService {
 
       playerClients.push({ [playerId]: client });
     }
+    let notifiedPlayers: string[] = [];
     for (const playerId of notification.playerIds) {
       // const client = this.clients.get(playerId);
+
+      if (notifiedPlayers.length > 0 && notifiedPlayers.includes(playerId)) {
+        logger.warn(
+          `[${serviceName}]: Player ${playerId} has already been notified for game server instance ready for match ${notification.containerMatchId}, skipping duplicate notification`,
+        );
+        continue;
+      }
+
+      notifiedPlayers.push(playerId ?? "unknown");
+
       const client = playerClients.find(pc => pc[playerId])?.[playerId];
 
       const gameServerPort = notification.rollbackPort || GAME_SERVER_PORT;
@@ -1020,6 +1061,13 @@ export class WebSocketService {
         logger.info(
           `[${serviceName}]: Sent game server instance ready to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`,
         );
+        logger.info(`${logPrefix} Game server instance ready message: ${JSON.stringify(message)}`);
+        if (notifiedPlayers.length > 0 && notifiedPlayers.includes(playerId)) {
+          logger.warn(
+            `[${serviceName}]: Player ${playerId} has already been notified for game server instance ready for match ${notification.containerMatchId}, skipping duplicate notification`,
+          );
+          continue;
+        }
         client.send(message);
       }
       else {

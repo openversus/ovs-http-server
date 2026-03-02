@@ -62,12 +62,12 @@ async function generateStaticAccess(req: express.Request) {
     return;
   }
 
+  let hydraUsername = "";
+  let randomName = hydraUsername = NameGenerator.NewName();
   let player = await PlayerTesterModel.findOne({ ip });
   if (!player) {
-    var nameGenerator = new NameGenerator();
-    const randomName = nameGenerator.Generate("OpenVersus_");
     // generate a random name like OpenVersus_1247112554154
-    player = new PlayerTesterModel({ ip, name: randomName, GameplayPreferences: 964 });
+    player = new PlayerTesterModel({ ip, name: randomName, hydraUsername: hydraUsername, GameplayPreferences: 964 });
     try {
       await player.save();
       logger.info(`${logPrefix} No player found for IP ${ip}. Created new player with id ${player.id} and name ${randomName}.`);
@@ -78,19 +78,38 @@ async function generateStaticAccess(req: express.Request) {
     }
   }
 
-  let ws = `ws://testing.openversus.org:${env.WEBSOCKET_PORT}`;
-  if (ip === "127.0.0.1") {
-    ws = `ws://testing.openversus.org:${env.WEBSOCKET_PORT}`;
-  } else {
-    ws = `ws://${env.LOCAL_PUBLIC_IP}:${env.WEBSOCKET_PORT}`;
+  if (!player.hydraUsername || player.hydraUsername === "" || undefined === player.hydraUsername)
+    {
+      var tempHydraUsername: string = hydraUsername;
+      if (player.hydraUsername && undefined !== player.hydraUsername) {
+        tempHydraUsername = player.hydraUsername;
+        if (tempHydraUsername.trim() === "") {
+          tempHydraUsername = hydraUsername;
+        }
+      }
+      player.hydraUsername = tempHydraUsername;
+    try {
+      await player.save();
+      logger.info(`${logPrefix} Updated hydraUsername for player ${player.id} to ${hydraUsername}.`);
+    }
+    catch (error) {
+      logger.error(`${logPrefix} Error updating hydraUsername for player ${player.id}: ${error}`);
+    }
   }
+
+  let ws = `ws://${env.WB_DOMAIN}:${env.WEBSOCKET_PORT}`;
+  // if (ip === "127.0.0.1") {
+  //   ws = `ws://testing.openversus.org:${env.WEBSOCKET_PORT}`;
+  // } else {
+  //   ws = `ws://${env.LOCAL_PUBLIC_IP}:${env.WEBSOCKET_PORT}`;
+  // }
 
   const account: SharedTypes.IAccountToken = {
     id: player.id,
     profile_id: player.profile_id.toHexString(),
     public_id: player.public_id,
     wb_network_id: player.id,
-    hydraUsername: player.name,
+    hydraUsername: player.hydraUsername,
     username: player.name,
     current_ip: ip,
     lobby_id: "",
@@ -170,14 +189,16 @@ async function generateStaticAccess(req: express.Request) {
           ],
         },
         usernames: [
-          { auth: "hydra", username: "dark-wild-grass-voice-yrpu2" },
+          //{ auth: "hydra", username: "dark-wild-grass-voice-yrpu2" },
+          { auth: "hydra", username: account.hydraUsername },
           { auth: "steam", username: account.username },
           { auth: "wb_network", username: account.username },
         ],
         platforms: ["steam"],
         current_platform: "steam",
         is_cross_platform: false,
-        username: "dark-wild-grass-voice-yRPU2",
+        //username: "dark-wild-grass-voice-yRPU2",
+        username: account.username,
       },
       email_verification: { state: "unverified" },
       opt_ins: { wbplay_optin: false },
@@ -964,7 +985,13 @@ async function generateStaticAccess(req: express.Request) {
       random_distribution: 0.25115115419482414,
       id: account.profile_id,
     },
-    notifications: [],
+    notifications: [
+      {
+        id: "620d88aae6bbaf409686b6fa",
+        caption: "Test Notification",
+        text: "This is a test notification.",
+      }
+    ],
     maintenance: null,
     wb_network: { network_token: token },
   };

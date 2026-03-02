@@ -9,6 +9,7 @@ import {
   redisOnMatchMakerStarted,
   redisPushTicketToQueue,
   redisUpdatePlayerStatus,
+  redisGetMatchTickets
 } from "../config/redis";
 import { logger } from "../config/logger";
 import { MVSTime } from "../utils/date";
@@ -26,6 +27,24 @@ export async function queueMatch(
   matchmakingRequestId: string,
   matchType: MATCH_TYPES,
 ): Promise<void> {
+
+  const tickets = await redisGetMatchTickets(MATCH_TYPES.ONE_V_ONE);
+
+  logger.info(`Current tickets in ${MATCH_TYPES.ONE_V_ONE} queue: ${tickets.length}`);
+  logger.info(`Checking for duplicate players in party (${partyId}) against ${MATCH_TYPES.ONE_V_ONE} queue. Players in party: ${playerIds.join(", ")}`);
+  if (tickets.length !== 0) {
+    let queuedPlayers = tickets.reduce((acc: string[], ticket: RedisMatchTicket) => {
+      return acc.concat(ticket.players.map(p => p.id));
+    }, []);
+
+    logger.info(`Players currently queued in ${MATCH_TYPES.ONE_V_ONE} queue: ${[...new Set(queuedPlayers)].join(", ")}`);
+
+    if (queuedPlayers.some(p => playerIds.includes(p))) {
+      logger.warn(`One or more players in party (${partyId}) are already queued for matchmaking. Players: ${playerIds.join(", ")}`);
+      return;
+    }
+  }
+
   try {
     // Create a match ticket
     const ticket: ON_MATCH_MAKER_STARTED_NOTIFICATION = {

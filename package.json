@@ -6,7 +6,7 @@
     "websocket": "node -r @swc-node/register ./src/websocketStart.ts",
     "worker": "node -r @swc-node/register ./src/workerStart.ts",
     "test": "node -r @swc-node/register ./src/game/udpTest.ts",
-    "build": "tsc --project ./ && cp -R src/ build/src/",
+    "build": "tsc --project ./ && cp -R src/ build/",
     "start:prod": "node ./build/index.js"
   },
   "dependencies": {

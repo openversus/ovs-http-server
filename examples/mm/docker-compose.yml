@@ -1,0 +1,43 @@
+# This is an example Docker Compose stack for running the OpenVersus Matchmaking Worker server.
+# Note that the "ovs" Docker network is created by the DB stack, and this stack is configured to use that network as an external network.
+# See the DB stack's docker-compose.yml file for details and a full explanation of the reasoning behind this setup.
+#
+# Adjust the configuration as needed to fit your specific setup and requirements, especially the volume mappings and environment variable files.
+
+services:
+  openversus-mm:
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+    env_file: .env
+    entrypoint: ["/entrypoint-matchmaking.sh"]
+    image: openversus:maplist
+    networks:
+      ovs:
+        aliases:
+          - openversus_openversus-mm
+          - openversus-openversus-mm
+          - openversus-mm
+          - openversus_mm
+    ports:
+      - "4000:4000"
+    restart: unless-stopped
+    volumes:
+      - /opt/docker/openversus/mm/entrypoint-matchmaking.sh:/entrypoint-matchmaking.sh
+      - /opt/docker/openversus/common/bans.txt:/app/build/src/data/bans.txt
+      - /opt/docker/openversus/common/cidr_bans.txt:/app/build/src/data/cidr_bans.txt
+      - /opt/docker/openversus/common/banned_names.txt:/app/build/src/data/banned_names.txt
+      - /opt/docker/openversus/common/force_change_names.txt:/app/build/src/data/force_change_names.txt
+      - /opt/docker/openversus/common/maps1v1.json:/app/build/src/data/maps1v1.json
+      - /opt/docker/openversus/common/maps2v2.json:/app/build/src/data/maps2v2.json
+      - index_openversus_logs:/var/log/openversus
+
+volumes:
+  index_openversus_logs:
+    external: true
+
+networks:
+  ovs:
+    name: ovs
+    external: true

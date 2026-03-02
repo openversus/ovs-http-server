@@ -13,6 +13,9 @@ export class PlayerTester {
   @prop({ default: "" })
   public name!: string;
 
+  @prop({ default: "" })
+  public hydraUsername!: string;
+
   @prop({ required: true, unique: true })
   public ip!: string;
 

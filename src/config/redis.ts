@@ -1,7 +1,7 @@
 import ObjectID from "bson-objectid";
 import redis, { createClient } from "redis";
 import type { RedisClientType } from "redis";
-import { logger } from "./logger";
+import { logger, logwrapper } from "./logger";
 import env from "../env/env";
 import { cancelMatchmaking, MATCH_TYPES } from "../services/matchmakingService";
 import { Cosmetics } from "../database/Cosmetics";
@@ -486,6 +486,11 @@ export async function redisDeleteKeysByPattern(prefix: string, pattern: string):
 export async function redisDeletePlayerKeys(playerId: string): Promise<void> {
   await redisDeleteKeysByPattern("player", `${playerId}`);
   await redisDeleteKeysByPattern(`connections`, `${playerId}`);
+  const partyKey = await redisClient.get(`connections:${playerId}:party_key`);
+  if (partyKey) {
+    logwrapper.verbose(`${logPrefix} Deleting Redis party keyfor player ${playerId}`);
+    await redisDeletePartyKey(partyKey);
+  }
 }
 
 export async function redisDeleteConnectionKeysByIp(ip: string): Promise<void> {

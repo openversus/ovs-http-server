@@ -1,4 +1,4 @@
-import { logger } from "../config/logger";
+import { logger, logwrapper } from "../config/logger";
 import { Request, Response } from "express";
 import { Types } from "mongoose";
 import { CosmeticsModel } from "../database/Cosmetics";
@@ -215,6 +215,18 @@ export async function set_profile_icon(req: Request, res: Response) {
   //const account = req.token;
   const body = req.body as Profile_Icon_REQ;
   //logger.info(body.Slug)
+  let mongoPlayer = await SharedTypes.PlayerTesterModel.findOne({ id: account.id });
+
+  if (mongoPlayer) {
+    mongoPlayer.profile_icon = body.Slug;
+    try {
+      await mongoPlayer.save();
+      logwrapper.verbose(`${logPrefix} Updated profile icon for player ${account.id} to ${body.Slug}`);
+    }
+    catch (err) {
+      logger.error(`${logPrefix} Error saving profile icon ${body.Slug} for ${account.id}: ${err}`);
+    }
+  }
 
   // TODO: SAVE ON PLAYERTESTER MODEL INSTEAD
   try {

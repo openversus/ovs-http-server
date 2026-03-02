@@ -14,7 +14,7 @@ import {
   redisOnGameplayConfigNotified,
   redisGetMatchTickets,
 } from "./config/redis";
-import { logger } from "./config/logger";
+import { logger, logwrapper } from "./config/logger";
 import ObjectID from "bson-objectid";
 import { randomBytes } from "crypto";
 import { MATCH_TYPES } from "./services/matchmakingService";
@@ -55,6 +55,10 @@ async function process1v1Queue(): Promise<boolean> {
     // Get all tickets in the queue
     const tickets = await redisGetMatchTickets(MATCH_TYPES.ONE_V_ONE);
 
+    logwrapper.verbose(`${logPrefix} Retrieved ${tickets.length} tickets from 1v1 queue`);
+    logwrapper.verbose(`${logPrefix} Tickets: ${JSON.stringify(tickets)}`);
+    logwrapper.verbose(`${logPrefix} Total players across tickets: ${tickets.reduce((sum, ticket) => sum + ticket.players.length, 0)}`);
+    logwrapper.verbose(`${logPrefix} Players are: ${JSON.stringify(tickets.flatMap(t => t.players))}`);
     if (tickets.length < MATCH_RULES["1v1"].teamsRequired) {
       return false; // Not enough tickets to make a match
     }
@@ -238,6 +242,9 @@ export async function createTeams(tickets: RedisMatchTicket[]): Promise<RedisTea
 
 // Create a match from selected tickets
 async function createMatch(tickets: RedisMatchTicket[], matchType: string): Promise<void> {
+  logwrapper.verbose(`${logPrefix} Creating match with ${tickets.length} tickets for ${matchType}`);
+  logwrapper.verbose(`${logPrefix} Total players across tickets: ${tickets.reduce((sum, ticket) => sum + ticket.players.length, 0)}`);
+  logwrapper.verbose(`${logPrefix} Tickets: ${JSON.stringify(tickets)}`);
   try {
     // Count total players
     const totalPlayers = tickets.reduce((sum, ticket) => sum + ticket.players.length, 0);
@@ -271,7 +278,7 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       players: await createTeams(tickets),
       matchId,
       matchKey: randomBytes(32).toString("base64"),
-      map: getRandomMapByType(matchType),
+      map: await getRandomMapByType(matchType, match.matchId),
       mode: matchType,
       rollbackPort: match.rollbackPort,
     };

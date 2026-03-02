@@ -1,0 +1,41 @@
+# This is an example Docker Compose stack for running the OpenVersus Index HTTP server.
+# Note that the "ovs" Docker network is created by the DB stack, and this stack is configured to use that network as an external network.
+# See the DB stack's docker-compose.yml file for details and a full explanation of the reasoning behind this setup.
+#
+# Adjust the configuration as needed to fit your specific setup and requirements, especially the volume mappings and environment variable files.
+
+services:
+  openversus:
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+    env_file: .env
+    image: openversus:maplist
+    networks:
+      ovs:
+        aliases:
+          - openversus_openversus
+          - openversus-openversus
+          - openversus
+    ports:
+      - "9000:9000"
+      - "41235:41235/udp"
+    restart: unless-stopped
+    volumes:
+      - /opt/docker/openversus/index/entrypoint-index.sh:/entrypoint.sh
+      - /opt/docker/openversus/common/bans.txt:/app/build/src/data/bans.txt
+      - /opt/docker/openversus/common/cidr_bans.txt:/app/build/src/data/cidr_bans.txt
+      - /opt/docker/openversus/common/banned_names.txt:/app/build/src/data/banned_names.txt
+      - /opt/docker/openversus/common/force_change_names.txt:/app/build/src/data/force_change_names.txt
+      - /opt/docker/openversus/common/maps1v1.json:/app/build/src/data/maps1v1.json
+      - /opt/docker/openversus/common/maps2v2.json:/app/build/src/data/maps2v2.json
+      - openversus_logs:/var/log/openversus
+
+volumes:
+  openversus_logs:
+
+networks:
+  ovs:
+    name: ovs
+    external: true

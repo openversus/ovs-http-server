@@ -9,7 +9,8 @@ import * as path from "path";
 import { hydraTokenMiddleware } from "./middleware/auth";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
-import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby } from "./config/redis";
+import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby, redisSetMatchPassword, redisGetMatchPassword, redisDeleteMatchPassword } from "./config/redis";
+import { processMatchResult, getLeaderboard } from "./services/eloService";
 import { GAME_SERVER_PORT } from "./game/udp";
 import { sscRouter } from "./ssc/routes";
 import { getCurrentCRC, LoadConfig, MATCHMAKING_CRC } from "./data/config";
@@ -72,6 +73,10 @@ const template = handlebars.compile(source);
 const partyFilePath = path.join(__dirname, "static/party.html");
 const partySource = fs.readFileSync(partyFilePath, "utf8");
 const partyTemplate = handlebars.compile(partySource);
+
+const leaderboardFilePath = path.join(__dirname, "static/leaderboard.html");
+const leaderboardSource = fs.readFileSync(leaderboardFilePath, "utf8");
+const leaderboardTemplate = handlebars.compile(leaderboardSource);
 
 app.get("/namechange", async (req, res) => {
   try {
@@ -261,6 +266,19 @@ app.post("/ovs_end_match", async (req, res, next) => {
       config.players.map((p) => p.playerId),
       config.matchId,
     );
+
+    // Process ELO updates if the rollback server reported a winning team
+    if (typeof body.winningTeam === "number" && (body.winningTeam === 0 || body.winningTeam === 1)) {
+      logger.info(`${logPrefix} Processing ELO update for match ${body.matchId}: team ${body.winningTeam} won`);
+      try {
+        await processMatchResult(body.matchId, body.winningTeam);
+      } catch (err) {
+        logger.error(`${logPrefix} Error processing match result for ELO: ${err}`);
+      }
+    } else {
+      logger.info(`${logPrefix} No winningTeam in end match body for ${body.matchId}, skipping ELO update`);
+    }
+
     res.send("");
   }
 });
@@ -317,10 +335,12 @@ app.get("/party", async (req, res) => {
     let player = await PlayerTesterModel.findOne({ ip });
     const username = player?.name || "Unknown";
     const currentKey = player?.party_key || "";
+    const currentPassword = player?.id ? (await redisGetMatchPassword(player.id) || "") : "";
 
     const html = partyTemplate({
       username,
       currentKey,
+      currentPassword,
       error: null,
       success: null,
     });
@@ -486,6 +506,93 @@ app.post("/party/join", async (req, res) => {
   } catch (e) {
     logger.error(`${logPrefix} Error in POST /party/join: ${e}`);
     res.status(500).send("Error joining party");
+  }
+});
+
+// ============================================================
+// Password Matchmaking — set/clear password for custom matches
+// ============================================================
+
+app.post("/party/set-password", async (req, res) => {
+  try {
+    const ip = req.ip!.replace(/^::ffff:/, "");
+    let player = await PlayerTesterModel.findOne({ ip });
+    if (!player) {
+      res.send(partyTemplate({ username: "Unknown", currentKey: "", currentPassword: "", error: "You must be connected to the game first.", success: null }));
+      return;
+    }
+
+    const password = (req.body.password || "").trim();
+    if (!password || password.length < 3) {
+      const currentPassword = player.id ? (await redisGetMatchPassword(player.id) || "") : "";
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", currentPassword, error: "Password must be at least 3 characters.", success: null }));
+      return;
+    }
+    if (password.length > 20) {
+      const currentPassword = player.id ? (await redisGetMatchPassword(player.id) || "") : "";
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", currentPassword, error: "Password must be 20 characters or less.", success: null }));
+      return;
+    }
+    if (!/^[a-zA-Z0-9_\-]+$/.test(password)) {
+      const currentPassword = player.id ? (await redisGetMatchPassword(player.id) || "") : "";
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", currentPassword, error: "Password can only contain letters, numbers, underscores, and dashes.", success: null }));
+      return;
+    }
+
+    await redisSetMatchPassword(player.id, password);
+    logger.info(`${logPrefix} Player ${player.name} (${ip}) set match password`);
+    res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", currentPassword: password, error: null, success: `Match password set! You'll only match against others with the same password.` }));
+  } catch (e) {
+    logger.error(`${logPrefix} Error in POST /party/set-password: ${e}`);
+    res.status(500).send("Error setting match password");
+  }
+});
+
+app.post("/party/clear-password", async (req, res) => {
+  try {
+    const ip = req.ip!.replace(/^::ffff:/, "");
+    let player = await PlayerTesterModel.findOne({ ip });
+    if (!player) {
+      res.send(partyTemplate({ username: "Unknown", currentKey: "", currentPassword: "", error: "You must be connected to the game first.", success: null }));
+      return;
+    }
+
+    await redisDeleteMatchPassword(player.id);
+    logger.info(`${logPrefix} Player ${player.name} (${ip}) cleared match password`);
+    res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", currentPassword: "", error: null, success: "Match password cleared. You'll now match against anyone." }));
+  } catch (e) {
+    logger.error(`${logPrefix} Error in POST /party/clear-password: ${e}`);
+    res.status(500).send("Error clearing match password");
+  }
+});
+
+// ============================================================
+// Leaderboard — Top 100 rankings for 1v1 and 2v2
+// ============================================================
+
+app.get("/leaderboard", async (req, res) => {
+  try {
+    const html = leaderboardTemplate({});
+    res.send(html);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /leaderboard: ${e}`);
+    res.status(500).send("Error loading leaderboard");
+  }
+});
+
+app.get("/api/leaderboard/:mode", async (req, res) => {
+  try {
+    const mode = req.params.mode as "1v1" | "2v2";
+    if (mode !== "1v1" && mode !== "2v2") {
+      res.status(400).json({ error: "Invalid mode. Use '1v1' or '2v2'." });
+      return;
+    }
+
+    const players = await getLeaderboard(mode, 100);
+    res.json({ players });
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /api/leaderboard: ${e}`);
+    res.status(500).json({ error: "Error fetching leaderboard" });
   }
 });
 

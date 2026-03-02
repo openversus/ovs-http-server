@@ -8,7 +8,6 @@ import { decodeToken } from "./middleware/auth";
 import * as SharedTypes from "./types/shared-types";
 import * as RollbackProcess from "./utils/processes";
 import * as KitchenSink from "./utils/garbagecan";
-import { Get1v1MapList, Get2v2MapList } from "./data/maps";
 //import { exec, spawn, spawnSync, SpawnOptions } from "child_process";
 
 import {
@@ -58,6 +57,9 @@ import {
   redisDeleteLobbyState,
   redisDeletePlayerLobby,
   redisPublishLobbyRejoin,
+  redisReleaseMatchmakingLock,
+  redisGetPasswordQueueKeys,
+  redisGetMatchTickets,
 } from "./config/redis";
 import { Server } from "https";
 import { Server as HttpServer } from "http";
@@ -70,7 +72,6 @@ import env from "./env/env";
 import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./database/Cosmetics";
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 import { cancelMatchmakingForAll } from "./services/matchmakingService";
-import { join } from 'path';
 
 const serviceName: string = "WebSocket";
 const logPrefix = `[${serviceName}]:`;
@@ -239,6 +240,16 @@ export class WebSocketService {
     playerWS.init = true;
     playerWS.account = decodedBody.account;
     playerWS.sendRaw(buffer);
+
+    // DIAGNOSTIC: Detect when a new WebSocket replaces an existing one (zombie detection)
+    const existingClient = this.clients.get(playerWS.account.id);
+    if (existingClient) {
+      logger.warn(
+        `[${serviceName}]: ZOMBIE-DIAG: Player ${playerWS.account.id} connecting with NEW WebSocket — replacing existing connection. ` +
+        `Old WS readyState=${existingClient.ws.readyState}, deleted=${existingClient.deleted}`,
+      );
+    }
+
     this.clients.set(playerWS.account.id, playerWS);
 
     // Clear pending rejoin flag if this is a reconnect after force-close
@@ -268,6 +279,17 @@ export class WebSocketService {
     if (playerWS && playerWS.account) {
       const playerId = playerWS.account.id;
 
+      // If this connection is no longer the active one for this player, it's a zombie/stale
+      // connection (e.g. replaced by a reconnect). Ignore it entirely — don't clean up
+      // Redis data or disband the party, since the player is still actively connected.
+      const currentClient = this.clients.get(playerId);
+      if (currentClient && currentClient !== playerWS) {
+        logger.info(
+          `[${serviceName}]: Ignoring stale WebSocket close for player ${playerId} — newer connection is active`,
+        );
+        return;
+      }
+
       // If this player is pending rejoin (force-closed for lobby rejoin),
       // skip all cleanup so their lobby data stays intact for when they reconnect
       if (this.pendingRejoin.has(playerId)) {
@@ -285,8 +307,17 @@ export class WebSocketService {
       // so remaining players aren't stuck with a ghost teammate
       try {
         const lobbyId = await redisGetPlayerLobby(playerId);
+        logger.info(
+          `[${serviceName}]: DISCONNECT-DIAG: Player ${playerId} disconnect handler running. ` +
+          `lobbyId=${lobbyId || "NONE"}, pendingRejoin=${this.pendingRejoin.has(playerId)}, ` +
+          `wsReadyState=${playerWS.ws.readyState}, deleted=${playerWS.deleted}`,
+        );
         if (lobbyId) {
           const lobbyState = await redisGetLobbyState(lobbyId);
+          logger.info(
+            `[${serviceName}]: DISCONNECT-DIAG: Player ${playerId} lobby ${lobbyId} state: ` +
+            `${lobbyState ? `playerIds=[${lobbyState.playerIds.join(",")}], mode=${(lobbyState as any).mode || "unknown"}` : "NULL (already deleted!)"}`,
+          );
           if (lobbyState && lobbyState.playerIds.length > 1) {
             const otherPlayerIds = lobbyState.playerIds.filter(pid => pid !== playerId);
             logger.info(
@@ -321,6 +352,7 @@ export class WebSocketService {
       this.attemptRemoveMatchTicket(playerWS);
       this.clients.delete(playerId);
       redisRemoveOnlinePlayer(playerId);
+      redisReleaseMatchmakingLock(playerId); // Release lock so they can queue again on reconnect
       redisCleanupPlayerLobby(playerId); // Clean up lobby state before deleting player keys
       redisDeletePlayerKeys(playerId);
       redisDeleteConnectionKeysByIp(playerWS.ip);
@@ -330,10 +362,25 @@ export class WebSocketService {
     }
   }
 
-  attemptRemoveMatchTicket(playerWS: WebSocketPlayer) {
+  async attemptRemoveMatchTicket(playerWS: WebSocketPlayer) {
     if (playerWS.ticket) {
+      // Remove from regular queues
       redisPopMatchTicketsFromQueue("1v1", [playerWS.ticket]);
       redisPopMatchTicketsFromQueue("2v2", [playerWS.ticket]);
+
+      // Also remove from password queues
+      try {
+        const pw1v1Keys = await redisGetPasswordQueueKeys("1v1");
+        for (const queueKey of pw1v1Keys) {
+          redisPopMatchTicketsFromQueue(queueKey, [playerWS.ticket]);
+        }
+        const pw2v2Keys = await redisGetPasswordQueueKeys("2v2");
+        for (const queueKey of pw2v2Keys) {
+          redisPopMatchTicketsFromQueue(queueKey, [playerWS.ticket]);
+        }
+      } catch (err) {
+        logger.warn(`${logPrefix} Error removing tickets from password queues: ${err}`);
+      }
     }
   }
 
@@ -402,6 +449,18 @@ export class WebSocketService {
         this.handleMatchTick(client, notification);
       }
     }
+    // Check for duplicate tickets — don't push if this player already has a ticket in the queue
+    const existingTickets = await redisGetMatchTickets(notification.matchType);
+    const newPlayerIds = new Set(notification.players.map((p) => p.id));
+    const hasDuplicate = existingTickets.some((t) =>
+      t.players.some((p) => newPlayerIds.has(p.id)),
+    );
+    if (hasDuplicate) {
+      logger.warn(
+        `${logPrefix} Duplicate ticket blocked — player(s) ${Array.from(newPlayerIds).join(", ")} already in ${notification.matchType} queue`,
+      );
+      return;
+    }
     // Add ticket to the matchmaking queue
     await redisPushTicketToQueue(notification.matchType, notification);
   }
@@ -455,7 +514,6 @@ export class WebSocketService {
       env.UDP_SERVER_IP2,
     ];
     const randomIndex = Math.floor(Math.random() * arr.length);
-    let notifiedPlayers: string[] = [];
     for (const matchPlayer of notification.players) {
       let tempPlayer = null;
       try {
@@ -476,17 +534,8 @@ export class WebSocketService {
 
       const player = tempPlayer;
       if (player) {
-        
         try {
-          if (player.account?.id &&
-            notifiedPlayers.length > 1 &&
-            notifiedPlayers.includes(player.account.id)
-          ) {
-              logger.warn(`[${serviceName}]: Player ${player.account.id} with IP ${player.ip} and name ${player.account.username} has already been notified for match ${notification.matchId}, skipping duplicate notification`);
-              continue;
-          }
           this.stopMatchTick(player);
-          notifiedPlayers.push(player.account?.id ?? "unknown");
         }
         catch (error) {
           logger.error(
@@ -874,25 +923,7 @@ export class WebSocketService {
 
     // Create the message to send to the players
 
-    //let stageHazards: boolean = notification.map.toLowerCase() === "PVE_03".toLowerCase() ? true : false;
-    let all1v1Maps = await Get1v1MapList();
-    let all2v2Maps = await Get2v2MapList();
-
-    let stageHazards: boolean = false;
-
-    if (notification.map === "PVE_03") {
-      stageHazards = true;
-    }
-    else if (notification.mode === "2v2")
-    {
-      var hazardsEnabled: boolean = all2v2Maps.find(m => m.id === notification.map.toLowerCase())?.hazards ?? false;
-      stageHazards = hazardsEnabled;
-    }
-    else {
-      var hazardsEnabled: boolean = all1v1Maps.find(m => m.id === notification.map.toLowerCase())?.hazards ?? false;
-      stageHazards = hazardsEnabled;
-    }
-
+    let stageHazards: boolean = notification.map.toLowerCase() === "PVE_03".toLowerCase() ? true : false;
     const message: GameNotification = {
       data: {
         MatchId: notification.matchId,
@@ -1014,19 +1045,8 @@ export class WebSocketService {
 
       playerClients.push({ [playerId]: client });
     }
-    let notifiedPlayers: string[] = [];
     for (const playerId of notification.playerIds) {
       // const client = this.clients.get(playerId);
-
-      if (notifiedPlayers.length > 0 && notifiedPlayers.includes(playerId)) {
-        logger.warn(
-          `[${serviceName}]: Player ${playerId} has already been notified for game server instance ready for match ${notification.containerMatchId}, skipping duplicate notification`,
-        );
-        continue;
-      }
-
-      notifiedPlayers.push(playerId ?? "unknown");
-
       const client = playerClients.find(pc => pc[playerId])?.[playerId];
 
       const gameServerPort = notification.rollbackPort || GAME_SERVER_PORT;
@@ -1061,13 +1081,6 @@ export class WebSocketService {
         logger.info(
           `[${serviceName}]: Sent game server instance ready to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`,
         );
-        logger.info(`${logPrefix} Game server instance ready message: ${JSON.stringify(message)}`);
-        if (notifiedPlayers.length > 0 && notifiedPlayers.includes(playerId)) {
-          logger.warn(
-            `[${serviceName}]: Player ${playerId} has already been notified for game server instance ready for match ${notification.containerMatchId}, skipping duplicate notification`,
-          );
-          continue;
-        }
         client.send(message);
       }
       else {
@@ -1109,6 +1122,9 @@ export class WebSocketService {
       if (client) {
         this.cancelMatchMaking(client, notification.matchmakingId);
       }
+
+      // Release matchmaking lock so they can queue again
+      redisReleaseMatchmakingLock(playerId);
     }
   }
 
@@ -1421,6 +1437,9 @@ export class WebSocketService {
         // Clear matchConfig and status since the match is over
         client.matchConfig = undefined;
         redisUpdatePlayerStatus(playerId, "idle");
+
+        // Release matchmaking lock so they can queue again
+        redisReleaseMatchmakingLock(playerId);
 
         setTimeout(() => {
           const data = {

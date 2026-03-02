@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpenVersus - Leaderboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fugaz+One&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+  <style>
+      :root {
+          --mv-blue: #1f6feb;
+          --mv-blue-dark: #0040a5;
+          --mv-orange: #ff7500;
+          --mv-orange-dark: #ff4d00;
+          --ink: #343434;
+          --card: rgba(255, 255, 255, 0.92);
+          --card2: rgba(255, 255, 255, 0.85);
+          --shadow: rgba(0, 0, 0, 0.28) 0px 19px 38px, rgba(0, 0, 0, 0.20) 0px 15px 12px;
+          --skew: -12deg;
+          --radius: 18px;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+          margin: 0;
+          font-family: "Fugaz One", Arial, sans-serif;
+          overflow-x: hidden;
+          color: var(--ink);
+          background: #000;
+      }
+      .background {
+          position: fixed; inset: 0; z-index: -2;
+          background-image: url("/images/name_change_background.jpeg");
+          background-size: cover; background-position: center; background-repeat: no-repeat;
+          transform: scale(1.03);
+      }
+      .background::after {
+          content: ""; position: absolute; inset: 0;
+          backdrop-filter: blur(6px);
+          background: rgba(10, 12, 20, 0.20);
+      }
+      .main_wrapper {
+          min-height: 100%;
+          display: grid; place-items: center;
+          padding: 24px 14px;
+      }
+      .main_container {
+          width: min(960px, 100%);
+          background: linear-gradient(180deg, var(--card), var(--card2));
+          border-radius: var(--radius);
+          box-shadow: var(--shadow);
+          padding: 22px;
+          position: relative; overflow: hidden;
+      }
+      .main_container::before {
+          content: ""; position: absolute; inset: -60px;
+          background: linear-gradient(115deg,
+          transparent 0%, transparent 45%,
+          rgba(255, 117, 0, 0.10) 45%, rgba(255, 117, 0, 0.10) 52%,
+          transparent 52%, transparent 100%),
+          linear-gradient(115deg,
+          transparent 0%, transparent 62%,
+          rgba(31, 111, 235, 0.10) 62%, rgba(31, 111, 235, 0.10) 69%,
+          transparent 69%, transparent 100%);
+          pointer-events: none; opacity: 0.85;
+      }
+      .content { position: relative; display: grid; gap: 18px; }
+      .top {
+          display: grid; grid-template-columns: 170px 1fr;
+          gap: 18px; align-items: center;
+      }
+      .logo {
+          width: 100%; max-width: 170px;
+          border-radius: 14px; display: block;
+          box-shadow: 0 10px 0 rgba(0, 0, 0, 0.10);
+      }
+      .panelTitle {
+          margin: 0;
+          font-size: clamp(22px, 3vw, 32px); line-height: 1;
+          background: linear-gradient(0deg, var(--mv-orange-dark), #ff8825);
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+          font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase;
+      }
+      .subline {
+          margin: 8px 0 0;
+          font-family: Helvetica, Arial, sans-serif;
+          color: rgba(20, 20, 20, 0.70); font-size: 14px;
+      }
+      .section {
+          padding: 16px; border: 3px solid #979797;
+          background: #fff; box-shadow: 0 10px 0 rgba(0, 0, 0, 0.10);
+          display: grid; gap: 12px;
+      }
+      .section-title {
+          margin: 0;
+          font-size: 20px; text-transform: uppercase; letter-spacing: 0.06em;
+          background: linear-gradient(0deg, var(--mv-blue-dark), var(--mv-blue));
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      }
+      .section-title.orange-title {
+          background: linear-gradient(0deg, var(--mv-orange-dark), #ff8825);
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      }
+      .tab-row {
+          display: flex; gap: 10px; margin-bottom: 4px;
+      }
+      .tab-btn {
+          display: inline-block; transform: skewX(var(--skew));
+          border: 3px solid var(--ink);
+          box-shadow: 0 8px 0 rgba(0, 0, 0, 0.15);
+          border-radius: 0; padding: 0; cursor: pointer; white-space: nowrap;
+          background: #ddd;
+          transition: background 0.15s;
+      }
+      .tab-btn.active { background: var(--mv-blue); }
+      .tab-btn.active .tab-label { color: #fff; }
+      .tab-btn:hover { filter: brightness(1.08); }
+      .tab-label {
+          display: block;
+          transform: skewX(calc(var(--skew) * -1));
+          background: transparent; border: none;
+          padding: 12px 24px; font-size: 16px; font-weight: 1000;
+          text-transform: uppercase; color: var(--ink);
+          letter-spacing: 0.06em; cursor: pointer;
+          font-family: Helvetica, Arial, sans-serif;
+      }
+      .lb-table {
+          width: 100%; border-collapse: collapse;
+          font-family: Helvetica, Arial, sans-serif;
+      }
+      .lb-table th {
+          text-align: left; padding: 10px 12px;
+          font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em;
+          color: rgba(0,0,0,0.55); border-bottom: 2px solid rgba(0,0,0,0.12);
+          font-weight: 900;
+      }
+      .lb-table td {
+          padding: 10px 12px; font-size: 14px; font-weight: 700;
+          border-bottom: 1px solid rgba(0,0,0,0.06);
+      }
+      .lb-table tr:hover td { background: rgba(31, 111, 235, 0.06); }
+      .rank-col { width: 60px; text-align: center; }
+      .elo-col { width: 80px; color: var(--mv-orange); font-weight: 900; }
+      .wl-col { width: 100px; }
+      .wr-col { width: 80px; }
+      .rank-badge {
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 32px; height: 32px; border-radius: 6px;
+          font-weight: 900; font-size: 14px; color: #fff;
+          background: var(--mv-blue);
+      }
+      .rank-badge.gold { background: #d4a017; }
+      .rank-badge.silver { background: #8a8a8a; }
+      .rank-badge.bronze { background: #cd7f32; }
+      .loading {
+          text-align: center; padding: 40px;
+          font-family: Helvetica, Arial, sans-serif;
+          color: rgba(0,0,0,0.45); font-weight: 700;
+      }
+      .halfSecond { animation-delay: 0.5s; }
+      @media (max-width: 760px) {
+          .top { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+          .logo { max-width: 140px; }
+          .lb-table th, .lb-table td { padding: 8px 6px; font-size: 12px; }
+      }
+  </style>
+</head>
+<body>
+<section class="background"></section>
+<div class="main_wrapper">
+  <section class="main_container animate__animated animate__fadeIn">
+    <div class="content">
+      <div class="top">
+        <img src="/images/OpenVersus_logo.png" class="logo" alt="OpenVersus Logo"/>
+        <div>
+          <h1 class="panelTitle">Leaderboard</h1>
+          <p class="subline">Top 100 players ranked by ELO rating.</p>
+        </div>
+      </div>
+
+      <div class="section animate__animated animate__fadeInUp halfSecond">
+        <div class="tab-row">
+          <div class="tab-btn active" id="tab-1v1" onclick="switchTab('1v1')">
+            <span class="tab-label">1v1 Rankings</span>
+          </div>
+          <div class="tab-btn" id="tab-2v2" onclick="switchTab('2v2')">
+            <span class="tab-label">2v2 Rankings</span>
+          </div>
+        </div>
+
+        <div id="leaderboard-content">
+          <div class="loading">Loading...</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+</div>
+
+<script>
+  let currentMode = '1v1';
+
+  function switchTab(mode) {
+    currentMode = mode;
+    document.getElementById('tab-1v1').classList.toggle('active', mode === '1v1');
+    document.getElementById('tab-2v2').classList.toggle('active', mode === '2v2');
+    loadLeaderboard(mode);
+  }
+
+  function getRankBadgeClass(rank) {
+    if (rank === 1) return 'rank-badge gold';
+    if (rank === 2) return 'rank-badge silver';
+    if (rank === 3) return 'rank-badge bronze';
+    return 'rank-badge';
+  }
+
+  async function loadLeaderboard(mode) {
+    const container = document.getElementById('leaderboard-content');
+    container.innerHTML = '<div class="loading">Loading...</div>';
+
+    try {
+      const res = await fetch('/api/leaderboard/' + mode);
+      const data = await res.json();
+
+      if (!data.players || data.players.length === 0) {
+        container.innerHTML = '<div class="loading">No players ranked yet. Play some matches!</div>';
+        return;
+      }
+
+      let html = '<table class="lb-table">';
+      html += '<thead><tr>';
+      html += '<th class="rank-col">Rank</th>';
+      html += '<th>Player</th>';
+      html += '<th class="elo-col">ELO</th>';
+      html += '<th class="wl-col">W / L</th>';
+      html += '<th class="wr-col">Win %</th>';
+      html += '</tr></thead><tbody>';
+
+      for (const p of data.players) {
+        const total = p.wins + p.losses;
+        const winRate = total > 0 ? Math.round((p.wins / total) * 100) : 0;
+        html += '<tr>';
+        html += '<td class="rank-col"><span class="' + getRankBadgeClass(p.rank) + '">' + p.rank + '</span></td>';
+        html += '<td>' + escapeHtml(p.username) + '</td>';
+        html += '<td class="elo-col">' + p.elo + '</td>';
+        html += '<td class="wl-col">' + p.wins + ' / ' + p.losses + '</td>';
+        html += '<td class="wr-col">' + winRate + '%</td>';
+        html += '</tr>';
+      }
+
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    } catch (err) {
+      container.innerHTML = '<div class="loading">Error loading leaderboard. Please try again.</div>';
+    }
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // Load 1v1 by default
+  loadLeaderboard('1v1');
+</script>
+</body>
+</html>

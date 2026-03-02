@@ -1,7 +1,7 @@
 import ObjectID from "bson-objectid";
 import redis, { createClient } from "redis";
 import type { RedisClientType } from "redis";
-import { logger, logwrapper } from "./logger";
+import { logger } from "./logger";
 import env from "../env/env";
 import { cancelMatchmaking, MATCH_TYPES } from "../services/matchmakingService";
 import { Cosmetics } from "../database/Cosmetics";
@@ -80,6 +80,7 @@ export interface RedisMatchTicket {
   created_at: number;
   partyId: string;
   matchmakingRequestId: string;
+  isPasswordMatch?: boolean;
 }
 
 export interface RedisMatch {
@@ -91,6 +92,7 @@ export interface RedisMatch {
   matchType: string;
   totalPlayers: number;
   rollbackPort: number;
+  isPasswordMatch?: boolean;
 }
 
 export interface RedisTeamEntry {
@@ -486,11 +488,6 @@ export async function redisDeleteKeysByPattern(prefix: string, pattern: string):
 export async function redisDeletePlayerKeys(playerId: string): Promise<void> {
   await redisDeleteKeysByPattern("player", `${playerId}`);
   await redisDeleteKeysByPattern(`connections`, `${playerId}`);
-  const partyKey = await redisClient.get(`connections:${playerId}:party_key`);
-  if (partyKey) {
-    logwrapper.verbose(`${logPrefix} Deleting Redis party keyfor player ${playerId}`);
-    await redisDeletePartyKey(partyKey);
-  }
 }
 
 export async function redisDeleteConnectionKeysByIp(ip: string): Promise<void> {
@@ -687,4 +684,61 @@ export async function redisUpdatePartyKeyLobby(key: string, lobbyId: string): Pr
     await redisSavePartyKey(key, existing);
     logger.info(`${logPrefix} Updated party key "${key}" lobbyId to ${lobbyId}`);
   }
+}
+
+// --- Match Password (custom lobby password matchmaking) ---
+
+export async function redisSetMatchPassword(accountId: string, password: string): Promise<void> {
+  const EX = 60 * 60; // 1 hour TTL
+  await redisClient.set(`match_password:${accountId}`, password, { EX });
+  logger.info(`${logPrefix} Set match password for player ${accountId}`);
+}
+
+export async function redisGetMatchPassword(accountId: string): Promise<string | null> {
+  return await redisClient.get(`match_password:${accountId}`);
+}
+
+export async function redisDeleteMatchPassword(accountId: string): Promise<void> {
+  await redisClient.del(`match_password:${accountId}`);
+  logger.info(`${logPrefix} Deleted match password for player ${accountId}`);
+}
+
+// --- Matchmaking Lock (atomic duplicate request guard) ---
+
+/**
+ * Attempts to acquire a matchmaking lock for a player.
+ * Uses SET NX (set-if-not-exists) for atomic operation.
+ * Returns true if lock was acquired, false if already locked (duplicate request).
+ */
+export async function redisAcquireMatchmakingLock(accountId: string): Promise<boolean> {
+  const result = await redisClient.set(`matchmaking_lock:${accountId}`, "1", { NX: true, EX: 30 });
+  return result === "OK";
+}
+
+/**
+ * Releases the matchmaking lock for a player.
+ * Called when matchmaking is cancelled or match ends.
+ */
+export async function redisReleaseMatchmakingLock(accountId: string): Promise<void> {
+  await redisClient.del(`matchmaking_lock:${accountId}`);
+}
+
+// --- Password Queue Key Scanning ---
+
+/**
+ * Scan for all password queue keys matching a pattern.
+ * Used by the matchmaking worker to find password-based queues.
+ */
+export async function redisGetPasswordQueueKeys(baseMatchType: string): Promise<string[]> {
+  const pattern = `${baseMatchType}_pw:*`;
+  const keys: string[] = [];
+  let cursor = 0;
+
+  do {
+    const result = await redisClient.scan(cursor, { MATCH: pattern, COUNT: 100 });
+    cursor = Number(result.cursor);
+    keys.push(...result.keys);
+  } while (cursor !== 0);
+
+  return keys;
 }

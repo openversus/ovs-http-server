@@ -9,15 +9,28 @@ import {
   redisOnMatchMakerStarted,
   redisPushTicketToQueue,
   redisUpdatePlayerStatus,
-  redisGetMatchTickets
+  redisGetMatchPassword,
 } from "../config/redis";
 import { logger } from "../config/logger";
 import { MVSTime } from "../utils/date";
+import { getOrCreateRating } from "./eloService";
 
 export enum MATCH_TYPES {
   ONE_V_ONE = "1v1",
   TWO_V_TWO = "2v2",
   FFA = "FFA",
+}
+
+/**
+ * Returns the base mode from a match type (strips password suffix).
+ * e.g., "1v1_pw:mypass" → "1v1", "2v2" → "2v2"
+ */
+export function getBaseMode(matchType: string): string {
+  const pwIndex = matchType.indexOf("_pw:");
+  if (pwIndex !== -1) {
+    return matchType.substring(0, pwIndex);
+  }
+  return matchType;
 }
 
 export async function queueMatch(
@@ -27,29 +40,26 @@ export async function queueMatch(
   matchmakingRequestId: string,
   matchType: MATCH_TYPES,
 ): Promise<void> {
-
-  const tickets = await redisGetMatchTickets(MATCH_TYPES.ONE_V_ONE);
-
-  logger.info(`Current tickets in ${MATCH_TYPES.ONE_V_ONE} queue: ${tickets.length}`);
-  logger.info(`Checking for duplicate players in party (${partyId}) against ${MATCH_TYPES.ONE_V_ONE} queue. Players in party: ${playerIds.join(", ")}`);
-  if (tickets.length !== 0) {
-    let queuedPlayers = tickets.reduce((acc: string[], ticket: RedisMatchTicket) => {
-      return acc.concat(ticket.players.map(p => p.id));
-    }, []);
-
-    logger.info(`Players currently queued in ${MATCH_TYPES.ONE_V_ONE} queue: ${[...new Set(queuedPlayers)].join(", ")}`);
-
-    if (queuedPlayers.some(p => playerIds.includes(p))) {
-      logger.warn(`One or more players in party (${partyId}) are already queued for matchmaking. Players: ${playerIds.join(", ")}`);
-      return;
-    }
-  }
-
   try {
+    // Check if the party leader has a match password set
+    const matchPassword = await redisGetMatchPassword(partyLeaderId);
+    const isPasswordMatch = !!matchPassword;
+
+    // Determine the queue key — password matches go to separate queues
+    let queueMatchType: string = matchType;
+    if (matchPassword) {
+      queueMatchType = `${matchType}_pw:${matchPassword}`;
+      logger.info(`Password match detected for player ${partyLeaderId}, using queue: ${queueMatchType}`);
+    }
+
+    // Look up each player's ELO for skill-based matchmaking
+    const baseMode = getBaseMode(queueMatchType);
+    const eloField = baseMode === "1v1" ? "elo_1v1" : "elo_2v2";
+
     // Create a match ticket
     const ticket: ON_MATCH_MAKER_STARTED_NOTIFICATION = {
       created_at: MVSTime(new Date()),
-      matchType,
+      matchType: queueMatchType as MATCH_TYPES,
       partyLeaderId,
       matchmakingRequestId,
       partyId,
@@ -57,22 +67,31 @@ export async function queueMatch(
       players: await Promise.all(
         playerIds.map(async (p) => {
           const playerConfig = await redisGetPlayer(p);
+          // Look up player's actual ELO from MongoDB
+          let skill = 0;
+          try {
+            const rating = await getOrCreateRating(p);
+            skill = rating[eloField];
+          } catch (err) {
+            logger.warn(`Could not fetch ELO for player ${p}, defaulting to 0: ${err}`);
+          }
           return {
             id: p,
             region: "MVSI",
-            skill: 0,
+            skill,
             ip: playerConfig.ip,
           };
         }),
       ),
     };
+
     // Publish a message that a party has been queued
     await redisOnMatchMakerStarted(ticket);
 
     logger.info(
-      `Party (${partyId}) matchmakingRequestId(${matchmakingRequestId}) has been added to ${matchType} matchmaking queue. Players (${playerIds.join(
+      `Party (${partyId}) matchmakingRequestId(${matchmakingRequestId}) has been added to ${queueMatchType} matchmaking queue. Players (${playerIds.join(
         ",",
-      )})`,
+      )})${isPasswordMatch ? " [PASSWORD MATCH]" : ""}`,
     );
   }
   catch (error) {

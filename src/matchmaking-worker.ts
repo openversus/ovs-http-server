@@ -13,11 +13,12 @@ import {
   redisUpdateMatch,
   redisOnGameplayConfigNotified,
   redisGetMatchTickets,
+  redisGetPasswordQueueKeys,
 } from "./config/redis";
-import { logger, logwrapper } from "./config/logger";
+import { logger } from "./config/logger";
 import ObjectID from "bson-objectid";
 import { randomBytes } from "crypto";
-import { MATCH_TYPES } from "./services/matchmakingService";
+import { MATCH_TYPES, getBaseMode } from "./services/matchmakingService";
 import { getRandomMap1v1, getRandomMapByType } from "./data/maps";
 import { randomUUID, randomInt } from "crypto";
 import env from "./env/env";
@@ -39,6 +40,93 @@ const MATCH_RULES = {
   },
 };
 
+// --- ELO Range Configuration ---
+// Time-based expanding ELO range for skill-based matchmaking
+
+function getEloRange(ticketAgeSec: number): number {
+  if (ticketAgeSec < 5) {
+    // 0-5 seconds: tight range
+    return 100;
+  } else if (ticketAgeSec < 10) {
+    // 5-10 seconds: wider range
+    return 250;
+  } else {
+    // 10+ seconds: match anyone
+    return Infinity;
+  }
+}
+
+/**
+ * Calculate the average skill (ELO) for a ticket's players.
+ */
+function getTicketAvgSkill(ticket: RedisMatchTicket): number {
+  if (ticket.players.length === 0) return 0;
+  const total = ticket.players.reduce((sum, p) => sum + p.skill, 0);
+  return total / ticket.players.length;
+}
+
+/**
+ * Check if two tickets share any player IDs (dedup guard).
+ * Returns true if they have overlapping players.
+ */
+function ticketsSharePlayers(ticketA: RedisMatchTicket, ticketB: RedisMatchTicket): boolean {
+  const idsA = new Set(ticketA.players.map((p) => p.id));
+  return ticketB.players.some((p) => idsA.has(p.id));
+}
+
+/**
+ * Remove duplicate tickets from a queue — if the same player appears
+ * in multiple tickets, keep only the newest one and remove the stale ones.
+ */
+async function deduplicateQueue(queueKey: string, tickets: RedisMatchTicket[]): Promise<RedisMatchTicket[]> {
+  const seen = new Map<string, number>(); // playerId → index of ticket
+  const staleIndices = new Set<number>();
+
+  for (let i = 0; i < tickets.length; i++) {
+    for (const player of tickets[i].players) {
+      if (seen.has(player.id)) {
+        // This player already has a ticket — mark the older one as stale
+        const prevIdx = seen.get(player.id)!;
+        const prevTicket = tickets[prevIdx];
+        const currTicket = tickets[i];
+        if (currTicket.created_at >= prevTicket.created_at) {
+          staleIndices.add(prevIdx);
+          seen.set(player.id, i);
+        } else {
+          staleIndices.add(i);
+        }
+      } else {
+        seen.set(player.id, i);
+      }
+    }
+  }
+
+  if (staleIndices.size > 0) {
+    const staleTickets = Array.from(staleIndices).map((i) => tickets[i]);
+    logger.warn(
+      `${logPrefix} Removing ${staleTickets.length} duplicate ticket(s) from ${queueKey} for players: ` +
+      staleTickets.flatMap((t) => t.players.map((p) => p.id)).join(", "),
+    );
+    await redisPopMatchTicketsFromQueue(queueKey, staleTickets);
+    return tickets.filter((_, i) => !staleIndices.has(i));
+  }
+
+  return tickets;
+}
+
+/**
+ * Check if two tickets are within ELO range of each other.
+ * Uses the wider range of the two (the one that's been waiting longer).
+ */
+function areTicketsInRange(ticketA: RedisMatchTicket, ticketB: RedisMatchTicket, nowSec: number): boolean {
+  const ageA = nowSec - ticketA.created_at; // both in seconds
+  const ageB = nowSec - ticketB.created_at;
+  // Use the wider range (from the ticket that's been waiting longer)
+  const range = Math.max(getEloRange(ageA), getEloRange(ageB));
+  const skillDiff = Math.abs(getTicketAvgSkill(ticketA) - getTicketAvgSkill(ticketB));
+  return skillDiff <= range;
+}
+
 export function startMatchMakingWorker(): void {
   logger.info(`${logPrefix} Starting matchmaking worker...`);
   // Run the first check immediately
@@ -49,74 +137,98 @@ export function startMatchMakingWorker(): void {
   logger.info(`${logPrefix} Matchmaking worker started, checking queue every ${CHECK_INTERVAL_MS}ms`);
 }
 
-// Process 1v1 matchmaking queue
-async function process1v1Queue(): Promise<boolean> {
+// Process 1v1 matchmaking queue with ELO-based matching
+async function process1v1Queue(queueKey: string = MATCH_TYPES.ONE_V_ONE, isPasswordQueue: boolean = false): Promise<boolean> {
   try {
     // Get all tickets in the queue
-    const tickets = await redisGetMatchTickets(MATCH_TYPES.ONE_V_ONE);
+    let tickets = await redisGetMatchTickets(queueKey);
 
-    logwrapper.verbose(`${logPrefix} Retrieved ${tickets.length} tickets from 1v1 queue`);
-    logwrapper.verbose(`${logPrefix} Tickets: ${JSON.stringify(tickets)}`);
-    logwrapper.verbose(`${logPrefix} Total players across tickets: ${tickets.reduce((sum, ticket) => sum + ticket.players.length, 0)}`);
-    logwrapper.verbose(`${logPrefix} Players are: ${JSON.stringify(tickets.flatMap(t => t.players))}`);
     if (tickets.length < MATCH_RULES["1v1"].teamsRequired) {
       return false; // Not enough tickets to make a match
     }
 
-    logger.info(`${logPrefix} Found ${tickets.length} tickets in 1v1 queue, attempting to create a match`);
+    // Remove duplicate tickets (same player in queue twice from stale data)
+    tickets = await deduplicateQueue(queueKey, tickets);
 
-    // Parse ticket data from queue
-    const matchedTickets: RedisMatchTicket[] = [];
-    for (const ticket of tickets) {
-      try {
-        if (ticket.party_size === 1) {
-          // For 1v1, we only want solo players
-          matchedTickets.push(ticket);
+    if (tickets.length < MATCH_RULES["1v1"].teamsRequired) {
+      return false;
+    }
 
-          // If we have enough tickets, stop looking
-          if (matchedTickets.length === MATCH_RULES["1v1"].teamsRequired) {
-            break;
+    logger.info(`${logPrefix} Found ${tickets.length} tickets in ${queueKey} queue, attempting to create a match`);
+
+    // Filter to solo players only
+    const soloTickets = tickets.filter((t) => t.party_size === 1);
+
+    if (soloTickets.length < MATCH_RULES["1v1"].teamsRequired) {
+      logger.info(`${logPrefix} Not enough solo tickets for a 1v1 match in ${queueKey} (need 2, found ${soloTickets.length})`);
+      return false;
+    }
+
+    // For password queues, skip ELO range matching — just match the first two unique players
+    if (isPasswordQueue) {
+      for (let i = 0; i < soloTickets.length; i++) {
+        for (let j = i + 1; j < soloTickets.length; j++) {
+          if (!ticketsSharePlayers(soloTickets[i], soloTickets[j])) {
+            const matchedTickets = [soloTickets[i], soloTickets[j]];
+            try {
+              await redisPopMatchTicketsFromQueue(queueKey, matchedTickets);
+              await createMatch(matchedTickets, getBaseMode(queueKey), isPasswordQueue);
+              return true;
+            } catch (error) {
+              logger.error(`${logPrefix} Error removing matched tickets from ${queueKey}: ${error}`);
+              return false;
+            }
           }
         }
       }
-      catch (error) {
-        logger.error(`${logPrefix} Error parsing ticket in 1v1 queue: ${error}`);
-        // Continue to next ticket
+      return false;
+    }
+
+    // ELO-based matching: sort by age (oldest first), find compatible pairs
+    const now = Math.floor(Date.now() / 1000); // seconds to match MVSTime format
+    const sortedTickets = soloTickets.sort((a, b) => a.created_at - b.created_at);
+
+    for (let i = 0; i < sortedTickets.length; i++) {
+      const ticketA = sortedTickets[i];
+      for (let j = i + 1; j < sortedTickets.length; j++) {
+        const ticketB = sortedTickets[j];
+        // Never match a player against themselves
+        if (ticketsSharePlayers(ticketA, ticketB)) continue;
+        if (areTicketsInRange(ticketA, ticketB, now)) {
+          const matchedTickets = [ticketA, ticketB];
+          try {
+            await redisPopMatchTicketsFromQueue(queueKey, matchedTickets);
+            await createMatch(matchedTickets, getBaseMode(queueKey), false);
+            logger.info(
+              `${logPrefix} ELO matched: ${getTicketAvgSkill(ticketA)} vs ${getTicketAvgSkill(ticketB)} ` +
+              `(range: ${getEloRange(now - ticketA.created_at)}/${getEloRange(now - ticketB.created_at)})`,
+            );
+            return true;
+          } catch (error) {
+            logger.error(`${logPrefix} Error removing matched tickets from queue: ${error}`);
+            return false;
+          }
+        }
       }
     }
 
-    // Check if we have enough tickets for a match
-    if (matchedTickets.length === MATCH_RULES["1v1"].teamsRequired) {
-      // Remove matched tickets from queue
-      try {
-        await redisPopMatchTicketsFromQueue(MATCH_TYPES.ONE_V_ONE, matchedTickets);
-
-        // Create a match with these tickets
-        await createMatch(matchedTickets, "1v1");
-        return true;
-      }
-      catch (error) {
-        logger.error(`${logPrefix} Error removing matched tickets from queue: ${error}`);
-        return false; // If we can't remove them, we can't proceed
-      }
-    }
-
-    logger.info(
-      `[${serviceName}]: Not enough valid tickets for a 1v1 match (need ${MATCH_RULES["1v1"].teamsRequired}, found ${matchedTickets.length})`,
-    );
+    logger.info(`${logPrefix} No ELO-compatible 1v1 match found in ${queueKey} yet (${soloTickets.length} waiting)`);
     return false;
   }
   catch (error) {
-    logger.error(`${logPrefix} Error processing 1v1 queue: ${error}`);
+    logger.error(`${logPrefix} Error processing 1v1 queue ${queueKey}: ${error}`);
     return false;
   }
 }
 
-// Process 2v2 matchmaking queue
-async function process2v2Queue(): Promise<boolean> {
+// Process 2v2 matchmaking queue with ELO-based matching
+async function process2v2Queue(queueKey: string = MATCH_TYPES.TWO_V_TWO, isPasswordQueue: boolean = false): Promise<boolean> {
   try {
     // Get all tickets in the queue
-    const tickets = await redisGetMatchTickets(MATCH_TYPES.TWO_V_TWO);
+    let tickets = await redisGetMatchTickets(queueKey);
+
+    // Remove duplicate tickets (same player in queue twice from stale data)
+    tickets = await deduplicateQueue(queueKey, tickets);
 
     // Count total players across all tickets (a party of 2 is 1 ticket with 2 players)
     const totalPlayersInQueue = tickets.reduce((sum, t) => sum + t.players.length, 0);
@@ -125,49 +237,116 @@ async function process2v2Queue(): Promise<boolean> {
       return false; // Not enough players to make a match
     }
 
-    logger.info(`${logPrefix} Found ${tickets.length} tickets (${totalPlayersInQueue} players) in 2v2 queue, attempting to create a match`);
+    logger.info(`${logPrefix} Found ${tickets.length} tickets (${totalPlayersInQueue} players) in ${queueKey} queue, attempting to create a match`);
 
     // Split tickets into duos and solos (preserving FIFO order within each group)
     const duos = tickets.filter((t) => t.players.length >= 2);
     const solos = tickets.filter((t) => t.players.length === 1);
 
+    const now = Math.floor(Date.now() / 1000); // seconds to match MVSTime format
     let matchedTickets: RedisMatchTicket[] | null = null;
 
-    // Priority 1: Two duos (2+2) — ideal match, don't let solos block them
-    if (duos.length >= 2) {
-      matchedTickets = [duos[0], duos[1]];
-      logger.info(`${logPrefix} Matched 2+2 (two duo parties)`);
-    }
-    // Priority 2: One duo + two solos (2+1+1)
-    else if (duos.length >= 1 && solos.length >= 2) {
-      matchedTickets = [duos[0], solos[0], solos[1]];
-      logger.info(`${logPrefix} Matched 2+1+1 (one duo + two solos)`);
-    }
-    // Priority 3: Four solos (1+1+1+1)
-    else if (solos.length >= 4) {
-      matchedTickets = [solos[0], solos[1], solos[2], solos[3]];
-      logger.info(`${logPrefix} Matched 1+1+1+1 (four solos)`);
+    if (isPasswordQueue) {
+      // Password queues: skip ELO matching, just use composition priority
+      if (duos.length >= 2) {
+        matchedTickets = [duos[0], duos[1]];
+        logger.info(`${logPrefix} Password match: 2+2 (two duo parties) in ${queueKey}`);
+      } else if (duos.length >= 1 && solos.length >= 2) {
+        matchedTickets = [duos[0], solos[0], solos[1]];
+        logger.info(`${logPrefix} Password match: 2+1+1 in ${queueKey}`);
+      } else if (solos.length >= 4) {
+        matchedTickets = [solos[0], solos[1], solos[2], solos[3]];
+        logger.info(`${logPrefix} Password match: 1+1+1+1 in ${queueKey}`);
+      }
+    } else {
+      // ELO-based matching with composition priorities
+
+      // Priority 1: Two duos (2+2) within ELO range
+      if (duos.length >= 2) {
+        for (let i = 0; i < duos.length; i++) {
+          for (let j = i + 1; j < duos.length; j++) {
+            if (areTicketsInRange(duos[i], duos[j], now)) {
+              matchedTickets = [duos[i], duos[j]];
+              logger.info(`${logPrefix} ELO matched 2+2: avg ${getTicketAvgSkill(duos[i])} vs ${getTicketAvgSkill(duos[j])}`);
+              break;
+            }
+          }
+          if (matchedTickets) break;
+        }
+      }
+
+      // Priority 2: One duo + two solos (2+1+1) within ELO range
+      if (!matchedTickets && duos.length >= 1 && solos.length >= 2) {
+        for (const duo of duos) {
+          // Find two solos that are compatible with the duo
+          for (let i = 0; i < solos.length; i++) {
+            for (let j = i + 1; j < solos.length; j++) {
+              // Create a virtual combined ticket for the two solos to check range
+              const combinedAvgSkill = (getTicketAvgSkill(solos[i]) + getTicketAvgSkill(solos[j])) / 2;
+              const duoAvgSkill = getTicketAvgSkill(duo);
+              const ageMax = Math.max(now - duo.created_at, now - solos[i].created_at, now - solos[j].created_at);
+              const range = getEloRange(ageMax);
+
+              if (Math.abs(duoAvgSkill - combinedAvgSkill) <= range) {
+                matchedTickets = [duo, solos[i], solos[j]];
+                logger.info(`${logPrefix} ELO matched 2+1+1: duo avg ${duoAvgSkill}, solos avg ${combinedAvgSkill}`);
+                break;
+              }
+            }
+            if (matchedTickets) break;
+          }
+          if (matchedTickets) break;
+        }
+      }
+
+      // Priority 3: Four solos (1+1+1+1) within ELO range
+      if (!matchedTickets && solos.length >= 4) {
+        const sortedSolos = solos.sort((a, b) => a.created_at - b.created_at);
+        // Try to find 4 solos where the oldest has expanded enough to match the rest
+        for (let i = 0; i < sortedSolos.length - 3; i++) {
+          const candidates = [sortedSolos[i]];
+          for (let j = i + 1; j < sortedSolos.length && candidates.length < 4; j++) {
+            // Check if this solo is within range of the oldest ticket
+            if (areTicketsInRange(sortedSolos[i], sortedSolos[j], now)) {
+              candidates.push(sortedSolos[j]);
+            }
+          }
+          if (candidates.length >= 4) {
+            matchedTickets = candidates.slice(0, 4);
+            logger.info(`${logPrefix} ELO matched 1+1+1+1 in ${queueKey}`);
+            break;
+          }
+        }
+      }
     }
 
     if (matchedTickets) {
       try {
-        await redisPopMatchTicketsFromQueue(MATCH_TYPES.TWO_V_TWO, matchedTickets);
-        await createMatch(matchedTickets, "2v2");
+        await redisPopMatchTicketsFromQueue(queueKey, matchedTickets);
+        await createMatch(matchedTickets, getBaseMode(queueKey), isPasswordQueue);
         return true;
       }
       catch (error) {
-        logger.error(`${logPrefix} Error removing matched tickets from queue: ${error}`);
+        logger.error(`${logPrefix} Error removing matched tickets from ${queueKey}: ${error}`);
         return false;
       }
     }
 
-    logger.info(
-      `[${serviceName}]: Not enough players for a 2v2 match (need ${MATCH_RULES["2v2"].totalPlayersRequired}, found ${totalPlayersInQueue} — ${duos.length} duo(s), ${solos.length} solo(s))`,
-    );
+    if (!isPasswordQueue) {
+      logger.info(
+        `${logPrefix} No ELO-compatible 2v2 match found in ${queueKey} yet ` +
+        `(${totalPlayersInQueue} players — ${duos.length} duo(s), ${solos.length} solo(s))`,
+      );
+    } else {
+      logger.info(
+        `${logPrefix} Not enough players for 2v2 password match in ${queueKey} ` +
+        `(need 4, found ${totalPlayersInQueue})`,
+      );
+    }
     return false;
   }
   catch (error) {
-    logger.error(`${logPrefix} Error processing 2v2 queue: ${error}`);
+    logger.error(`${logPrefix} Error processing 2v2 queue ${queueKey}: ${error}`);
     return false;
   }
 }
@@ -241,10 +420,7 @@ export async function createTeams(tickets: RedisMatchTicket[]): Promise<RedisTea
 }
 
 // Create a match from selected tickets
-async function createMatch(tickets: RedisMatchTicket[], matchType: string): Promise<void> {
-  logwrapper.verbose(`${logPrefix} Creating match with ${tickets.length} tickets for ${matchType}`);
-  logwrapper.verbose(`${logPrefix} Total players across tickets: ${tickets.reduce((sum, ticket) => sum + ticket.players.length, 0)}`);
-  logwrapper.verbose(`${logPrefix} Tickets: ${JSON.stringify(tickets)}`);
+async function createMatch(tickets: RedisMatchTicket[], matchType: string, isPasswordMatch: boolean = false): Promise<void> {
   try {
     // Count total players
     const totalPlayers = tickets.reduce((sum, ticket) => sum + ticket.players.length, 0);
@@ -260,7 +436,8 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       createdAt: Date.now(),
       matchType,
       totalPlayers,
-      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
+      rollbackPort: env.UDP_PORT,
+      isPasswordMatch,
     };
 
     // Get all player IDs from all tickets
@@ -278,7 +455,7 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       players: await createTeams(tickets),
       matchId,
       matchKey: randomBytes(32).toString("base64"),
-      map: await getRandomMapByType(matchType, match.matchId),
+      map: getRandomMapByType(matchType),
       mode: matchType,
       rollbackPort: match.rollbackPort,
     };
@@ -296,7 +473,10 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       await redisGameServerInstanceReady(matchId, playerIds);
     }
 
-    logger.info(`${logPrefix} Created ${matchType} match ${match.resultId} with ${totalPlayers} players across ${tickets.length} tickets`);
+    logger.info(
+      `${logPrefix} Created ${matchType} match ${match.resultId} with ${totalPlayers} players across ${tickets.length} tickets` +
+      `${isPasswordMatch ? " [PASSWORD MATCH - NO ELO]" : ""}`,
+    );
   }
   catch (error) {
     logger.error(`${logPrefix} Error creating match: ${error}`);
@@ -306,10 +486,10 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
 // Worker process
 async function checkQueues(): Promise<void> {
   try {
-    // First try to make 1v1 matches
+    // First try to make regular 1v1 matches
     const made1v1Match = await process1v1Queue();
 
-    // Then try to make 2v2 matches
+    // Then try to make regular 2v2 matches
     const made2v2Match = await process2v2Queue();
 
     if (made1v1Match) {
@@ -319,8 +499,39 @@ async function checkQueues(): Promise<void> {
     if (made2v2Match) {
       logger.info(`${logPrefix} Successfully created matches in this cycle: 2v2=${made2v2Match}`);
     }
+
+    // Process password queues (separate queues per password)
+    await processPasswordQueues();
   }
   catch (error) {
     logger.error(`${logPrefix} Error checking queue: ${error}`);
+  }
+}
+
+/**
+ * Scan and process all password-based matchmaking queues.
+ * Password queues have keys like "1v1_pw:mypass123" or "2v2_pw:secret".
+ */
+async function processPasswordQueues(): Promise<void> {
+  try {
+    // Find all 1v1 password queues
+    const pw1v1Keys = await redisGetPasswordQueueKeys("1v1");
+    for (const queueKey of pw1v1Keys) {
+      const made = await process1v1Queue(queueKey, true);
+      if (made) {
+        logger.info(`${logPrefix} Created password match from queue: ${queueKey}`);
+      }
+    }
+
+    // Find all 2v2 password queues
+    const pw2v2Keys = await redisGetPasswordQueueKeys("2v2");
+    for (const queueKey of pw2v2Keys) {
+      const made = await process2v2Queue(queueKey, true);
+      if (made) {
+        logger.info(`${logPrefix} Created password match from queue: ${queueKey}`);
+      }
+    }
+  } catch (error) {
+    logger.error(`${logPrefix} Error processing password queues: ${error}`);
   }
 }

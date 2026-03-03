@@ -265,37 +265,6 @@
         </div>
       </div>
 
-      <hr class="divider"/>
-
-      <!-- CUSTOM MATCH PASSWORD -->
-      <div class="section animate__animated animate__fadeInUp animate__delay-1s">
-        <h2 class="section-title orange-title">Custom Match Password</h2>
-        {{#if currentPassword}}
-        <p class="current-key">{{currentPassword}}</p>
-        {{else}}
-        <p class="current-key none">No password set</p>
-        {{/if}}
-        <form action="/party/set-password" method="POST">
-          <div class="formRow">
-            <div class="skew-input-wrap">
-              <input class="skew-input" type="text" placeholder="Enter a password..." name="password" maxlength="20" value="{{currentPassword}}"/>
-            </div>
-            <div class="mv-btn-wrap orange-btn">
-              <button class="mv-btn" type="submit">Set Password</button>
-            </div>
-          </div>
-        </form>
-        {{#if currentPassword}}
-        <form action="/party/clear-password" method="POST" style="margin-top: 10px;">
-          <div class="mv-btn-wrap">
-            <button class="mv-btn" type="submit">Clear Password</button>
-          </div>
-        </form>
-        {{/if}}
-        <div class="mv-tip-wrap">
-          <div class="mv-tip">Set a password to only match against other players using the same password. ELO is not affected in password matches.</div>
-        </div>
-      </div>
 
     </div>
   </section>

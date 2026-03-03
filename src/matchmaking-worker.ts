@@ -416,15 +416,16 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
     const playerIds = players.map((p) => p.playerId);
     // Notify about the match creation
     await redisOnGameplayConfigNotified(notification);
-    // Notify about the matchmaking complete
+    // Notify about the matchmaking complete — one per ticket (each has its own matchmakingRequestId)
     for (const ticket of tickets) {
       await redisMatchMakingComplete(
         matchId,
         ticket.matchmakingRequestId,
         ticket.players.map((p) => p.id),
       );
-      await redisGameServerInstanceReady(matchId, playerIds);
     }
+    // Notify game server instance ready — once for all players (not per-ticket)
+    await redisGameServerInstanceReady(matchId, playerIds);
 
     logger.info(
       `${logPrefix} Created ${matchType} match ${match.resultId} with ${totalPlayers} players across ${tickets.length} tickets`,

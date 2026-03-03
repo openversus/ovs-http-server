@@ -779,6 +779,21 @@ app.get("/accounts/me/notifications/bulk", async (req, res) => {
   res.send({ notifications: [], total: 0 });
 });
 
+// Game requests gameplay config via HTTP as a fallback — already delivered via WebSocket
+app.get("/ssc/invoke/load_gameplay_config", async (req, res) => {
+  const matchId = req.query.MatchId as string;
+  logger.info(`${logPrefix} GET /ssc/invoke/load_gameplay_config for MatchId=${matchId}`);
+  // Config is already sent via WebSocket (handleSendGamePlayConfig), return empty success
+  res.send({ body: {}, metadata: null, return_code: 200 });
+});
+
+// Game notifies server that a player is leaving a match
+app.put("/matches/:id/leave", async (req, res) => {
+  const matchId = req.params.id;
+  logger.info(`${logPrefix} PUT /matches/${matchId}/leave`);
+  res.send({ body: {}, metadata: null, return_code: 200 });
+});
+
 app.use((req, res, next) => {
   logger.info(`${logPrefix} NOT IMPLEMENTED - ${req.method} ${req.url}\n`);
   KitchenSink.TryInspectRequestVerbose(req);

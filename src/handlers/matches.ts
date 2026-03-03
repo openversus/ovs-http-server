@@ -417,6 +417,7 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
   const lockAcquired = await redisAcquireMatchmakingLock(preCheckAccount.id);
   if (!lockAcquired) {
     logger.warn(`${logPrefix} Duplicate matchmaking request blocked for player ${preCheckAccount.id}`);
+    res.status(409).send({ error: "matchmaking_already_queued" });
     return;
   }
 
@@ -463,6 +464,8 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
   let playerLoadout = await redisGetPlayer(aID);
   if (!playerLoadout || !playerLoadout.character || !playerLoadout.skin) {
     logger.error(`${logPrefix} No Redis player loadout found for player ID ${aID}, cannot matchmake.`);
+    await redisReleaseMatchmakingLock(aID);
+    res.status(500).send({ error: "player_loadout_not_found" });
     return;
   }
 
@@ -572,6 +575,7 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   const lockAcquired = await redisAcquireMatchmakingLock(account.id);
   if (!lockAcquired) {
     logger.warn(`${logPrefix} Duplicate matchmaking request blocked for player ${account.id}`);
+    res.status(409).send({ error: "matchmaking_already_queued" });
     return;
   }
 
@@ -579,7 +583,7 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
     logger.info(`${logPrefix} Request is: \n`)
     KitchenSink.TryInspectRequestVerbose(req);
   }
-  
+
   let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${account.id}`) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
     logger.error(`${logPrefix} No Redis player connection found for player ID ${account.id}, this should not happen.`);
@@ -607,6 +611,8 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   let playerLoadout = await redisGetPlayer(aID);
   if (!playerLoadout || !playerLoadout.character || !playerLoadout.skin) {
     logger.error(`${logPrefix} No Redis player loadout found for player ID ${aID}, cannot matchmake.`);
+    await redisReleaseMatchmakingLock(aID);
+    res.status(500).send({ error: "player_loadout_not_found" });
     return;
   }
 

@@ -83,6 +83,7 @@ export class WebSocketPlayer {
   deleted?: boolean;
   account: SharedTypes.IAccountToken | undefined;
   matchTick: NodeJS.Timeout | undefined;
+  matchTimeout: NodeJS.Timeout | undefined;
   matchConfig?: GameNotification;
   ticket?: ON_MATCH_MAKER_STARTED_NOTIFICATION;
   ip: string;
@@ -406,6 +407,12 @@ export class WebSocketService {
   }
 
   async stopMatchTick(player: WebSocketPlayer) {
+    // Clear the 100s auto-cancel timeout — match was found, no need to auto-cancel
+    if (player.matchTimeout) {
+      clearTimeout(player.matchTimeout);
+      player.matchTimeout = undefined;
+    }
+
     if (player.matchTick) {
       logger.info(
         `[${serviceName}]: Stopping matchtick for player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"}`,
@@ -420,6 +427,23 @@ export class WebSocketService {
   }
 
   async handlePartyQueued(notification: ON_MATCH_MAKER_STARTED_NOTIFICATION) {
+    // Check for duplicate tickets BEFORE starting the tick — prevents ghost queues
+    const existingTickets = await redisGetMatchTickets(notification.matchType);
+    const newPlayerIds = new Set(notification.players.map((p) => p.id));
+    const hasDuplicate = existingTickets.some((t) =>
+      t.players.some((p) => newPlayerIds.has(p.id)),
+    );
+    if (hasDuplicate) {
+      logger.warn(
+        `${logPrefix} Duplicate ticket blocked — player(s) ${Array.from(newPlayerIds).join(", ")} already in ${notification.matchType} queue. Removing stale tickets and re-queuing.`,
+      );
+      // Remove the stale tickets for these players so the new one can be pushed
+      const staleTickets = existingTickets.filter((t) =>
+        t.players.some((p) => newPlayerIds.has(p.id)),
+      );
+      await redisPopMatchTicketsFromQueue(notification.matchType, staleTickets);
+    }
+
     for (const player of notification.players) {
       const client = this.clients.get(player.id);
       if (client) {
@@ -442,23 +466,17 @@ export class WebSocketService {
         this.handleMatchTick(client, notification);
       }
     }
-    // Check for duplicate tickets — don't push if this player already has a ticket in the queue
-    const existingTickets = await redisGetMatchTickets(notification.matchType);
-    const newPlayerIds = new Set(notification.players.map((p) => p.id));
-    const hasDuplicate = existingTickets.some((t) =>
-      t.players.some((p) => newPlayerIds.has(p.id)),
-    );
-    if (hasDuplicate) {
-      logger.warn(
-        `${logPrefix} Duplicate ticket blocked — player(s) ${Array.from(newPlayerIds).join(", ")} already in ${notification.matchType} queue`,
-      );
-      return;
-    }
     // Add ticket to the matchmaking queue
     await redisPushTicketToQueue(notification.matchType, notification);
   }
 
   handleMatchTick(client: WebSocketPlayer, notification: ON_MATCH_MAKER_STARTED_NOTIFICATION) {
+    // Clear any existing zombie timeout from a previous queue cycle
+    if (client.matchTimeout) {
+      clearTimeout(client.matchTimeout);
+      client.matchTimeout = undefined;
+    }
+
     client.matchTick = setInterval(() => {
       client.send({
         data: {},
@@ -471,12 +489,18 @@ export class WebSocketService {
       });
     }, 1000);
 
-    setTimeout(async () => {
+    client.matchTimeout = setTimeout(async () => {
       await this.cancelMatchMaking(client, notification.matchmakingRequestId);
     }, 100_000);
   }
 
   async cancelMatchMaking(client: WebSocketPlayer, matchmakingRequestId: string) {
+    // Always clear the 100s timeout to prevent zombie timeouts from canceling future queues
+    if (client.matchTimeout) {
+      clearTimeout(client.matchTimeout);
+      client.matchTimeout = undefined;
+    }
+
     if (client.matchTick) {
       const message = {
         data: {},
@@ -494,6 +518,8 @@ export class WebSocketService {
       // Clear the "queued" status so the player isn't stuck as searching
       if (client.account?.id) {
         await redisUpdatePlayerStatus(client.account.id, "idle");
+        // Release matchmaking lock so they can queue again immediately
+        await redisReleaseMatchmakingLock(client.account.id);
       }
       logger.trace(
         `[${serviceName}]: Canceling matchmaking - ${client.account?.id ?? "unknown"} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} - matchmakingRequestId: ${matchmakingRequestId}`,

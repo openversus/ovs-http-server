@@ -1280,17 +1280,17 @@ export class WebSocketService {
     if (client) {
       const toastMessage = {
         data: {
-          template_id: "OnToasted",
-          sender_id: notification.toasterAccountId,
-          ContainerMatchId: notification.containerMatchId,
-          ToasterAccountID: notification.toasterAccountId,
-          ToasterUsername: notification.toasterUsername,
-          Rewards: [],
+          template_id: "ToastReceived",
+          ToastInfo: {
+            ToasterAccountID: notification.toasterAccountId,
+            ToasterUsername: notification.toasterUsername,
+            Rewards: [],
+          },
         },
         payload: {
           frm: {
-            id: notification.toasterAccountId,
-            type: "account",
+            id: "internal-server",
+            type: "server-api-key",
           },
           template: "realtime",
           account_id: notification.toasteeAccountId,

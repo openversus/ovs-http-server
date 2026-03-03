@@ -25,6 +25,7 @@ import * as AuthUtils from "../utils/auth";
 import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import * as KitchenSink from "../utils/garbagecan";
+import { processMatchResult } from "../services/eloService";
 
 const serviceName = "Handlers.SSC";
 const logPrefix = `[${serviceName}]:`;
@@ -58117,11 +58118,28 @@ export async function handleSsc_invoke_set_ready_for_lobby(req: Request<{}, {}, 
 }
 
 export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}, {}, {}, {}>, res: Response) {
-  logger.info(`${logPrefix} Received end of match stats ${BE_VERBOSE ? ", body:" : ""}`);
-  if (req.body)
-  {
-    KitchenSink.TryInspectVerbose(req.body);
+  const matchId = req.body?.ContainerMatchId;
+  const winningTeamIndex = req.body?.EndOfMatchStats?.WinningTeamIndex;
+
+  logger.info(`${logPrefix} Received end of match stats for match ${matchId}, WinningTeamIndex: ${winningTeamIndex}`);
+  logwrapper.verbose(`${logPrefix} End of match stats payload: ${JSON.stringify(req.body)}`);
+
+  // Process ELO from client-submitted stats (dedup: only first submission per match)
+  if (matchId && typeof winningTeamIndex === "number" && (winningTeamIndex === 0 || winningTeamIndex === 1)) {
+    const dedupeKey = `elo_processed:${matchId}`;
+    const alreadyProcessed = await redisClient.set(dedupeKey, "1", { NX: true, EX: 300 });
+    if (alreadyProcessed === "OK") {
+      logger.info(`${logPrefix} Processing ELO from client stats for match ${matchId}: team ${winningTeamIndex} won`);
+      try {
+        await processMatchResult(matchId, winningTeamIndex);
+      } catch (e) {
+        logger.error(`${logPrefix} Error processing ELO from client stats: ${e}`);
+      }
+    } else {
+      logger.info(`${logPrefix} ELO already processed for match ${matchId}, skipping duplicate`);
+    }
   }
+
   res.send({ body: {}, metadata: null, return_code: 0 });
 }
 

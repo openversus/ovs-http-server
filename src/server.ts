@@ -10,7 +10,7 @@ import { hydraTokenMiddleware } from "./middleware/auth";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
 import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby, redisSetMatchPassword, redisGetMatchPassword, redisDeleteMatchPassword } from "./config/redis";
-import { processMatchResult, getLeaderboard } from "./services/eloService";
+import { getLeaderboard } from "./services/eloService";
 import { GAME_SERVER_PORT } from "./game/udp";
 import { sscRouter } from "./ssc/routes";
 import { getCurrentCRC, LoadConfig, MATCHMAKING_CRC } from "./data/config";
@@ -267,17 +267,9 @@ app.post("/ovs_end_match", async (req, res, next) => {
       config.matchId,
     );
 
-    // Process ELO updates if the rollback server reported a winning team
-    if (typeof body.winningTeam === "number" && (body.winningTeam === 0 || body.winningTeam === 1)) {
-      logger.info(`${logPrefix} Processing ELO update for match ${body.matchId}: team ${body.winningTeam} won`);
-      try {
-        await processMatchResult(body.matchId, body.winningTeam);
-      } catch (err) {
-        logger.error(`${logPrefix} Error processing match result for ELO: ${err}`);
-      }
-    } else {
-      logger.info(`${logPrefix} No winningTeam in end match body for ${body.matchId}, skipping ELO update`);
-    }
+    // ELO is now processed via client-submitted submit_end_of_match_stats (WinningTeamIndex),
+    // not from the rollback server. This allows ephemeral rollback servers (C# rewrite)
+    // that don't need to report match results.
 
     res.send("");
   }

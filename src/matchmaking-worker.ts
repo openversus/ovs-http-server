@@ -6,7 +6,6 @@ import {
   RedisMatch,
   RedisTeamEntry,
   MATCH_FOUND_NOTIFICATION,
-  redisGameServerInstanceReady,
   redisMatchMakingComplete,
   redisPopMatchTicketsFromQueue,
   redisGetPlayer,
@@ -424,8 +423,10 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
         ticket.players.map((p) => p.id),
       );
     }
-    // Notify game server instance ready — once for all players (not per-ticket)
-    await redisGameServerInstanceReady(matchId, playerIds);
+    // NOTE: redisGameServerInstanceReady is NOT called here anymore.
+    // It's now triggered by the /ovs_register handler AFTER the rollback server
+    // fetches the match config, preventing a race condition where game clients
+    // try to connect before the rollback server is ready.
 
     logger.info(
       `${logPrefix} Created ${matchType} match ${match.resultId} with ${totalPlayers} players across ${tickets.length} tickets`,

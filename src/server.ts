@@ -9,7 +9,7 @@ import * as path from "path";
 import { hydraTokenMiddleware } from "./middleware/auth";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
-import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby } from "./config/redis";
+import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby, redisGameServerInstanceReady } from "./config/redis";
 import { getLeaderboard } from "./services/eloService";
 import {
   createLobby,
@@ -258,6 +258,12 @@ app.post("/ovs_register", async (req, res, next) => {
     match_duration: 36000,
     players,
   });
+
+  // Now that the rollback server has the match config, tell game clients to connect.
+  // This MUST happen after the response so the rollback server is ready before clients arrive.
+  const playerIds = config.players.map((p) => p.playerId);
+  await redisGameServerInstanceReady(body.matchId, playerIds);
+  logger.info(`${logPrefix} Sent game-server-instance-ready for match ${body.matchId} after rollback server fetched config`);
 });
 
 app.post("/ovs_end_match", async (req, res, next) => {
@@ -326,6 +332,11 @@ app.post("/mvsi_register", async (req, res, next) => {
     match_duration: 36000,
     players,
   });
+
+  // Same as /ovs_register — tell game clients to connect after rollback server is ready
+  const playerIds = config.players.map((p) => p.playerId);
+  await redisGameServerInstanceReady(body.matchId, playerIds);
+  logger.info(`${logPrefix} Sent game-server-instance-ready for match ${body.matchId} after rollback server fetched config (legacy)`);
 });
 
 // Being kept for backwards compatibility with older OVS versions, can be removed eventually

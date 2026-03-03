@@ -6,7 +6,6 @@ import {
   MATCH_FOUND_NOTIFICATION,
   redisOnGameplayConfigNotified,
   redisMatchMakingComplete,
-  redisGameServerInstanceReady,
   redisUpdateMatch,
 } from "../config/redis";
 import { logger } from "../config/logger";
@@ -539,7 +538,7 @@ export async function startMatch(
     const playerIds = players.map((p) => p.playerId);
     await redisOnGameplayConfigNotified(notification);
     await redisMatchMakingComplete(matchId, matchmakingRequestId, playerIds);
-    await redisGameServerInstanceReady(matchId, playerIds);
+    // redisGameServerInstanceReady is triggered by /ovs_register after rollback server fetches match config
 
     // Update lobby status
     lobby.status = "in_match";
@@ -906,7 +905,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
     const playerIds = players.map((p) => p.playerId);
     await redisOnGameplayConfigNotified(notification);
     await redisMatchMakingComplete(matchId, matchmakingRequestId, playerIds);
-    await redisGameServerInstanceReady(matchId, playerIds);
+    // redisGameServerInstanceReady is triggered by /ovs_register after rollback server fetches match config
 
     lobby.status = "in_match";
     await saveLobby(lobby);

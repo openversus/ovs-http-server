@@ -451,12 +451,8 @@ async function checkQueues(): Promise<void> {
     if (made2v2Match) {
       logger.info(`${logPrefix} Successfully created matches in this cycle: 2v2=${made2v2Match}`);
     }
-
-    // Password matchmaking removed — use /custom for custom lobbies
   }
   catch (error) {
     logger.error(`${logPrefix} Error checking queue: ${error}`);
   }
 }
-
-// Password matchmaking removed — use /custom web lobbies instead

@@ -58,7 +58,6 @@ import {
   redisDeletePlayerLobby,
   redisPublishLobbyRejoin,
   redisReleaseMatchmakingLock,
-  redisGetPasswordQueueKeys,
   redisGetMatchTickets,
 } from "./config/redis";
 import { Server } from "https";
@@ -372,23 +371,8 @@ export class WebSocketService {
 
   async attemptRemoveMatchTicket(playerWS: WebSocketPlayer) {
     if (playerWS.ticket) {
-      // Remove from regular queues
       await redisPopMatchTicketsFromQueue("1v1", [playerWS.ticket]);
       await redisPopMatchTicketsFromQueue("2v2", [playerWS.ticket]);
-
-      // Also remove from password queues
-      try {
-        const pw1v1Keys = await redisGetPasswordQueueKeys("1v1");
-        for (const queueKey of pw1v1Keys) {
-          await redisPopMatchTicketsFromQueue(queueKey, [playerWS.ticket]);
-        }
-        const pw2v2Keys = await redisGetPasswordQueueKeys("2v2");
-        for (const queueKey of pw2v2Keys) {
-          await redisPopMatchTicketsFromQueue(queueKey, [playerWS.ticket]);
-        }
-      } catch (err) {
-        logger.warn(`${logPrefix} Error removing tickets from password queues: ${err}`);
-      }
     }
   }
 

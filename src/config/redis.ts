@@ -686,23 +686,6 @@ export async function redisUpdatePartyKeyLobby(key: string, lobbyId: string): Pr
   }
 }
 
-// --- Match Password (custom lobby password matchmaking) ---
-
-export async function redisSetMatchPassword(accountId: string, password: string): Promise<void> {
-  const EX = 60 * 60; // 1 hour TTL
-  await redisClient.set(`match_password:${accountId}`, password, { EX });
-  logger.info(`${logPrefix} Set match password for player ${accountId}`);
-}
-
-export async function redisGetMatchPassword(accountId: string): Promise<string | null> {
-  return await redisClient.get(`match_password:${accountId}`);
-}
-
-export async function redisDeleteMatchPassword(accountId: string): Promise<void> {
-  await redisClient.del(`match_password:${accountId}`);
-  logger.info(`${logPrefix} Deleted match password for player ${accountId}`);
-}
-
 // --- Matchmaking Lock (atomic duplicate request guard) ---
 
 /**
@@ -723,22 +706,3 @@ export async function redisReleaseMatchmakingLock(accountId: string): Promise<vo
   await redisClient.del(`matchmaking_lock:${accountId}`);
 }
 
-// --- Password Queue Key Scanning ---
-
-/**
- * Scan for all password queue keys matching a pattern.
- * Used by the matchmaking worker to find password-based queues.
- */
-export async function redisGetPasswordQueueKeys(baseMatchType: string): Promise<string[]> {
-  const pattern = `${baseMatchType}_pw:*`;
-  const keys: string[] = [];
-  let cursor = 0;
-
-  do {
-    const result = await redisClient.scan(cursor, { MATCH: pattern, COUNT: 100 });
-    cursor = Number(result.cursor);
-    keys.push(...result.keys);
-  } while (cursor !== 0);
-
-  return keys;
-}

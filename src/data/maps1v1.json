@@ -3,140 +3,160 @@
     "M001_V2": {
       "id": "M001_V2",
       "name": "Batcave 1v1",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M002_V2": {
       "id": "M002_V2",
       "name": "Treefort 1v1",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M003_V1": {
       "id": "M003_V1",
       "name": "Trophy's Edge 1v1",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M003_V5": {
       "id": "M003_V5",
       "name": "Trophy's Edge 1v1 v5",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M006_V3": {
       "id": "M006_V3",
       "name": "Scooby's No Roof 1v1",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M007_V2": {
       "id": "M007_V2",
       "name": "Water Tower Locked Door",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M008_V2": {
       "id": "M008_V2",
       "name": "Throne Room 1v1",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M009_V2": {
       "id": "M009_V2",
       "name": "Cromulons 1v1",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M011_V3": {
       "id": "M011_V3",
       "name": "Sky Arena 1v1",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M011_V4": {
       "id": "M011_V4",
       "name": "Sky Arena 1v1 v4",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M012_V2": {
       "id": "M012_V2",
       "name": "Titans Tower 1v1",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M014_V2": {
       "id": "M014_V2",
       "name": "Midnight Showing 1v1",
-      "enabled": false
+      "enabled": false,
+      "hazards": false
     }
   },
   {
     "M015_V1": {
       "id": "M015_V1",
-      "name": "Unknown",
-      "enabled": true
+      "name": "Townsville",
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M015_V2": {
       "id": "M015_V2",
       "name": "Townsville Destroyed",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M016_V3": {
       "id": "M016_V3",
       "name": "Dexters Lab 2 1v1",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M017_V1": {
       "id": "M017_V1",
       "name": "Back to the Past",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M018_V2": {
       "id": "M018_V2",
       "name": "Candy Kingdom 2",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "M023_V2": {
       "id": "M023_V2",
       "name": "Rabbit Season 1v1",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "MTS001_V1": {
       "id": "MTS001_V1",
       "name": "Space",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   },
   {
     "MTS003_V1": {
       "id": "MTS003_V1",
       "name": "Castle",
-      "enabled": true
+      "enabled": true,
+      "hazards": false
     }
   }
 ]

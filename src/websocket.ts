@@ -66,6 +66,7 @@ import { GAME_SERVER_PORT } from "./game/udp";
 import { logger, logwrapper, BE_VERBOSE } from "./config/logger";
 import { MVSTime } from "./utils/date";
 import { getCustomLobbyForMatch, handleCustomLobbyMatchEnd, leaveLobby } from "./services/customLobbyService";
+import { getMapHazards } from "./data/maps";
 import ObjectID from "bson-objectid";
 import { RedisClientType } from "@redis/client";
 import env from "./env/env";
@@ -470,8 +471,8 @@ export class WebSocketService {
       });
     }, 1000);
 
-    setTimeout(() => {
-      this.cancelMatchMaking(client, notification.matchmakingRequestId);
+    setTimeout(async () => {
+      await this.cancelMatchMaking(client, notification.matchmakingRequestId);
     }, 100_000);
   }
 
@@ -486,7 +487,7 @@ export class WebSocketService {
         header: "Matchmaking request cancelled.",
         cmd: "matchmaking-cancel",
       };
-      this.attemptRemoveMatchTicket(client);
+      await this.attemptRemoveMatchTicket(client);
       clearInterval(client.matchTick);
       client.matchTick = undefined;
       client.send(message);
@@ -915,7 +916,8 @@ export class WebSocketService {
 
     // Create the message to send to the players
 
-    let stageHazards: boolean = notification.map.toLowerCase() === "PVE_03".toLowerCase() ? true : false;
+    // Look up hazards from map JSON data (PVE_03 always has hazards, others check JSON)
+    let stageHazards: boolean = getMapHazards(notification.map, notification.mode);
     const message: GameNotification = {
       data: {
         MatchId: notification.matchId,
@@ -1112,7 +1114,7 @@ export class WebSocketService {
       const client = this.clients.get(playerId);
 
       if (client) {
-        this.cancelMatchMaking(client, notification.matchmakingId);
+        await this.cancelMatchMaking(client, notification.matchmakingId);
       }
 
       // Release matchmaking lock so they can queue again
@@ -1550,9 +1552,9 @@ export class WebSocketService {
 
   private setupRedisSubscription() {
     // Subscribe to channels
-    this.redisSub.subscribe(ON_GAMEPLAY_CONFIG_NOTIFIED_CHANNEL, (message) => {
+    this.redisSub.subscribe(ON_GAMEPLAY_CONFIG_NOTIFIED_CHANNEL, async (message) => {
       const notification = JSON.parse(message) as MATCH_FOUND_NOTIFICATION;
-      this.handleMatchFound(notification);
+      await this.handleMatchFound(notification);
     });
 
     this.redisSub.subscribe(ALL_PERKS_LOCKED_CHANNEL, (message) => {
@@ -1560,9 +1562,9 @@ export class WebSocketService {
       this.handleAllPerksLocked(notification);
     });
 
-    this.redisSub.subscribe(ON_MATCH_MAKER_STARTED_CHANNEL, (message) => {
+    this.redisSub.subscribe(ON_MATCH_MAKER_STARTED_CHANNEL, async (message) => {
       const notification = JSON.parse(message) as ON_MATCH_MAKER_STARTED_NOTIFICATION;
-      this.handlePartyQueued(notification);
+      await this.handlePartyQueued(notification);
     });
 
     this.redisSub.subscribe(GAME_SERVER_INSTANCE_READY_CHANNEL, (message) => {
@@ -1580,14 +1582,14 @@ export class WebSocketService {
       this.handleOnLobbyModeChanged(notification);
     });
 
-    this.redisSub.subscribe(ON_CANCEL_MATCHMAKING, (message) => {
+    this.redisSub.subscribe(ON_CANCEL_MATCHMAKING, async (message) => {
       const notification = JSON.parse(message) as RedisCancelMatchMakingNotification;
-      this.handleCancelMatchMaking(notification);
+      await this.handleCancelMatchMaking(notification);
     });
 
-    this.redisSub.subscribe(ON_END_OF_MATCH, (message) => {
+    this.redisSub.subscribe(ON_END_OF_MATCH, async (message) => {
       const notification = JSON.parse(message) as RedisMatchEndNotification;
-      this.handleOnMatchEnd(notification);
+      await this.handleOnMatchEnd(notification);
     });
 
     this.redisSub.subscribe(PARTY_INVITE_CHANNEL, (message) => {

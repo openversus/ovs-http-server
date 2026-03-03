@@ -13,7 +13,7 @@ import { logger } from "../config/logger";
 import { getRandomMapByType, getMapList } from "../data/maps";
 import { PlayerTesterModel } from "../database/PlayerTester";
 import ObjectID from "bson-objectid";
-import { randomBytes } from "crypto";
+import { randomBytes, randomInt } from "crypto";
 import env from "../env/env";
 
 const logPrefix = "[CustomLobby]:";
@@ -515,7 +515,7 @@ export async function startMatch(
       createdAt: Date.now(),
       matchType: lobby.mode,
       totalPlayers: allPlayers.length,
-      rollbackPort: env.UDP_PORT,
+      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
       isPasswordMatch: true, // Custom lobby = no ELO
     };
     await redisUpdateMatch(matchId, match);
@@ -532,7 +532,7 @@ export async function startMatch(
       matchKey: randomBytes(32).toString("base64"),
       map,
       mode: lobby.mode,
-      rollbackPort: env.UDP_PORT,
+      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
     };
 
     // Publish to same 3 channels as matchmaking worker
@@ -884,7 +884,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
       createdAt: Date.now(),
       matchType: lobby.mode,
       totalPlayers: allPlayers.length,
-      rollbackPort: env.UDP_PORT,
+      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
       isPasswordMatch: true,
     };
     await redisUpdateMatch(matchId, match);
@@ -900,7 +900,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
       matchKey: randomBytes(32).toString("base64"),
       map,
       mode: lobby.mode,
-      rollbackPort: env.UDP_PORT,
+      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
     };
 
     const playerIds = players.map((p) => p.playerId);

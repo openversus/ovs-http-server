@@ -23,9 +23,11 @@ export enum MATCH_TYPES {
 
 /**
  * Returns the base mode from a match type.
+ * Strips password suffix if present (e.g. "1v1_pw:mypass" → "1v1").
  */
 export function getBaseMode(matchType: string): string {
-  return matchType;
+  const idx = matchType.indexOf("_pw:");
+  return idx >= 0 ? matchType.substring(0, idx) : matchType;
 }
 
 export async function queueMatch(

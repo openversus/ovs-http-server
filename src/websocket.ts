@@ -59,6 +59,8 @@ import {
   redisPublishLobbyRejoin,
   redisReleaseMatchmakingLock,
   redisGetMatchTickets,
+  TOAST_RECEIVED_CHANNEL,
+  RedisToastNotification,
 } from "./config/redis";
 import { Server } from "https";
 import { Server as HttpServer } from "http";
@@ -1273,6 +1275,37 @@ export class WebSocketService {
     }
   }
 
+  handleToastReceived(notification: RedisToastNotification) {
+    const client = this.clients.get(notification.toasteeAccountId);
+    if (client) {
+      const toastMessage = {
+        data: {
+          template_id: "OnToasted",
+          sender_id: notification.toasterAccountId,
+          ContainerMatchId: notification.containerMatchId,
+          ToasterAccountID: notification.toasterAccountId,
+          ToasterUsername: notification.toasterUsername,
+          Rewards: [],
+        },
+        payload: {
+          frm: {
+            id: notification.toasterAccountId,
+            type: "account",
+          },
+          template: "realtime",
+          account_id: notification.toasteeAccountId,
+          profile_id: notification.toasteeAccountId,
+        },
+        header: "",
+        cmd: "profile-notification",
+      };
+      client.send(toastMessage);
+      logger.info(`[${serviceName}]: Sent toast notification to ${notification.toasteeAccountId} from ${notification.toasterUsername} (${notification.toasterAccountId})`);
+    } else {
+      logger.warn(`[${serviceName}]: Could not find player ${notification.toasteeAccountId} to deliver toast from ${notification.toasterAccountId}`);
+    }
+  }
+
   async handlePlayerJoinedLobby(notification: RedisPlayerJoinedLobbyNotification) {
     const allPlayerIds = notification.allPlayerIds;
     const ownerId = notification.ownerId;
@@ -1631,6 +1664,11 @@ export class WebSocketService {
     this.redisSub.subscribe(LOBBY_REJOIN_CHANNEL, (message) => {
       const notification = JSON.parse(message) as RedisLobbyRejoinNotification;
       this.handleLobbyRejoin(notification);
+    });
+
+    this.redisSub.subscribe(TOAST_RECEIVED_CHANNEL, (message) => {
+      const notification = JSON.parse(message) as RedisToastNotification;
+      this.handleToastReceived(notification);
     });
 
     // Custom lobby rematch decline — send RematchDeclinedNotification to all affected players

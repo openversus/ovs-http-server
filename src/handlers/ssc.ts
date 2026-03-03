@@ -13,6 +13,7 @@ import {
   redisSetPlayerConnectionByIp,
   redisGetPlayerLobby,
   redisGetLobbyState,
+  redisPublishToast,
 } from "../config/redis";
 import {  getCurrentCRC, MATCHMAKING_CRC } from "../data/config";
 import { PerkPagesModel } from "../database/PerkPages";
@@ -58171,17 +58172,24 @@ export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}
 }
 
 export async function handleSsc_invoke_toast_player(req: Request<{}, {}, {}, {}>, res: Response) {
-  logger.info(`${logPrefix} Received toast player request ${BE_VERBOSE ? ", headers:" : ""}`);
-  if (req.headers)
-  {
-    KitchenSink.TryInspectVerbose(req.headers);
+  logger.info(`${logPrefix} Received toast player request`);
+  logwrapper.verbose(`${logPrefix} Toast player body: ${JSON.stringify(req.body)}`);
+
+  const token = (req as any).token;
+  const body = req.body as { ContainerMatchId?: string; ToasteeId?: string };
+
+  if (token && body?.ContainerMatchId && body?.ToasteeId) {
+    await redisPublishToast({
+      toasterAccountId: token.id,
+      toasterUsername: token.username,
+      toasteeAccountId: body.ToasteeId,
+      containerMatchId: body.ContainerMatchId,
+    });
+    logger.info(`${logPrefix} Toast published: ${token.username} (${token.id}) toasted ${body.ToasteeId} in match ${body.ContainerMatchId}`);
+  } else {
+    logger.warn(`${logPrefix} Toast request missing required fields — token: ${!!token}, ContainerMatchId: ${body?.ContainerMatchId}, ToasteeId: ${body?.ToasteeId}`);
   }
 
-  logger.info(`${logPrefix} Received toast player request ${BE_VERBOSE ? ", body:" : ""}`);
-  if (req.body)
-  {
-    KitchenSink.TryInspectVerbose(req.body);
-  }
   res.send({ body: {}, metadata: null, return_code: 0 });
 }
 export interface Ssc_invoke_set_ready_for_lobby_REQUEST {

@@ -519,6 +519,7 @@ export async function redisGetOnlinePlayers(): Promise<string[]> {
 // --- Party Invites ---
 
 export const PARTY_INVITE_CHANNEL = "party:invite";
+export const TOAST_RECEIVED_CHANNEL = "toast:received";
 
 export interface RedisPartyInviteNotification {
   inviterAccountId: string;
@@ -531,6 +532,20 @@ export interface RedisPartyInviteNotification {
 export async function redisPublishPartyInvite(notification: RedisPartyInviteNotification): Promise<void> {
   await redisClient.publish(PARTY_INVITE_CHANNEL, JSON.stringify(notification));
   logger.info(`${logPrefix} Published party invite from ${notification.inviterAccountId} to ${notification.invitedAccountId} for match ${notification.matchId}`);
+}
+
+// --- Toast Notifications ---
+
+export interface RedisToastNotification {
+  toasterAccountId: string;
+  toasterUsername: string;
+  toasteeAccountId: string;
+  containerMatchId: string;
+}
+
+export async function redisPublishToast(notification: RedisToastNotification): Promise<void> {
+  await redisClient.publish(TOAST_RECEIVED_CHANNEL, JSON.stringify(notification));
+  logger.info(`${logPrefix} Published toast from ${notification.toasterAccountId} (${notification.toasterUsername}) to ${notification.toasteeAccountId} for match ${notification.containerMatchId}`);
 }
 
 // --- Lobby State ---

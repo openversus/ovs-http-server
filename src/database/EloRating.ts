@@ -5,7 +5,7 @@ import { getModelForClass, prop, modelOptions, index, Severity } from "@typegoos
 @index({ elo_1v1: -1 })
 @index({ elo_2v2: -1 })
 export class EloRating {
-  @prop({ required: true, unique: true })
+  @prop({ required: true })
   public account_id!: string;
 
   @prop({ default: "" })

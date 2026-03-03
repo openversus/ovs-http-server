@@ -9,8 +9,20 @@ import * as path from "path";
 import { hydraTokenMiddleware } from "./middleware/auth";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
-import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby, redisSetMatchPassword, redisGetMatchPassword, redisDeleteMatchPassword } from "./config/redis";
+import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby } from "./config/redis";
 import { getLeaderboard } from "./services/eloService";
+import {
+  createLobby,
+  joinLobby,
+  leaveLobby,
+  switchTeam,
+  toggleReady,
+  setMapPool,
+  selectMode,
+  startMatch,
+  getLobbyWithStatus,
+} from "./services/customLobbyService";
+import { getMapList } from "./data/maps";
 import { GAME_SERVER_PORT } from "./game/udp";
 import { sscRouter } from "./ssc/routes";
 import { getCurrentCRC, LoadConfig, MATCHMAKING_CRC } from "./data/config";
@@ -77,6 +89,24 @@ const partyTemplate = handlebars.compile(partySource);
 const leaderboardFilePath = path.join(__dirname, "static/leaderboard.html");
 const leaderboardSource = fs.readFileSync(leaderboardFilePath, "utf8");
 const leaderboardTemplate = handlebars.compile(leaderboardSource);
+
+const customLobbyFilePath = path.join(__dirname, "static/custom_lobby.html");
+const customLobbySource = fs.readFileSync(customLobbyFilePath, "utf8");
+const customLobbyTemplate = handlebars.compile(customLobbySource);
+
+const homeFilePath = path.join(__dirname, "static/home.html");
+const homeSource = fs.readFileSync(homeFilePath, "utf8");
+const homeTemplate = handlebars.compile(homeSource);
+
+app.get("/home", async (req, res) => {
+  try {
+    const html = homeTemplate({});
+    res.send(html);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /home: ${e}`);
+    res.status(500).send("Error loading home page");
+  }
+});
 
 app.get("/namechange", async (req, res) => {
   try {
@@ -327,12 +357,10 @@ app.get("/party", async (req, res) => {
     let player = await PlayerTesterModel.findOne({ ip });
     const username = player?.name || "Unknown";
     const currentKey = player?.party_key || "";
-    const currentPassword = player?.id ? (await redisGetMatchPassword(player.id) || "") : "";
 
     const html = partyTemplate({
       username,
       currentKey,
-      currentPassword,
       error: null,
       success: null,
     });
@@ -501,62 +529,7 @@ app.post("/party/join", async (req, res) => {
   }
 });
 
-// ============================================================
-// Password Matchmaking — set/clear password for custom matches
-// ============================================================
-
-app.post("/party/set-password", async (req, res) => {
-  try {
-    const ip = req.ip!.replace(/^::ffff:/, "");
-    let player = await PlayerTesterModel.findOne({ ip });
-    if (!player) {
-      res.send(partyTemplate({ username: "Unknown", currentKey: "", currentPassword: "", error: "You must be connected to the game first.", success: null }));
-      return;
-    }
-
-    const password = (req.body.password || "").trim();
-    if (!password || password.length < 3) {
-      const currentPassword = player.id ? (await redisGetMatchPassword(player.id) || "") : "";
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", currentPassword, error: "Password must be at least 3 characters.", success: null }));
-      return;
-    }
-    if (password.length > 20) {
-      const currentPassword = player.id ? (await redisGetMatchPassword(player.id) || "") : "";
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", currentPassword, error: "Password must be 20 characters or less.", success: null }));
-      return;
-    }
-    if (!/^[a-zA-Z0-9_\-]+$/.test(password)) {
-      const currentPassword = player.id ? (await redisGetMatchPassword(player.id) || "") : "";
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", currentPassword, error: "Password can only contain letters, numbers, underscores, and dashes.", success: null }));
-      return;
-    }
-
-    await redisSetMatchPassword(player.id, password);
-    logger.info(`${logPrefix} Player ${player.name} (${ip}) set match password`);
-    res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", currentPassword: password, error: null, success: `Match password set! You'll only match against others with the same password.` }));
-  } catch (e) {
-    logger.error(`${logPrefix} Error in POST /party/set-password: ${e}`);
-    res.status(500).send("Error setting match password");
-  }
-});
-
-app.post("/party/clear-password", async (req, res) => {
-  try {
-    const ip = req.ip!.replace(/^::ffff:/, "");
-    let player = await PlayerTesterModel.findOne({ ip });
-    if (!player) {
-      res.send(partyTemplate({ username: "Unknown", currentKey: "", currentPassword: "", error: "You must be connected to the game first.", success: null }));
-      return;
-    }
-
-    await redisDeleteMatchPassword(player.id);
-    logger.info(`${logPrefix} Player ${player.name} (${ip}) cleared match password`);
-    res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", currentPassword: "", error: null, success: "Match password cleared. You'll now match against anyone." }));
-  } catch (e) {
-    logger.error(`${logPrefix} Error in POST /party/clear-password: ${e}`);
-    res.status(500).send("Error clearing match password");
-  }
-});
+// Password matchmaking removed — use /custom for custom lobbies instead
 
 // ============================================================
 // Leaderboard — Top 100 rankings for 1v1 and 2v2
@@ -586,6 +559,201 @@ app.get("/api/leaderboard/:mode", async (req, res) => {
     logger.error(`${logPrefix} Error in GET /api/leaderboard: ${e}`);
     res.status(500).json({ error: "Error fetching leaderboard" });
   }
+});
+
+// ============================================================
+// Custom Lobby — Web-based custom game lobbies
+// ============================================================
+
+// Helper: identify player by IP (same pattern as party page)
+async function getPlayerFromReq(req: any): Promise<{ id: string; username: string; ip: string } | null> {
+  const ip = req.ip!.replace(/^::ffff:/, "");
+  const player = await PlayerTesterModel.findOne({ ip });
+  if (!player) return null;
+  return { id: player.id, username: player.name || "Unknown", ip };
+}
+
+app.get("/custom", async (req, res) => {
+  try {
+    const html = customLobbyTemplate({});
+    res.send(html);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /custom: ${e}`);
+    res.status(500).send("Error loading custom lobby page");
+  }
+});
+
+app.get("/api/custom/whoami", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.json({ error: "Not connected to game" });
+    return;
+  }
+  res.json({ playerId: player.id, username: player.username });
+});
+
+app.post("/api/custom/create", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game. Launch the game first." });
+    return;
+  }
+  const result = await createLobby(player.id, player.username, player.ip);
+  res.json(result);
+});
+
+app.post("/api/custom/join", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game. Launch the game first." });
+    return;
+  }
+  const lobbyCode = req.body?.lobbyCode;
+  if (!lobbyCode) {
+    res.status(400).json({ error: "Lobby code is required." });
+    return;
+  }
+  const result = await joinLobby(lobbyCode, player.id, player.username, player.ip);
+  res.json(result);
+});
+
+app.post("/api/custom/leave", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game." });
+    return;
+  }
+  const result = await leaveLobby(player.id);
+  res.json(result);
+});
+
+app.post("/api/custom/switch-team", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game." });
+    return;
+  }
+  const result = await switchTeam(player.id);
+  res.json(result);
+});
+
+app.post("/api/custom/ready", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game." });
+    return;
+  }
+  const result = await toggleReady(player.id);
+  res.json(result);
+});
+
+app.post("/api/custom/select-map", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game." });
+    return;
+  }
+  const maps = Array.isArray(req.body?.maps) ? req.body.maps : [];
+  const result = await setMapPool(player.id, maps);
+  res.json(result);
+});
+
+app.post("/api/custom/select-mode", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game." });
+    return;
+  }
+  const mode = req.body?.mode;
+  if (mode !== "1v1" && mode !== "2v2") {
+    res.status(400).json({ error: "Invalid mode. Must be '1v1' or '2v2'." });
+    return;
+  }
+  const result = await selectMode(player.id, mode);
+  res.json(result);
+});
+
+app.post("/api/custom/start", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game." });
+    return;
+  }
+  const result = await startMatch(player.id);
+  res.json(result);
+});
+
+app.get("/api/custom/status/:lobbyCode", async (req, res) => {
+  try {
+    const lobbyCode = req.params.lobbyCode.toUpperCase();
+    const status = await getLobbyWithStatus(lobbyCode);
+    if (!status) {
+      res.status(404).json({ error: "Lobby not found." });
+      return;
+    }
+    res.json(status);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /api/custom/status: ${e}`);
+    res.status(500).json({ error: "Error fetching lobby status" });
+  }
+});
+
+app.get("/api/custom/maps/:mode", async (req, res) => {
+  const mode = req.params.mode;
+  const maps = getMapList(mode);
+  res.json({ maps });
+});
+
+// SSE endpoint for live lobby updates
+app.get("/api/custom/events/:lobbyCode", async (req, res) => {
+  const lobbyCode = req.params.lobbyCode.toUpperCase();
+
+  // Set SSE headers
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+  });
+
+  // Create a dedicated Redis subscriber for this connection
+  const sub = redisClient.duplicate();
+  await sub.connect();
+
+  const channelName = `custom_lobby_update:${lobbyCode}`;
+  await sub.subscribe(channelName, (message: string) => {
+    res.write(`event: lobby-update\ndata: ${message}\n\n`);
+  });
+
+  // Send initial state
+  const initialState = await getLobbyWithStatus(lobbyCode);
+  if (initialState) {
+    res.write(`event: lobby-update\ndata: ${JSON.stringify(initialState)}\n\n`);
+  }
+
+  // Heartbeat to keep connection alive
+  const heartbeat = setInterval(() => {
+    res.write(`:heartbeat\n\n`);
+  }, 15000);
+
+  // Periodic connection status refresh (every 5 seconds)
+  const statusRefresh = setInterval(async () => {
+    try {
+      const status = await getLobbyWithStatus(lobbyCode);
+      if (status) {
+        res.write(`event: lobby-update\ndata: ${JSON.stringify(status)}\n\n`);
+      }
+    } catch {
+      // ignore
+    }
+  }, 5000);
+
+  // Cleanup on disconnect
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    clearInterval(statusRefresh);
+    sub.unsubscribe(channelName);
+    sub.quit();
+  });
 });
 
 app.use(hydraDecoderMiddleware);

@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpenVersus - Custom Lobby</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fugaz+One&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+  <style>
+    :root {
+      --mv-blue: #1f6feb;
+      --mv-blue-dark: #0040a5;
+      --mv-orange: #ff7500;
+      --mv-orange-dark: #ff4d00;
+      --ink: #343434;
+      --card: rgba(255, 255, 255, 0.92);
+      --card2: rgba(255, 255, 255, 0.85);
+      --shadow: rgba(0, 0, 0, 0.28) 0px 19px 38px, rgba(0, 0, 0, 0.20) 0px 15px 12px;
+      --skew: -12deg;
+      --radius: 18px;
+      --green: #22c55e;
+      --red: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: "Fugaz One", Arial, sans-serif;
+      overflow-x: hidden;
+      color: var(--ink);
+      background: #000;
+    }
+    .background {
+      position: fixed; inset: 0; z-index: -2;
+      background-image: url("/images/name_change_background.jpeg");
+      background-size: cover; background-position: center; background-repeat: no-repeat;
+      transform: scale(1.03);
+    }
+    .background::after {
+      content: ""; position: absolute; inset: 0;
+      backdrop-filter: blur(6px);
+      background: rgba(10, 12, 20, 0.20);
+    }
+    .main_wrapper {
+      min-height: 100%;
+      display: grid; place-items: center;
+      padding: 24px 14px;
+    }
+    .main_container {
+      width: min(960px, 100%);
+      background: linear-gradient(180deg, var(--card), var(--card2));
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 22px;
+      position: relative; overflow: hidden;
+    }
+    .main_container::before {
+      content: ""; position: absolute; inset: -60px;
+      background: linear-gradient(115deg,
+        transparent 0%, transparent 45%,
+        rgba(255, 117, 0, 0.10) 45%, rgba(255, 117, 0, 0.10) 52%,
+        transparent 52%, transparent 100%),
+        linear-gradient(115deg,
+        transparent 0%, transparent 62%,
+        rgba(31, 111, 235, 0.10) 62%, rgba(31, 111, 235, 0.10) 69%,
+        transparent 69%, transparent 100%);
+      pointer-events: none; opacity: 0.85;
+    }
+    .content { position: relative; display: grid; gap: 18px; }
+    .top {
+      display: grid; grid-template-columns: 170px 1fr;
+      gap: 18px; align-items: center;
+    }
+    .logo {
+      width: 100%; max-width: 170px;
+      border-radius: 14px; display: block;
+      box-shadow: 0 10px 0 rgba(0, 0, 0, 0.10);
+    }
+    .panelTitle {
+      margin: 0;
+      font-size: clamp(1.6rem, 4vw, 2.2rem);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--mv-blue);
+    }
+    .panelSubtitle {
+      margin: 4px 0 0;
+      font-size: 0.9rem;
+      font-weight: normal;
+      font-family: Arial, sans-serif;
+      color: #666;
+    }
+    .section {
+      background: rgba(255,255,255,0.6);
+      border-radius: 12px;
+      padding: 18px;
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+    .section-title {
+      font-size: 1.1rem;
+      margin: 0 0 12px;
+      color: var(--mv-blue);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Landing view */
+    .landing-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    .landing-card {
+      text-align: center;
+      padding: 30px 20px;
+    }
+    .landing-card h3 {
+      margin: 0 0 16px;
+      font-size: 1.3rem;
+      color: var(--mv-blue);
+    }
+    .landing-card p {
+      font-family: Arial, sans-serif;
+      font-size: 0.85rem;
+      color: #666;
+      margin: 0 0 16px;
+    }
+
+    /* Inputs & buttons */
+    .input-field {
+      width: 100%;
+      padding: 12px 16px;
+      font-family: "Fugaz One", Arial, sans-serif;
+      font-size: 1.1rem;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      border: 2px solid #ddd;
+      border-radius: 10px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .input-field:focus {
+      border-color: var(--mv-blue);
+    }
+    .btn {
+      display: inline-block;
+      padding: 12px 28px;
+      font-family: "Fugaz One", Arial, sans-serif;
+      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform 0.15s, opacity 0.2s;
+      color: #fff;
+    }
+    .btn:hover { transform: scale(1.03); }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .btn-blue { background: linear-gradient(135deg, var(--mv-blue), var(--mv-blue-dark)); }
+    .btn-orange { background: linear-gradient(135deg, var(--mv-orange), var(--mv-orange-dark)); }
+    .btn-red { background: linear-gradient(135deg, #ef4444, #dc2626); }
+    .btn-green { background: linear-gradient(135deg, #22c55e, #16a34a); }
+    .btn-sm { padding: 8px 16px; font-size: 0.8rem; }
+    .btn-full { width: 100%; margin-top: 10px; }
+
+    /* Lobby view */
+    .lobby-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .lobby-code-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .lobby-code {
+      font-size: 2rem;
+      letter-spacing: 6px;
+      color: var(--mv-orange);
+      cursor: pointer;
+      user-select: all;
+    }
+    .lobby-code:hover { opacity: 0.8; }
+    .copy-hint {
+      font-family: Arial, sans-serif;
+      font-size: 0.7rem;
+      color: #999;
+    }
+    .lobby-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .lobby-controls select {
+      padding: 8px 12px;
+      font-family: "Fugaz One", Arial, sans-serif;
+      font-size: 0.85rem;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      outline: none;
+      background: #fff;
+      cursor: pointer;
+    }
+    .lobby-controls select:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Teams grid */
+    .teams-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    .team-col {
+      background: rgba(255,255,255,0.5);
+      border-radius: 10px;
+      padding: 14px;
+      border: 2px solid transparent;
+    }
+    .team-col.team-0 { border-color: rgba(31, 111, 235, 0.3); }
+    .team-col.team-1 { border-color: rgba(255, 117, 0, 0.3); }
+    .team-title {
+      font-size: 1rem;
+      margin: 0 0 10px;
+      text-align: center;
+    }
+    .team-0 .team-title { color: var(--mv-blue); }
+    .team-1 .team-title { color: var(--mv-orange); }
+
+    .player-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.7);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+    .player-card:last-child { margin-bottom: 0; }
+    .connection-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .connection-dot.online { background: var(--green); box-shadow: 0 0 6px rgba(34, 197, 94, 0.5); }
+    .connection-dot.offline { background: var(--red); box-shadow: 0 0 6px rgba(239, 68, 68, 0.5); }
+    .player-info { flex: 1; min-width: 0; }
+    .player-name {
+      font-size: 0.9rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .player-name .leader-badge {
+      font-size: 0.65rem;
+      color: var(--mv-orange);
+      margin-left: 4px;
+    }
+    .player-character {
+      font-family: Arial, sans-serif;
+      font-size: 0.7rem;
+      color: #888;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ready-badge {
+      font-size: 0.7rem;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-family: Arial, sans-serif;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+    .ready-badge.is-ready { background: #dcfce7; color: #16a34a; }
+    .ready-badge.not-ready { background: #fef2f2; color: #dc2626; }
+
+    .empty-slot {
+      padding: 10px 12px;
+      background: rgba(0,0,0,0.03);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      text-align: center;
+      font-family: Arial, sans-serif;
+      font-size: 0.8rem;
+      color: #bbb;
+      border: 1px dashed #ddd;
+    }
+
+    /* Bottom actions */
+    .lobby-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    /* Status messages */
+    .status-msg {
+      text-align: center;
+      font-family: Arial, sans-serif;
+      font-size: 0.85rem;
+      padding: 8px;
+      border-radius: 8px;
+      margin-top: 8px;
+    }
+    .status-msg.error { background: #fef2f2; color: #dc2626; }
+    .status-msg.success { background: #f0fdf4; color: #16a34a; }
+    .status-msg.info { background: #eff6ff; color: #2563eb; }
+
+    /* Map checkbox grid */
+    .map-checkbox-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 6px;
+    }
+    .map-checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      background: rgba(255,255,255,0.6);
+      border-radius: 6px;
+      border: 1px solid rgba(0,0,0,0.06);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      font-family: Arial, sans-serif;
+      font-size: 0.8rem;
+      color: var(--ink);
+      user-select: none;
+    }
+    .map-checkbox-item:hover { background: rgba(31,111,235,0.06); }
+    .map-checkbox-item.checked {
+      background: rgba(31,111,235,0.1);
+      border-color: var(--mv-blue);
+    }
+    .map-checkbox-item.disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .map-checkbox-item input[type="checkbox"] {
+      accent-color: var(--mv-blue);
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .map-checkbox-item.disabled input[type="checkbox"] {
+      cursor: not-allowed;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 600px) {
+      .top { grid-template-columns: 100px 1fr; }
+      .logo { max-width: 100px; }
+      .landing-actions { grid-template-columns: 1fr; }
+      .teams-grid { grid-template-columns: 1fr; }
+      .lobby-code { font-size: 1.5rem; letter-spacing: 4px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="background"></div>
+  <div class="main_wrapper">
+    <div class="main_container animate__animated animate__fadeIn">
+      <div class="content">
+        <!-- Header -->
+        <div class="top">
+          <img class="logo" src="/images/OpenVersus_logo.png" alt="OpenVersus"/>
+          <div>
+            <h1 class="panelTitle">Custom Lobby</h1>
+            <p class="panelSubtitle">Create or join a custom match</p>
+          </div>
+        </div>
+
+        <!-- Landing View -->
+        <div id="landing-view">
+          <div class="landing-actions">
+            <div class="section landing-card">
+              <h3>Create Lobby</h3>
+              <p>Start a new custom game lobby and invite friends with a code.</p>
+              <button class="btn btn-blue" onclick="createLobby()">Create Lobby</button>
+            </div>
+            <div class="section landing-card">
+              <h3>Join Lobby</h3>
+              <p>Enter a lobby code to join an existing custom game.</p>
+              <input type="text" id="join-code-input" class="input-field" placeholder="ABC123" maxlength="6"
+                     onkeydown="if(event.key==='Enter')joinLobby()"/>
+              <button class="btn btn-orange btn-full" onclick="joinLobby()">Join</button>
+            </div>
+          </div>
+          <div id="landing-status" class="status-msg hidden"></div>
+        </div>
+
+        <!-- Lobby View -->
+        <div id="lobby-view" class="hidden">
+          <!-- Lobby Header -->
+          <div class="section">
+            <div class="lobby-header">
+              <div class="lobby-code-wrap">
+                <span class="lobby-code" id="lobby-code-display" onclick="copyCode()" title="Click to copy">------</span>
+                <span class="copy-hint">click to copy</span>
+              </div>
+              <div class="lobby-controls">
+                <select id="mode-select" onchange="changeMode(this.value)">
+                  <option value="1v1">1v1</option>
+                  <option value="2v2">2v2</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Map Pool -->
+          <div class="section" id="map-pool-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <h3 class="section-title" style="margin: 0;">Map Pool</h3>
+              <span id="map-pool-hint" style="font-family: Arial, sans-serif; font-size: 0.75rem; color: #999;">
+                None selected = random from all maps
+              </span>
+            </div>
+            <div id="map-checkboxes" class="map-checkbox-grid"></div>
+          </div>
+
+          <!-- Teams -->
+          <div class="teams-grid">
+            <div class="team-col team-0">
+              <h3 class="team-title">Team 1</h3>
+              <div id="team-0-players"></div>
+            </div>
+            <div class="team-col team-1">
+              <h3 class="team-title">Team 2</h3>
+              <div id="team-1-players"></div>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="lobby-actions">
+            <button class="btn btn-green" id="ready-btn" onclick="toggleReady()">Ready Up</button>
+            <button class="btn btn-blue" id="switch-btn" onclick="switchTeam()">Switch Team</button>
+            <button class="btn btn-orange" id="start-btn" onclick="startMatch()" disabled>Start Match</button>
+            <button class="btn btn-red btn-sm" onclick="leaveLobby()">Leave</button>
+          </div>
+
+          <div id="lobby-status" class="status-msg hidden"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+<script>
+  // --- State ---
+  let currentLobbyCode = null;
+  let lobbyState = null;
+  let myPlayerId = null;
+  let eventSource = null;
+  let mapList = [];
+  let lastShownStatus = null; // Track last status to avoid SSE spam
+
+  // Character slug → display name mapping (from game data)
+  const CHARACTER_NAMES = {
+    'character_wonder_woman': 'Wonder Woman',
+    'character_batman': 'Batman',
+    'character_arya': 'Arya Stark',
+    'character_superman': 'Superman',
+    'character_steven': 'Steven Universe',
+    'character_garnet': 'Garnet',
+    'character_velma': 'Velma',
+    'character_finn': 'Finn',
+    'character_tom_and_jerry': 'Tom & Jerry',
+    'character_shaggy': 'Shaggy',
+    'character_jake': 'Jake',
+    'character_creature': 'Reindog',
+    'character_bugs_bunny': 'Bugs Bunny',
+    'character_harleyquinn': 'Harley Quinn',
+    'character_taz': 'Taz',
+    'character_c017': 'Iron Giant',
+    'character_c018': 'Marvin The Martian',
+    'character_c019': 'Morty',
+    'character_c020': 'Rick',
+    'character_c021': 'Black Adam',
+    'character_c023a': 'Gizmo',
+    'character_c023b': 'Stripe',
+    'character_c024': 'Betelgeuse',
+    'character_c025': 'Raven',
+    'character_c026': 'Samurai Jack',
+    'character_c027': 'Nubia',
+    'character_c028': 'The Joker',
+    'character_c029': 'Aquaman',
+    'character_c030': 'The Powerpuff Girls',
+    'character_c031': 'Marceline',
+    'character_bananaguard': 'Banana Guard',
+    'character_jason': 'Jason Voorhees',
+    'character_c036': 'Agent Smith',
+    'character_c038': 'Lola Bunny',
+    'character_c16': 'LeBron James',
+  };
+
+  // Format character slug to display name (case-insensitive lookup)
+  function formatCharacter(slug) {
+    if (!slug) return '';
+    const lower = slug.toLowerCase();
+    // Try exact match first (e.g. "character_c036")
+    if (CHARACTER_NAMES[lower]) return CHARACTER_NAMES[lower];
+    // Try with prefix prepended (e.g. "C036" → "character_c036")
+    const withPrefix = 'character_' + lower;
+    if (CHARACTER_NAMES[withPrefix]) return CHARACTER_NAMES[withPrefix];
+    // Fallback: strip prefix and capitalize
+    return slug.replace(/^character_/i, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  // --- API Helpers ---
+  async function api(method, path, body) {
+    try {
+      const opts = { method, headers: {} };
+      if (body) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(body);
+      }
+      const res = await fetch(path, opts);
+      return await res.json();
+    } catch (e) {
+      return { error: 'Network error: ' + e.message };
+    }
+  }
+
+  function showStatus(elementId, msg, type) {
+    const el = document.getElementById(elementId);
+    el.textContent = msg;
+    el.className = 'status-msg ' + type;
+    el.classList.remove('hidden');
+    if (type !== 'error') {
+      setTimeout(() => el.classList.add('hidden'), 4000);
+    }
+  }
+
+  function hideStatus(elementId) {
+    document.getElementById(elementId).classList.add('hidden');
+  }
+
+  // --- Landing Actions ---
+  async function createLobby() {
+    hideStatus('landing-status');
+    const result = await api('POST', '/api/custom/create');
+    if (result.error) {
+      showStatus('landing-status', result.error, 'error');
+      return;
+    }
+    enterLobby(result.lobbyCode);
+  }
+
+  async function joinLobby() {
+    hideStatus('landing-status');
+    const code = document.getElementById('join-code-input').value.trim().toUpperCase();
+    if (!code || code.length < 4) {
+      showStatus('landing-status', 'Enter a valid lobby code.', 'error');
+      return;
+    }
+    const result = await api('POST', '/api/custom/join', { lobbyCode: code });
+    if (result.error) {
+      showStatus('landing-status', result.error, 'error');
+      return;
+    }
+    enterLobby(code);
+  }
+
+  // --- Enter Lobby ---
+  async function enterLobby(code) {
+    currentLobbyCode = code.toUpperCase();
+
+    // Update URL
+    history.pushState(null, '', '/custom?lobby=' + currentLobbyCode);
+
+    // Show lobby view, hide landing
+    document.getElementById('landing-view').classList.add('hidden');
+    document.getElementById('lobby-view').classList.remove('hidden');
+
+    // Set lobby code display
+    document.getElementById('lobby-code-display').textContent = currentLobbyCode;
+
+    // Start SSE early so we receive updates immediately
+    connectSSE();
+
+    // Load initial state
+    const status = await api('GET', '/api/custom/status/' + currentLobbyCode);
+    if (status && !status.error) {
+      lobbyState = status;
+      if (!myPlayerId && status.players) {
+        const whoami = await api('GET', '/api/custom/whoami');
+        if (whoami && whoami.playerId) {
+          myPlayerId = whoami.playerId;
+        }
+      }
+      renderLobby();
+    }
+
+    // Load maps
+    await loadMaps(status ? status.mode : '1v1');
+  }
+
+  // --- SSE ---
+  function connectSSE() {
+    if (eventSource) {
+      eventSource.close();
+    }
+    eventSource = new EventSource('/api/custom/events/' + currentLobbyCode);
+
+    eventSource.addEventListener('lobby-update', (e) => {
+      const data = JSON.parse(e.data);
+      if (data.deleted) {
+        showStatus('lobby-status', 'Lobby has been closed.', 'error');
+        setTimeout(() => {
+          currentLobbyCode = null;
+          lobbyState = null;
+          document.getElementById('lobby-view').classList.add('hidden');
+          document.getElementById('landing-view').classList.remove('hidden');
+          history.pushState(null, '', '/custom');
+        }, 2000);
+        return;
+      }
+      lobbyState = data;
+      renderLobby();
+    });
+
+    eventSource.onerror = () => {
+      // Reconnect after a delay
+      setTimeout(() => {
+        if (currentLobbyCode) connectSSE();
+      }, 3000);
+    };
+  }
+
+  // --- Load Maps ---
+  async function loadMaps(mode) {
+    const result = await api('GET', '/api/custom/maps/' + mode);
+    if (result && result.maps) {
+      mapList = result.maps;
+      renderMapCheckboxes();
+    }
+  }
+
+  function renderMapCheckboxes() {
+    const container = document.getElementById('map-checkboxes');
+    const isLeader = myPlayerId && lobbyState && myPlayerId === lobbyState.leaderId;
+    const currentPool = (lobbyState && lobbyState.mapPool) || [];
+
+    let html = '';
+    for (const m of mapList) {
+      const checked = currentPool.includes(m.id);
+      const disabledAttr = isLeader ? '' : 'disabled';
+      const checkedAttr = checked ? 'checked' : '';
+      const itemClass = 'map-checkbox-item' + (checked ? ' checked' : '') + (isLeader ? '' : ' disabled');
+      html += '<label class="' + itemClass + '">';
+      html += '  <input type="checkbox" value="' + m.id + '" ' + checkedAttr + ' ' + disabledAttr + ' onchange="updateMapPool()">';
+      html += '  ' + escapeHtml(m.name);
+      html += '</label>';
+    }
+    container.innerHTML = html;
+  }
+
+  // --- Render ---
+  function renderLobby() {
+    if (!lobbyState) return;
+    const isLeader = myPlayerId === lobbyState.leaderId;
+    const me = lobbyState.players.find(p => p.playerId === myPlayerId);
+    const playersPerTeam = lobbyState.mode === '1v1' ? 1 : 2;
+
+    // Mode select
+    const modeSelect = document.getElementById('mode-select');
+    modeSelect.value = lobbyState.mode;
+    modeSelect.disabled = !isLeader;
+
+    // Re-render map checkboxes (updates checked state + disabled state)
+    if (mapList.length > 0) {
+      renderMapCheckboxes();
+    } else {
+      loadMaps(lobbyState.mode);
+    }
+
+    // Map pool hint
+    const hint = document.getElementById('map-pool-hint');
+    const poolSize = (lobbyState.mapPool || []).length;
+    if (poolSize === 0) {
+      hint.textContent = 'None selected = random from all maps';
+    } else {
+      hint.textContent = poolSize + ' map' + (poolSize > 1 ? 's' : '') + ' selected';
+    }
+
+    // Render teams
+    for (let t = 0; t < 2; t++) {
+      const container = document.getElementById('team-' + t + '-players');
+      const teamPlayers = lobbyState.players.filter(p => p.teamIndex === t);
+      let html = '';
+
+      for (const p of teamPlayers) {
+        const isMe = p.playerId === myPlayerId;
+        const connClass = p.connected ? 'online' : 'offline';
+        const readyClass = p.ready ? 'is-ready' : 'not-ready';
+        const readyText = p.ready ? 'READY' : 'NOT READY';
+        const leaderBadge = p.playerId === lobbyState.leaderId ? '<span class="leader-badge">LEADER</span>' : '';
+        const charDisplay = formatCharacter(p.character);
+
+        html += '<div class="player-card' + (isMe ? ' is-me' : '') + '">';
+        html += '  <div class="connection-dot ' + connClass + '" title="' + (p.connected ? 'Game connected' : 'Game not connected') + '"></div>';
+        html += '  <div class="player-info">';
+        html += '    <div class="player-name">' + escapeHtml(p.username) + leaderBadge + '</div>';
+        html += '    <div class="player-character">' + (charDisplay || 'No character selected') + '</div>';
+        html += '  </div>';
+        html += '  <span class="ready-badge ' + readyClass + '">' + readyText + '</span>';
+        html += '</div>';
+      }
+
+      // Empty slots
+      const emptyCount = playersPerTeam - teamPlayers.length;
+      for (let i = 0; i < emptyCount; i++) {
+        html += '<div class="empty-slot">Waiting for player...</div>';
+      }
+
+      container.innerHTML = html;
+    }
+
+    // Ready button
+    const readyBtn = document.getElementById('ready-btn');
+    if (me) {
+      readyBtn.textContent = me.ready ? 'Unready' : 'Ready Up';
+      readyBtn.className = 'btn ' + (me.ready ? 'btn-red' : 'btn-green');
+    }
+
+    // Start button (leader only)
+    const startBtn = document.getElementById('start-btn');
+    if (isLeader) {
+      startBtn.classList.remove('hidden');
+      const allReady = lobbyState.players.every(p => p.ready);
+      const allConnected = lobbyState.players.every(p => p.connected);
+      const team0Count = lobbyState.players.filter(p => p.teamIndex === 0).length;
+      const team1Count = lobbyState.players.filter(p => p.teamIndex === 1).length;
+      const teamsValid = team0Count === playersPerTeam && team1Count === playersPerTeam;
+      startBtn.disabled = !(allReady && allConnected && teamsValid);
+    } else {
+      startBtn.classList.add('hidden');
+    }
+
+    // Handle in_match status (only show once per status change to avoid SSE spam)
+    if (lobbyState.status === 'starting' || lobbyState.status === 'in_match') {
+      if (lastShownStatus !== lobbyState.status) {
+        showStatus('lobby-status', 'Match is starting! Check your game.', 'success');
+        lastShownStatus = lobbyState.status;
+      }
+      readyBtn.disabled = true;
+      document.getElementById('switch-btn').disabled = true;
+      startBtn.disabled = true;
+    } else {
+      lastShownStatus = null; // Reset so it shows again on next match
+      readyBtn.disabled = false;
+      document.getElementById('switch-btn').disabled = false;
+    }
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // --- Lobby Actions ---
+  async function toggleReady() {
+    hideStatus('lobby-status');
+    const result = await api('POST', '/api/custom/ready');
+    if (result.error) {
+      showStatus('lobby-status', result.error, 'error');
+    } else if (result.ready !== undefined && lobbyState) {
+      // Update UI immediately without waiting for SSE
+      const me = lobbyState.players.find(p => p.playerId === myPlayerId);
+      if (me) {
+        me.ready = result.ready;
+        renderLobby();
+      }
+    }
+  }
+
+  async function switchTeam() {
+    hideStatus('lobby-status');
+    const result = await api('POST', '/api/custom/switch-team');
+    if (result.error) showStatus('lobby-status', result.error, 'error');
+  }
+
+  async function changeMode(mode) {
+    hideStatus('lobby-status');
+    const result = await api('POST', '/api/custom/select-mode', { mode });
+    if (result.error) {
+      showStatus('lobby-status', result.error, 'error');
+      // Revert select
+      if (lobbyState) document.getElementById('mode-select').value = lobbyState.mode;
+    } else {
+      // Reset map list so it reloads for the new mode
+      mapList = [];
+      await loadMaps(mode);
+    }
+  }
+
+  async function updateMapPool() {
+    hideStatus('lobby-status');
+    const checkboxes = document.querySelectorAll('#map-checkboxes input[type="checkbox"]');
+    const selectedMaps = [];
+    checkboxes.forEach(cb => {
+      if (cb.checked) selectedMaps.push(cb.value);
+    });
+    const result = await api('POST', '/api/custom/select-map', { maps: selectedMaps });
+    if (result.error) showStatus('lobby-status', result.error, 'error');
+  }
+
+  async function startMatch() {
+    hideStatus('lobby-status');
+    showStatus('lobby-status', 'Starting match...', 'info');
+    const result = await api('POST', '/api/custom/start');
+    if (result.error) showStatus('lobby-status', result.error, 'error');
+  }
+
+  async function leaveLobby() {
+    const result = await api('POST', '/api/custom/leave');
+    if (eventSource) eventSource.close();
+    currentLobbyCode = null;
+    lobbyState = null;
+    myPlayerId = null;
+    document.getElementById('lobby-view').classList.add('hidden');
+    document.getElementById('landing-view').classList.remove('hidden');
+    hideStatus('lobby-status');
+    history.pushState(null, '', '/custom');
+  }
+
+  function copyCode() {
+    if (currentLobbyCode) {
+      navigator.clipboard.writeText(currentLobbyCode).then(() => {
+        showStatus('lobby-status', 'Lobby code copied!', 'success');
+      });
+    }
+  }
+
+  // --- Init ---
+  (async function init() {
+    // Check URL for lobby code
+    const params = new URLSearchParams(window.location.search);
+    const lobbyParam = params.get('lobby');
+
+    // Get our player ID
+    const whoami = await api('GET', '/api/custom/whoami');
+    if (whoami && whoami.playerId) {
+      myPlayerId = whoami.playerId;
+    }
+
+    if (lobbyParam) {
+      // Try to join/view existing lobby
+      const code = lobbyParam.toUpperCase();
+      const status = await api('GET', '/api/custom/status/' + code);
+      if (status && !status.error && status.lobbyCode) {
+        // Check if we're in this lobby
+        const amInLobby = status.players.some(p => p.playerId === myPlayerId);
+        if (amInLobby) {
+          enterLobby(code);
+        } else {
+          // Try to join
+          const joinResult = await api('POST', '/api/custom/join', { lobbyCode: code });
+          if (joinResult.error) {
+            showStatus('landing-status', joinResult.error, 'error');
+          } else {
+            enterLobby(code);
+          }
+        }
+      }
+    }
+  })();
+</script>
+</body>
+</html>

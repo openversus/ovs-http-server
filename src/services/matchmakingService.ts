@@ -9,11 +9,11 @@ import {
   redisOnMatchMakerStarted,
   redisPushTicketToQueue,
   redisUpdatePlayerStatus,
-  redisGetMatchPassword,
 } from "../config/redis";
 import { logger } from "../config/logger";
 import { MVSTime } from "../utils/date";
 import { getOrCreateRating } from "./eloService";
+import { leaveLobby } from "./customLobbyService";
 
 export enum MATCH_TYPES {
   ONE_V_ONE = "1v1",
@@ -22,14 +22,9 @@ export enum MATCH_TYPES {
 }
 
 /**
- * Returns the base mode from a match type (strips password suffix).
- * e.g., "1v1_pw:mypass" → "1v1", "2v2" → "2v2"
+ * Returns the base mode from a match type.
  */
 export function getBaseMode(matchType: string): string {
-  const pwIndex = matchType.indexOf("_pw:");
-  if (pwIndex !== -1) {
-    return matchType.substring(0, pwIndex);
-  }
   return matchType;
 }
 
@@ -41,25 +36,22 @@ export async function queueMatch(
   matchType: MATCH_TYPES,
 ): Promise<void> {
   try {
-    // Check if the party leader has a match password set
-    const matchPassword = await redisGetMatchPassword(partyLeaderId);
-    const isPasswordMatch = !!matchPassword;
-
-    // Determine the queue key — password matches go to separate queues
-    let queueMatchType: string = matchType;
-    if (matchPassword) {
-      queueMatchType = `${matchType}_pw:${matchPassword}`;
-      logger.info(`Password match detected for player ${partyLeaderId}, using queue: ${queueMatchType}`);
+    // Flush players from any custom lobby they're in before queuing
+    for (const pid of playerIds) {
+      try {
+        await leaveLobby(pid);
+      } catch {
+        // ignore — player may not be in a custom lobby
+      }
     }
 
     // Look up each player's ELO for skill-based matchmaking
-    const baseMode = getBaseMode(queueMatchType);
-    const eloField = baseMode === "1v1" ? "elo_1v1" : "elo_2v2";
+    const eloField = matchType === "1v1" ? "elo_1v1" : "elo_2v2";
 
     // Create a match ticket
     const ticket: ON_MATCH_MAKER_STARTED_NOTIFICATION = {
       created_at: MVSTime(new Date()),
-      matchType: queueMatchType as MATCH_TYPES,
+      matchType,
       partyLeaderId,
       matchmakingRequestId,
       partyId,
@@ -89,9 +81,9 @@ export async function queueMatch(
     await redisOnMatchMakerStarted(ticket);
 
     logger.info(
-      `Party (${partyId}) matchmakingRequestId(${matchmakingRequestId}) has been added to ${queueMatchType} matchmaking queue. Players (${playerIds.join(
+      `Party (${partyId}) matchmakingRequestId(${matchmakingRequestId}) has been added to ${matchType} matchmaking queue. Players (${playerIds.join(
         ",",
-      )})${isPasswordMatch ? " [PASSWORD MATCH]" : ""}`,
+      )})`,
     );
   }
   catch (error) {

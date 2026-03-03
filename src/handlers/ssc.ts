@@ -26,6 +26,7 @@ import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import * as KitchenSink from "../utils/garbagecan";
 import { processMatchResult } from "../services/eloService";
+import { handleRematchDecline, handleRematchAccept } from "../services/customLobbyService";
 
 const serviceName = "Handlers.SSC";
 const logPrefix = `[${serviceName}]:`;
@@ -58081,7 +58082,33 @@ export async function handleSsc_invoke_ranked_data(req: Request<{}, {}, {}, {}>,
   });
 }
 
-export async function handleSsc_invoke_rematch_decline(req: Request<{}, {}, {}, {}>, res: Response) {
+export async function handleSsc_invoke_rematch_decline(req: Request<{}, {}, any, {}>, res: Response) {
+  const account = AuthUtils.DecodeClientToken(req);
+  const playerId = account?.id || (req as any).token?.id;
+
+  if (playerId) {
+    logger.info(`${logPrefix} Player ${playerId} declined rematch`);
+    const result = await handleRematchDecline(playerId);
+
+    if (result.playerIds && result.playerIds.length > 0) {
+      // Publish so WebSocket sends RematchDeclinedNotification to all players in the lobby
+      logger.info(`${logPrefix} Cancelling rematch for all players in lobby ${result.lobbyCode}`);
+      await redisClient.publish("custom_lobby_rematch_decline", JSON.stringify({ playerIds: result.playerIds }));
+    }
+  }
+
+  res.send({ body: [], metadata: null, return_code: 0 });
+}
+
+export async function handleSsc_invoke_rematch_accept(req: Request<{}, {}, any, {}>, res: Response) {
+  const account = AuthUtils.DecodeClientToken(req);
+  const playerId = account?.id || (req as any).token?.id;
+
+  if (playerId) {
+    logger.info(`${logPrefix} Player ${playerId} accepted rematch`);
+    await handleRematchAccept(playerId);
+  }
+
   res.send({ body: [], metadata: null, return_code: 0 });
 }
 
@@ -58117,7 +58144,7 @@ export async function handleSsc_invoke_set_ready_for_lobby(req: Request<{}, {}, 
   });
 }
 
-export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}, {}, {}, {}>, res: Response) {
+export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}, {}, any, {}>, res: Response) {
   const matchId = req.body?.ContainerMatchId;
   const winningTeamIndex = req.body?.EndOfMatchStats?.WinningTeamIndex;
 

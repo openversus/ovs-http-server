@@ -154,11 +154,33 @@
       .rank-badge.gold { background: #d4a017; }
       .rank-badge.silver { background: #8a8a8a; }
       .rank-badge.bronze { background: #cd7f32; }
+      .lb-separator {
+          border: none; border-top: 3px dashed rgba(0,0,0,0.15);
+          margin: 0;
+      }
+      .lb-table tr.my-row td {
+          background: rgba(31, 111, 235, 0.10);
+          font-weight: 900;
+      }
+      .lb-table tr.my-row:hover td {
+          background: rgba(31, 111, 235, 0.16);
+      }
+      .rank-badge.me { background: var(--mv-orange); }
       .loading {
           text-align: center; padding: 40px;
           font-family: Helvetica, Arial, sans-serif;
           color: rgba(0,0,0,0.45); font-weight: 700;
       }
+      .back-btn {
+          display: inline-flex; align-items: center; gap: 6px;
+          text-decoration: none; color: var(--mv-blue);
+          font-family: Helvetica, Arial, sans-serif;
+          font-weight: 800; font-size: 13px;
+          text-transform: uppercase; letter-spacing: 0.06em;
+          padding: 8px 0; transition: opacity 0.15s;
+      }
+      .back-btn:hover { opacity: 0.7; }
+      .back-btn svg { width: 16px; height: 16px; }
       .halfSecond { animation-delay: 0.5s; }
       @media (max-width: 760px) {
           .top { grid-template-columns: 1fr; justify-items: center; text-align: center; }
@@ -172,6 +194,7 @@
 <div class="main_wrapper">
   <section class="main_container animate__animated animate__fadeIn">
     <div class="content">
+      <a href="/home" class="back-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back to Home</a>
       <div class="top">
         <img src="/images/OpenVersus_logo.png" class="logo" alt="OpenVersus Logo"/>
         <div>
@@ -221,8 +244,13 @@
     container.innerHTML = '<div class="loading">Loading...</div>';
 
     try {
-      const res = await fetch('/api/leaderboard/' + mode);
-      const data = await res.json();
+      // Fetch top 100 and current player's rank in parallel
+      const [lbRes, meRes] = await Promise.all([
+        fetch('/api/leaderboard/' + mode),
+        fetch('/api/leaderboard/' + mode + '/me'),
+      ]);
+      const data = await lbRes.json();
+      const meData = await meRes.json();
 
       if (!data.players || data.players.length === 0) {
         container.innerHTML = '<div class="loading">No players ranked yet. Play some matches!</div>';
@@ -238,14 +266,32 @@
       html += '<th class="wr-col">Win %</th>';
       html += '</tr></thead><tbody>';
 
+      // Check if the current player is already in the top 100
+      const meInTop100 = meData && !meData.error && meData.rank <= 100;
+
       for (const p of data.players) {
         const total = p.wins + p.losses;
         const winRate = total > 0 ? Math.round((p.wins / total) * 100) : 0;
-        html += '<tr>';
-        html += '<td class="rank-col"><span class="' + getRankBadgeClass(p.rank) + '">' + p.rank + '</span></td>';
-        html += '<td>' + escapeHtml(p.username) + '</td>';
+        const isMe = meData && !meData.error && p.rank === meData.rank;
+        html += '<tr' + (isMe ? ' class="my-row"' : '') + '>';
+        html += '<td class="rank-col"><span class="' + getRankBadgeClass(p.rank) + (isMe ? ' me' : '') + '">' + p.rank + '</span></td>';
+        html += '<td>' + escapeHtml(p.username) + (isMe ? ' <span style="font-size:11px;color:var(--mv-blue);">(YOU)</span>' : '') + '</td>';
         html += '<td class="elo-col">' + p.elo + '</td>';
         html += '<td class="wl-col">' + p.wins + ' / ' + p.losses + '</td>';
+        html += '<td class="wr-col">' + winRate + '%</td>';
+        html += '</tr>';
+      }
+
+      // If player is NOT in top 100, show separator + their row
+      if (meData && !meData.error && !meInTop100) {
+        const total = meData.wins + meData.losses;
+        const winRate = total > 0 ? Math.round((meData.wins / total) * 100) : 0;
+        html += '<tr><td colspan="5" style="padding:0;"><hr class="lb-separator"/></td></tr>';
+        html += '<tr class="my-row">';
+        html += '<td class="rank-col"><span class="rank-badge me">' + meData.rank + '</span></td>';
+        html += '<td>' + escapeHtml(meData.username) + ' <span style="font-size:11px;color:var(--mv-blue);">(YOU)</span></td>';
+        html += '<td class="elo-col">' + meData.elo + '</td>';
+        html += '<td class="wl-col">' + meData.wins + ' / ' + meData.losses + '</td>';
         html += '<td class="wr-col">' + winRate + '%</td>';
         html += '</tr>';
       }

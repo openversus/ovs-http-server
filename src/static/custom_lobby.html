@@ -364,6 +364,16 @@
       cursor: not-allowed;
     }
 
+    .back-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      text-decoration: none; color: var(--mv-blue);
+      font-family: Helvetica, Arial, sans-serif;
+      font-weight: 800; font-size: 13px;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      padding: 8px 0; transition: opacity 0.15s;
+    }
+    .back-btn:hover { opacity: 0.7; }
+    .back-btn svg { width: 16px; height: 16px; }
     .hidden { display: none !important; }
 
     @media (max-width: 600px) {
@@ -381,6 +391,7 @@
     <div class="main_container animate__animated animate__fadeIn">
       <div class="content">
         <!-- Header -->
+        <a href="/home" class="back-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back to Home</a>
         <div class="top">
           <img class="logo" src="/images/OpenVersus_logo.png" alt="OpenVersus"/>
           <div>

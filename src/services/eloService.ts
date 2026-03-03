@@ -205,6 +205,36 @@ export async function processMatchResult(matchId: string, winningTeamIndex: numb
 }
 
 /**
+ * Get a specific player's rank and stats for a given mode.
+ * Returns null if the player hasn't played any games in this mode.
+ */
+export async function getPlayerRank(accountId: string, mode: "1v1" | "2v2") {
+  const eloField = mode === "1v1" ? "elo_1v1" : "elo_2v2";
+  const winsField = mode === "1v1" ? "wins_1v1" : "wins_2v2";
+  const lossesField = mode === "1v1" ? "losses_1v1" : "losses_2v2";
+
+  const player = await EloRatingModel.findOne({ account_id: accountId }).lean();
+  if (!player) return null;
+
+  const totalGames = (player[winsField] || 0) + (player[lossesField] || 0);
+  if (totalGames === 0) return null;
+
+  // Count how many players have a higher ELO (rank = that count + 1)
+  const playersAbove = await EloRatingModel.countDocuments({
+    [eloField]: { $gt: player[eloField] },
+    $expr: { $gt: [{ $add: [`$${winsField}`, `$${lossesField}`] }, 0] },
+  });
+
+  return {
+    rank: playersAbove + 1,
+    username: player.username || "Unknown",
+    elo: player[eloField],
+    wins: player[winsField] || 0,
+    losses: player[lossesField] || 0,
+  };
+}
+
+/**
  * Get leaderboard for a specific mode.
  * Returns top players sorted by ELO descending.
  * Only includes players who have played at least 1 game.

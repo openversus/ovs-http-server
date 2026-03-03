@@ -10,7 +10,7 @@ import { hydraTokenMiddleware } from "./middleware/auth";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
 import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby, redisGameServerInstanceReady } from "./config/redis";
-import { getLeaderboard } from "./services/eloService";
+import { getLeaderboard, getPlayerRank } from "./services/eloService";
 import {
   createLobby,
   joinLobby,
@@ -569,6 +569,30 @@ app.get("/api/leaderboard/:mode", async (req, res) => {
   } catch (e) {
     logger.error(`${logPrefix} Error in GET /api/leaderboard: ${e}`);
     res.status(500).json({ error: "Error fetching leaderboard" });
+  }
+});
+
+app.get("/api/leaderboard/:mode/me", async (req, res) => {
+  try {
+    const mode = req.params.mode as "1v1" | "2v2";
+    if (mode !== "1v1" && mode !== "2v2") {
+      res.status(400).json({ error: "Invalid mode. Use '1v1' or '2v2'." });
+      return;
+    }
+    const player = await getPlayerFromReq(req);
+    if (!player) {
+      res.json({ error: "Not connected to game" });
+      return;
+    }
+    const rank = await getPlayerRank(player.id, mode);
+    if (!rank) {
+      res.json({ error: "No ranked games played" });
+      return;
+    }
+    res.json(rank);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /api/leaderboard/me: ${e}`);
+    res.status(500).json({ error: "Error fetching player rank" });
   }
 });
 

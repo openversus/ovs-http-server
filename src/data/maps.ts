@@ -1,78 +1,123 @@
-import { logger, logwrapper } from "../config/logger"
-import MAPFILES from "../enums/maps"
 import { randomInt } from "crypto";
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync } from "fs";
+import { join } from "path";
+import { logger } from "../config/logger";
 
-const serviceName: string = "Maps";
-const logPrefix: string = `[${serviceName}]:`;
+const logPrefix = "[Maps]:";
 
-export interface mapObject
-{
+// --- Map object interface (matches JSON files) ---
+
+export interface mapObject {
   id: string;
   name: string;
   enabled: boolean;
   hazards: boolean;
 }
 
-async function GetMapList(mapList: any): Promise<mapObject[]>
-{
-  let maps: mapObject[];
+// --- Load maps from JSON files ---
 
-  logwrapper.verbose(`${logPrefix} Attempting to read map list from ${mapList}`);
-  logwrapper.verbose(`${logPrefix} __filename: ${__filename}`);
-  logwrapper.verbose(`${logPrefix} __dirname: ${__dirname}`);
-  try{
-    const data = readFileSync(mapList, 'utf-8');
+function GetMapList(mapFile: string): mapObject[] {
+  try {
+    const data = readFileSync(mapFile, "utf-8");
     const raw = JSON.parse(data) as Record<string, mapObject>[];
-    maps = raw.map(obj => Object.values(obj)[0]);
-    return maps;
-  }
-  catch (error) {
-    logwrapper.error(`${logPrefix} Could not import maps from ${mapList}, error: ${error}`)
-    return new Array<mapObject>();
+    return raw.map((obj) => Object.values(obj)[0]);
+  } catch (error) {
+    logger.error(`${logPrefix} Could not import maps from ${mapFile}: ${error}`);
+    return [];
   }
 }
 
-export async function Get1v1MapList(): Promise<mapObject[]>
-{
-  return await GetMapList(join(__dirname, MAPFILES.ALL_MAPS_1V1));
+export function Get1v1MapList(): mapObject[] {
+  return GetMapList(join(__dirname, "./maps1v1.json"));
 }
 
-export async function Get2v2MapList(): Promise<mapObject[]>
-{
-  return await GetMapList(join(__dirname, MAPFILES.ALL_MAPS_2V2));
+export function Get2v2MapList(): mapObject[] {
+  return GetMapList(join(__dirname, "./maps2v2.json"));
 }
 
-logwrapper.info(`${logPrefix} __dirname at init: ${__dirname}`);
-logwrapper.info(`${logPrefix} MAPFILES.ALL_MAPS_1V1: ${MAPFILES.ALL_MAPS_1V1}`);
-logwrapper.info(`${logPrefix} join result: ${join(__dirname, MAPFILES.ALL_MAPS_1V1)}`);
-let all1v1Maps = GetMapList(join(__dirname, MAPFILES.ALL_MAPS_1V1));
-let all2v2Maps = GetMapList(join(__dirname, MAPFILES.ALL_MAPS_2V2));
+/**
+ * Look up whether a map has hazards enabled.
+ * Checks PVE_03 first, then looks up from JSON data.
+ */
+export function getMapHazards(mapId: string, mode: string): boolean {
+  if (mapId === "PVE_03") return true;
+  const maps = mode === "2v2" ? Get2v2MapList() : Get1v1MapList();
+  return maps.find((m) => m.id.toLowerCase() === mapId.toLowerCase())?.hazards ?? false;
+}
 
-export const originalMapList1v1 = [
-  "M001_V2",
-  "M003_V1",
-  "M003_V5",
-  "M008_V2",
-  "M009_V2",
-  "M011_V3",
-  "M011_V4",
-  "M006_V3",
-  "M015_V1",
-];
+// Display names for maps (used by custom lobby map selector)
+export const MAP_NAMES: Record<string, string> = {
+  // 1v1 maps
+  "M001_V2": "Batcave 1v1",
+  "M002_V2": "Treefort 1v1",
+  "M003_V1": "Trophy's Edge",
+  "M003_V5": "Trophy's Edge V5",
+  "M006_V3": "Scooby's Mansion 1v1",
+  "M007_V2": "Water Tower",
+  "M008_V2": "Throne Room 1v1",
+  "M009_V2": "Cromulons 1v1",
+  "M011_V3": "Sky Arena 1v1",
+  "M011_V4": "Sky Arena 1v1 V4",
+  "M012_V2": "Titans Tower 1v1",
+  "M015_V1": "Townsville",
+  "M015_V2": "Townsville Destroyed",
+  "M016_V3": "Dexter's Lab 1v1",
+  "M017_V1": "Back to the Past",
+  "M018_V2": "Candy Kingdom",
+  "M023_V2": "Rabbit Season 1v1",
+  "MTS001_V1": "Space",
+  "MTS003_V1": "Castle",
+  // 2v2 maps
+  "M001": "Batcave",
+  "M002_V3": "Treefort",
+  "M001_V1": "Trophy's Edge Single Plat",
+  "M006_V2": "Scooby's Mansion",
+  "M007_V1": "Water Tower 2v2",
+  "M008_V1": "Throne Room",
+  "M009_V1": "Cromulons",
+  "M011_V1": "Sky Arena",
+  "M011_V2": "Sky Arena V2",
+  "M012_V3": "Titans Tower",
+  "M016_V4": "Dexter's Lab",
+  "M023_V1": "Rabbit Season",
+  "MTS003_V4": "Castle V4",
+};
 
-export const originalMapList2v2 = [
-  "M001",
-  "M003_V3",
-  "M003_V5",
-  "M009_V1",
-  "M011_V1",
-  "M011_V2",
-  "M006_V2",
-];
+/**
+ * Get a list of maps with display names for a given mode.
+ * Used by the custom lobby map selector dropdown.
+ */
+export function getMapList(mode: string): { id: string; name: string }[] {
+  const mapArray = mode === "2v2" ? maps2v2 : maps1v1;
+  return mapArray.map((id) => ({
+    id,
+    name: MAP_NAMES[id] || id,
+  }));
+}
 
-export const backupMapList1v1 = [
+// export const maps1v1 = [
+//   "M001_V2",
+//   "M003_V1",
+//   "M003_V5",
+//   "M008_V2",
+//   "M009_V2",
+//   "M011_V3",
+//   "M011_V4",
+//   "M006_V3",
+//   "M015_V1",
+// ];
+
+// export const maps2v2 = [
+//   "M001",
+//   "M003_V3",
+//   "M003_V5",
+//   "M009_V1",
+//   "M011_V1",
+//   "M011_V2",
+//   "M006_V2",
+// ];
+
+export const maps1v1 = [
   "M001_V2",    // (Batcave 1v1)
   "M002_V2",    // (Treefort 1v1)
   "M003_V1",    // (Trophy's Edge 1v1)
@@ -95,7 +140,7 @@ export const backupMapList1v1 = [
   "MTS003_V1",  // (Castle)
 ];
 
-export const backupMapList2v2 = [
+export const maps2v2 = [
   "M001",       // (Batcave)
   "M002_V3",    // (Batcave)
   "M003_V5",    // (Treefort 2)
@@ -112,78 +157,37 @@ export const backupMapList2v2 = [
   "M016_V4",    // (Dexters Lab 3) 
   "M017_V1",    // (Back to the Past) 
   "M018_V2",    // (Candy Kingdom 2)
-  "M023_V1",    // (Rabbit Season)
+  "M023_V1",    // (Rabbit Season) 
   "MTS001_V1",  // (Space) 
   // "MTS002_V3",  // (Beach Boat) 
   "MTS003_V4",  // (Castle 3)
-]
+];
 
-export async function getRandomMapByType(mode: string, matchID: string): Promise<string> {
-  let mapType: mapObject[] = [];
-  let spicyChance: boolean = randomInt(1, 1000) == 69;
-  all1v1Maps = GetMapList(join(__dirname, MAPFILES.ALL_MAPS_1V1));
-  all2v2Maps = GetMapList(join(__dirname, MAPFILES.ALL_MAPS_2V2));
-
+export function getRandomMapByType(mode: string) {
   if (mode === "1v1") {
-    mapType = (await all1v1Maps).filter(map => map.enabled);
-    if (spicyChance)
-    {
-      logger.info(`${logPrefix} Spicy map chance hit for match ${matchID}! Returning PVE_03`);
+    var spicyChance = randomInt(1, 1000);
+    if (spicyChance == 69) {
       return "PVE_03";
     }
-  }
-  else if (mode === "2v2") {
-    mapType = (await all2v2Maps).filter(map => map.enabled);
-  }
-  else {
-    logger.warn(`${logPrefix} No map type found for mode ${mode}, defaulting to 1v1 maps`);
-    mapType = (await all1v1Maps).filter(map => map.enabled);
-  }
-  if (mapType.length === 0) {
-    logger.error(`${logPrefix} No enabled maps found for mode ${mode}`);
-    if (mode === "2v2")
+    else
     {
-      var selectedMap = getRandomMap2v2();
-      logger.info(`${logPrefix} Selected map ${selectedMap} for MatchID ${matchID} and mode ${mode} from backup list`);
-      return selectedMap;
-    }
-    else {
-      var selectedMap = getRandomMap1v1();
-      logger.info(`${logPrefix} Selected map ${selectedMap} for MatchID ${matchID} and mode ${mode} from backup list`);
-      return selectedMap;
+    return getRandomMap1v1();
     }
   }
-
-  var randomIndex = randomInt(0, mapType.length);
-  logger.info(`${logPrefix} Selected map ${mapType[randomIndex].id} for MatchID ${matchID} and mode ${mode} from map list`);
-  return mapType[randomIndex].id;
+  if (mode === "2v2") {
+    return getRandomMap2v2();
+  }
+  return getRandomMap1v1();
 }
 
-// export function getRandomMapByType(mode: string) {
-//   if (mode === "1v1") {
-//     var spicyChance = randomInt(1, 1000);
-//     if (spicyChance == 69) {
-//       return "PVE_03";
-//     }
-//     else
-//     {
-//     return getRandomMap1v1();
-//     }
-//   }
-//   if (mode === "2v2") {
-//     return getRandomMap2v2();
-//   }
-//   return getRandomMap1v1();
-// }
-
 export function getRandomMap1v1(): string {
-  const randomIndex = Math.floor(Math.random() * backupMapList1v1.length);
-  return backupMapList1v1[randomIndex];
+  const randomIndex = Math.floor(Math.random() * maps1v1.length);
+  return maps1v1[randomIndex];
 }
 
 export function getRandomMap2v2(): string {
-  const randomIndex = Math.floor(Math.random() * backupMapList2v2.length);
-  return backupMapList2v2[randomIndex];
+  const randomIndex = Math.floor(Math.random() * maps2v2.length);
+  return maps2v2[randomIndex];
 }
 
 export const MAP_ROTATIONS = {

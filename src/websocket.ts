@@ -8,7 +8,6 @@ import { decodeToken } from "./middleware/auth";
 import * as SharedTypes from "./types/shared-types";
 import * as RollbackProcess from "./utils/processes";
 import * as KitchenSink from "./utils/garbagecan";
-import { Get1v1MapList, Get2v2MapList } from "./data/maps";
 //import { exec, spawn, spawnSync, SpawnOptions } from "child_process";
 
 import {
@@ -58,19 +57,24 @@ import {
   redisDeleteLobbyState,
   redisDeletePlayerLobby,
   redisPublishLobbyRejoin,
+  redisReleaseMatchmakingLock,
+  redisGetMatchTickets,
+  TOAST_RECEIVED_CHANNEL,
+  RedisToastNotification,
 } from "./config/redis";
 import { Server } from "https";
 import { Server as HttpServer } from "http";
 import { GAME_SERVER_PORT } from "./game/udp";
 import { logger, logwrapper, BE_VERBOSE } from "./config/logger";
 import { MVSTime } from "./utils/date";
+import { getCustomLobbyForMatch, handleCustomLobbyMatchEnd, leaveLobby } from "./services/customLobbyService";
+import { getMapHazards } from "./data/maps";
 import ObjectID from "bson-objectid";
 import { RedisClientType } from "@redis/client";
 import env from "./env/env";
 import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./database/Cosmetics";
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 import { cancelMatchmakingForAll } from "./services/matchmakingService";
-import { join } from 'path';
 
 const serviceName: string = "WebSocket";
 const logPrefix = `[${serviceName}]:`;
@@ -81,6 +85,7 @@ export class WebSocketPlayer {
   deleted?: boolean;
   account: SharedTypes.IAccountToken | undefined;
   matchTick: NodeJS.Timeout | undefined;
+  matchTimeout: NodeJS.Timeout | undefined;
   matchConfig?: GameNotification;
   ticket?: ON_MATCH_MAKER_STARTED_NOTIFICATION;
   ip: string;
@@ -239,6 +244,16 @@ export class WebSocketService {
     playerWS.init = true;
     playerWS.account = decodedBody.account;
     playerWS.sendRaw(buffer);
+
+    // DIAGNOSTIC: Detect when a new WebSocket replaces an existing one (zombie detection)
+    const existingClient = this.clients.get(playerWS.account.id);
+    if (existingClient) {
+      logger.warn(
+        `[${serviceName}]: ZOMBIE-DIAG: Player ${playerWS.account.id} connecting with NEW WebSocket — replacing existing connection. ` +
+        `Old WS readyState=${existingClient.ws.readyState}, deleted=${existingClient.deleted}`,
+      );
+    }
+
     this.clients.set(playerWS.account.id, playerWS);
 
     // Clear pending rejoin flag if this is a reconnect after force-close
@@ -247,7 +262,7 @@ export class WebSocketService {
       this.pendingRejoin.delete(playerWS.account.id);
     }
 
-    redisAddOnlinePlayer(playerWS.account.id);
+    redisAddOnlinePlayer(playerWS.account.id).catch((err) => logger.error(`${logPrefix} Error adding online player: ${err}`));
     logger.info(
       `[${serviceName}]: Player ${playerWS.account.id} with IP ${playerWS.ip} and name ${playerWS.account.username} connected to websocket`,
     );
@@ -268,6 +283,17 @@ export class WebSocketService {
     if (playerWS && playerWS.account) {
       const playerId = playerWS.account.id;
 
+      // If this connection is no longer the active one for this player, it's a zombie/stale
+      // connection (e.g. replaced by a reconnect). Ignore it entirely — don't clean up
+      // Redis data or disband the party, since the player is still actively connected.
+      const currentClient = this.clients.get(playerId);
+      if (currentClient && currentClient !== playerWS) {
+        logger.info(
+          `[${serviceName}]: Ignoring stale WebSocket close for player ${playerId} — newer connection is active`,
+        );
+        return;
+      }
+
       // If this player is pending rejoin (force-closed for lobby rejoin),
       // skip all cleanup so their lobby data stays intact for when they reconnect
       if (this.pendingRejoin.has(playerId)) {
@@ -285,8 +311,17 @@ export class WebSocketService {
       // so remaining players aren't stuck with a ghost teammate
       try {
         const lobbyId = await redisGetPlayerLobby(playerId);
+        logger.info(
+          `[${serviceName}]: DISCONNECT-DIAG: Player ${playerId} disconnect handler running. ` +
+          `lobbyId=${lobbyId || "NONE"}, pendingRejoin=${this.pendingRejoin.has(playerId)}, ` +
+          `wsReadyState=${playerWS.ws.readyState}, deleted=${playerWS.deleted}`,
+        );
         if (lobbyId) {
           const lobbyState = await redisGetLobbyState(lobbyId);
+          logger.info(
+            `[${serviceName}]: DISCONNECT-DIAG: Player ${playerId} lobby ${lobbyId} state: ` +
+            `${lobbyState ? `playerIds=[${lobbyState.playerIds.join(",")}], mode=${(lobbyState as any).mode || "unknown"}` : "NULL (already deleted!)"}`,
+          );
           if (lobbyState && lobbyState.playerIds.length > 1) {
             const otherPlayerIds = lobbyState.playerIds.filter(pid => pid !== playerId);
             logger.info(
@@ -316,24 +351,32 @@ export class WebSocketService {
         logger.error(`[${serviceName}]: Error disbanding party for disconnected player ${playerId}: ${err}`);
       }
 
+      // Remove from custom lobby (web-based) if they're in one
+      try {
+        await leaveLobby(playerId);
+      } catch (e) {
+        // ignore — they may not be in a custom lobby
+      }
+
       playerWS.deleted = true;
-      this.stopMatchTick(playerWS);
-      this.attemptRemoveMatchTicket(playerWS);
+      await this.stopMatchTick(playerWS);
+      await this.attemptRemoveMatchTicket(playerWS);
       this.clients.delete(playerId);
-      redisRemoveOnlinePlayer(playerId);
-      redisCleanupPlayerLobby(playerId); // Clean up lobby state before deleting player keys
-      redisDeletePlayerKeys(playerId);
-      redisDeleteConnectionKeysByIp(playerWS.ip);
+      await redisRemoveOnlinePlayer(playerId);
+      await redisReleaseMatchmakingLock(playerId); // Release lock so they can queue again on reconnect
+      await redisCleanupPlayerLobby(playerId); // Clean up lobby state before deleting player keys
+      await redisDeletePlayerKeys(playerId);
+      await redisDeleteConnectionKeysByIp(playerWS.ip);
       logger.info(
         `[${serviceName}]: Player ${playerId} with IP ${playerWS.ip} and name ${playerWS.account.username} disconnected from websocket`,
       );
     }
   }
 
-  attemptRemoveMatchTicket(playerWS: WebSocketPlayer) {
+  async attemptRemoveMatchTicket(playerWS: WebSocketPlayer) {
     if (playerWS.ticket) {
-      redisPopMatchTicketsFromQueue("1v1", [playerWS.ticket]);
-      redisPopMatchTicketsFromQueue("2v2", [playerWS.ticket]);
+      await redisPopMatchTicketsFromQueue("1v1", [playerWS.ticket]);
+      await redisPopMatchTicketsFromQueue("2v2", [playerWS.ticket]);
     }
   }
 
@@ -365,7 +408,13 @@ export class WebSocketService {
     });
   }
 
-  stopMatchTick(player: WebSocketPlayer) {
+  async stopMatchTick(player: WebSocketPlayer) {
+    // Clear the 100s auto-cancel timeout — match was found, no need to auto-cancel
+    if (player.matchTimeout) {
+      clearTimeout(player.matchTimeout);
+      player.matchTimeout = undefined;
+    }
+
     if (player.matchTick) {
       logger.info(
         `[${serviceName}]: Stopping matchtick for player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"}`,
@@ -374,12 +423,29 @@ export class WebSocketService {
       player.matchTick = undefined;
       // Match was found — mark as in_match so party join is still blocked
       if (player.account?.id) {
-        redisUpdatePlayerStatus(player.account.id, "in_match");
+        await redisUpdatePlayerStatus(player.account.id, "in_match");
       }
     }
   }
 
   async handlePartyQueued(notification: ON_MATCH_MAKER_STARTED_NOTIFICATION) {
+    // Check for duplicate tickets BEFORE starting the tick — prevents ghost queues
+    const existingTickets = await redisGetMatchTickets(notification.matchType);
+    const newPlayerIds = new Set(notification.players.map((p) => p.id));
+    const hasDuplicate = existingTickets.some((t) =>
+      t.players.some((p) => newPlayerIds.has(p.id)),
+    );
+    if (hasDuplicate) {
+      logger.warn(
+        `${logPrefix} Duplicate ticket blocked — player(s) ${Array.from(newPlayerIds).join(", ")} already in ${notification.matchType} queue. Removing stale tickets and re-queuing.`,
+      );
+      // Remove the stale tickets for these players so the new one can be pushed
+      const staleTickets = existingTickets.filter((t) =>
+        t.players.some((p) => newPlayerIds.has(p.id)),
+      );
+      await redisPopMatchTicketsFromQueue(notification.matchType, staleTickets);
+    }
+
     for (const player of notification.players) {
       const client = this.clients.get(player.id);
       if (client) {
@@ -407,6 +473,12 @@ export class WebSocketService {
   }
 
   handleMatchTick(client: WebSocketPlayer, notification: ON_MATCH_MAKER_STARTED_NOTIFICATION) {
+    // Clear any existing zombie timeout from a previous queue cycle
+    if (client.matchTimeout) {
+      clearTimeout(client.matchTimeout);
+      client.matchTimeout = undefined;
+    }
+
     client.matchTick = setInterval(() => {
       client.send({
         data: {},
@@ -419,12 +491,18 @@ export class WebSocketService {
       });
     }, 1000);
 
-    setTimeout(() => {
-      this.cancelMatchMaking(client, notification.matchmakingRequestId);
+    client.matchTimeout = setTimeout(async () => {
+      await this.cancelMatchMaking(client, notification.matchmakingRequestId);
     }, 100_000);
   }
 
-  cancelMatchMaking(client: WebSocketPlayer, matchmakingRequestId: string) {
+  async cancelMatchMaking(client: WebSocketPlayer, matchmakingRequestId: string) {
+    // Always clear the 100s timeout to prevent zombie timeouts from canceling future queues
+    if (client.matchTimeout) {
+      clearTimeout(client.matchTimeout);
+      client.matchTimeout = undefined;
+    }
+
     if (client.matchTick) {
       const message = {
         data: {},
@@ -435,13 +513,15 @@ export class WebSocketService {
         header: "Matchmaking request cancelled.",
         cmd: "matchmaking-cancel",
       };
-      this.attemptRemoveMatchTicket(client);
+      await this.attemptRemoveMatchTicket(client);
       clearInterval(client.matchTick);
       client.matchTick = undefined;
       client.send(message);
       // Clear the "queued" status so the player isn't stuck as searching
       if (client.account?.id) {
-        redisUpdatePlayerStatus(client.account.id, "idle");
+        await redisUpdatePlayerStatus(client.account.id, "idle");
+        // Release matchmaking lock so they can queue again immediately
+        await redisReleaseMatchmakingLock(client.account.id);
       }
       logger.trace(
         `[${serviceName}]: Canceling matchmaking - ${client.account?.id ?? "unknown"} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} - matchmakingRequestId: ${matchmakingRequestId}`,
@@ -449,13 +529,12 @@ export class WebSocketService {
     }
   }
 
-  handleMatchFound(notification: MATCH_FOUND_NOTIFICATION) {
+  async handleMatchFound(notification: MATCH_FOUND_NOTIFICATION) {
     const arr = [
       env.UDP_SERVER_IP,
       env.UDP_SERVER_IP2,
     ];
     const randomIndex = Math.floor(Math.random() * arr.length);
-    let notifiedPlayers: string[] = [];
     for (const matchPlayer of notification.players) {
       let tempPlayer = null;
       try {
@@ -476,17 +555,8 @@ export class WebSocketService {
 
       const player = tempPlayer;
       if (player) {
-        
         try {
-          if (player.account?.id &&
-            notifiedPlayers.length > 1 &&
-            notifiedPlayers.includes(player.account.id)
-          ) {
-              logger.warn(`[${serviceName}]: Player ${player.account.id} with IP ${player.ip} and name ${player.account.username} has already been notified for match ${notification.matchId}, skipping duplicate notification`);
-              continue;
-          }
-          this.stopMatchTick(player);
-          notifiedPlayers.push(player.account?.id ?? "unknown");
+          await this.stopMatchTick(player);
         }
         catch (error) {
           logger.error(
@@ -874,25 +944,8 @@ export class WebSocketService {
 
     // Create the message to send to the players
 
-    //let stageHazards: boolean = notification.map.toLowerCase() === "PVE_03".toLowerCase() ? true : false;
-    let all1v1Maps = await Get1v1MapList();
-    let all2v2Maps = await Get2v2MapList();
-
-    let stageHazards: boolean = false;
-
-    if (notification.map === "PVE_03") {
-      stageHazards = true;
-    }
-    else if (notification.mode === "2v2")
-    {
-      var hazardsEnabled: boolean = all2v2Maps.find(m => m.id === notification.map.toLowerCase())?.hazards ?? false;
-      stageHazards = hazardsEnabled;
-    }
-    else {
-      var hazardsEnabled: boolean = all1v1Maps.find(m => m.id === notification.map.toLowerCase())?.hazards ?? false;
-      stageHazards = hazardsEnabled;
-    }
-
+    // Look up hazards from map JSON data (PVE_03 always has hazards, others check JSON)
+    let stageHazards: boolean = getMapHazards(notification.map, notification.mode);
     const message: GameNotification = {
       data: {
         MatchId: notification.matchId,
@@ -1014,19 +1067,8 @@ export class WebSocketService {
 
       playerClients.push({ [playerId]: client });
     }
-    let notifiedPlayers: string[] = [];
     for (const playerId of notification.playerIds) {
       // const client = this.clients.get(playerId);
-
-      if (notifiedPlayers.length > 0 && notifiedPlayers.includes(playerId)) {
-        logger.warn(
-          `[${serviceName}]: Player ${playerId} has already been notified for game server instance ready for match ${notification.containerMatchId}, skipping duplicate notification`,
-        );
-        continue;
-      }
-
-      notifiedPlayers.push(playerId ?? "unknown");
-
       const client = playerClients.find(pc => pc[playerId])?.[playerId];
 
       const gameServerPort = notification.rollbackPort || GAME_SERVER_PORT;
@@ -1061,13 +1103,6 @@ export class WebSocketService {
         logger.info(
           `[${serviceName}]: Sent game server instance ready to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`,
         );
-        logger.info(`${logPrefix} Game server instance ready message: ${JSON.stringify(message)}`);
-        if (notifiedPlayers.length > 0 && notifiedPlayers.includes(playerId)) {
-          logger.warn(
-            `[${serviceName}]: Player ${playerId} has already been notified for game server instance ready for match ${notification.containerMatchId}, skipping duplicate notification`,
-          );
-          continue;
-        }
         client.send(message);
       }
       else {
@@ -1102,13 +1137,16 @@ export class WebSocketService {
     }
   }
 
-  handleCancelMatchMaking(notification: RedisCancelMatchMakingNotification) {
+  async handleCancelMatchMaking(notification: RedisCancelMatchMakingNotification) {
     for (const playerId of notification.playersIds) {
       const client = this.clients.get(playerId);
 
       if (client) {
-        this.cancelMatchMaking(client, notification.matchmakingId);
+        await this.cancelMatchMaking(client, notification.matchmakingId);
       }
+
+      // Release matchmaking lock so they can queue again
+      await redisReleaseMatchmakingLock(playerId);
     }
   }
 
@@ -1234,6 +1272,37 @@ export class WebSocketService {
       logger.warn(
         `[${serviceName}]: Could not find player ${notification.invitedAccountId} to send party invite from ${notification.inviterAccountId}`,
       );
+    }
+  }
+
+  handleToastReceived(notification: RedisToastNotification) {
+    const client = this.clients.get(notification.toasteeAccountId);
+    if (client) {
+      const toastMessage = {
+        data: {
+          template_id: "ToastReceived",
+          ToastInfo: {
+            ToasterAccountID: notification.toasterAccountId,
+            ToasterUsername: notification.toasterUsername,
+            Rewards: [],
+          },
+        },
+        payload: {
+          frm: {
+            id: "internal-server",
+            type: "server-api-key",
+          },
+          template: "realtime",
+          account_id: notification.toasteeAccountId,
+          profile_id: notification.toasteeAccountId,
+        },
+        header: "",
+        cmd: "profile-notification",
+      };
+      client.send(toastMessage);
+      logger.info(`[${serviceName}]: Sent toast notification to ${notification.toasteeAccountId} from ${notification.toasterUsername} (${notification.toasterAccountId})`);
+    } else {
+      logger.warn(`[${serviceName}]: Could not find player ${notification.toasteeAccountId} to deliver toast from ${notification.toasterAccountId}`);
     }
   }
 
@@ -1377,20 +1446,20 @@ export class WebSocketService {
       }
 
       // Clear the pending rejoin flag after a timeout (in case the game doesn't reconnect)
-      setTimeout(() => {
+      setTimeout(async () => {
         if (this.pendingRejoin.has(playerId)) {
           logger.warn(`[${serviceName}]: Player ${playerId} did not reconnect after rejoin — clearing pending flag`);
           this.pendingRejoin.delete(playerId);
           // Clean up since they didn't reconnect
-          redisRemoveOnlinePlayer(playerId);
-          redisCleanupPlayerLobby(playerId);
-          redisDeletePlayerKeys(playerId);
+          await redisRemoveOnlinePlayer(playerId);
+          await redisCleanupPlayerLobby(playerId);
+          await redisDeletePlayerKeys(playerId);
         }
       }, 15000); // 15 seconds timeout for reconnection
     }, 500); // 500ms delay before closing — minimal disruption
   }
 
-  handleOnMatchEnd(notification: RedisMatchEndNotification) {
+  async handleOnMatchEnd(notification: RedisMatchEndNotification) {
     for (const playerId of notification.playersIds) {
       const client = this.clients.get(playerId);
 
@@ -1420,29 +1489,47 @@ export class WebSocketService {
 
         // Clear matchConfig and status since the match is over
         client.matchConfig = undefined;
-        redisUpdatePlayerStatus(playerId, "idle");
+        await redisUpdatePlayerStatus(playerId, "idle");
 
-        setTimeout(() => {
-          const data = {
-            data: {
-              AccountId: playerId,
-              MatchId: notification.matchId,
-              template_id: "RematchDeclinedNotification",
-            },
-            payload: {
-              frm: {
-                id: "internal-server",
-                type: "server-api-key",
+        // Release matchmaking lock so they can queue again
+        await redisReleaseMatchmakingLock(playerId);
+      }
+    }
+
+    // Check if this match belongs to a custom lobby
+    const customLobbyCode = await getCustomLobbyForMatch(notification.matchId);
+    if (customLobbyCode) {
+      // Custom lobby match — DON'T send RematchDeclinedNotification.
+      // The lobby service will handle rematch after 25 seconds.
+      logger.info(`[${serviceName}]: Match ${notification.matchId} is a custom lobby match (${customLobbyCode}), skipping RematchDeclinedNotification`);
+      await handleCustomLobbyMatchEnd(notification.matchId);
+    } else {
+      // Normal match — send RematchDeclinedNotification after 1 second to kick to menus
+      for (const playerId of notification.playersIds) {
+        const client = this.clients.get(playerId);
+        if (client) {
+          setTimeout(() => {
+            const data = {
+              data: {
+                AccountId: playerId,
+                MatchId: notification.matchId,
+                template_id: "RematchDeclinedNotification",
               },
-              template: "realtime",
-              account_id: playerId,
-              profile_id: playerId,
-            },
-            header: "",
-            cmd: "profile-notification",
-          };
-          client.send(data);
-        }, 1000);
+              payload: {
+                frm: {
+                  id: "internal-server",
+                  type: "server-api-key",
+                },
+                template: "realtime",
+                account_id: playerId,
+                profile_id: playerId,
+              },
+              header: "",
+              cmd: "profile-notification",
+            };
+            client.send(data);
+          }, 1000);
+        }
       }
     }
 
@@ -1469,7 +1556,7 @@ export class WebSocketService {
 
         // Longer timeout for post-match (45 seconds — game takes time to transition
         // through end-of-match screens before disconnecting and reconnecting)
-        setTimeout(() => {
+        setTimeout(async () => {
           if (this.pendingRejoin.has(playerId)) {
             // Check if the player is still connected — if so, they never disconnected,
             // so just clear the flag without wiping data
@@ -1487,9 +1574,9 @@ export class WebSocketService {
               `[${serviceName}]: Post-match: Player ${playerId} did not reconnect after match — cleaning up`,
             );
             this.pendingRejoin.delete(playerId);
-            redisRemoveOnlinePlayer(playerId);
-            redisCleanupPlayerLobby(playerId);
-            redisDeletePlayerKeys(playerId);
+            await redisRemoveOnlinePlayer(playerId);
+            await redisCleanupPlayerLobby(playerId);
+            await redisDeletePlayerKeys(playerId);
           }
         }, 45000); // 45 seconds timeout for post-match reconnection
       } catch (err) {
@@ -1524,9 +1611,9 @@ export class WebSocketService {
 
   private setupRedisSubscription() {
     // Subscribe to channels
-    this.redisSub.subscribe(ON_GAMEPLAY_CONFIG_NOTIFIED_CHANNEL, (message) => {
+    this.redisSub.subscribe(ON_GAMEPLAY_CONFIG_NOTIFIED_CHANNEL, async (message) => {
       const notification = JSON.parse(message) as MATCH_FOUND_NOTIFICATION;
-      this.handleMatchFound(notification);
+      await this.handleMatchFound(notification);
     });
 
     this.redisSub.subscribe(ALL_PERKS_LOCKED_CHANNEL, (message) => {
@@ -1534,9 +1621,9 @@ export class WebSocketService {
       this.handleAllPerksLocked(notification);
     });
 
-    this.redisSub.subscribe(ON_MATCH_MAKER_STARTED_CHANNEL, (message) => {
+    this.redisSub.subscribe(ON_MATCH_MAKER_STARTED_CHANNEL, async (message) => {
       const notification = JSON.parse(message) as ON_MATCH_MAKER_STARTED_NOTIFICATION;
-      this.handlePartyQueued(notification);
+      await this.handlePartyQueued(notification);
     });
 
     this.redisSub.subscribe(GAME_SERVER_INSTANCE_READY_CHANNEL, (message) => {
@@ -1554,14 +1641,14 @@ export class WebSocketService {
       this.handleOnLobbyModeChanged(notification);
     });
 
-    this.redisSub.subscribe(ON_CANCEL_MATCHMAKING, (message) => {
+    this.redisSub.subscribe(ON_CANCEL_MATCHMAKING, async (message) => {
       const notification = JSON.parse(message) as RedisCancelMatchMakingNotification;
-      this.handleCancelMatchMaking(notification);
+      await this.handleCancelMatchMaking(notification);
     });
 
-    this.redisSub.subscribe(ON_END_OF_MATCH, (message) => {
+    this.redisSub.subscribe(ON_END_OF_MATCH, async (message) => {
       const notification = JSON.parse(message) as RedisMatchEndNotification;
-      this.handleOnMatchEnd(notification);
+      await this.handleOnMatchEnd(notification);
     });
 
     this.redisSub.subscribe(PARTY_INVITE_CHANNEL, (message) => {
@@ -1577,6 +1664,41 @@ export class WebSocketService {
     this.redisSub.subscribe(LOBBY_REJOIN_CHANNEL, (message) => {
       const notification = JSON.parse(message) as RedisLobbyRejoinNotification;
       this.handleLobbyRejoin(notification);
+    });
+
+    this.redisSub.subscribe(TOAST_RECEIVED_CHANNEL, (message) => {
+      const notification = JSON.parse(message) as RedisToastNotification;
+      this.handleToastReceived(notification);
+    });
+
+    // Custom lobby rematch decline — send RematchDeclinedNotification to all affected players
+    this.redisSub.subscribe("custom_lobby_rematch_decline", (message) => {
+      const { playerIds } = JSON.parse(message) as { playerIds: string[] };
+      logger.info(`[${serviceName}]: Sending RematchDeclinedNotification to ${playerIds.length} players (custom lobby decline)`);
+      for (const playerId of playerIds) {
+        const client = this.clients.get(playerId);
+        if (client) {
+          const data = {
+            data: {
+              AccountId: playerId,
+              MatchId: "",
+              template_id: "RematchDeclinedNotification",
+            },
+            payload: {
+              frm: {
+                id: "internal-server",
+                type: "server-api-key",
+              },
+              template: "realtime",
+              account_id: playerId,
+              profile_id: playerId,
+            },
+            header: "",
+            cmd: "profile-notification",
+          };
+          client.send(data);
+        }
+      }
     });
   }
 }

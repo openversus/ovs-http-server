@@ -9,7 +9,20 @@ import * as path from "path";
 import { hydraTokenMiddleware } from "./middleware/auth";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
-import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby } from "./config/redis";
+import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby, redisGameServerInstanceReady } from "./config/redis";
+import { getLeaderboard, getPlayerRank } from "./services/eloService";
+import {
+  createLobby,
+  joinLobby,
+  leaveLobby,
+  switchTeam,
+  toggleReady,
+  setMapPool,
+  selectMode,
+  startMatch,
+  getLobbyWithStatus,
+} from "./services/customLobbyService";
+import { getMapList } from "./data/maps";
 import { GAME_SERVER_PORT } from "./game/udp";
 import { sscRouter } from "./ssc/routes";
 import { getCurrentCRC, LoadConfig, MATCHMAKING_CRC } from "./data/config";
@@ -72,6 +85,28 @@ const template = handlebars.compile(source);
 const partyFilePath = path.join(__dirname, "static/party.html");
 const partySource = fs.readFileSync(partyFilePath, "utf8");
 const partyTemplate = handlebars.compile(partySource);
+
+const leaderboardFilePath = path.join(__dirname, "static/leaderboard.html");
+const leaderboardSource = fs.readFileSync(leaderboardFilePath, "utf8");
+const leaderboardTemplate = handlebars.compile(leaderboardSource);
+
+const customLobbyFilePath = path.join(__dirname, "static/custom_lobby.html");
+const customLobbySource = fs.readFileSync(customLobbyFilePath, "utf8");
+const customLobbyTemplate = handlebars.compile(customLobbySource);
+
+const homeFilePath = path.join(__dirname, "static/home.html");
+const homeSource = fs.readFileSync(homeFilePath, "utf8");
+const homeTemplate = handlebars.compile(homeSource);
+
+app.get("/home", async (req, res) => {
+  try {
+    const html = homeTemplate({});
+    res.send(html);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /home: ${e}`);
+    res.status(500).send("Error loading home page");
+  }
+});
 
 app.get("/namechange", async (req, res) => {
   try {
@@ -223,6 +258,12 @@ app.post("/ovs_register", async (req, res, next) => {
     match_duration: 36000,
     players,
   });
+
+  // Now that the rollback server has the match config, tell game clients to connect.
+  // This MUST happen after the response so the rollback server is ready before clients arrive.
+  const playerIds = config.players.map((p) => p.playerId);
+  await redisGameServerInstanceReady(body.matchId, playerIds);
+  logger.info(`${logPrefix} Sent game-server-instance-ready for match ${body.matchId} after rollback server fetched config`);
 });
 
 app.post("/ovs_end_match", async (req, res, next) => {
@@ -261,6 +302,11 @@ app.post("/ovs_end_match", async (req, res, next) => {
       config.players.map((p) => p.playerId),
       config.matchId,
     );
+
+    // ELO is now processed via client-submitted submit_end_of_match_stats (WinningTeamIndex),
+    // not from the rollback server. This allows ephemeral rollback servers (C# rewrite)
+    // that don't need to report match results.
+
     res.send("");
   }
 });
@@ -286,6 +332,11 @@ app.post("/mvsi_register", async (req, res, next) => {
     match_duration: 36000,
     players,
   });
+
+  // Same as /ovs_register — tell game clients to connect after rollback server is ready
+  const playerIds = config.players.map((p) => p.playerId);
+  await redisGameServerInstanceReady(body.matchId, playerIds);
+  logger.info(`${logPrefix} Sent game-server-instance-ready for match ${body.matchId} after rollback server fetched config (legacy)`);
 });
 
 // Being kept for backwards compatibility with older OVS versions, can be removed eventually
@@ -489,6 +540,257 @@ app.post("/party/join", async (req, res) => {
   }
 });
 
+// Password matchmaking removed — use /custom for custom lobbies instead
+
+// ============================================================
+// Leaderboard — Top 100 rankings for 1v1 and 2v2
+// ============================================================
+
+app.get("/leaderboard", async (req, res) => {
+  try {
+    const html = leaderboardTemplate({});
+    res.send(html);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /leaderboard: ${e}`);
+    res.status(500).send("Error loading leaderboard");
+  }
+});
+
+app.get("/api/leaderboard/:mode", async (req, res) => {
+  try {
+    const mode = req.params.mode as "1v1" | "2v2";
+    if (mode !== "1v1" && mode !== "2v2") {
+      res.status(400).json({ error: "Invalid mode. Use '1v1' or '2v2'." });
+      return;
+    }
+
+    const players = await getLeaderboard(mode, 100);
+    res.json({ players });
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /api/leaderboard: ${e}`);
+    res.status(500).json({ error: "Error fetching leaderboard" });
+  }
+});
+
+app.get("/api/leaderboard/:mode/me", async (req, res) => {
+  try {
+    const mode = req.params.mode as "1v1" | "2v2";
+    if (mode !== "1v1" && mode !== "2v2") {
+      res.status(400).json({ error: "Invalid mode. Use '1v1' or '2v2'." });
+      return;
+    }
+    const player = await getPlayerFromReq(req);
+    if (!player) {
+      res.json({ error: "Not connected to game" });
+      return;
+    }
+    const rank = await getPlayerRank(player.id, mode);
+    if (!rank) {
+      res.json({ error: "No ranked games played" });
+      return;
+    }
+    res.json(rank);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /api/leaderboard/me: ${e}`);
+    res.status(500).json({ error: "Error fetching player rank" });
+  }
+});
+
+// ============================================================
+// Custom Lobby — Web-based custom game lobbies
+// ============================================================
+
+// Helper: identify player by IP (same pattern as party page)
+async function getPlayerFromReq(req: any): Promise<{ id: string; username: string; ip: string } | null> {
+  const ip = req.ip!.replace(/^::ffff:/, "");
+  const player = await PlayerTesterModel.findOne({ ip });
+  if (!player) return null;
+  return { id: player.id, username: player.name || "Unknown", ip };
+}
+
+app.get("/custom", async (req, res) => {
+  try {
+    const html = customLobbyTemplate({});
+    res.send(html);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /custom: ${e}`);
+    res.status(500).send("Error loading custom lobby page");
+  }
+});
+
+app.get("/api/custom/whoami", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.json({ error: "Not connected to game" });
+    return;
+  }
+  res.json({ playerId: player.id, username: player.username });
+});
+
+app.post("/api/custom/create", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game. Launch the game first." });
+    return;
+  }
+  const result = await createLobby(player.id, player.username, player.ip);
+  res.json(result);
+});
+
+app.post("/api/custom/join", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game. Launch the game first." });
+    return;
+  }
+  const lobbyCode = req.body?.lobbyCode;
+  if (!lobbyCode) {
+    res.status(400).json({ error: "Lobby code is required." });
+    return;
+  }
+  const result = await joinLobby(lobbyCode, player.id, player.username, player.ip);
+  res.json(result);
+});
+
+app.post("/api/custom/leave", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game." });
+    return;
+  }
+  const result = await leaveLobby(player.id);
+  res.json(result);
+});
+
+app.post("/api/custom/switch-team", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game." });
+    return;
+  }
+  const result = await switchTeam(player.id);
+  res.json(result);
+});
+
+app.post("/api/custom/ready", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game." });
+    return;
+  }
+  const result = await toggleReady(player.id);
+  res.json(result);
+});
+
+app.post("/api/custom/select-map", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game." });
+    return;
+  }
+  const maps = Array.isArray(req.body?.maps) ? req.body.maps : [];
+  const result = await setMapPool(player.id, maps);
+  res.json(result);
+});
+
+app.post("/api/custom/select-mode", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game." });
+    return;
+  }
+  const mode = req.body?.mode;
+  if (mode !== "1v1" && mode !== "2v2") {
+    res.status(400).json({ error: "Invalid mode. Must be '1v1' or '2v2'." });
+    return;
+  }
+  const result = await selectMode(player.id, mode);
+  res.json(result);
+});
+
+app.post("/api/custom/start", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game." });
+    return;
+  }
+  const result = await startMatch(player.id);
+  res.json(result);
+});
+
+app.get("/api/custom/status/:lobbyCode", async (req, res) => {
+  try {
+    const lobbyCode = req.params.lobbyCode.toUpperCase();
+    const status = await getLobbyWithStatus(lobbyCode);
+    if (!status) {
+      res.status(404).json({ error: "Lobby not found." });
+      return;
+    }
+    res.json(status);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /api/custom/status: ${e}`);
+    res.status(500).json({ error: "Error fetching lobby status" });
+  }
+});
+
+app.get("/api/custom/maps/:mode", async (req, res) => {
+  const mode = req.params.mode;
+  const maps = getMapList(mode);
+  res.json({ maps });
+});
+
+// SSE endpoint for live lobby updates
+app.get("/api/custom/events/:lobbyCode", async (req, res) => {
+  const lobbyCode = req.params.lobbyCode.toUpperCase();
+
+  // Set SSE headers
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+  });
+
+  // Create a dedicated Redis subscriber for this connection
+  const sub = redisClient.duplicate();
+  await sub.connect();
+
+  const channelName = `custom_lobby_update:${lobbyCode}`;
+  await sub.subscribe(channelName, (message: string) => {
+    res.write(`event: lobby-update\ndata: ${message}\n\n`);
+  });
+
+  // Send initial state
+  const initialState = await getLobbyWithStatus(lobbyCode);
+  if (initialState) {
+    res.write(`event: lobby-update\ndata: ${JSON.stringify(initialState)}\n\n`);
+  }
+
+  // Heartbeat to keep connection alive
+  const heartbeat = setInterval(() => {
+    res.write(`:heartbeat\n\n`);
+  }, 15000);
+
+  // Periodic connection status refresh (every 5 seconds)
+  const statusRefresh = setInterval(async () => {
+    try {
+      const status = await getLobbyWithStatus(lobbyCode);
+      if (status) {
+        res.write(`event: lobby-update\ndata: ${JSON.stringify(status)}\n\n`);
+      }
+    } catch {
+      // ignore
+    }
+  }, 5000);
+
+  // Cleanup on disconnect
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    clearInterval(statusRefresh);
+    sub.unsubscribe(channelName);
+    sub.quit();
+  });
+});
+
 app.use(hydraDecoderMiddleware);
 app.use(hydraTokenMiddleware);
 
@@ -510,6 +812,21 @@ app.get("/accounts/me/notifications", async (req, res) => {
 app.get("/accounts/me/notifications/bulk", async (req, res) => {
   logger.info(`${logPrefix} GET /accounts/me/notifications/bulk requested`);
   res.send({ notifications: [], total: 0 });
+});
+
+// Game requests gameplay config via HTTP as a fallback — already delivered via WebSocket
+app.get("/ssc/invoke/load_gameplay_config", async (req, res) => {
+  const matchId = req.query.MatchId as string;
+  logger.info(`${logPrefix} GET /ssc/invoke/load_gameplay_config for MatchId=${matchId}`);
+  // Config is already sent via WebSocket (handleSendGamePlayConfig), return empty success
+  res.send({ body: {}, metadata: null, return_code: 200 });
+});
+
+// Game notifies server that a player is leaving a match
+app.put("/matches/:id/leave", async (req, res) => {
+  const matchId = req.params.id;
+  logger.info(`${logPrefix} PUT /matches/${matchId}/leave`);
+  res.send({ body: {}, metadata: null, return_code: 200 });
 });
 
 app.use((req, res, next) => {

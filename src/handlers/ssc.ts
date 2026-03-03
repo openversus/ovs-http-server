@@ -13,6 +13,7 @@ import {
   redisSetPlayerConnectionByIp,
   redisGetPlayerLobby,
   redisGetLobbyState,
+  redisPublishToast,
 } from "../config/redis";
 import {  getCurrentCRC, MATCHMAKING_CRC } from "../data/config";
 import { PerkPagesModel } from "../database/PerkPages";
@@ -25,6 +26,8 @@ import * as AuthUtils from "../utils/auth";
 import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import * as KitchenSink from "../utils/garbagecan";
+import { processMatchResult } from "../services/eloService";
+import { handleRematchDecline, handleRematchAccept } from "../services/customLobbyService";
 
 const serviceName = "Handlers.SSC";
 const logPrefix = `[${serviceName}]:`;
@@ -58080,7 +58083,33 @@ export async function handleSsc_invoke_ranked_data(req: Request<{}, {}, {}, {}>,
   });
 }
 
-export async function handleSsc_invoke_rematch_decline(req: Request<{}, {}, {}, {}>, res: Response) {
+export async function handleSsc_invoke_rematch_decline(req: Request<{}, {}, any, {}>, res: Response) {
+  const account = AuthUtils.DecodeClientToken(req);
+  const playerId = account?.id || (req as any).token?.id;
+
+  if (playerId) {
+    logger.info(`${logPrefix} Player ${playerId} declined rematch`);
+    const result = await handleRematchDecline(playerId);
+
+    if (result.playerIds && result.playerIds.length > 0) {
+      // Publish so WebSocket sends RematchDeclinedNotification to all players in the lobby
+      logger.info(`${logPrefix} Cancelling rematch for all players in lobby ${result.lobbyCode}`);
+      await redisClient.publish("custom_lobby_rematch_decline", JSON.stringify({ playerIds: result.playerIds }));
+    }
+  }
+
+  res.send({ body: [], metadata: null, return_code: 0 });
+}
+
+export async function handleSsc_invoke_rematch_accept(req: Request<{}, {}, any, {}>, res: Response) {
+  const account = AuthUtils.DecodeClientToken(req);
+  const playerId = account?.id || (req as any).token?.id;
+
+  if (playerId) {
+    logger.info(`${logPrefix} Player ${playerId} accepted rematch`);
+    await handleRematchAccept(playerId);
+  }
+
   res.send({ body: [], metadata: null, return_code: 0 });
 }
 
@@ -58116,27 +58145,51 @@ export async function handleSsc_invoke_set_ready_for_lobby(req: Request<{}, {}, 
   });
 }
 
-export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}, {}, {}, {}>, res: Response) {
-  logger.info(`${logPrefix} Received end of match stats ${BE_VERBOSE ? ", body:" : ""}`);
-  if (req.body)
-  {
-    KitchenSink.TryInspectVerbose(req.body);
+export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}, {}, any, {}>, res: Response) {
+  const matchId = req.body?.ContainerMatchId;
+  const winningTeamIndex = req.body?.EndOfMatchStats?.WinningTeamIndex;
+
+  logger.info(`${logPrefix} Received end of match stats for match ${matchId}, WinningTeamIndex: ${winningTeamIndex}`);
+  logwrapper.verbose(`${logPrefix} End of match stats payload: ${JSON.stringify(req.body)}`);
+
+  // Process ELO from client-submitted stats (dedup: only first submission per match)
+  if (matchId && typeof winningTeamIndex === "number" && (winningTeamIndex === 0 || winningTeamIndex === 1)) {
+    const dedupeKey = `elo_processed:${matchId}`;
+    const alreadyProcessed = await redisClient.set(dedupeKey, "1", { NX: true, EX: 300 });
+    if (alreadyProcessed === "OK") {
+      logger.info(`${logPrefix} Processing ELO from client stats for match ${matchId}: team ${winningTeamIndex} won`);
+      try {
+        await processMatchResult(matchId, winningTeamIndex);
+      } catch (e) {
+        logger.error(`${logPrefix} Error processing ELO from client stats: ${e}`);
+      }
+    } else {
+      logger.info(`${logPrefix} ELO already processed for match ${matchId}, skipping duplicate`);
+    }
   }
+
   res.send({ body: {}, metadata: null, return_code: 0 });
 }
 
 export async function handleSsc_invoke_toast_player(req: Request<{}, {}, {}, {}>, res: Response) {
-  logger.info(`${logPrefix} Received toast player request ${BE_VERBOSE ? ", headers:" : ""}`);
-  if (req.headers)
-  {
-    KitchenSink.TryInspectVerbose(req.headers);
+  logger.info(`${logPrefix} Received toast player request`);
+  logwrapper.verbose(`${logPrefix} Toast player body: ${JSON.stringify(req.body)}`);
+
+  const account = AuthUtils.DecodeClientToken(req);
+  const body = req.body as { ContainerMatchId?: string; ToasteeId?: string };
+
+  if (account && body?.ContainerMatchId && body?.ToasteeId) {
+    await redisPublishToast({
+      toasterAccountId: account.id,
+      toasterUsername: account.username,
+      toasteeAccountId: body.ToasteeId,
+      containerMatchId: body.ContainerMatchId,
+    });
+    logger.info(`${logPrefix} Toast published: ${account.username} (${account.id}) toasted ${body.ToasteeId} in match ${body.ContainerMatchId}`);
+  } else {
+    logger.warn(`${logPrefix} Toast request missing required fields — account: ${!!account}, ContainerMatchId: ${body?.ContainerMatchId}, ToasteeId: ${body?.ToasteeId}`);
   }
 
-  logger.info(`${logPrefix} Received toast player request ${BE_VERBOSE ? ", body:" : ""}`);
-  if (req.body)
-  {
-    KitchenSink.TryInspectVerbose(req.body);
-  }
   res.send({ body: {}, metadata: null, return_code: 0 });
 }
 export interface Ssc_invoke_set_ready_for_lobby_REQUEST {

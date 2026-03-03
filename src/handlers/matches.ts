@@ -12,6 +12,8 @@ import {
   RedisPlayerJoinedLobbyNotification,
   redisGetLobbyRedirect,
   redisGetPlayerLobby,
+  redisAcquireMatchmakingLock,
+  redisReleaseMatchmakingLock,
 } from "../config/redis";
 import { Cosmetics, CosmeticsModel, TauntSlotsClass } from "../database/Cosmetics";
 import { getEquippedCosmetics } from "../services/cosmeticsService";
@@ -410,6 +412,15 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
 
   // If the player's lobby has 2+ players, force 2v2 instead of 1v1
   const preCheckAccount = AuthUtils.DecodeClientToken(req);
+
+  // Atomic duplicate matchmaking guard — prevents duplicate tickets from rapid client requests
+  const lockAcquired = await redisAcquireMatchmakingLock(preCheckAccount.id);
+  if (!lockAcquired) {
+    logger.warn(`${logPrefix} Duplicate matchmaking request blocked for player ${preCheckAccount.id}`);
+    res.status(409).send({ error: "matchmaking_already_queued" });
+    return;
+  }
+
   const preCheckLobbyId = await redisGetPlayerLobby(preCheckAccount.id);
   if (preCheckLobbyId) {
     const preCheckLobby = await redisGetLobbyState(preCheckLobbyId);
@@ -453,6 +464,8 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
   let playerLoadout = await redisGetPlayer(aID);
   if (!playerLoadout || !playerLoadout.character || !playerLoadout.skin) {
     logger.error(`${logPrefix} No Redis player loadout found for player ID ${aID}, cannot matchmake.`);
+    await redisReleaseMatchmakingLock(aID);
+    res.status(500).send({ error: "player_loadout_not_found" });
     return;
   }
 
@@ -553,16 +566,24 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   // const account = req.token;
 
   logger.info("Received 2v2 retail matchmaking request");
-  
+
+  // Should really extract this code out into a helper function since it's repeated in both 1v1 and 2v2 handlers, but
+  // for now I'm just going to be lazy and copy/paste it
+  const account = AuthUtils.DecodeClientToken(req);
+
+  // Atomic duplicate matchmaking guard — prevents duplicate tickets from rapid client requests
+  const lockAcquired = await redisAcquireMatchmakingLock(account.id);
+  if (!lockAcquired) {
+    logger.warn(`${logPrefix} Duplicate matchmaking request blocked for player ${account.id}`);
+    res.status(409).send({ error: "matchmaking_already_queued" });
+    return;
+  }
+
   if (BE_VERBOSE) {
     logger.info(`${logPrefix} Request is: \n`)
     KitchenSink.TryInspectRequestVerbose(req);
   }
 
-  // Should really extract this code out into a helper function since it's repeated in both 1v1 and 2v2 handlers, but
-  // for now I'm just going to be lazy and copy/paste it
-  const account = AuthUtils.DecodeClientToken(req);
-  
   let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${account.id}`) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
     logger.error(`${logPrefix} No Redis player connection found for player ID ${account.id}, this should not happen.`);
@@ -590,6 +611,8 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   let playerLoadout = await redisGetPlayer(aID);
   if (!playerLoadout || !playerLoadout.character || !playerLoadout.skin) {
     logger.error(`${logPrefix} No Redis player loadout found for player ID ${aID}, cannot matchmake.`);
+    await redisReleaseMatchmakingLock(aID);
+    res.status(500).send({ error: "player_loadout_not_found" });
     return;
   }
 
@@ -600,6 +623,29 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   const lobbyId = await redisGetPlayerLobby(aID);
   const lobbyState = lobbyId ? await redisGetLobbyState(lobbyId) : null;
   const allPlayerIds = lobbyState ? lobbyState.playerIds : [aID];
+
+  // DIAGNOSTIC: Log exactly what happened with lobby lookup so we can trace party drops
+  if (!lobbyId) {
+    logger.warn(
+      `${logPrefix} PARTY-DIAG: Player ${aID} (${playerUsername}) queued 2v2 but has NO player_lobby key — ` +
+      `falling back to SOLO queue. This means Redis lost the player_lobby mapping.`,
+    );
+  } else if (!lobbyState) {
+    logger.warn(
+      `${logPrefix} PARTY-DIAG: Player ${aID} (${playerUsername}) has player_lobby=${lobbyId} but lobby state is NULL — ` +
+      `the lobby: key was deleted while player_lobby: still exists. Falling back to SOLO queue.`,
+    );
+  } else if (lobbyState.playerIds.length === 1) {
+    logger.info(
+      `${logPrefix} PARTY-DIAG: Player ${aID} (${playerUsername}) is in lobby ${lobbyId} but ALONE (only player). ` +
+      `This is normal for solo queue.`,
+    );
+  } else {
+    logger.info(
+      `${logPrefix} PARTY-DIAG: Player ${aID} (${playerUsername}) is in lobby ${lobbyId} with full party: [${allPlayerIds.join(", ")}]. ` +
+      `Party intact, queuing as team.`,
+    );
+  }
 
   logger.info(`${logPrefix} 2v2 matchmaking: lobby ${lobbyId}, all players: ${allPlayerIds.join(", ")}`);
 
@@ -718,10 +764,15 @@ export async function handle_cancel_matchmaking(req: Request<{ id: string }, {},
   const account = AuthUtils.DecodeClientToken(req);
   const aID = account.id;
 
-  // Cancel matchmaking for ALL players in the lobby, not just the requester
+  // Release matchmaking lock for all lobby players
   const lobbyId = await redisGetPlayerLobby(aID);
   const lobbyState = lobbyId ? await redisGetLobbyState(lobbyId) : null;
   const allPlayerIds = lobbyState ? lobbyState.playerIds : [aID];
+
+  // Release locks for all players
+  for (const pid of allPlayerIds) {
+    await redisReleaseMatchmakingLock(pid);
+  }
 
   await cancelMatchmakingForAll(allPlayerIds, req.params.id);
 

@@ -1,7 +1,7 @@
 import ObjectID from "bson-objectid";
 import redis, { createClient } from "redis";
 import type { RedisClientType } from "redis";
-import { logger, logwrapper } from "./logger";
+import { logger } from "./logger";
 import env from "../env/env";
 import { cancelMatchmaking, MATCH_TYPES } from "../services/matchmakingService";
 import { Cosmetics } from "../database/Cosmetics";
@@ -80,6 +80,7 @@ export interface RedisMatchTicket {
   created_at: number;
   partyId: string;
   matchmakingRequestId: string;
+  isPasswordMatch?: boolean;
 }
 
 export interface RedisMatch {
@@ -91,6 +92,7 @@ export interface RedisMatch {
   matchType: string;
   totalPlayers: number;
   rollbackPort: number;
+  isPasswordMatch?: boolean;
 }
 
 export interface RedisTeamEntry {
@@ -486,11 +488,6 @@ export async function redisDeleteKeysByPattern(prefix: string, pattern: string):
 export async function redisDeletePlayerKeys(playerId: string): Promise<void> {
   await redisDeleteKeysByPattern("player", `${playerId}`);
   await redisDeleteKeysByPattern(`connections`, `${playerId}`);
-  const partyKey = await redisClient.get(`connections:${playerId}:party_key`);
-  if (partyKey) {
-    logwrapper.verbose(`${logPrefix} Deleting Redis party keyfor player ${playerId}`);
-    await redisDeletePartyKey(partyKey);
-  }
 }
 
 export async function redisDeleteConnectionKeysByIp(ip: string): Promise<void> {
@@ -522,6 +519,7 @@ export async function redisGetOnlinePlayers(): Promise<string[]> {
 // --- Party Invites ---
 
 export const PARTY_INVITE_CHANNEL = "party:invite";
+export const TOAST_RECEIVED_CHANNEL = "toast:received";
 
 export interface RedisPartyInviteNotification {
   inviterAccountId: string;
@@ -534,6 +532,20 @@ export interface RedisPartyInviteNotification {
 export async function redisPublishPartyInvite(notification: RedisPartyInviteNotification): Promise<void> {
   await redisClient.publish(PARTY_INVITE_CHANNEL, JSON.stringify(notification));
   logger.info(`${logPrefix} Published party invite from ${notification.inviterAccountId} to ${notification.invitedAccountId} for match ${notification.matchId}`);
+}
+
+// --- Toast Notifications ---
+
+export interface RedisToastNotification {
+  toasterAccountId: string;
+  toasterUsername: string;
+  toasteeAccountId: string;
+  containerMatchId: string;
+}
+
+export async function redisPublishToast(notification: RedisToastNotification): Promise<void> {
+  await redisClient.publish(TOAST_RECEIVED_CHANNEL, JSON.stringify(notification));
+  logger.info(`${logPrefix} Published toast from ${notification.toasterAccountId} (${notification.toasterUsername}) to ${notification.toasteeAccountId} for match ${notification.containerMatchId}`);
 }
 
 // --- Lobby State ---
@@ -688,3 +700,24 @@ export async function redisUpdatePartyKeyLobby(key: string, lobbyId: string): Pr
     logger.info(`${logPrefix} Updated party key "${key}" lobbyId to ${lobbyId}`);
   }
 }
+
+// --- Matchmaking Lock (atomic duplicate request guard) ---
+
+/**
+ * Attempts to acquire a matchmaking lock for a player.
+ * Uses SET NX (set-if-not-exists) for atomic operation.
+ * Returns true if lock was acquired, false if already locked (duplicate request).
+ */
+export async function redisAcquireMatchmakingLock(accountId: string): Promise<boolean> {
+  const result = await redisClient.set(`matchmaking_lock:${accountId}`, "1", { NX: true, EX: 30 });
+  return result === "OK";
+}
+
+/**
+ * Releases the matchmaking lock for a player.
+ * Called when matchmaking is cancelled or match ends.
+ */
+export async function redisReleaseMatchmakingLock(accountId: string): Promise<void> {
+  await redisClient.del(`matchmaking_lock:${accountId}`);
+}
+

@@ -371,6 +371,11 @@ router.put("/ssc/invoke/rematch_decline", (req: Request<{}, {}, {}, {}>, res: Re
   h.handleSsc_invoke_rematch_decline(req, res);
 });
 
+router.put("/ssc/invoke/rematch_accept", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  // @ts-ignore TODO : implementation. Remove comment once implemented`
+  h.handleSsc_invoke_rematch_accept(req, res);
+});
+
 router.put("/ssc/invoke/set_lobby_joinable", (req: Request<{}, {}, {}, {}>, res: Response) => {
   // @ts-ignore TODO : implementation. Remove comment once implemented`
   h.handleSsc_invoke_set_lobby_joinable(req, res);

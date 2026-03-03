@@ -183,6 +183,16 @@
           white-space: normal;
       }
       .divider { border: none; border-top: 2px solid rgba(0,0,0,0.08); margin: 4px 0; }
+      .back-btn {
+          display: inline-flex; align-items: center; gap: 6px;
+          text-decoration: none; color: var(--mv-blue);
+          font-family: Helvetica, Arial, sans-serif;
+          font-weight: 800; font-size: 13px;
+          text-transform: uppercase; letter-spacing: 0.06em;
+          padding: 8px 0; transition: opacity 0.15s;
+      }
+      .back-btn:hover { opacity: 0.7; }
+      .back-btn svg { width: 16px; height: 16px; }
       .halfSecond { animation-delay: 0.5s; }
       @media (max-width: 760px) {
           .top { grid-template-columns: 1fr; justify-items: center; text-align: center; }
@@ -199,6 +209,7 @@
 <div class="main_wrapper">
   <section class="main_container animate__animated animate__fadeIn">
     <div class="content">
+      <a href="/home" class="back-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back to Home</a>
       <div class="top">
         <img src="/images/OpenVersus_logo.png" class="logo" alt="OpenVersus Logo"/>
         <div>
@@ -264,6 +275,7 @@
           <div class="mv-tip">Enter the party key of the player you want to join. Both players must be in-game.</div>
         </div>
       </div>
+
 
     </div>
   </section>

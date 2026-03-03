@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpenVersus - Home</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fugaz+One&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+  <style>
+    :root {
+      --mv-blue: #1f6feb;
+      --mv-blue-dark: #0040a5;
+      --mv-orange: #ff7500;
+      --mv-orange-dark: #ff4d00;
+      --ink: #343434;
+      --card: rgba(255, 255, 255, 0.92);
+      --card2: rgba(255, 255, 255, 0.85);
+      --shadow: rgba(0, 0, 0, 0.28) 0px 19px 38px, rgba(0, 0, 0, 0.20) 0px 15px 12px;
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: "Fugaz One", Arial, sans-serif;
+      overflow-x: hidden;
+      color: var(--ink);
+      background: #000;
+    }
+    .background {
+      position: fixed; inset: 0; z-index: -2;
+      background-image: url("/images/name_change_background.jpeg");
+      background-size: cover; background-position: center; background-repeat: no-repeat;
+      transform: scale(1.03);
+    }
+    .background::after {
+      content: ""; position: absolute; inset: 0;
+      backdrop-filter: blur(6px);
+      background: rgba(10, 12, 20, 0.20);
+    }
+    .main_wrapper {
+      min-height: 100%;
+      display: grid; place-items: center;
+      padding: 24px 14px;
+    }
+    .main_container {
+      width: min(700px, 100%);
+      background: linear-gradient(180deg, var(--card), var(--card2));
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 30px;
+      position: relative; overflow: hidden;
+    }
+    .main_container::before {
+      content: ""; position: absolute; inset: -60px;
+      background: linear-gradient(115deg,
+        transparent 0%, transparent 45%,
+        rgba(255, 117, 0, 0.10) 45%, rgba(255, 117, 0, 0.10) 52%,
+        transparent 52%, transparent 100%),
+        linear-gradient(115deg,
+        transparent 0%, transparent 62%,
+        rgba(31, 111, 235, 0.10) 62%, rgba(31, 111, 235, 0.10) 69%,
+        transparent 69%, transparent 100%);
+      pointer-events: none; opacity: 0.85;
+    }
+    .content { position: relative; display: grid; gap: 22px; }
+    .top {
+      display: grid; grid-template-columns: 170px 1fr;
+      gap: 18px; align-items: center;
+    }
+    .logo {
+      width: 100%; max-width: 170px;
+      border-radius: 14px; display: block;
+      box-shadow: 0 10px 0 rgba(0, 0, 0, 0.10);
+    }
+    .panelTitle {
+      margin: 0;
+      font-size: clamp(1.6rem, 4vw, 2.2rem);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--mv-blue);
+    }
+    .panelSubtitle {
+      margin: 4px 0 0;
+      font-size: 0.9rem;
+      font-weight: normal;
+      font-family: Arial, sans-serif;
+      color: #666;
+    }
+    .links-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .link-card {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      background: rgba(255,255,255,0.6);
+      border-radius: 12px;
+      padding: 24px 20px;
+      border: 2px solid rgba(0,0,0,0.06);
+      transition: transform 0.15s, border-color 0.2s, box-shadow 0.2s;
+      text-align: center;
+    }
+    .link-card:hover {
+      transform: scale(1.03);
+      border-color: var(--mv-blue);
+      box-shadow: 0 8px 24px rgba(31, 111, 235, 0.15);
+    }
+    .link-card h3 {
+      margin: 0 0 8px;
+      font-size: 1.2rem;
+      color: var(--mv-blue);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .link-card p {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      font-size: 0.82rem;
+      color: #666;
+      line-height: 1.4;
+    }
+    .link-card.orange:hover {
+      border-color: var(--mv-orange);
+      box-shadow: 0 8px 24px rgba(255, 117, 0, 0.15);
+    }
+    .link-card.orange h3 { color: var(--mv-orange); }
+
+    @media (max-width: 500px) {
+      .top { grid-template-columns: 100px 1fr; }
+      .logo { max-width: 100px; }
+      .links-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="background"></div>
+  <div class="main_wrapper">
+    <div class="main_container animate__animated animate__fadeIn">
+      <div class="content">
+        <div class="top">
+          <img class="logo" src="/images/OpenVersus_logo.png" alt="OpenVersus"/>
+          <div>
+            <h1 class="panelTitle">OpenVersus</h1>
+            <p class="panelSubtitle">Server tools and utilities</p>
+          </div>
+        </div>
+
+        <div class="links-grid">
+          <a href="/custom" class="link-card orange">
+            <h3>Custom Lobby</h3>
+            <p>Create or join a custom match with friends using a lobby code.</p>
+          </a>
+          <a href="/party" class="link-card">
+            <h3>Party</h3>
+            <p>View your current party and manage party members.</p>
+          </a>
+          <a href="/namechange" class="link-card">
+            <h3>Name Change</h3>
+            <p>Change your in-game display name.</p>
+          </a>
+          <a href="/leaderboard" class="link-card orange">
+            <h3>Leaderboard</h3>
+            <p>View ELO rankings for 1v1 and 2v2.</p>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

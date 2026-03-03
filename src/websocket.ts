@@ -259,7 +259,7 @@ export class WebSocketService {
       this.pendingRejoin.delete(playerWS.account.id);
     }
 
-    await redisAddOnlinePlayer(playerWS.account.id);
+    redisAddOnlinePlayer(playerWS.account.id).catch((err) => logger.error(`${logPrefix} Error adding online player: ${err}`));
     logger.info(
       `[${serviceName}]: Player ${playerWS.account.id} with IP ${playerWS.ip} and name ${playerWS.account.username} connected to websocket`,
     );

@@ -58175,19 +58175,19 @@ export async function handleSsc_invoke_toast_player(req: Request<{}, {}, {}, {}>
   logger.info(`${logPrefix} Received toast player request`);
   logwrapper.verbose(`${logPrefix} Toast player body: ${JSON.stringify(req.body)}`);
 
-  const token = (req as any).token;
+  const account = AuthUtils.DecodeClientToken(req);
   const body = req.body as { ContainerMatchId?: string; ToasteeId?: string };
 
-  if (token && body?.ContainerMatchId && body?.ToasteeId) {
+  if (account && body?.ContainerMatchId && body?.ToasteeId) {
     await redisPublishToast({
-      toasterAccountId: token.id,
-      toasterUsername: token.username,
+      toasterAccountId: account.id,
+      toasterUsername: account.username,
       toasteeAccountId: body.ToasteeId,
       containerMatchId: body.ContainerMatchId,
     });
-    logger.info(`${logPrefix} Toast published: ${token.username} (${token.id}) toasted ${body.ToasteeId} in match ${body.ContainerMatchId}`);
+    logger.info(`${logPrefix} Toast published: ${account.username} (${account.id}) toasted ${body.ToasteeId} in match ${body.ContainerMatchId}`);
   } else {
-    logger.warn(`${logPrefix} Toast request missing required fields — token: ${!!token}, ContainerMatchId: ${body?.ContainerMatchId}, ToasteeId: ${body?.ToasteeId}`);
+    logger.warn(`${logPrefix} Toast request missing required fields — account: ${!!account}, ContainerMatchId: ${body?.ContainerMatchId}, ToasteeId: ${body?.ToasteeId}`);
   }
 
   res.send({ body: {}, metadata: null, return_code: 0 });

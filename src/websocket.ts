@@ -61,6 +61,7 @@ import {
   redisGetMatchTickets,
   TOAST_RECEIVED_CHANNEL,
   RedisToastNotification,
+  redisGetMatchConfig,
 } from "./config/redis";
 import { Server } from "https";
 import { Server as HttpServer } from "http";
@@ -1068,6 +1069,26 @@ export class WebSocketService {
           `[${serviceName}]: Sent all perks lock to player ${playerId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`,
         );
       }
+    }
+
+    // Also send PerksLockedNotification to spectators — they need it to transition past the countdown
+    try {
+      const matchConfig = await redisGetMatchConfig(notification.containerMatchId);
+      if (matchConfig) {
+        const spectatorIds = matchConfig.players.filter((p) => p.isSpectator).map((p) => p.playerId);
+        for (const spectatorId of spectatorIds) {
+          const client = this.clients.get(spectatorId);
+          if (client && client.matchConfig) {
+            client.matchConfig.data.template_id = "PerksLockedNotification";
+            client.send(client.matchConfig);
+            logger.info(
+              `[${serviceName}]: Sent all perks lock to spectator ${spectatorId} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} for match ${notification.containerMatchId}`,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      logger.error(`[${serviceName}]: Error sending perks lock to spectators for match ${notification.containerMatchId}: ${e}`);
     }
   }
 

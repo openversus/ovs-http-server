@@ -248,17 +248,17 @@ app.post("/ovs_register", async (req, res, next) => {
     res.send("");
     return;
   }
-  // Only send active players (not spectators) to the rollback server
-  const activePlayers = config.players.filter((p) => !p.isSpectator);
-  const players = activePlayers.map((p) => {
+  // Send all players (including spectators) to the rollback server so spectators can connect
+  const players = config.players.map((p) => {
     return {
       player_index: p.playerIndex,
       ip: p.ip,
       is_host: p.isHost,
+      is_spectator: p.isSpectator ?? false,
     };
   });
   res.json({
-    max_players: activePlayers.length,
+    max_players: config.players.length,
     match_duration: 36000,
     players,
   });

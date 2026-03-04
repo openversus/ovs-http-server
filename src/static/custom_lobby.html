@@ -364,6 +364,20 @@
       cursor: not-allowed;
     }
 
+    /* Spectator section */
+    .spectator-section {
+      background: rgba(255,255,255,0.5);
+      border-radius: 10px;
+      padding: 14px;
+      border: 2px solid rgba(128,128,128,0.3);
+    }
+    .spectator-title {
+      font-size: 1rem;
+      margin: 0 0 10px;
+      text-align: center;
+      color: #666;
+    }
+
     .back-btn {
       display: inline-flex; align-items: center; gap: 6px;
       text-decoration: none; color: var(--mv-blue);
@@ -460,10 +474,17 @@
             </div>
           </div>
 
+          <!-- Spectator -->
+          <div class="spectator-section">
+            <h3 class="spectator-title">Spectator</h3>
+            <div id="spectator-players"></div>
+          </div>
+
           <!-- Actions -->
           <div class="lobby-actions">
             <button class="btn btn-green" id="ready-btn" onclick="toggleReady()">Ready Up</button>
             <button class="btn btn-blue" id="switch-btn" onclick="switchTeam()">Switch Team</button>
+            <button class="btn btn-blue btn-sm" id="spectate-btn" onclick="toggleSpectate()">Spectate</button>
             <button class="btn btn-orange" id="start-btn" onclick="startMatch()" disabled>Start Match</button>
             <button class="btn btn-red btn-sm" onclick="leaveLobby()">Leave</button>
           </div>
@@ -713,10 +734,14 @@
       hint.textContent = poolSize + ' map' + (poolSize > 1 ? 's' : '') + ' selected';
     }
 
-    // Render teams
+    // Split players from spectators
+    const gamePlayers = lobbyState.players.filter(p => !p.isSpectator);
+    const spectators = lobbyState.players.filter(p => p.isSpectator);
+
+    // Render teams (only non-spectators)
     for (let t = 0; t < 2; t++) {
       const container = document.getElementById('team-' + t + '-players');
-      const teamPlayers = lobbyState.players.filter(p => p.teamIndex === t);
+      const teamPlayers = gamePlayers.filter(p => p.teamIndex === t);
       let html = '';
 
       for (const p of teamPlayers) {
@@ -746,21 +771,63 @@
       container.innerHTML = html;
     }
 
-    // Ready button
-    const readyBtn = document.getElementById('ready-btn');
-    if (me) {
-      readyBtn.textContent = me.ready ? 'Unready' : 'Ready Up';
-      readyBtn.className = 'btn ' + (me.ready ? 'btn-red' : 'btn-green');
+    // Render spectator section
+    const specContainer = document.getElementById('spectator-players');
+    if (spectators.length > 0) {
+      let specHtml = '';
+      for (const p of spectators) {
+        const isMe = p.playerId === myPlayerId;
+        const connClass = p.connected ? 'online' : 'offline';
+        specHtml += '<div class="player-card' + (isMe ? ' is-me' : '') + '">';
+        specHtml += '  <div class="connection-dot ' + connClass + '"></div>';
+        specHtml += '  <div class="player-info">';
+        specHtml += '    <div class="player-name">' + escapeHtml(p.username) + '</div>';
+        specHtml += '  </div>';
+        specHtml += '  <span class="ready-badge" style="background:#f0f0f0;color:#888;">SPECTATING</span>';
+        specHtml += '</div>';
+      }
+      specContainer.innerHTML = specHtml;
+    } else {
+      specContainer.innerHTML = '<div class="empty-slot">No spectator</div>';
     }
 
-    // Start button (leader only)
+    // Ready button — hide if spectating
+    const readyBtn = document.getElementById('ready-btn');
+    const meIsSpectator = me && me.isSpectator;
+    if (me && !meIsSpectator) {
+      readyBtn.textContent = me.ready ? 'Unready' : 'Ready Up';
+      readyBtn.className = 'btn ' + (me.ready ? 'btn-red' : 'btn-green');
+      readyBtn.classList.remove('hidden');
+    } else {
+      readyBtn.classList.add('hidden');
+    }
+
+    // Switch team button — hide if spectating
+    const switchBtn = document.getElementById('switch-btn');
+    if (meIsSpectator) {
+      switchBtn.classList.add('hidden');
+    } else {
+      switchBtn.classList.remove('hidden');
+    }
+
+    // Spectate button
+    const spectateBtn = document.getElementById('spectate-btn');
+    if (meIsSpectator) {
+      spectateBtn.textContent = 'Join Game';
+      spectateBtn.className = 'btn btn-green btn-sm';
+    } else {
+      spectateBtn.textContent = 'Spectate';
+      spectateBtn.className = 'btn btn-blue btn-sm';
+    }
+
+    // Start button (leader only) — only check game players, not spectators
     const startBtn = document.getElementById('start-btn');
     if (isLeader) {
       startBtn.classList.remove('hidden');
-      const allReady = lobbyState.players.every(p => p.ready);
-      const allConnected = lobbyState.players.every(p => p.connected);
-      const team0Count = lobbyState.players.filter(p => p.teamIndex === 0).length;
-      const team1Count = lobbyState.players.filter(p => p.teamIndex === 1).length;
+      const allReady = gamePlayers.every(p => p.ready);
+      const allConnected = lobbyState.players.every(p => p.connected); // all must be connected
+      const team0Count = gamePlayers.filter(p => p.teamIndex === 0).length;
+      const team1Count = gamePlayers.filter(p => p.teamIndex === 1).length;
       const teamsValid = team0Count === playersPerTeam && team1Count === playersPerTeam;
       startBtn.disabled = !(allReady && allConnected && teamsValid);
     } else {
@@ -808,6 +875,14 @@
   async function switchTeam() {
     hideStatus('lobby-status');
     const result = await api('POST', '/api/custom/switch-team');
+    if (result.error) showStatus('lobby-status', result.error, 'error');
+  }
+
+  async function toggleSpectate() {
+    hideStatus('lobby-status');
+    const me = lobbyState && lobbyState.players.find(p => p.playerId === myPlayerId);
+    const endpoint = me && me.isSpectator ? '/api/custom/unspectate' : '/api/custom/spectate';
+    const result = await api('POST', endpoint);
     if (result.error) showStatus('lobby-status', result.error, 'error');
   }
 

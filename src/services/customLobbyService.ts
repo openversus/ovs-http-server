@@ -25,6 +25,7 @@ export interface CustomLobbyPlayer {
   ip: string;
   ready: boolean;
   teamIndex: number; // 0 or 1
+  isSpectator?: boolean;
 }
 
 export interface RedisCustomLobby {
@@ -43,6 +44,7 @@ export interface CustomLobbyPlayerStatus {
   username: string;
   ready: boolean;
   teamIndex: number;
+  isSpectator: boolean;
   connected: boolean;     // game client connected via WebSocket
   character: string;      // current character slug from in-game
   skin: string;           // current skin slug from in-game
@@ -196,16 +198,22 @@ export async function joinLobby(
     return { success: true };
   }
 
-  // Check max players for mode
+  // Max = team players + 1 spectator slot
   const maxPlayers = lobby.mode === "1v1" ? 2 : 4;
-  if (lobby.players.length >= maxPlayers) {
-    return { error: `Lobby is full (${maxPlayers} players max for ${lobby.mode}).` };
+  const maxTotal = maxPlayers + 1; // +1 for spectator
+  if (lobby.players.length >= maxTotal) {
+    return { error: `Lobby is full.` };
   }
 
-  // Assign to team with fewer players
-  const team0Count = lobby.players.filter((p) => p.teamIndex === 0).length;
-  const team1Count = lobby.players.filter((p) => p.teamIndex === 1).length;
-  const teamIndex = team0Count <= team1Count ? 0 : 1;
+  // Assign to team with fewer active (non-spectator) players
+  const activePlayers = lobby.players.filter((p) => !p.isSpectator);
+  const team0Count = activePlayers.filter((p) => p.teamIndex === 0).length;
+  const team1Count = activePlayers.filter((p) => p.teamIndex === 1).length;
+
+  // If both teams are full, join as spectator
+  const playersPerTeam = lobby.mode === "1v1" ? 1 : 2;
+  const teamsFull = team0Count >= playersPerTeam && team1Count >= playersPerTeam;
+  const teamIndex = teamsFull ? 0 : (team0Count <= team1Count ? 0 : 1);
 
   lobby.players.push({
     playerId,
@@ -213,6 +221,7 @@ export async function joinLobby(
     ip,
     ready: false,
     teamIndex,
+    isSpectator: teamsFull,
   });
 
   await saveLobby(lobby);
@@ -276,11 +285,13 @@ export async function switchTeam(
   const player = lobby.players.find((p) => p.playerId === playerId);
   if (!player) return { error: "Not in this lobby." };
 
+  if (player.isSpectator) return { error: "Spectators can't switch teams. Join the game first." };
+
   const newTeam = player.teamIndex === 0 ? 1 : 0;
 
-  // Check if target team is full
+  // Check if target team is full (only count non-spectators)
   const playersPerTeam = lobby.mode === "1v1" ? 1 : 2;
-  const targetTeamCount = lobby.players.filter((p) => p.teamIndex === newTeam).length;
+  const targetTeamCount = lobby.players.filter((p) => !p.isSpectator && p.teamIndex === newTeam).length;
   if (targetTeamCount >= playersPerTeam) {
     return { error: `Team ${newTeam + 1} is full.` };
   }
@@ -291,6 +302,71 @@ export async function switchTeam(
   await saveLobby(lobby);
   await publishUpdate(code);
 
+  return { success: true };
+}
+
+export async function moveToSpectator(
+  playerId: string,
+): Promise<{ success: boolean } | { error: string }> {
+  const code = await getPlayerLobby(playerId);
+  if (!code) return { error: "Not in a lobby." };
+
+  const lobby = await getLobby(code);
+  if (!lobby) return { error: "Lobby not found." };
+
+  const player = lobby.players.find((p) => p.playerId === playerId);
+  if (!player) return { error: "Not in this lobby." };
+
+  if (player.isSpectator) return { error: "Already spectating." };
+
+  // Only 1 spectator allowed
+  const currentSpectators = lobby.players.filter((p) => p.isSpectator);
+  if (currentSpectators.length >= 1) {
+    return { error: "Spectator slot is full (max 1)." };
+  }
+
+  player.isSpectator = true;
+  player.ready = false;
+
+  await saveLobby(lobby);
+  await publishUpdate(code);
+
+  logger.info(`${logPrefix} ${player.username} (${playerId}) moved to spectator in lobby ${code}`);
+  return { success: true };
+}
+
+export async function moveToPlayer(
+  playerId: string,
+): Promise<{ success: boolean } | { error: string }> {
+  const code = await getPlayerLobby(playerId);
+  if (!code) return { error: "Not in a lobby." };
+
+  const lobby = await getLobby(code);
+  if (!lobby) return { error: "Lobby not found." };
+
+  const player = lobby.players.find((p) => p.playerId === playerId);
+  if (!player) return { error: "Not in this lobby." };
+
+  if (!player.isSpectator) return { error: "Not spectating." };
+
+  // Check if teams have room
+  const activePlayers = lobby.players.filter((p) => !p.isSpectator);
+  const maxPlayers = lobby.mode === "1v1" ? 2 : 4;
+  if (activePlayers.length >= maxPlayers) {
+    return { error: `Teams are full (${maxPlayers} players max for ${lobby.mode}).` };
+  }
+
+  // Assign to team with fewer players
+  const team0Count = activePlayers.filter((p) => p.teamIndex === 0).length;
+  const team1Count = activePlayers.filter((p) => p.teamIndex === 1).length;
+  player.teamIndex = team0Count <= team1Count ? 0 : 1;
+  player.isSpectator = false;
+  player.ready = false;
+
+  await saveLobby(lobby);
+  await publishUpdate(code);
+
+  logger.info(`${logPrefix} ${player.username} (${playerId}) moved from spectator to team ${player.teamIndex + 1} in lobby ${code}`);
   return { success: true };
 }
 
@@ -400,22 +476,24 @@ export async function startMatch(
     return { error: "Match already starting." };
   }
 
-  // Validate team composition
+  // Validate team composition (only non-spectator players)
   const playersPerTeam = lobby.mode === "1v1" ? 1 : 2;
-  const team0 = lobby.players.filter((p) => p.teamIndex === 0);
-  const team1 = lobby.players.filter((p) => p.teamIndex === 1);
+  const gamePlayers = lobby.players.filter((p) => !p.isSpectator);
+  const spectators = lobby.players.filter((p) => p.isSpectator);
+  const team0 = gamePlayers.filter((p) => p.teamIndex === 0);
+  const team1 = gamePlayers.filter((p) => p.teamIndex === 1);
 
   if (team0.length !== playersPerTeam || team1.length !== playersPerTeam) {
     return { error: `Need exactly ${playersPerTeam} player(s) per team for ${lobby.mode}.` };
   }
 
-  // Check all players are ready
-  const notReady = lobby.players.filter((p) => !p.ready);
+  // Check all game players are ready (spectators don't need to be ready)
+  const notReady = gamePlayers.filter((p) => !p.ready);
   if (notReady.length > 0) {
     return { error: `Not all players are ready: ${notReady.map((p) => p.username).join(", ")}` };
   }
 
-  // Check all game clients are connected
+  // Check all game clients are connected (players AND spectators)
   for (const p of lobby.players) {
     const isOnline = await redisClient.sIsMember("online_players", p.playerId);
     if (!isOnline) {
@@ -477,7 +555,7 @@ export async function startMatch(
     const resultId = ObjectID().toHexString();
     const matchmakingRequestId = ObjectID().toHexString();
 
-    // Build RedisTeamEntry[] from lobby teams
+    // Build RedisTeamEntry[] from lobby teams (game players only)
     const allPlayers = [...team0, ...team1];
     const randomHost = Math.floor(Math.random() * allPlayers.length);
 
@@ -488,6 +566,17 @@ export async function startMatch(
       teamIndex: p.teamIndex as 0 | 1,
       isHost: idx === randomHost,
       ip: p.ip,
+    }));
+
+    // Add spectators with isSpectator flag (they get the match config but don't play)
+    const spectatorEntries: RedisTeamEntry[] = spectators.map((p, idx) => ({
+      playerId: p.playerId,
+      partyId: matchId,
+      playerIndex: allPlayers.length + idx,
+      teamIndex: 0 as 0 | 1, // doesn't matter for spectators
+      isHost: false,
+      ip: p.ip,
+      isSpectator: true,
     }));
 
     // Build a ticket so the perk-locking handler can find playerIds
@@ -524,9 +613,9 @@ export async function startMatch(
       ? lobby.mapPool[Math.floor(Math.random() * lobby.mapPool.length)]
       : getRandomMapByType(lobby.mode);
 
-    // Build notification
+    // Build notification (include spectators so they receive the match config)
     const notification: MATCH_FOUND_NOTIFICATION = {
-      players,
+      players: [...players, ...spectatorEntries],
       matchId,
       matchKey: randomBytes(32).toString("base64"),
       map,
@@ -534,8 +623,8 @@ export async function startMatch(
       rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
     };
 
-    // Publish to same 3 channels as matchmaking worker
-    const playerIds = players.map((p) => p.playerId);
+    // Include spectators in playerIds so they receive all match notifications
+    const playerIds = [...players, ...spectatorEntries].map((p) => p.playerId);
     await redisOnGameplayConfigNotified(notification);
     await redisMatchMakingComplete(matchId, matchmakingRequestId, playerIds);
     // redisGameServerInstanceReady is triggered by /ovs_register after rollback server fetches match config
@@ -608,6 +697,7 @@ export async function getLobbyWithStatus(lobbyCode: string): Promise<CustomLobby
         username: p.username,
         ready: p.ready,
         teamIndex: p.teamIndex,
+        isSpectator: p.isSpectator || false,
         connected,
         character,
         skin,
@@ -779,10 +869,12 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
     return;
   }
 
-  // Check team composition
+  // Check team composition (only non-spectator players)
   const playersPerTeam = lobby.mode === "1v1" ? 1 : 2;
-  const team0 = lobby.players.filter((p) => p.teamIndex === 0);
-  const team1 = lobby.players.filter((p) => p.teamIndex === 1);
+  const rematchGamePlayers = lobby.players.filter((p) => !p.isSpectator);
+  const rematchSpectators = lobby.players.filter((p) => p.isSpectator);
+  const team0 = rematchGamePlayers.filter((p) => p.teamIndex === 0);
+  const team1 = rematchGamePlayers.filter((p) => p.teamIndex === 1);
 
   if (team0.length !== playersPerTeam || team1.length !== playersPerTeam) {
     logger.info(`${logPrefix} Not enough players for rematch in lobby ${lobbyCode}, teams: ${team0.length}v${team1.length}`);
@@ -861,6 +953,17 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
       ip: p.ip,
     }));
 
+    // Add spectators with isSpectator flag for rematch too
+    const rematchSpectatorEntries: RedisTeamEntry[] = rematchSpectators.map((p, idx) => ({
+      playerId: p.playerId,
+      partyId: matchId,
+      playerIndex: allPlayers.length + idx,
+      teamIndex: 0 as 0 | 1,
+      isHost: false,
+      ip: p.ip,
+      isSpectator: true,
+    }));
+
     const ticket: RedisMatchTicket = {
       party_size: allPlayers.length,
       players: allPlayers.map((p) => ({
@@ -894,7 +997,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
       : getRandomMapByType(lobby.mode);
 
     const notification: MATCH_FOUND_NOTIFICATION = {
-      players,
+      players: [...players, ...rematchSpectatorEntries],
       matchId,
       matchKey: randomBytes(32).toString("base64"),
       map,
@@ -902,7 +1005,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
       rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
     };
 
-    const playerIds = players.map((p) => p.playerId);
+    const playerIds = [...players, ...rematchSpectatorEntries].map((p) => p.playerId);
     await redisOnGameplayConfigNotified(notification);
     await redisMatchMakingComplete(matchId, matchmakingRequestId, playerIds);
     // redisGameServerInstanceReady is triggered by /ovs_register after rollback server fetches match config

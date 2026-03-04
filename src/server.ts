@@ -10,7 +10,7 @@ import { hydraTokenMiddleware } from "./middleware/auth";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
 import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby, redisGameServerInstanceReady } from "./config/redis";
-import { getLeaderboard, getPlayerRank } from "./services/eloService";
+import { getLeaderboard, getPlayerRank, processMatchLeave } from "./services/eloService";
 import {
   createLobby,
   joinLobby,
@@ -21,6 +21,8 @@ import {
   selectMode,
   startMatch,
   getLobbyWithStatus,
+  moveToSpectator,
+  moveToPlayer,
 } from "./services/customLobbyService";
 import { getMapList } from "./data/maps";
 import { GAME_SERVER_PORT } from "./game/udp";
@@ -246,7 +248,9 @@ app.post("/ovs_register", async (req, res, next) => {
     res.send("");
     return;
   }
-  const players = config.players.map((p) => {
+  // Only send active players (not spectators) to the rollback server
+  const activePlayers = config.players.filter((p) => !p.isSpectator);
+  const players = activePlayers.map((p) => {
     return {
       player_index: p.playerIndex,
       ip: p.ip,
@@ -254,12 +258,12 @@ app.post("/ovs_register", async (req, res, next) => {
     };
   });
   res.json({
-    max_players: config.players.length,
+    max_players: activePlayers.length,
     match_duration: 36000,
     players,
   });
 
-  // Now that the rollback server has the match config, tell game clients to connect.
+  // Now that the rollback server has the match config, tell ALL clients (including spectators) to connect.
   // This MUST happen after the response so the rollback server is ready before clients arrive.
   const playerIds = config.players.map((p) => p.playerId);
   await redisGameServerInstanceReady(body.matchId, playerIds);
@@ -672,6 +676,26 @@ app.post("/api/custom/switch-team", async (req, res) => {
   res.json(result);
 });
 
+app.post("/api/custom/spectate", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game." });
+    return;
+  }
+  const result = await moveToSpectator(player.id);
+  res.json(result);
+});
+
+app.post("/api/custom/unspectate", async (req, res) => {
+  const player = await getPlayerFromReq(req);
+  if (!player) {
+    res.status(401).json({ error: "Not connected to game." });
+    return;
+  }
+  const result = await moveToPlayer(player.id);
+  res.json(result);
+});
+
 app.post("/api/custom/ready", async (req, res) => {
   const player = await getPlayerFromReq(req);
   if (!player) {
@@ -822,10 +846,21 @@ app.get("/ssc/invoke/load_gameplay_config", async (req, res) => {
   res.send({ body: {}, metadata: null, return_code: 200 });
 });
 
-// Game notifies server that a player is leaving a match
+// Game notifies server that a player is leaving a match — process as ELO loss for the leaver
 app.put("/matches/:id/leave", async (req, res) => {
   const matchId = req.params.id;
-  logger.info(`${logPrefix} PUT /matches/${matchId}/leave`);
+  const account = AuthUtils.DecodeClientToken(req);
+  const playerId = account?.id || (req as any).token?.id;
+
+  logger.info(`${logPrefix} PUT /matches/${matchId}/leave — player ${playerId || "unknown"}`);
+
+  if (playerId && matchId) {
+    // Process the leave as a loss for the leaver's team (dedup prevents double processing)
+    processMatchLeave(matchId, playerId).catch((e) =>
+      logger.error(`${logPrefix} Error processing match leave ELO: ${e}`)
+    );
+  }
+
   res.send({ body: {}, metadata: null, return_code: 200 });
 });
 

@@ -205,6 +205,49 @@ export async function processMatchResult(matchId: string, winningTeamIndex: numb
 }
 
 /**
+ * Process a match leave/disconnect — the leaver's team loses, the other team wins.
+ * Uses the same dedup key as submit_end_of_match_stats so ELO is only processed once.
+ *
+ * @param matchId - The match ID
+ * @param leaverPlayerId - The player who left/disconnected
+ */
+export async function processMatchLeave(matchId: string, leaverPlayerId: string): Promise<void> {
+  try {
+    // Same dedup key used by submit_end_of_match_stats
+    const dedupeKey = `elo_processed:${matchId}`;
+    const alreadyProcessed = await redisClient.set(dedupeKey, "1", { NX: true, EX: 300 });
+    if (alreadyProcessed !== "OK") {
+      logger.info(`${logPrefix} ELO already processed for match ${matchId}, skipping leave penalty`);
+      return;
+    }
+
+    const matchConfig = await redisGetMatchConfig(matchId);
+    if (!matchConfig || !matchConfig.players) {
+      logger.warn(`${logPrefix} Cannot process match leave: match config not found for ${matchId}`);
+      return;
+    }
+
+    // Find the leaver's team
+    const leaver = matchConfig.players.find((p) => p.playerId === leaverPlayerId);
+    if (!leaver) {
+      logger.warn(`${logPrefix} Cannot process match leave: player ${leaverPlayerId} not found in match ${matchId}`);
+      return;
+    }
+
+    // The opposing team wins
+    const winningTeamIndex = leaver.teamIndex === 0 ? 1 : 0;
+    logger.info(
+      `${logPrefix} Processing match leave for ${matchId}: player ${leaverPlayerId} left (team ${leaver.teamIndex}), ` +
+      `awarding win to team ${winningTeamIndex}`,
+    );
+
+    await processMatchResult(matchId, winningTeamIndex);
+  } catch (error) {
+    logger.error(`${logPrefix} Error processing match leave for ${matchId}: ${error}`);
+  }
+}
+
+/**
  * Get a specific player's rank and stats for a given mode.
  * Returns null if the player hasn't played any games in this mode.
  */
@@ -227,6 +270,7 @@ export async function getPlayerRank(accountId: string, mode: "1v1" | "2v2") {
 
   return {
     rank: playersAbove + 1,
+    account_id: accountId,
     username: player.username || "Unknown",
     elo: player[eloField],
     wins: player[winsField] || 0,
@@ -278,6 +322,7 @@ export async function getLeaderboard(mode: "1v1" | "2v2", limit: number = 100) {
       }
       return {
         rank: index + 1,
+        account_id: p.account_id,
         username: username || "Unknown",
         elo: p[eloField],
         wins: p[winsField],

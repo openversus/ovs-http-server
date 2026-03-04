@@ -75,6 +75,7 @@ import env from "./env/env";
 import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./database/Cosmetics";
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 import { cancelMatchmakingForAll } from "./services/matchmakingService";
+import { processMatchLeave } from "./services/eloService";
 
 const serviceName: string = "WebSocket";
 const logPrefix = `[${serviceName}]:`;
@@ -349,6 +350,20 @@ export class WebSocketService {
         }
       } catch (err) {
         logger.error(`[${serviceName}]: Error disbanding party for disconnected player ${playerId}: ${err}`);
+      }
+
+      // If the player was in an active match, treat the disconnect as a forfeit
+      // (dedup prevents double ELO processing if end-of-match also fires)
+      try {
+        const matchId = playerWS.matchConfig?.data?.GameplayConfig?.MatchId;
+        if (matchId) {
+          logger.info(
+            `[${serviceName}]: Player ${playerId} (${playerWS.account.username}) disconnected during active match ${matchId} — processing as forfeit`,
+          );
+          await processMatchLeave(matchId, playerId);
+        }
+      } catch (e) {
+        logger.error(`[${serviceName}]: Error processing match leave on disconnect for ${playerId}: ${e}`);
       }
 
       // Remove from custom lobby (web-based) if they're in one
@@ -685,8 +700,12 @@ export class WebSocketService {
     const playerLoadouts = await redisGetPlayers(playerIds);
 
     // Get the player configs from redis
+    // Separate spectators from active players
+    const gamePlayers = notification.players.filter((p) => !p.isSpectator);
+    const spectatorPlayers = notification.players.filter((p) => p.isSpectator);
 
     const Players: { [key: string]: PlayerConfig } = {};
+    const Spectators: { [key: string]: PlayerConfig } = {};
 
     for (let i = 0; i < notification.players.length; i++) {
       const player = notification.players[i];
@@ -743,7 +762,8 @@ export class WebSocketService {
           "stat_tracking_bundle_default",
         ];
 
-        Players[player.playerId] = {
+        const configTarget = player.isSpectator ? Spectators : Players;
+        configTarget[player.playerId] = {
           Taunts: characterTaunts,
           BotBehaviorOverride: "",
           AccountId: player.playerId,
@@ -789,7 +809,7 @@ export class WebSocketService {
           BotDifficultyMin: 0,
         };
 
-        logger.info(`${logPrefix} Successfully created player config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} for match ${notification.matchId}`);
+        logger.info(`${logPrefix} Successfully created ${player.isSpectator ? "spectator" : "player"} config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} for match ${notification.matchId}`);
       }
       catch (error) {
         logger.error(
@@ -799,7 +819,8 @@ export class WebSocketService {
         // logger.error(`${logPrefix} PlayerConfig.StatTrackers: ${JSON.stringify(playerConfig.StatTrackers)}`);
 
         // Create a minimal valid config as fallback
-        Players[player.playerId] = {
+        const fallbackTarget = player.isSpectator ? Spectators : Players;
+        fallbackTarget[player.playerId] = {
           Taunts: [
             "",
             "",
@@ -937,8 +958,9 @@ export class WebSocketService {
       //     BotDifficultyMin: 0,
       //   };
       // }
+      const preparedConfig = player.isSpectator ? Spectators[player.playerId] : Players[player.playerId];
       logger.info(
-        `[${serviceName}]: Prepared player config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} for match ${notification.matchId}, GameplayPreferences: ${Players[player.playerId].GameplayPreferences}`,
+        `[${serviceName}]: Prepared ${player.isSpectator ? "spectator" : "player"} config for ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} for match ${notification.matchId}, GameplayPreferences: ${preparedConfig?.GameplayPreferences}`,
       );
     }
 
@@ -962,7 +984,7 @@ export class WebSocketService {
           EventQueueSlug: "",
           bModeGrantsProgress: true,
           TeamData: [],
-          Spectators: {},
+          Spectators,
           bIsRanked: false,
           bIsCustomGame: false,
           Players,

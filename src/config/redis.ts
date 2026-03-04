@@ -102,6 +102,7 @@ export interface RedisTeamEntry {
   teamIndex: 0 | 1;
   isHost: boolean;
   ip: string;
+  isSpectator?: boolean;
 }
 
 export interface MVS_NOTIFICATION {}

@@ -556,17 +556,28 @@ export async function startMatch(
     const matchmakingRequestId = ObjectID().toHexString();
 
     // Build RedisTeamEntry[] from lobby teams (game players only)
+    // Use same interleaved spawn formula as matchmaking-worker: playerIndex = idxInTeam * 2 + teamIndex
+    // Team 0 → spawns 0, 2  |  Team 1 → spawns 1, 3
     const allPlayers = [...team0, ...team1];
     const randomHost = Math.floor(Math.random() * allPlayers.length);
 
-    const players: RedisTeamEntry[] = allPlayers.map((p, idx) => ({
-      playerId: p.playerId,
-      partyId: matchId,
-      playerIndex: idx,
-      teamIndex: p.teamIndex as 0 | 1,
-      isHost: idx === randomHost,
-      ip: p.ip,
-    }));
+    const players: RedisTeamEntry[] = [];
+    for (const teamIndex of [0, 1] as const) {
+      const teamPlayers = teamIndex === 0 ? team0 : team1;
+      let idxInTeam = 0;
+      for (const p of teamPlayers) {
+        const playerIndex = idxInTeam * 2 + teamIndex;
+        players.push({
+          playerId: p.playerId,
+          partyId: matchId,
+          playerIndex,
+          teamIndex,
+          isHost: players.length === randomHost,
+          ip: p.ip,
+        });
+        idxInTeam++;
+      }
+    }
 
     // Add spectators with isSpectator flag (they get the match config but don't play)
     const spectatorEntries: RedisTeamEntry[] = spectators.map((p, idx) => ({
@@ -941,17 +952,27 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
     const resultId = ObjectID().toHexString();
     const matchmakingRequestId = ObjectID().toHexString();
 
+    // Use same interleaved spawn formula as matchmaking-worker: playerIndex = idxInTeam * 2 + teamIndex
     const allPlayers = [...team0, ...team1];
     const randomHost = Math.floor(Math.random() * allPlayers.length);
 
-    const players: RedisTeamEntry[] = allPlayers.map((p, idx) => ({
-      playerId: p.playerId,
-      partyId: matchId,
-      playerIndex: idx,
-      teamIndex: p.teamIndex as 0 | 1,
-      isHost: idx === randomHost,
-      ip: p.ip,
-    }));
+    const players: RedisTeamEntry[] = [];
+    for (const teamIndex of [0, 1] as const) {
+      const teamPlayers = teamIndex === 0 ? team0 : team1;
+      let idxInTeam = 0;
+      for (const p of teamPlayers) {
+        const playerIndex = idxInTeam * 2 + teamIndex;
+        players.push({
+          playerId: p.playerId,
+          partyId: matchId,
+          playerIndex,
+          teamIndex,
+          isHost: players.length === randomHost,
+          ip: p.ip,
+        });
+        idxInTeam++;
+      }
+    }
 
     // Add spectators with isSpectator flag for rematch too
     const rematchSpectatorEntries: RedisTeamEntry[] = rematchSpectators.map((p, idx) => ({

@@ -54,6 +54,8 @@ import {
   redisCleanupPlayerLobby,
   redisGetPlayerLobby,
   redisGetLobbyState,
+  redisSaveLobbyState,
+  redisSavePlayerLobby,
   redisDeleteLobbyState,
   redisDeletePlayerLobby,
   redisPublishLobbyRejoin,
@@ -1578,6 +1580,10 @@ export class WebSocketService {
 
         const lobbyState = await redisGetLobbyState(lobbyId);
         if (!lobbyState || lobbyState.playerIds.length <= 1) continue;
+
+        // Refresh TTLs so the lobby survives through long sessions
+        await redisSaveLobbyState(lobbyId, lobbyState);
+        await redisSavePlayerLobby(playerId, lobbyId);
 
         // This player is in a party — preserve their lobby data through disconnect
         // so the REJOIN path in create_party_lobby works when they reconnect

@@ -251,6 +251,28 @@ export async function redisPopMatchTicketsFromQueue(queueType: string, tickets: 
   await multi.exec();
 }
 
+/**
+ * Silently removes any existing matchmaking tickets for a player from all queues.
+ * Does NOT publish any Redis notifications or trigger cancel flows — just a direct removal.
+ * Used at the start of matchmaking to clean up stale tickets before creating new ones.
+ */
+export async function redisRemoveExistingTicketsForPlayer(playerId: string): Promise<number> {
+  const queues = ["1v1", "2v2"];
+  let removed = 0;
+  for (const queue of queues) {
+    const ticketsStr = await redisClient.lRange(queue, 0, -1);
+    for (const ticketStr of ticketsStr) {
+      const ticket = JSON.parse(ticketStr) as RedisMatchTicket;
+      if (ticket.players.some((p) => p.id === playerId)) {
+        await redisClient.lRem(queue, 0, ticketStr);
+        logger.info(`${logPrefix} Silently removed stale ticket ${ticket.partyId} from ${queue} queue for player ${playerId}`);
+        removed++;
+      }
+    }
+  }
+  return removed;
+}
+
 export async function redisUpdatePlayerLoadout(playerId: string, redisPlayer: RedisPlayer) {
   // Convert all values to strings for Redis
   const redisPlayerStringObj: Record<string, string> = {};

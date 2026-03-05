@@ -283,6 +283,7 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
   }
 
   const loadout = { Character: character, Skin: variant };
+
   logger.info(
     `[${serviceName}]: Received request to create party lobby for AccountId ${aID} with character: ${loadout.Character} and IP: ${ip}`,
   );

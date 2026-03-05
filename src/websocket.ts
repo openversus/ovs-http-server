@@ -57,7 +57,6 @@ import {
   redisDeleteLobbyState,
   redisDeletePlayerLobby,
   redisPublishLobbyRejoin,
-  redisReleaseMatchmakingLock,
   redisGetMatchTickets,
   TOAST_RECEIVED_CHANNEL,
   RedisToastNotification,
@@ -379,7 +378,6 @@ export class WebSocketService {
       await this.attemptRemoveMatchTicket(playerWS);
       this.clients.delete(playerId);
       await redisRemoveOnlinePlayer(playerId);
-      await redisReleaseMatchmakingLock(playerId); // Release lock so they can queue again on reconnect
       await redisCleanupPlayerLobby(playerId); // Clean up lobby state before deleting player keys
       await redisDeletePlayerKeys(playerId);
       await redisDeleteConnectionKeysByIp(playerWS.ip);
@@ -492,7 +490,6 @@ export class WebSocketService {
     // Clear any existing zombie timeout from a previous queue cycle
     if (client.matchTimeout) {
       clearTimeout(client.matchTimeout);
-      client.matchTimeout = undefined;
     }
 
     client.matchTick = setInterval(() => {
@@ -536,8 +533,6 @@ export class WebSocketService {
       // Clear the "queued" status so the player isn't stuck as searching
       if (client.account?.id) {
         await redisUpdatePlayerStatus(client.account.id, "idle");
-        // Release matchmaking lock so they can queue again immediately
-        await redisReleaseMatchmakingLock(client.account.id);
       }
       logger.trace(
         `[${serviceName}]: Canceling matchmaking - ${client.account?.id ?? "unknown"} with IP ${client.ip} and name ${client.account?.username ?? "unknown"} - matchmakingRequestId: ${matchmakingRequestId}`,
@@ -1187,9 +1182,6 @@ export class WebSocketService {
       if (client) {
         await this.cancelMatchMaking(client, notification.matchmakingId);
       }
-
-      // Release matchmaking lock so they can queue again
-      await redisReleaseMatchmakingLock(playerId);
     }
   }
 
@@ -1533,9 +1525,6 @@ export class WebSocketService {
         // Clear matchConfig and status since the match is over
         client.matchConfig = undefined;
         await redisUpdatePlayerStatus(playerId, "idle");
-
-        // Release matchmaking lock so they can queue again
-        await redisReleaseMatchmakingLock(playerId);
       }
     }
 

@@ -12,8 +12,7 @@ import {
   RedisPlayerJoinedLobbyNotification,
   redisGetLobbyRedirect,
   redisGetPlayerLobby,
-  redisAcquireMatchmakingLock,
-  redisReleaseMatchmakingLock,
+  redisRemoveExistingTicketsForPlayer,
 } from "../config/redis";
 import { Cosmetics, CosmeticsModel, TauntSlotsClass } from "../database/Cosmetics";
 import { getEquippedCosmetics } from "../services/cosmeticsService";
@@ -413,12 +412,14 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
   // If the player's lobby has 2+ players, force 2v2 instead of 1v1
   const preCheckAccount = AuthUtils.DecodeClientToken(req);
 
-  // Atomic duplicate matchmaking guard — prevents duplicate tickets from rapid client requests
-  const lockAcquired = await redisAcquireMatchmakingLock(preCheckAccount.id);
-  if (!lockAcquired) {
-    logger.warn(`${logPrefix} Duplicate matchmaking request blocked for player ${preCheckAccount.id}`);
-    res.send({ body: {}, metadata: null, return_code: 200 });
-    return;
+  // Remove any stale tickets for this player before creating a new one
+  try {
+    const removed = await redisRemoveExistingTicketsForPlayer(preCheckAccount.id);
+    if (removed > 0) {
+      logger.info(`${logPrefix} Cleaned up ${removed} stale ticket(s) for player ${preCheckAccount.id} before re-queuing`);
+    }
+  } catch (e) {
+    logger.error(`${logPrefix} Error cleaning up stale tickets for player ${preCheckAccount.id}: ${e}`);
   }
 
   const preCheckLobbyId = await redisGetPlayerLobby(preCheckAccount.id);
@@ -464,7 +465,6 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
   let playerLoadout = await redisGetPlayer(aID);
   if (!playerLoadout || !playerLoadout.character || !playerLoadout.skin) {
     logger.error(`${logPrefix} No Redis player loadout found for player ID ${aID}, cannot matchmake.`);
-    await redisReleaseMatchmakingLock(aID);
     res.status(500).send({ error: "player_loadout_not_found" });
     return;
   }
@@ -571,12 +571,14 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   // for now I'm just going to be lazy and copy/paste it
   const account = AuthUtils.DecodeClientToken(req);
 
-  // Atomic duplicate matchmaking guard — prevents duplicate tickets from rapid client requests
-  const lockAcquired = await redisAcquireMatchmakingLock(account.id);
-  if (!lockAcquired) {
-    logger.warn(`${logPrefix} Duplicate matchmaking request blocked for player ${account.id}`);
-    res.send({ body: {}, metadata: null, return_code: 200 });
-    return;
+  // Remove any stale tickets for this player before creating a new one
+  try {
+    const removed = await redisRemoveExistingTicketsForPlayer(account.id);
+    if (removed > 0) {
+      logger.info(`${logPrefix} Cleaned up ${removed} stale ticket(s) for player ${account.id} before re-queuing (2v2)`);
+    }
+  } catch (e) {
+    logger.error(`${logPrefix} Error cleaning up stale tickets for player ${account.id}: ${e}`);
   }
 
   if (BE_VERBOSE) {
@@ -611,7 +613,6 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   let playerLoadout = await redisGetPlayer(aID);
   if (!playerLoadout || !playerLoadout.character || !playerLoadout.skin) {
     logger.error(`${logPrefix} No Redis player loadout found for player ID ${aID}, cannot matchmake.`);
-    await redisReleaseMatchmakingLock(aID);
     res.status(500).send({ error: "player_loadout_not_found" });
     return;
   }
@@ -764,15 +765,9 @@ export async function handle_cancel_matchmaking(req: Request<{ id: string }, {},
   const account = AuthUtils.DecodeClientToken(req);
   const aID = account.id;
 
-  // Release matchmaking lock for all lobby players
   const lobbyId = await redisGetPlayerLobby(aID);
   const lobbyState = lobbyId ? await redisGetLobbyState(lobbyId) : null;
   const allPlayerIds = lobbyState ? lobbyState.playerIds : [aID];
-
-  // Release locks for all players
-  for (const pid of allPlayerIds) {
-    await redisReleaseMatchmakingLock(pid);
-  }
 
   await cancelMatchmakingForAll(allPlayerIds, req.params.id);
 

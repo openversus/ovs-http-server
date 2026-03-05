@@ -417,7 +417,7 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
   const lockAcquired = await redisAcquireMatchmakingLock(preCheckAccount.id);
   if (!lockAcquired) {
     logger.warn(`${logPrefix} Duplicate matchmaking request blocked for player ${preCheckAccount.id}`);
-    res.status(409).send({ error: "matchmaking_already_queued" });
+    res.send({ body: {}, metadata: null, return_code: 200 });
     return;
   }
 
@@ -575,7 +575,7 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   const lockAcquired = await redisAcquireMatchmakingLock(account.id);
   if (!lockAcquired) {
     logger.warn(`${logPrefix} Duplicate matchmaking request blocked for player ${account.id}`);
-    res.status(409).send({ error: "matchmaking_already_queued" });
+    res.send({ body: {}, metadata: null, return_code: 200 });
     return;
   }
 

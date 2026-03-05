@@ -70,6 +70,7 @@ export const MAP_NAMES: Record<string, string> = {
   // 2v2 maps
   "M001": "Batcave",
   "M002_V3": "Treefort",
+  "M003_V3": "Trophy's Edge",
   "M001_V1": "Trophy's Edge Single Plat",
   "M006_V2": "Scooby's Mansion",
   "M007_V1": "Water Tower 2v2",
@@ -142,8 +143,9 @@ export const maps1v1 = [
 
 export const maps2v2 = [
   "M001",       // (Batcave)
-  "M002_V3",    // (Batcave)
-  "M003_V5",    // (Treefort 2)
+  "M002_V3",    // (Treefort)
+  "M003_V3",    // (Trophy's Edge)
+  "M003_V5",    // (Trophy's Edge V5)
   "M001_V1",    // (Trophy's Edge Single Plat)
   "M006_V2",    // (Scooby's No Roof) 
   "M007_V1",    // (Water Tower)

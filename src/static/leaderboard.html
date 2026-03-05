@@ -267,12 +267,13 @@
       html += '</tr></thead><tbody>';
 
       // Check if the current player is already in the top 100
-      const meInTop100 = meData && !meData.error && meData.rank <= 100;
+      const meId = meData && !meData.error ? meData.account_id : null;
+      const meInTop100 = meId && data.players.some(p => p.account_id === meId);
 
       for (const p of data.players) {
         const total = p.wins + p.losses;
         const winRate = total > 0 ? Math.round((p.wins / total) * 100) : 0;
-        const isMe = meData && !meData.error && p.rank === meData.rank;
+        const isMe = meId && p.account_id === meId;
         html += '<tr' + (isMe ? ' class="my-row"' : '') + '>';
         html += '<td class="rank-col"><span class="' + getRankBadgeClass(p.rank) + (isMe ? ' me' : '') + '">' + p.rank + '</span></td>';
         html += '<td>' + escapeHtml(p.username) + (isMe ? ' <span style="font-size:11px;color:var(--mv-blue);">(YOU)</span>' : '') + '</td>';

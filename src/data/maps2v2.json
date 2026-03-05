@@ -10,7 +10,15 @@
   {
     "M002_V3": {
       "id": "M002_V3",
-      "name": "Batcave",
+      "name": "Treefort",
+      "enabled": true,
+      "hazards": false
+    }
+  },
+  {
+    "M003_V3": {
+      "id": "M003_V3",
+      "name": "Trophy's Edge",
       "enabled": true,
       "hazards": false
     }
@@ -18,7 +26,7 @@
   {
     "M003_V5": {
       "id": "M003_V5",
-      "name": "Treefort 2",
+      "name": "Trophy's Edge V5",
       "enabled": true,
       "hazards": false
     }

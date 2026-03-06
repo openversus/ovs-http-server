@@ -115,7 +115,7 @@
     "M016_V3": {
       "id": "M016_V3",
       "name": "Dexters Lab 2 1v1",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   },

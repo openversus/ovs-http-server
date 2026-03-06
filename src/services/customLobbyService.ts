@@ -9,7 +9,7 @@ import {
   redisUpdateMatch,
 } from "../config/redis";
 import { logger } from "../config/logger";
-import { getRandomMapByType, getMapList } from "../data/maps";
+import { getCustomRandomMapByType, getMapList } from "../data/maps";
 import { PlayerTesterModel } from "../database/PlayerTester";
 import ObjectID from "bson-objectid";
 import { randomBytes, randomInt } from "crypto";
@@ -622,7 +622,7 @@ export async function startMatch(
     // Select map from pool (or random from all maps if pool is empty)
     const map = lobby.mapPool.length > 0
       ? lobby.mapPool[Math.floor(Math.random() * lobby.mapPool.length)]
-      : getRandomMapByType(lobby.mode);
+      : await getCustomRandomMapByType(lobby.mode);
 
     // Build notification (include spectators so they receive the match config)
     const notification: MATCH_FOUND_NOTIFICATION = {
@@ -1015,7 +1015,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
     // Select map from pool (or random from all maps if pool is empty)
     const map = lobby.mapPool.length > 0
       ? lobby.mapPool[Math.floor(Math.random() * lobby.mapPool.length)]
-      : getRandomMapByType(lobby.mode);
+      : await getCustomRandomMapByType(lobby.mode);
 
     const notification: MATCH_FOUND_NOTIFICATION = {
       players: [...players, ...rematchSpectatorEntries],

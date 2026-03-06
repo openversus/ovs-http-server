@@ -965,7 +965,7 @@ export class WebSocketService {
     // Create the message to send to the players
 
     // Look up hazards from map JSON data (PVE_03 always has hazards, others check JSON)
-    let stageHazards: boolean = getMapHazards(notification.map, notification.mode);
+    let stageHazards: boolean = await getMapHazards(notification.map, notification.mode);
     const message: GameNotification = {
       data: {
         MatchId: notification.matchId,

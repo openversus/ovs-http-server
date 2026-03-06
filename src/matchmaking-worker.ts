@@ -17,7 +17,7 @@ import { logger } from "./config/logger";
 import ObjectID from "bson-objectid";
 import { randomBytes } from "crypto";
 import { MATCH_TYPES, getBaseMode } from "./services/matchmakingService";
-import { getRandomMap1v1, getRandomMapByType } from "./data/maps";
+import { getRandomMapByType } from "./data/maps";
 import { randomUUID, randomInt } from "crypto";
 import env from "./env/env";
 
@@ -407,7 +407,7 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       players: await createTeams(tickets),
       matchId,
       matchKey: randomBytes(32).toString("base64"),
-      map: getRandomMapByType(matchType),
+      map: await getRandomMapByType(matchType, matchId),
       mode: matchType,
       rollbackPort: match.rollbackPort,
     };

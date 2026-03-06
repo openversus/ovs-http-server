@@ -10,15 +10,7 @@
   {
     "M002_V3": {
       "id": "M002_V3",
-      "name": "Treefort",
-      "enabled": true,
-      "hazards": false
-    }
-  },
-  {
-    "M003_V3": {
-      "id": "M003_V3",
-      "name": "Trophy's Edge",
+      "name": "Batcave",
       "enabled": true,
       "hazards": false
     }
@@ -26,7 +18,7 @@
   {
     "M003_V5": {
       "id": "M003_V5",
-      "name": "Trophy's Edge V5",
+      "name": "Treefort 2",
       "enabled": true,
       "hazards": false
     }
@@ -115,7 +107,7 @@
     "M016_V4": {
       "id": "M016_V4",
       "name": "Dexters Lab 3",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   },
@@ -155,8 +147,7 @@
     "MTS002_V3": {
       "id": "MTS002_V3",
       "name": "Beach Boat",
-      "enabled": false,
-      "hazards": false
+      "enabled": false
     }
   },
   {

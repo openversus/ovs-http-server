@@ -155,7 +155,7 @@
     "MTS003_V1": {
       "id": "MTS003_V1",
       "name": "Castle",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   }

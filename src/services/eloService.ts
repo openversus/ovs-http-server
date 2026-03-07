@@ -3,18 +3,20 @@ import { redisGetMatchConfig, redisGetMatch, redisClient, RedisPlayerConnection 
 import { logger } from "../config/logger";
 import { PlayerTesterModel } from "../database/PlayerTester";
 import { Types } from "mongoose";
+import env from "../env/env";
 
 const serviceName = "Services.Elo";
 const logPrefix = `[${serviceName}]:`;
 
-const DEFAULT_ELO = 1000;
+const DEFAULT_ELO = env.DEFAULT_ELO || 1000;
 
 // --- Dynamic K-Factor Configuration ---
 // Provisional: first N games use higher K for faster convergence
-const PROVISIONAL_GAME_THRESHOLD = 20;
-const K_PROVISIONAL = 64;
-const K_1V1 = 32;
-const K_2V2 = 24; // Lower K for 2v2 due to higher variance
+const PROVISIONAL_GAME_THRESHOLD = Number(env.PROVISIONAL_GAME_THRESHOLD) || 20;
+const K_PROVISIONAL = Number(env.K_PROVISIONAL) || 64;
+const K_1V1 = Number(env.K_1V1) || 32;
+const K_2V2 = Number(env.K_2V2) || 24; // Lower K for 2v2 due to higher variance
+const ELO_DIVISOR = Number(env.ELO_DIVISOR) || 800; // Standard ELO divisor for expected score calculation
 
 /**
  * Get the dynamic K-factor for a player based on mode and game count.
@@ -31,7 +33,7 @@ function getKFactor(totalGames: number, is1v1: boolean): number {
  * Returns value between 0 and 1.
  */
 function expectedScore(playerElo: number, opponentElo: number): number {
-  return 1 / (1 + Math.pow(10, (opponentElo - playerElo) / 400));
+  return 1 / (1 + Math.pow(10, (opponentElo - playerElo) / ELO_DIVISOR));
 }
 
 /**

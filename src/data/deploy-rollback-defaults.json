@@ -1,0 +1,8 @@
+{
+  "entrypoint": "\"dotnet\", \"OVS.Rollback.Server.dll\", \"41234\"",
+  "image": "ghcr.io/christopher-conley/webhook-docker/webhook-dind:latest",
+  "ovs_server": "http://testing.openversus.org:8000",
+  "port": 0,
+  "servicename": "ovs-rollback-server-csharp",
+  "created_at": 0
+}

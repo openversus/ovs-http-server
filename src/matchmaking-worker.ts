@@ -19,6 +19,7 @@ import { randomBytes } from "crypto";
 import { MATCH_TYPES, getBaseMode } from "./services/matchmakingService";
 import { getRandomMapByType } from "./data/maps";
 import { randomUUID, randomInt } from "crypto";
+import { IDeployInfo, DeployInfo, getDefaultDeployInfo, useOnDemandRollback } from "./services/rollbackService";
 import env from "./env/env";
 
 const serviceName = "MatchmakingWorker";
@@ -389,7 +390,8 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       createdAt: Date.now(),
       matchType,
       totalPlayers,
-      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
+      //rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
+      rollbackPort: DeployInfo.getRandomRollbackPort(),
     };
 
     // Get all player IDs from all tickets
@@ -411,6 +413,19 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       mode: matchType,
       rollbackPort: match.rollbackPort,
     };
+
+    if (useOnDemandRollback) {
+      let deployInfo: IDeployInfo = getDefaultDeployInfo();
+      deployInfo.port = match.rollbackPort;
+      const isDeployed = DeployInfo.Deploy(deployInfo);
+      if (!isDeployed) {
+        logger.error(`${logPrefix} Failed to deploy rollback server for match ${matchId} on port ${deployInfo.port}`);
+        // Depending on the desired behavior, you might want to:
+        // - Mark the match as failed and notify players
+        // - Fall back to an internal rollback server if available
+        // For now, we'll just log the error and proceed, but this means the match will likely fail when clients try to connect.
+      }
+    }
 
     const playerIds = players.map((p) => p.playerId);
     // Notify about the match creation

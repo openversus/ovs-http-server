@@ -7,6 +7,7 @@ import { cancelMatchmaking, MATCH_TYPES } from "../services/matchmakingService";
 import { Cosmetics } from "../database/Cosmetics";
 import { GAME_SERVER_PORT } from "../game/udp";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
+import { IDeployInfo } from "../services/rollbackService";
 import { num } from "envalid";
 
 const serviceName: string = "Config.Redis";
@@ -519,6 +520,47 @@ export async function redisDeleteConnectionKeysByIp(ip: string): Promise<void> {
 
 export async function redisDeleteConnectionKeysById(playerId: string): Promise<void> {
   await redisDeleteKeysByPattern(`connections`, `${playerId}`);
+}
+
+export async function redisAddDeployedRollbackServer(containerMatchId: string, deployInfo: IDeployInfo): Promise<void> {
+  await redisClient.set(`rollback:${containerMatchId}`, JSON.stringify(deployInfo));
+}
+
+export async function redisDeleteDeployedRollbackServer(containerMatchId: string): Promise<void> {
+  await redisClient.del(`rollback:${containerMatchId}`);
+}
+
+export async function redisGetDeployedRollbackServer(containerMatchId: string): Promise<IDeployInfo | null> {
+  const deployInfoStr = await redisClient.get(`rollback:${containerMatchId}`);
+  if (deployInfoStr) {
+    return JSON.parse(deployInfoStr) as IDeployInfo;
+  }
+  return null;
+}
+
+export async function redisGetAllDeployedRollbackServers(): Promise<Record<string, IDeployInfo>> {
+  const rollbackServers: Record<string, IDeployInfo> = {};
+  let cursor = 0;
+
+  do {
+    const result = await redisClient.scan(cursor, {
+      MATCH: `rollback:*`,
+      COUNT: 100,
+    });
+
+    cursor = Number(result.cursor);
+    const keys = result.keys;
+
+    for (const key of keys) {
+      const containerMatchId = key.split(":")[1];
+      const deployInfoStr = await redisClient.get(key);
+      if (deployInfoStr) {
+        rollbackServers[containerMatchId] = JSON.parse(deployInfoStr) as IDeployInfo;
+      }
+    }
+  } while (cursor !== 0);
+  
+  return rollbackServers;
 }
 
 // --- Online Players Tracking ---

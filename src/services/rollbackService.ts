@@ -1,0 +1,280 @@
+import { logger, logwrapper } from "../config/logger";
+import { readFileSync, appendFileSync } from "fs";
+import { join } from "path";
+import { randomInt, createHmac } from "crypto";
+import * as http from "http";
+import env from "../env/env";
+
+const serviceName = "Services.RollbackService";
+const logPrefix: string = `[${serviceName}]:`;
+
+const webhookHost: string = env.WEBHOOK_HOST ?? "localhost";
+const webhookPort: number = env.WEBHOOK_PORT || 9001;
+const webhookPath: string = env.WEBHOOK_DEPLOY_PATH ?? "/deploy-rollback-server";
+const deployKey: string = env.DEPLOY_KEY ?? "CHANGEME";
+const deployInfoFile: string = env.DEPLOY_ROLLBACK_DEFAULTS_FILE ?? "../data/deploy-rollback-defaults.json";
+export const useOnDemandRollback: boolean = env.ON_DEMAND_ROLLBACK === 1;
+
+export interface IDeployInfo
+{
+  entrypoint: string;
+  image: string;
+  ovs_server: string;
+  port: number;
+  servicename: string;
+  created_at: number;
+}
+
+export class DeployInfo implements IDeployInfo {
+  entrypoint: string;
+  image: string;
+  ovs_server: string;
+  port: number;
+  servicename: string;
+  created_at: number;
+
+  constructor();
+  constructor(entrypoint: string, image: string, ovs_server: string, port: number, servicename: string);
+  constructor() {
+    let rollbackPort = DeployInfo.getRandomRollbackPort();
+    let createdAt = Date.now();
+
+    switch (arguments.length) {
+      case 0:
+        this.entrypoint = "";
+        this.image = "";
+        this.ovs_server = "";
+        this.port = rollbackPort;
+        this.servicename = "";
+        this.created_at = createdAt;
+        return;
+      case 1:
+        this.entrypoint = arguments[0];
+        this.image = "";
+        this.ovs_server = "";
+        this.port = rollbackPort;
+        this.servicename = "";
+        this.created_at = createdAt;
+        return;
+      case 2:
+        this.entrypoint = arguments[0];
+        this.image = arguments[1];
+        this.ovs_server = "";
+        this.port = rollbackPort;
+        this.servicename = "";
+        this.created_at = createdAt;
+        return;
+      case 3:
+        this.entrypoint = arguments[0];
+        this.image = arguments[1];
+        this.ovs_server = arguments[2];
+        this.port = rollbackPort;
+        this.servicename = "";
+        this.created_at = createdAt;
+        return;
+      case 4:
+        this.entrypoint = arguments[0];
+        this.image = arguments[1];
+        this.ovs_server = arguments[2];
+        this.port = arguments[3];
+        this.servicename = "";
+        this.created_at = createdAt;
+        return;
+      case 5:
+        this.entrypoint = arguments[0];
+        this.image = arguments[1];
+        this.ovs_server = arguments[2];
+        this.port = arguments[3];
+        this.servicename = arguments[4];
+        this.created_at = createdAt;
+        return;
+    }
+
+    this.entrypoint = "";
+    this.image = "";
+    this.ovs_server = "";
+    this.port = DeployInfo.getRandomRollbackPort();
+    this.servicename = "";
+    this.created_at = createdAt;
+    return;
+  }
+
+  static Deploy(deployObject: IDeployInfo): boolean {
+    let deployer = new DeployInfo(
+      deployObject.entrypoint,
+      deployObject.image,
+      deployObject.ovs_server,
+      deployObject.port,
+      deployObject.servicename
+    );
+    return deployer._deploy(deployObject);
+  }
+
+  _deploy(): boolean;
+  _deploy(deployObject: IDeployInfo): boolean;
+  _deploy(): boolean
+  {
+    let finalDeployObject: IDeployInfo = this;
+    if (arguments.length === 1) {
+      finalDeployObject = arguments[0];
+    }
+
+    let rawStringPayload = JSON.stringify(finalDeployObject);
+    let payloadHmacSha = createHmac("sha1", deployKey)
+                           .update(rawStringPayload)
+                           .digest("hex");
+    
+    let options = {
+      host: webhookHost,
+      port: webhookPort,
+      path: webhookPath,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Deploy-Key': payloadHmacSha
+      },
+    };
+
+  logwrapper.verbose(`${logPrefix} Deploying rollback server with the following info: ${JSON.stringify(finalDeployObject)}`);
+    try {
+      const deployRequest = http.request(options, (res) => {
+      let responseData = '';
+
+      res.on('data', (chunk) => {
+        responseData += chunk;
+      });
+
+      res.on('end', () => {
+        logwrapper.info(`${logPrefix} Response from webhook server: ${responseData}`);
+      });
+    });
+
+    deployRequest.on('error', (error) => {
+      logwrapper.error(`${logPrefix} Error making deployment request to webhook server: ${JSON.stringify(error)}`);
+    });
+
+    deployRequest.write(rawStringPayload);
+    deployRequest.end();
+
+    logwrapper.info(`${logPrefix} Successfully sent deployment request to webhook server for rollback server with the following info: ${JSON.stringify(finalDeployObject)}`);
+    
+    return true;
+    }
+    catch (error) {
+      logwrapper.error(`${logPrefix} Failed to send deployment request to webhook server for rollback server with the following info: ${JSON.stringify(finalDeployObject)}. Error: ${JSON.stringify(error)}`);
+      return false;
+    }
+  }
+
+  static Destroy(destroyObject: IDeployInfo): boolean {
+    let destroyer = new DeployInfo(
+      destroyObject.entrypoint,
+      destroyObject.image,
+      destroyObject.ovs_server,
+      destroyObject.port,
+      destroyObject.servicename
+    );
+    return destroyer._destroy(destroyObject);
+  }
+
+  _destroy(): boolean;
+  _destroy(destroyObject: IDeployInfo): boolean;
+  _destroy(): boolean
+  {
+    let finalDestroyObject: IDeployInfo = this;
+    if (arguments.length === 1) {
+      finalDestroyObject = arguments[0];
+    }
+
+    const destroyPayload = {
+      servicename: finalDestroyObject.servicename,
+      port: finalDestroyObject.port,
+      directory: `${finalDestroyObject.servicename}-${finalDestroyObject.port}`,
+    }
+
+    const rawStringPayload = JSON.stringify(destroyPayload);
+    let payloadHmacSha = createHmac("sha1", deployKey)
+                            .update(rawStringPayload)
+                            .digest("hex");
+
+    let options = {
+      host: webhookHost,
+      port: webhookPort,
+      path: webhookPath,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Destroy-Key': payloadHmacSha
+      },
+    };
+
+    try {
+      const destroyRequest = http.request(options, (res) => {
+        let responseData = '';
+
+        res.on('data', (chunk) => {
+          responseData += chunk;
+        });
+
+        res.on('end', () => {
+          logwrapper.info(`${logPrefix} Response from webhook server: ${responseData}`);
+        });
+      });
+
+      destroyRequest.on('error', (error) => {
+        logwrapper.error(`${logPrefix} Error making destroy request to webhook server: ${JSON.stringify(error)}`);
+      });
+
+      destroyRequest.write(rawStringPayload);
+      destroyRequest.end();
+
+      logwrapper.info(`${logPrefix} Successfully sent destroy request to webhook server for rollback server with the following info: ${JSON.stringify(finalDestroyObject)}`);
+      return true;
+    }
+    catch (error) {
+      logwrapper.error(`${logPrefix} Failed to send destroy request to webhook server for rollback server with the following info: ${JSON.stringify(finalDestroyObject)}. Error: ${JSON.stringify(error)}`);
+      return false;
+    }
+  }
+
+  static getRandomRollbackPort(): number {
+    if (useOnDemandRollback) {
+      return randomInt(env.ON_DEMAND_ROLLBACK_PORT_LOW, env.ON_DEMAND_ROLLBACK_PORT_HIGH);
+    }
+    return randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH);
+  }
+
+  static GetEmpty(): IDeployInfo {
+    var returnObject = new DeployInfo() as IDeployInfo;
+    returnObject.port = DeployInfo.getRandomRollbackPort();
+    return returnObject;
+  }
+
+  static GetDefaults(): IDeployInfo {
+    logwrapper.verbose(`${logPrefix} Reading deploy info from: ${deployInfoFile}`);
+    let returnObject: IDeployInfo = new DeployInfo() as IDeployInfo;
+    try {
+      var data = readFileSync(join(__dirname, deployInfoFile), "utf-8");
+      returnObject = JSON.parse(data) as IDeployInfo;
+      returnObject.port = DeployInfo.getRandomRollbackPort();
+    }
+    catch (error) {
+      logwrapper.error(`${logPrefix} Error reading deploy info from: ${deployInfoFile}, returning empty object. Error: ${JSON.stringify(error)}`);
+    }
+
+  return returnObject;
+  }
+}
+
+export function getDefaultDeployInfo(): IDeployInfo {
+  let returnObject = new DeployInfo() as IDeployInfo;
+
+  try {
+    returnObject = DeployInfo.GetDefaults() as IDeployInfo;
+  }
+  catch (error) {
+    logger.error(`${logPrefix} Error reading deploy info from: ${deployInfoFile}. Error: ${JSON.stringify(error)}`);
+  }
+
+  return returnObject;
+}

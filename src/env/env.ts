@@ -36,7 +36,7 @@ const env = cleanEnv(process.env, {
   UDP_SERVER_IP: str(),
   UDP_SERVER_IP2: str(),
   VERBOSE_LOGGING: num({ default: 0 }),
-  WEBHOOK_DEPLOY_SECRET: str({ default: "CHANGEME" }),
+  WEBHOOK_HMAC_SECRET: str({ default: "CHANGEME" }),
   WEBHOOK_HOST: str({ default: "localhost" }),
   WEBHOOK_PORT: num({ default: 9001 }),
   WEBHOOK_DEPLOY_PATH: str({ default: "/hooks/deploy-rollback-server"}),

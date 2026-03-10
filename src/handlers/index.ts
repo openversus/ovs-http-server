@@ -15,4 +15,3 @@ export * from "./sessions";
 export * from "./social";
 export * from "./ssc";
 export * from "./images";
-export * from "./testing";

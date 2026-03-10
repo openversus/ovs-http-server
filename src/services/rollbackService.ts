@@ -10,7 +10,8 @@ const logPrefix: string = `[${serviceName}]:`;
 
 const webhookHost: string = env.WEBHOOK_HOST ?? "localhost";
 const webhookPort: number = env.WEBHOOK_PORT || 9001;
-const webhookPath: string = env.WEBHOOK_DEPLOY_PATH ?? "/deploy-rollback-server";
+const webhookDeployPath: string = env.WEBHOOK_DEPLOY_PATH ?? "/hooks/deploy-rollback-server";
+const webhookDestroyPath: string = env.WEBHOOK_DESTROY_PATH ?? "/hooks/destroy-rollback-server";
 const deployKey: string = env.DEPLOY_KEY ?? "CHANGEME";
 const deployInfoFile: string = env.DEPLOY_ROLLBACK_DEFAULTS_FILE ?? "../data/deploy-rollback-defaults.json";
 export const useOnDemandRollback: boolean = env.ON_DEMAND_ROLLBACK === 1;
@@ -127,7 +128,7 @@ export class DeployInfo implements IDeployInfo {
     let options = {
       host: webhookHost,
       port: webhookPort,
-      path: webhookPath,
+      path: webhookDeployPath,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -200,7 +201,7 @@ export class DeployInfo implements IDeployInfo {
     let options = {
       host: webhookHost,
       port: webhookPort,
-      path: webhookPath,
+      path: webhookDestroyPath,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

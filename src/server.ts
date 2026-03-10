@@ -42,6 +42,7 @@ import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { NameGenerator } from "./utils/namegeneration";
 import { initAccelByteLobbyWs } from "./accelByteLobbyWs";
+import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
 
 // HTML Rendering
 const handlebars = require("handlebars");
@@ -813,6 +814,14 @@ app.get("/api/custom/events/:lobbyCode", async (req, res) => {
     sub.unsubscribe(channelName);
     sub.quit();
   });
+});
+
+app.post("/api/testing/deploy-rollback-server", async (req, res) => {
+  await handleDeployRollbackServer(req, res);
+});
+
+app.post("/api/testing/destroy-rollback-server", async (req, res) => {
+  await handleDestroyRollbackServer(req, res);
 });
 
 app.use(hydraDecoderMiddleware);

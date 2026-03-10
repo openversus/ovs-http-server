@@ -407,12 +407,4 @@ router.get("/images/:image", (req: Request<{}, {}, {}, {}>, res: Response) => {
   h.handleImages(req, res);
 });
 
-router.post("/api/testing/deploy-rollback-server", async (req, res) => {
-  h.handleDeployRollbackServer(req, res);
-});
-
-router.post("/api/testing/destroy-rollback-server", async (req, res) => {
-  h.handleDestroyRollbackServer(req, res);
-});
-
 export default router;

@@ -23,6 +23,7 @@ const env = cleanEnv(process.env, {
   ON_DEMAND_ROLLBACK: num({ default: 0 }),
   ON_DEMAND_ROLLBACK_PORT_LOW: num({ default: 60000 }),
   ON_DEMAND_ROLLBACK_PORT_HIGH: num({ default: 64000 }),
+  OVS_SERVER: str({ default: "http://localhost:8000" }),
   PROVISIONAL_GAME_THRESHOLD: num({ default: 20 }),
   REDIS: str(),
   REDIS_PORT: num(),

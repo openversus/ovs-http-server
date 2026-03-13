@@ -97,7 +97,7 @@ async function generateStaticAccess(req: express.Request) {
     }
   }
 
-  let ws = `wss://${env.WB_DOMAIN}:${env.WEBSOCKET_PORT}`;
+  let ws = `ws://${env.WB_DOMAIN}:${env.WEBSOCKET_PORT}`;
   // if (ip === "127.0.0.1") {
   //   ws = `ws://testing.openversus.org:${env.WEBSOCKET_PORT}`;
   // } else {

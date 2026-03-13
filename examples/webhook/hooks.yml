@@ -1,0 +1,51 @@
+- id: deploy-rollback-server
+  execute-command: /etc/webhook/scripts/deploy-rollback.sh
+  command-working-directory: /etc/webhook/scripts
+  response-message: I'm a teapot
+  response-headers:
+    - name: Access-Control-Allow-Origin
+      value: "*"
+  pass-arguments-to-command:
+    - source: payload
+      name: port
+    - source: payload
+      name: entrypoint
+    - source: payload
+      name: ovs_server
+    - source: payload
+      name: servicename
+    - source: payload
+      name: image
+
+  trigger-rule:
+    and:
+      - match:
+          type: payload-hmac-sha1
+          secret: "{{ getenv "WEBHOOK_HMAC_SECRET" | js }}"
+          parameter:
+            source: header
+            name: X-Deploy-Key
+
+- id: destroy-rollback-server
+  execute-command: /etc/webhook/scripts/destroy-rollback.sh
+  command-working-directory: /etc/webhook/scripts
+  response-message: I'm a teapot
+  response-headers:
+    - name: Access-Control-Allow-Origin
+      value: "*"
+  pass-arguments-to-command:
+    - source: payload
+      name: directory
+    - source: payload
+      name: servicename
+    - source: payload
+      name: port
+
+  trigger-rule:
+    and:
+      - match:
+          type: payload-hmac-sha1
+          secret: "{{ getenv "WEBHOOK_HMAC_SECRET" | js }}"
+          parameter:
+            source: header
+            name: X-Destroy-Key

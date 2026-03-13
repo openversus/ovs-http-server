@@ -13,6 +13,9 @@ services:
     privileged: true
     restart: unless-stopped
     volumes:
+      # In case you want to use a custom entrypoint, you can mount it here. Just make sure to set the correct permissions on the file.
+      # - /opt/docker/openversus/webhook/entrypoint.sh:/entrypoint.sh
+      - /opt/docker/openversus/webhook/compose-files:/etc/webhook/compose-files
       - /opt/docker/openversus/webhook/hooks.yml:/etc/webhook/hooks.yml
       - /opt/docker/openversus/webhook/scripts:/etc/webhook/scripts
       - /opt/docker/openversus/webhook/log:/var/log/webhook

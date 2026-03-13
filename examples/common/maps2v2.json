@@ -107,7 +107,7 @@
     "M016_V4": {
       "id": "M016_V4",
       "name": "Dexters Lab 3",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   },
@@ -139,7 +139,7 @@
     "MTS001_V1": {
       "id": "MTS001_V1",
       "name": "Space",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   },
@@ -147,14 +147,15 @@
     "MTS002_V3": {
       "id": "MTS002_V3",
       "name": "Beach Boat",
-      "enabled": false
+      "enabled": false,
+      "hazards": false
     }
   },
   {
     "MTS003_V4": {
       "id": "MTS003_V4",
       "name": "Castle 3",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   }

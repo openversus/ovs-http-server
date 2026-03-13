@@ -417,6 +417,8 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
     if (useOnDemandRollback) {
       let deployInfo: IDeployInfo = getDefaultDeployInfo();
       deployInfo.port = match.rollbackPort;
+      deployInfo.entrypoint = deployInfo.entrypoint.replace("CHANGEMEDEFAULTPORT", deployInfo.port.toString());
+      deployInfo.ovs_server = env.OVS_SERVER;
       const isDeployed = DeployInfo.Deploy(deployInfo);
       if (!isDeployed) {
         logger.error(`${logPrefix} Failed to deploy rollback server for match ${matchId} on port ${deployInfo.port}`);

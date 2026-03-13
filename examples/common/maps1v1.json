@@ -98,7 +98,7 @@
   {
     "M015_V1": {
       "id": "M015_V1",
-      "name": "Unknown",
+      "name": "Townsville",
       "enabled": true,
       "hazards": false
     }
@@ -115,7 +115,7 @@
     "M016_V3": {
       "id": "M016_V3",
       "name": "Dexters Lab 2 1v1",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   },
@@ -147,7 +147,7 @@
     "MTS001_V1": {
       "id": "MTS001_V1",
       "name": "Space",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   },
@@ -155,7 +155,7 @@
     "MTS003_V1": {
       "id": "MTS003_V1",
       "name": "Castle",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   }

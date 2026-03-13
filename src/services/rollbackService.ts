@@ -12,7 +12,7 @@ const webhookHost: string = env.WEBHOOK_HOST ?? "localhost";
 const webhookPort: number = env.WEBHOOK_PORT || 9001;
 const webhookDeployPath: string = env.WEBHOOK_DEPLOY_PATH ?? "/hooks/deploy-rollback-server";
 const webhookDestroyPath: string = env.WEBHOOK_DESTROY_PATH ?? "/hooks/destroy-rollback-server";
-const deployKey: string = env.DEPLOY_KEY ?? "CHANGEME";
+const deployKey: string = env.WEBHOOK_HMAC_SECRET ?? "CHANGEME";
 const deployInfoFile: string = env.DEPLOY_ROLLBACK_DEFAULTS_FILE ?? "../data/deploy-rollback-defaults.json";
 export const useOnDemandRollback: boolean = env.ON_DEMAND_ROLLBACK === 1;
 
@@ -167,6 +167,10 @@ export class DeployInfo implements IDeployInfo {
     }
   }
 
+  // The "Destroy" endpoints are unused for now, as the deploy script contains an embedded
+  // shell script that self-destructs the rollback server instance after 9 minutes. These are just here
+  // b uj9=0mkfor future use by the rollback server itself to call after its End of Match call, and the
+  // auto-selflo+-destruct timer will just be there as a redundant deprovisioning measure.
   static Destroy(destroyObject: IDeployInfo): boolean {
     let destroyer = new DeployInfo(
       destroyObject.entrypoint,

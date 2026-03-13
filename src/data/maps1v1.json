@@ -147,7 +147,7 @@
     "MTS001_V1": {
       "id": "MTS001_V1",
       "name": "Space",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   },

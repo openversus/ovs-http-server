@@ -13,9 +13,12 @@ import { getCustomRandomMapByType, getMapList } from "../data/maps";
 import { PlayerTesterModel } from "../database/PlayerTester";
 import ObjectID from "bson-objectid";
 import { randomBytes, randomInt } from "crypto";
+import { useOnDemandRollback } from "./rollbackService";
 import env from "../env/env";
 
 const logPrefix = "[CustomLobby]:";
+let customLobbyUDPPortLow: number = useOnDemandRollback ? env.ON_DEMAND_ROLLBACK_PORT_LOW : env.ROLLBACK_UDP_PORT_LOW
+let customLobbyUDPPortHigh: number = useOnDemandRollback ? env.ON_DEMAND_ROLLBACK_PORT_HIGH : env.ROLLBACK_UDP_PORT_HIGH
 
 // --- Interfaces ---
 
@@ -614,7 +617,7 @@ export async function startMatch(
       createdAt: Date.now(),
       matchType: lobby.mode,
       totalPlayers: allPlayers.length,
-      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
+      rollbackPort: randomInt(customLobbyUDPPortLow, customLobbyUDPPortHigh),
       isPasswordMatch: true, // Custom lobby = no ELO
     };
     await redisUpdateMatch(matchId, match);
@@ -631,7 +634,7 @@ export async function startMatch(
       matchKey: randomBytes(32).toString("base64"),
       map,
       mode: lobby.mode,
-      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
+      rollbackPort: randomInt(customLobbyUDPPortLow, customLobbyUDPPortHigh),
     };
 
     // Include spectators in playerIds so they receive all match notifications
@@ -1007,7 +1010,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
       createdAt: Date.now(),
       matchType: lobby.mode,
       totalPlayers: allPlayers.length,
-      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
+      rollbackPort: randomInt(customLobbyUDPPortLow, customLobbyUDPPortHigh),
       isPasswordMatch: true,
     };
     await redisUpdateMatch(matchId, match);
@@ -1023,7 +1026,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
       matchKey: randomBytes(32).toString("base64"),
       map,
       mode: lobby.mode,
-      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
+      rollbackPort: randomInt(customLobbyUDPPortLow, customLobbyUDPPortHigh),
     };
 
     const playerIds = [...players, ...rematchSpectatorEntries].map((p) => p.playerId);

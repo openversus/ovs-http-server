@@ -121,7 +121,7 @@ export async function requestMatchmakingByLobby(
     server_submitted: false,
   };
 
-  await queueMatchmaking(accountId, [accountId], data.from_match, data.id, matchType);
+  await queueMatchmaking(accountId, Object.keys(lobby.Teams[0].Players), data.from_match, data.id, matchType);
   return data;
 }
 

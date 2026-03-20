@@ -89,7 +89,7 @@ async function process1v1Queue(): Promise<boolean> {
     for (const group of matchedGroups) {
       try {
         await removeTicketsFromQueue(MATCH_TYPES.ONE_V_ONE, group);
-        await createMatch(group, MATCH_TYPES.ONE_V_ONE);
+        await createRetailMatch(group, MATCH_TYPES.ONE_V_ONE);
         createdAny = true;
       } catch (error) {
         logger.error(`Error creating 1v1 match from matched group: ${error}`);
@@ -136,7 +136,7 @@ async function process2v2Queue(): Promise<boolean> {
     for (const group of matchedGroups) {
       try {
         await removeTicketsFromQueue(MATCH_TYPES.TWO_V_TWO, group);
-        await createMatch(group, MATCH_TYPES.TWO_V_TWO);
+        await createRetailMatch(group, MATCH_TYPES.TWO_V_TWO);
         createdAny = true;
       } catch (error) {
         logger.error(`Error creating 2v2 match from matched group: ${error}`);
@@ -247,7 +247,7 @@ async function configurePlayersForMatch(
   return players;
 }
 
-async function createMatch(tickets: MatchmakingTicket[], matchType: MATCH_TYPES): Promise<void> {
+async function createRetailMatch(tickets: MatchmakingTicket[], matchType: MATCH_TYPES): Promise<void> {
   try {
     const totalPlayers = tickets.reduce((sum, ticket) => sum + ticket.playerIds.length, 0);
 

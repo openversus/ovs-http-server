@@ -17,6 +17,7 @@ export enum MATCH_TYPES {
   ONE_V_ONE_RANKED = "ranked-1v1",
   TWO_V_TWO_RANKED = "ranked-2v2",
   RIFTS = "rifts",
+  ARENA = "arena",
 }
 
 export const MATCH_STATE = {
@@ -75,14 +76,14 @@ export type MatchmakingPerksLockMessage = {
 
 export type GameplayConfig = {
   ArenaId?: string;
-  ArenaData?: ArenaData;
   ArenaConstants?: ArenaConstants;
+  ArenaData?: ArenaData;
   GameplayConfig: MatchConfig;
 };
 
 export type ActiveMatch = {
   matchKey: string;
-  GameplayConfig: GameplayConfig;
+  MatchConfig: MatchConfig;
   state: string;
 };
 

@@ -87,6 +87,22 @@ router.post(
   },
 );
 
+router.post(
+  "/matches/matchmaking/arena-retail/request",
+  async ({ claims, body }) => {
+    return await requestMatchmakingByLobby(
+      body.match,
+      claims.id,
+      MATCH_TYPES.ARENA,
+      body.data.MultiplayParams,
+      "arena-retail",
+    );
+  },
+  {
+    body: RequestMatchSchema,
+  },
+);
+
 router.post("/matches/matchmaking/request/:matchId/cancel", async ({ claims, params }) => {
   return await cancelMatchmaking(claims.id, params.matchId);
 });
@@ -123,7 +139,7 @@ router.put(
       return {
         body: {
           message: "Perks were locked",
-          GameplayConfig: activeMatch.matchConfig,
+          GameplayConfig: activeMatch.MatchConfig,
         },
         metadata: null,
         return_code: 0,

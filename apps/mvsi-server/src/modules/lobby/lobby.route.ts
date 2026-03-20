@@ -10,11 +10,13 @@ import {
   createArenaLobby,
   joinArenaLobby,
 } from "./arena.lobby.service";
+import type { ArenaLobby } from "./lobby.types";
 import {
   addCustomGameBot,
   updateCustomGameBotFighter,
   createCustomLobby,
   createPartyLobby,
+  getLobby,
   invitePlayerToLobby,
   joinCustomLobby,
   kickFromLobby,
@@ -711,7 +713,11 @@ router.put(
 router.put(
   "/ssc/invoke/start_arena_match",
   async ({ claims, body }) => {
-    // TODO: start matchmaking
+    const lobby = (await getLobby(body.LobbyId)) as ArenaLobby | null;
+    if (!lobby || lobby.LeaderID !== claims.id) {
+      return { body: {}, metadata: null, return_code: 1 };
+    }
+    await assembleArenaMatch([lobby]);
     return { body: {}, metadata: null, return_code: 0 };
   },
   {

@@ -289,7 +289,7 @@ async function createMatch(tickets: MatchmakingTicket[], matchType: MATCH_TYPES)
         RiftNodeId: "",
         bModeGrantsProgress: true,
         EventQueueSlug: "",
-        MatchId: "",
+        MatchId: new ObjectId().toHexString(),
         Created: new Date(),
         Map: getRandomMapByType(matchType),
         ModeString: matchType,

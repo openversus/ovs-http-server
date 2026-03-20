@@ -132,11 +132,10 @@ export async function getActiveMatch(matchId: string) {
 
 export async function notifyActiveMatchCreated(gameplayConfig: GameplayConfig) {
   const EX = 60 * 20;
-  gameplayConfig.GameplayConfig.MatchId = new ObjectId().toHexString();
   const matchmakingMatchConfig: ActiveMatch = {
     matchKey: randomUUID(),
     state: "active",
-    GameplayConfig: gameplayConfig,
+    MatchConfig: gameplayConfig.GameplayConfig,
   };
   await redisClient.json.set(
     MATCH_KEY(gameplayConfig.GameplayConfig.MatchId),
@@ -246,8 +245,8 @@ export async function completeMatchmaking(
 
 export async function lockPerks(containerMatchId: string, accountId: string, perks: string[]) {
   const script = `
-    redis.call('JSON.SET', KEYS[1], '$.matchConfig.Players["' .. ARGV[1] .. '"].Perks', ARGV[2])
-    local result = redis.call('JSON.GET', KEYS[1], '$.matchConfig.Players')
+    redis.call('JSON.SET', KEYS[1], '$.MatchConfig.Players["' .. ARGV[1] .. '"].Perks', ARGV[2])
+    local result = redis.call('JSON.GET', KEYS[1], '$.MatchConfig.Players')
     local decoded = cjson.decode(result)
     local players = decoded[1]
     
@@ -266,7 +265,6 @@ export async function lockPerks(containerMatchId: string, accountId: string, per
     end
     return false
   `;
-
   const result = await redisClient.eval(script, {
     keys: [MATCH_KEY(containerMatchId)],
     arguments: [accountId, JSON.stringify(perks)],

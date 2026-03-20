@@ -18,6 +18,7 @@ import {
   broadcastNotificationToTopic,
   broadcastNotificationToUsers,
 } from "../notifications/notifications.utils";
+import { generateBotPlayerConfig } from "../bots/bots.service";
 import { getPlayerConfig, getPlayersConfig } from "../playerConfig/playerConfig.service";
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
 import {
@@ -1558,41 +1559,15 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
         };
         const diff = BOT_DIFFICULTY[lobbyPlayer.BotSettingSlug] ?? BOT_DIFFICULTY.Medium;
         playerConfig = {
-          AccountId: playerId,
-          Username: playerId,
-          bUseCharacterDisplayName: true,
+          ...generateBotPlayerConfig(playerId),
           PlayerIndex: lobbyPlayer.LobbyPlayerIndex,
           TeamIndex: team.TeamIndex,
           Character: botPlayer.Fighter?.Slug ?? "",
           Skin: botPlayer.Skin?.Slug ?? "",
-          Taunts: [],
-          Perks: [
-            "perk_gen_boxer",
-            "perk_team_speed_force_assist",
-            "perk_purest_of_motivations",
-            "perk_gen_well_rounded",
-          ],
-          Banner: "banner_default",
-          ProfileIcon: "",
-          RingoutVfx: "ring_out_vfx_default",
-          bIsBot: true,
-          BotBehaviorOverride: "",
           BotDifficultyMin: diff.min,
           BotDifficultyMax: diff.max,
           Buffs: buffs,
-          StatTrackers: [],
-          Gems: [],
-          StartingDamage: 0,
           Handicap: handicap,
-          GameplayPreferences: 0,
-          bAutoPartyPreference: false,
-          PartyMember: null,
-          PartyId: null,
-          RankedTier: null,
-          RankedDivision: null,
-          WinStreak: null,
-          IsHost: false,
-          Ip: "",
         };
       } else {
         const config = playerConfigs.get(playerId);

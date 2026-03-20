@@ -1,21 +1,18 @@
 import { logger } from "@mvsi/logger";
 import { redisClient } from "@mvsi/redis";
 import { ObjectId } from "mongodb";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { getRandomMap2v2 } from "../../data/maps";
 import { getAssetsByType } from "../../loadAssets";
-import {
-  type GameplayConfig,
-  MATCHMAKING_MATCH_FOUND_CHANNEL,
-  type MatchFoundChannelMessage,
-} from "../matchmaking/matchmaking.types";
+import type { GameplayConfig } from "../matchmaking/matchmaking.types";
+import { notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
 import { broadcastNotificationToUsers } from "../notifications/notifications.utils";
+import { generateBotId, isBotId } from "../bots/bots.service";
 import { getPlayerConfig } from "../playerConfig/playerConfig.service";
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
 import type { ArenaLobby, LobbyCreatedMessage } from "./lobby.types";
 import { LOBBY_JOINED_CHANNEL } from "./lobby.types";
-import { createBaseLobby, getLobby, notifyLobbyJoined } from "./lobby.service";
-import { notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
+import { createBaseLobby, notifyLobbyJoined } from "./lobby.service";
 import type {
   ArenaConstants,
   ArenaData,
@@ -28,8 +25,8 @@ import type {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const ARENA_EX = 2 * 24 * 60 * 60; // 2 days
-const MAX_TEAMS = 8;
+const ARENA_EX = 2 * 60 * 60; // 2 hours
+const TOTAL_TEAMS = 8;
 const PLAYERS_PER_TEAM = 2;
 const SELECTABLE_CHARACTER_COUNT = 6;
 
@@ -43,87 +40,6 @@ function arenaStateKey(id: string) {
 
 function evalLua(script: string, keys: string[], args: string[]) {
   return redisClient.eval(script, { keys, arguments: args });
-}
-
-// ─── Bot cosmetics pools ──────────────────────────────────────────────────────
-
-const BOT_NAMES = [
-  "AuntieKim",
-  "SkyIsBlue",
-  "SweetieDown",
-  "RoboNickPhD",
-  "BristleKemp",
-  "Laney03",
-  "Florrekko",
-  "HarmonicMelody",
-  "FelixDcat",
-  "DMah",
-  "Dark",
-  "CelestialBard",
-  "NightOwl777",
-  "PixelPulse",
-  "StarChaser",
-  "IronGlitch",
-  "ChaosTheory",
-  "ZeroGravity",
-  "LunarTide",
-  "QuantumByte",
-];
-
-const BOT_RINGOUT_VFX = [
-  "ring_out_vfx_default",
-  "ring_out_vfx_aku_fire",
-  "ring_out_vfx_adam_west",
-  "ring_out_vfx_monster_reveal",
-  "ring_out_vfx_firework_show",
-  "ring_out_vfx_omega_beam",
-  "ring_out_vfx_bat_signal",
-  "ring_out_vfx_lunar_rabbit",
-  "ring_out_vfx_lasso_of_truth",
-  "ring_out_vfx_boom_tube",
-  "ring_out_vfx_soothing_energy",
-  "ring_out_vfx_house_lannister",
-  "ring_out_vfx_house_Targeryen",
-  "ring_out_vfx_happy_birday_tweetie",
-  "ring_out_vfx_monster_tweety",
-  "ring_out_vfx_sugar_spice_everything_nice",
-];
-
-const BOT_BANNERS = [
-  "banner_default",
-  "banner_cheesy_temptations",
-  "banner_hole_sweet_hole",
-  "banner_lannister_banner",
-  "banner_slushy_plushy",
-  "banner_scoobtober_bats",
-  "banner_presently_shocked_epic",
-  "banner_marcyshouse",
-  "banner_jokerhaha",
-  "banner_foretold_champion_rare",
-  "banner_test",
-  "banner_3rror_mvs",
-  "banner_marvin_wardrobe_v2",
-  "banner_housetargaryen_01",
-  "banner_tools_of_the_trade",
-  "banner_chestnuts_not_included",
-];
-
-const BOT_PROFILE_ICONS = [
-  "profile_icon_default",
-  "profile_icon_dc_bat_batman_1",
-  "profile_icon_wb_watertower",
-  "profile_icon_cn_at_finn_adventure_time",
-  "profile_icon_wb_sd_scooby_snack",
-  "profile_icon_wb_sd_mysterymachine",
-  "profile_icon_mvs_beach_day",
-  "profile_icon_bugsbunny_thewabbit",
-  "profileicon_stripe_mogwaistripe",
-  "profileicon_wb_sj_oldschooljam",
-  "profile_icon_c036_data_corrupted",
-];
-
-function randomItem<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
 }
 
 // ─── Arena constants (tweak here to tune gameplay) ───────────────────────────
@@ -306,7 +222,6 @@ export async function createArenaLobby(accountId: string): Promise<ArenaLobby> {
   };
 
   await notifyLobbyJoined(arenaLobby);
-
   logger.info(`Arena lobby created by ${accountId} - matchId: ${arenaLobby.MatchID}`);
   return arenaLobby;
 }
@@ -347,7 +262,6 @@ export async function joinArenaLobby(
     JSON.stringify({ lobbyId: matchId, accountId } satisfies LobbyCreatedMessage),
   );
 
-  // Notify existing lobby members about the new player
   const playerTeam = updatedLobby.Teams.find((t) => t.Players[accountId]);
   const otherPlayers = Object.keys(updatedLobby.PlayerGameplayPreferences).filter(
     (id) => id !== accountId,
@@ -374,71 +288,94 @@ export async function joinArenaLobby(
   return updatedLobby;
 }
 
-export async function assembleArenaMatch(arenaLobbyId: string, leaderId: string) {
-  const lobby = (await getLobby(arenaLobbyId)) as ArenaLobby | null;
-  if (!lobby || lobby.LeaderID !== leaderId) return null;
+// ─── Arena assembly ───────────────────────────────────────────────────────────
 
+/**
+ * Assemble an arena match from one or more ArenaLobbies.
+ * Called either from the start_arena_match route (single lobby) or
+ * from the matchmaking worker (multiple matched lobbies).
+ */
+export async function assembleArenaMatch(lobbies: ArenaLobby[]): Promise<ArenaData | null> {
+  if (lobbies.length === 0) return null;
+
+  const arenaId = new ObjectId().toHexString();
   const arenaConstants = getArenaConstants();
 
-  // Assign a UUID team ID to each of the 8 lobby teams
-  const teamUUIDs: string[] = Array.from({ length: MAX_TEAMS }, () => randomUUID());
-
-  // Fill any team that has fewer than PLAYERS_PER_TEAM with bots
-  let globalPlayerIndex = lobby.Teams.reduce((sum, t) => sum + t.Length, 0);
-  for (const team of lobby.Teams) {
-    const slotsNeeded = PLAYERS_PER_TEAM - team.Length;
-    for (let j = 0; j < slotsNeeded; j++) {
-      const botId = `Bot${randomUUID()}`;
-      team.Players[botId] = {
-        Account: { id: botId },
-        JoinedAt: new Date(),
-        BotSettingSlug: "Medium",
-        LobbyPlayerIndex: globalPlayerIndex++,
-        CrossplayPreference: 0,
-      };
-      team.Length++;
+  // ── 1. Extract real-player teams from all lobbies, preserving pairs ──────
+  // A team slot in a lobby with at least 1 real player becomes one arena team.
+  const rawTeams: string[][] = [];
+  for (const lobby of lobbies) {
+    for (const team of lobby.Teams) {
+      const realPlayers = Object.entries(team.Players)
+        .filter(([, p]) => p.BotSettingSlug === "")
+        .map(([id]) => id);
+      if (realPlayers.length > 0) {
+        rawTeams.push(realPlayers);
+      }
     }
   }
 
-  // Identify real players (BotSettingSlug is empty for real players)
-  const realPlayerIds: string[] = [];
-  for (const team of lobby.Teams) {
-    for (const [pid, p] of Object.entries(team.Players)) {
-      if (p.BotSettingSlug === "") realPlayerIds.push(pid);
-    }
-  }
+  // ── 2. Ensure at least 4 real teams; pad with bot-only teams to reach 8 ──
+  const MIN_REAL_TEAMS = 4;
+  const botTeamsNeeded = Math.max(
+    TOTAL_TEAMS - rawTeams.length,
+    rawTeams.length < MIN_REAL_TEAMS ? MIN_REAL_TEAMS : 0,
+  );
+  const totalTeams = rawTeams.length + botTeamsNeeded;
+  const targetTeams = Math.max(totalTeams, TOTAL_TEAMS);
 
-  // Fetch configs for real players
+  // Pad rawTeams to targetTeams with empty bot-only slots
+  while (rawTeams.length < targetTeams) {
+    rawTeams.push([]);
+  }
+  // Cap to TOTAL_TEAMS
+  const teamSlots = rawTeams.slice(0, TOTAL_TEAMS);
+
+  // ── 3. Generate a new ObjectId for each team ──────────────────────────────
+  const teamIds = teamSlots.map(() => new ObjectId().toHexString());
+
+  // ── 4. Fill each team to PLAYERS_PER_TEAM with bots ──────────────────────
+  const teams: { teamId: string; players: string[] }[] = teamSlots.map((players, i) => {
+    const filled = [...players];
+    while (filled.length < PLAYERS_PER_TEAM) {
+      filled.push(generateBotId());
+    }
+    return { teamId: teamIds[i], players: filled };
+  });
+
+  // ── 5. Fetch PlayerConfig for all players (real via Redis, bots generated) ─
   const playerConfigMap = new Map<string, PlayerConfig>();
-  for (const pid of realPlayerIds) {
-    const config = await getPlayerConfig(pid);
-    if (config) playerConfigMap.set(pid, config);
+  for (const { players } of teams) {
+    for (const pid of players) {
+      if (!playerConfigMap.has(pid)) {
+        const config = await getPlayerConfig(pid);
+        if (config) playerConfigMap.set(pid, config);
+      }
+    }
   }
 
-  // Build PlayerInfo for everyone
-  const playerInfo: Record<string, ArenaPlayerInfo> = {};
-  for (let i = 0; i < MAX_TEAMS; i++) {
-    const team = lobby.Teams[i];
-    const teamId = teamUUIDs[i];
-    for (const [pid, lobbyPlayer] of Object.entries(team.Players)) {
-      const isBot = lobbyPlayer.BotSettingSlug !== "";
-      const config = playerConfigMap.get(pid);
+  const realPlayerIds = teams.flatMap(({ players }) => players.filter((p) => !isBotId(p)));
 
+  // ── 6. Build PlayerInfo ───────────────────────────────────────────────────
+  const playerInfo: Record<string, ArenaPlayerInfo> = {};
+  for (const { teamId, players } of teams) {
+    for (const pid of players) {
+      const config = playerConfigMap.get(pid)!;
+      const isBot = config.bIsBot;
       playerInfo[pid] = {
         Loadout: { Character: "", Skin: "" },
         SelectableCharacters: isBot ? [] : getRandomCharacters(SELECTABLE_CHARACTER_COUNT),
         AccountId: pid,
-        GameplayPreferences: isBot ? 0 : (lobby.PlayerGameplayPreferences[pid] ?? 964),
+        GameplayPreferences: config.GameplayPreferences,
         TeamId: teamId,
         PlayerData: createArenaPlayerData(),
         CharacterClass: 0,
         AccountInfo: {
-          RingoutVfx:
-            config?.RingoutVfx ?? (isBot ? randomItem(BOT_RINGOUT_VFX) : "ring_out_vfx_default"),
-          Taunts: config?.Taunts ?? [],
-          Banner: config?.Banner ?? (isBot ? randomItem(BOT_BANNERS) : "banner_default"),
-          ProfileIcon: config?.ProfileIcon ?? (isBot ? randomItem(BOT_PROFILE_ICONS) : ""),
-          Name: (config?.Username as string) ?? (isBot ? randomItem(BOT_NAMES) : ""),
+          RingoutVfx: config.RingoutVfx,
+          Taunts: config.Taunts,
+          Banner: config.Banner,
+          ProfileIcon: config.ProfileIcon,
+          Name: config.Username as string,
         },
         bIsBot: isBot,
         ...(isBot
@@ -448,128 +385,91 @@ export async function assembleArenaMatch(arenaLobbyId: string, leaderId: string)
     }
   }
 
-  // Build TeamInfo — pair teams sequentially: 0v1, 2v3, 4v5, 6v7
+  // ── 7. Build TeamInfo with round-1 pairings (0v1, 2v3, 4v5, 6v7) ─────────
+  const roundMap = getRandomMap2v2();
+
   const teamInfo: Record<string, ArenaTeamInfo> = {};
-  for (let i = 0; i < MAX_TEAMS; i++) {
-    const teamId = teamUUIDs[i];
+  for (let i = 0; i < TOTAL_TEAMS; i++) {
+    const { teamId, players } = teams[i];
     const opponentIdx = i % 2 === 0 ? i + 1 : i - 1;
-    const opponentId = teamUUIDs[opponentIdx];
+    const opponentId = teamIds[opponentIdx];
 
     const hasPlayedTeam: Record<string, boolean> = {};
-    for (let j = 0; j < MAX_TEAMS; j++) {
-      if (j !== i) hasPlayedTeam[teamUUIDs[j]] = j === opponentIdx;
+    for (let j = 0; j < TOTAL_TEAMS; j++) {
+      if (j !== i) hasPlayedTeam[teamIds[j]] = j === opponentIdx;
     }
 
     teamInfo[teamId] = {
       TeamId: teamId,
       TeamIndex: i,
-      Players: Object.keys(lobby.Teams[i].Players),
+      Players: players,
       Stats: createArenaTeamStats(),
       LifeRemaining: 100,
       FinalRank: 0,
       RoundOpponents: [opponentId],
       HasPlayedTeam: hasPlayedTeam,
       Matches: [],
+      PriorMap: roundMap,
     };
   }
 
-  const arenaState: ArenaData = {
-    AllMultiplayParams: lobby.AllMultiplayParams,
+  const arenaData: ArenaData = {
+    AllMultiplayParams: lobbies[0].AllMultiplayParams,
     PlayerInfo: playerInfo,
     CurrentRound: 1,
     TeamInfo: teamInfo,
     Players: realPlayerIds,
   };
 
-  // Create round-1 matches and notify players (pairs: 0v1, 2v3, 4v5, 6v7)
-  for (let i = 0; i < MAX_TEAMS; i += 2) {
-    const teamAId = teamUUIDs[i];
-    const teamBId = teamUUIDs[i + 1];
-    const teamAPlayers = Object.keys(lobby.Teams[i].Players);
-    const teamBPlayers = Object.keys(lobby.Teams[i + 1].Players);
-    const allMatchPlayers = [...teamAPlayers, ...teamBPlayers];
+  // ── 8. Create per-match GameplayConfig, store, and notify real matches ─────
+  for (let i = 0; i < TOTAL_TEAMS; i += 2) {
+    const { teamId: teamAId, players: teamAPlayers } = teams[i];
+    const { teamId: teamBId, players: teamBPlayers } = teams[i + 1];
 
-    const realInMatch = allMatchPlayers.filter((pid) => playerConfigMap.has(pid));
+    const realInMatch = [...teamAPlayers, ...teamBPlayers].filter((pid) => !isBotId(pid));
     const isRealMatch = realInMatch.length > 0;
     const matchId = isRealMatch ? new ObjectId().toHexString() : `Sim${randomUUID()}`;
 
-    // Record match in team info
-    arenaState.TeamInfo[teamAId].Matches.push(matchId);
-    arenaState.TeamInfo[teamBId].Matches.push(matchId);
+    arenaData.TeamInfo[teamAId].Matches.push(matchId);
+    arenaData.TeamInfo[teamBId].Matches.push(matchId);
 
-    if (isRealMatch) {
-      const map = getRandomMap2v2();
-      arenaState.TeamInfo[teamAId].PriorMap = map;
-      arenaState.TeamInfo[teamBId].PriorMap = map;
-    }
-
-    // Build match players (TeamIndex 0 = teamA, 1 = teamB)
+    // Build match Players for this 2v2
     const matchPlayers: Record<string, PlayerConfig> = {};
-    for (let j = 0; j < allMatchPlayers.length; j++) {
-      const pid = allMatchPlayers[j];
-      const teamIdx = j < PLAYERS_PER_TEAM ? 0 : 1;
-      const isBot = !playerConfigMap.has(pid);
-      const info = playerInfo[pid];
-
-      if (isBot) {
-        matchPlayers[pid] = {
-          AccountId: pid,
-          Username: info.AccountInfo.Name,
-          bUseCharacterDisplayName: true,
-          PlayerIndex: j,
-          TeamIndex: teamIdx,
-          Character: "",
-          Skin: "",
-          Taunts: [],
-          Perks: [
-            "perk_gen_boxer",
-            "perk_team_speed_force_assist",
-            "perk_purest_of_motivations",
-            "perk_gen_well_rounded",
-          ],
-          Banner: info.AccountInfo.Banner,
-          ProfileIcon: info.AccountInfo.ProfileIcon,
-          RingoutVfx: info.AccountInfo.RingoutVfx,
-          bIsBot: true,
-          BotBehaviorOverride: "",
-          BotDifficultyMin: 2,
-          BotDifficultyMax: 2,
-          Buffs: [],
-          StatTrackers: [],
-          Gems: [],
-          StartingDamage: 0,
-          Handicap: 0,
-          GameplayPreferences: 0,
-          bAutoPartyPreference: false,
-          PartyMember: null,
-          PartyId: null,
-          RankedTier: null,
-          RankedDivision: null,
-          WinStreak: null,
-          IsHost: false,
-          Ip: "",
-        };
-      } else {
-        const config = playerConfigMap.get(pid)!;
-        matchPlayers[pid] = {
-          ...config,
-          PlayerIndex: j,
-          TeamIndex: teamIdx,
-          Character: "",
-          Skin: "",
-          Buffs: [],
-          Handicap: 0,
-          GameplayPreferences: lobby.PlayerGameplayPreferences[pid] ?? config.GameplayPreferences,
-          PartyId: null,
-          PartyMember: null,
-          IsHost: pid === lobby.LeaderID,
-        };
-      }
+    for (let j = 0; j < teamAPlayers.length; j++) {
+      const pid = teamAPlayers[j];
+      matchPlayers[pid] = {
+        ...playerConfigMap.get(pid)!,
+        PlayerIndex: j,
+        TeamIndex: 0,
+        Character: "",
+        Skin: "",
+        Buffs: [],
+        Handicap: 0,
+        PartyId: null,
+        PartyMember: null,
+        IsHost: false,
+      };
     }
-
-    const map = arenaState.TeamInfo[teamAId].PriorMap ?? getRandomMap2v2();
+    for (let j = 0; j < teamBPlayers.length; j++) {
+      const pid = teamBPlayers[j];
+      matchPlayers[pid] = {
+        ...playerConfigMap.get(pid)!,
+        PlayerIndex: j,
+        TeamIndex: 1,
+        Character: "",
+        Skin: "",
+        Buffs: [],
+        Handicap: 0,
+        PartyId: null,
+        PartyMember: null,
+        IsHost: false,
+      };
+    }
 
     const gameplayConfig: GameplayConfig = {
+      ArenaId: arenaId,
+      ArenaData: arenaData,
+      ArenaConstants: arenaConstants,
       GameplayConfig: {
         ArenaModeInfo: {
           FaceoffWaitTime: arenaConstants.FaceoffWaitTime,
@@ -606,47 +506,31 @@ export async function assembleArenaMatch(arenaLobbyId: string, leaderId: string)
         MatchId: matchId,
         bIsOnlineMatch: true,
         ModeString: "arena",
-        Map: map,
+        Map: roundMap,
         bIsRift: false,
       },
     };
 
-    await notifyActiveMatchCreated(gameplayConfig);
-
     if (isRealMatch) {
-      const msg: MatchFoundChannelMessage = {
-        matchId,
-        matchKey: randomBytes(32).toString("base64"),
-        playerIds: realInMatch,
-        gameNotification: {
-          data: {
-            ArenaId: arenaLobbyId,
-            ArenaData: arenaState,
-            ArenaConstants: getArenaConstants(),
-            MatchId: matchId,
-            GameplayConfig: gameplayConfig,
-            template_id: "OnGameplayConfigNotified",
-          },
-          payload: { match: { id: matchId }, custom_notification: "realtime" },
-          header: "",
-          cmd: "update",
-        },
-      };
-      await redisClient.publish(MATCHMAKING_MATCH_FOUND_CHANNEL, JSON.stringify(msg));
+      await notifyActiveMatchCreated(gameplayConfig);
     }
   }
 
-  // Persist arena state
-  const stateKey = arenaStateKey(arenaLobbyId);
+  // ── 9. Persist ArenaData ──────────────────────────────────────────────────
+  const stateKey = arenaStateKey(arenaId);
   await redisClient
     .multi()
-    .json.set(stateKey, "$", arenaState as Parameters<typeof redisClient.json.set>[2])
+    .json.set(stateKey, "$", arenaData as Parameters<typeof redisClient.json.set>[2])
     .expire(stateKey, ARENA_EX)
     .exec();
 
-  logger.info(`Arena match started for lobby ${arenaLobbyId}`);
-  return arenaState;
+  logger.info(
+    `Arena match assembled: arenaId=${arenaId}, teams=${TOTAL_TEAMS}, realPlayers=${realPlayerIds.length}`,
+  );
+  return arenaData;
 }
+
+// ─── Per-round actions ────────────────────────────────────────────────────────
 
 export async function arenaSelectCharacter(
   arenaLobbyId: string,
@@ -671,7 +555,6 @@ export async function arenaPlayerShopClosed(
     NumRerolls: number;
   },
 ) {
-  // Shop phase records; full item processing can be expanded here
   return {};
 }
 
@@ -681,7 +564,6 @@ export async function arenaCheckin(
   _containerMatchId: string,
   _accountId: string,
 ) {
-  // Between-round checkin; trigger next-round logic here when all players check in
   return {};
 }
 

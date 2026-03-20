@@ -111,7 +111,7 @@ async function handleOnMatchEnd(notification: MatchEndMessage) {
   for (const client of connectedClients) {
     const data = {
       data: {
-        GameplayConfig: activeMatch.GameplayConfig,
+        GameplayConfig: activeMatch.MatchConfig,
         template_id: "EndOfMatchPayload",
         ClientReturnData: {},
       },
@@ -231,12 +231,12 @@ async function handleAllPerksLocked(notification: MatchmakingPerksLockMessage) {
   }
   const message = {
     data: {
-      GameplayConfig: activeMatch.GameplayConfig,
+      GameplayConfig: activeMatch.MatchConfig,
       template_id: "PerksLockedNotification",
     },
     payload: {
       match: {
-        id: activeMatch.GameplayConfig.GameplayConfig.MatchId,
+        id: activeMatch.MatchConfig.MatchId,
       },
       custom_notification: "realtime",
     },

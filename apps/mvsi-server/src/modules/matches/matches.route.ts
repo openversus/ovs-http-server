@@ -28,8 +28,10 @@ router.get(
 );
 
 router.put("/matches/:lobbyId", async ({ claims, params }) => {
-  // This is really not needed but MVS calls this route after creating a lobby
-  // Creating a lobby already sets up everything not sure what this is needed for
+  const lobby = await getLobby(params.lobbyId);
+  if (!lobby) {
+    return {};
+  }
   return {
     updated_at: new Date(),
     created_at: new Date(),
@@ -47,33 +49,15 @@ router.put("/matches/:lobbyId", async ({ claims, params }) => {
     arbitration: null,
     data: {},
     server_data: {
-      Teams: [
-        {
-          TeamIndex: 0,
-          Players: {
-            [claims.id]: {
-              Account: { id: claims.id },
-              JoinedAt: new Date(),
-              BotSettingSlug: "",
-              LobbyPlayerIndex: 0,
-              CrossplayPreference: 1,
-            },
-          },
-          Length: 1,
-        },
-        { TeamIndex: 1, Players: {}, Length: 0 },
-        { TeamIndex: 2, Players: {}, Length: 0 },
-        { TeamIndex: 3, Players: {}, Length: 0 },
-        { TeamIndex: 4, Players: {}, Length: 0 },
-      ],
-      LeaderID: claims.id,
+      Teams: lobby.Teams,
+      LeaderID: lobby.LeaderID,
       LobbyType: 0,
-      ReadyPlayers: {},
-      PlayerGameplayPreferences: { [claims.id]: 544 },
-      PlayerAutoPartyPreferences: { [claims.id]: true },
+      ReadyPlayers: lobby.ReadyPlayers,
+      PlayerGameplayPreferences: lobby.PlayerGameplayPreferences,
+      PlayerAutoPartyPreferences: lobby.PlayerAutoPartyPreferences,
       GameVersion: env.GAME_VERSION,
       HissCrc: getCurrentCRC(),
-      Platforms: { [claims.id]: "PC" },
+      Platforms: lobby.Platforms,
       AllMultiplayParams: {
         "1": {
           MultiplayClusterSlug: "ec2-us-east-1-dokken",
@@ -92,11 +76,9 @@ router.put("/matches/:lobbyId", async ({ claims, params }) => {
           MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682",
         },
       },
-      LockedLoadouts: {
-        [claims.id]: { Character: "character_wonder_woman", Skin: "skin_wonder_woman_default" },
-      },
-      ModeString: "1v1",
-      IsLobbyJoinable: true,
+      LockedLoadouts: lobby.LockedLoadouts,
+      ModeString: "TODO",
+      IsLobbyJoinable: lobby.IsLobbyJoinable,
     },
     players: {
       all: [
@@ -149,8 +131,8 @@ router.put("/matches/:lobbyId", async ({ claims, params }) => {
     last_warning_time: null,
     template: {
       type: "async",
-      name: "party_lobby",
-      slug: "party_lobby",
+      name: lobby.Template,
+      slug: lobby.Template,
       min_players: 2,
       max_players: 2,
       game_server_integration_enabled: false,
@@ -251,16 +233,16 @@ mvsi_match_routes.post(
     if (match?.matchKey !== body.key) {
       return "";
     }
-    const playerKeys = Object.keys(match.GameplayConfig.Players);
+    const playerKeys = Object.keys(match.MatchConfig.Players);
     const players = playerKeys.map((playerKey) => {
-      const player = match.GameplayConfig.Players[playerKey];
+      const player = match.MatchConfig.Players[playerKey];
       return {
         player_index: player.PlayerIndex,
         ip: player.Ip,
         is_host: player.IsHost,
       };
     });
-    const humanCount = playerKeys.filter((k) => !match.GameplayConfig.Players[k].bIsBot).length;
+    const humanCount = playerKeys.filter((k) => !match.MatchConfig.Players[k].bIsBot).length;
     const result = {
       max_players: humanCount,
       match_duration: 36000,
@@ -285,10 +267,8 @@ mvsi_match_routes.post(
     }
     if (match) {
       await notifyActiveMatchEnded(
-        Object.keys(match.GameplayConfig.Players).map(
-          (p) => match.GameplayConfig.Players[p].AccountId,
-        ),
-        match.GameplayConfig.MatchId,
+        Object.keys(match.MatchConfig.Players).map((p) => match.MatchConfig.Players[p].AccountId),
+        match.MatchConfig.MatchId,
       );
       return "";
     }

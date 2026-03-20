@@ -2,6 +2,7 @@ import { PlayerModel } from "@mvsi/database/models/Player";
 import { logger } from "@mvsi/logger";
 import { redisClient } from "@mvsi/redis";
 import { ObjectId } from "mongodb";
+import { generateBotPlayerConfig, isBotId } from "../bots/bots.service";
 import { getCosmeticsConfigurationForPlayer } from "../cosmetics/cosmetics.service";
 import type { PlayerConfig } from "./playerConfig.types";
 import { getLobby } from "../lobby/lobby.service";
@@ -14,7 +15,10 @@ export async function setPlayerConfig(
   await redisClient.set(`player:${playerId}:config`, JSON.stringify(playerConfig));
 }
 
-export async function getPlayerConfig(playerId: string) {
+export async function getPlayerConfig(playerId: string): Promise<PlayerConfig | undefined> {
+  if (isBotId(playerId)) {
+    return generateBotPlayerConfig(playerId);
+  }
   const playerConfigStr = await redisClient.get(`player:${playerId}:config`);
   if (playerConfigStr) {
     return JSON.parse(playerConfigStr) as PlayerConfig;

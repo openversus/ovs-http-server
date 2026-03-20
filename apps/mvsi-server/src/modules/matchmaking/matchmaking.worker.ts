@@ -21,7 +21,7 @@ import { findMatchedGroups } from "./matchmaking.matching";
 import {
   MATCH_TYPES,
   MATCHMAKING_MATCH_TICK_CHANNEL,
-  type MatchmakingActiveMatch,
+  type GameplayConfig,
   type MatchmakingTicket,
 } from "./matchmaking.types";
 import { redisClient } from "@mvsi/redis";
@@ -250,22 +250,13 @@ async function configurePlayersForMatch(
 async function createMatch(tickets: MatchmakingTicket[], matchType: MATCH_TYPES): Promise<void> {
   try {
     const totalPlayers = tickets.reduce((sum, ticket) => sum + ticket.playerIds.length, 0);
-    const matchId = new ObjectId().toHexString();
-    const resultId = new ObjectId().toHexString();
-
-    const players = tickets.flatMap((ticket) =>
-      ticket.playerIds.map((player) => ({
-        playerId: player,
-        partyId: ticket.partyId,
-      })),
-    );
 
     const gameMode = GAME_MODES.get(matchType);
     if (!gameMode) {
-      throw new MatchCreationError("Failed to get gamed mode", matchId);
+      throw new Error("Failed to get gamed mode");
     }
-    const match: MatchmakingActiveMatch = {
-      matchConfig: {
+    const gameplayConfig: GameplayConfig = {
+      GameplayConfig: {
         Spectators: {},
         TeamData: [],
         bIsTutorial: false,
@@ -298,18 +289,15 @@ async function createMatch(tickets: MatchmakingTicket[], matchType: MATCH_TYPES)
         RiftNodeId: "",
         bModeGrantsProgress: true,
         EventQueueSlug: "",
-        MatchId: matchId,
+        MatchId: "",
         Created: new Date(),
         Map: getRandomMapByType(matchType),
         ModeString: matchType,
         Players: await configurePlayersForMatch(tickets, gameMode),
       },
-      state: "pending",
-      matchKey: randomBytes(32).toString("base64"),
-      resultId,
     };
 
-    await notifyActiveMatchCreated(match.matchConfig.MatchId, match);
+    const matchId = await notifyActiveMatchCreated(gameplayConfig);
 
     for (const ticket of tickets) {
       await completeMatchmaking(
@@ -320,7 +308,7 @@ async function createMatch(tickets: MatchmakingTicket[], matchType: MATCH_TYPES)
     }
 
     logger.info(
-      `Created ${matchType} match ${match.resultId} with ${totalPlayers} players across ${tickets.length} tickets`,
+      `Created ${matchType} match ${matchId} with ${totalPlayers} players across ${tickets.length} tickets`,
     );
   } catch (error) {
     logger.error(`Error creating match: ${error}`);

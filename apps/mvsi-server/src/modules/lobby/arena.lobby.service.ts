@@ -4,16 +4,29 @@ import { ObjectId } from "mongodb";
 import { randomBytes, randomUUID } from "node:crypto";
 import { getRandomMap2v2 } from "../../data/maps";
 import { getAssetsByType } from "../../loadAssets";
+import {
+  type GameplayConfig,
+  MATCHMAKING_MATCH_FOUND_CHANNEL,
+  type MatchFoundChannelMessage,
+} from "../matchmaking/matchmaking.types";
 import { broadcastNotificationToUsers } from "../notifications/notifications.utils";
 import { getPlayerConfig } from "../playerConfig/playerConfig.service";
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
 import type { ArenaLobby, LobbyCreatedMessage } from "./lobby.types";
 import { LOBBY_JOINED_CHANNEL } from "./lobby.types";
 import { createBaseLobby, getLobby, notifyLobbyJoined } from "./lobby.service";
+import { notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
+import type {
+  ArenaConstants,
+  ArenaData,
+  ArenaPlayerData,
+  ArenaPlayerInfo,
+  ArenaPlayerStats,
+  ArenaTeamInfo,
+  MatchStats,
+} from "./arena.lobby.types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-export const ARENA_MATCH_FOUND_CHANNEL = "arena:matchFound";
 
 const ARENA_EX = 2 * 24 * 60 * 60; // 2 days
 const MAX_TEAMS = 8;
@@ -113,102 +126,9 @@ function randomItem<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export type ArenaPlayerData = {
-  ShopRerollCost: number;
-  FreeShopRerolls: number;
-  InterestPer: number;
-  Inventory: { Xp: number; Level: number; Slug: string; NextLevelXp: number }[];
-  CurrencyAmount: number;
-};
-
-type MatchStats = {
-  KnockbackMitigated: number;
-  KnockbackAdded: number;
-  HealingReceived: number;
-  Ringouts: number;
-  GreyHealthReceived: number;
-  DamagedAdded: number;
-  DamageMitigated: number;
-  Damage: number;
-};
-
-export type ArenaPlayerStats = {
-  bRandomCharacter: boolean;
-  ShopRerolls: number;
-  ItemsPurchased: number;
-  ItemsSold: number;
-  InterestGained: number;
-  MatchStats: MatchStats;
-  CurrencySpent: number;
-  ItemsLeveled: number;
-};
-
-export type ArenaPlayerInfo = {
-  Loadout: { Character: string; Skin: string };
-  SelectableCharacters: string[];
-  AccountId: string;
-  GameplayPreferences: number;
-  TeamId: string;
-  PlayerData: ArenaPlayerData;
-  CharacterClass: number;
-  AccountInfo: {
-    RingoutVfx: string;
-    Taunts: string[];
-    Banner: string;
-    ProfileIcon: string;
-    Name: string;
-  };
-  bIsBot: boolean;
-  Stats?: ArenaPlayerStats;
-  CurrentShop?: any[];
-  CurrentShopLocal?: any[];
-};
-
-export type ArenaTeamInfo = {
-  TeamId: string;
-  TeamIndex: number;
-  Players: string[];
-  Stats: {
-    Wins: number;
-    WinStreak: number;
-    Losses: number;
-    LoseStreak: number;
-    Draws: number;
-    MatchStats: MatchStats;
-  };
-  LifeRemaining: number;
-  FinalRank: number;
-  RoundOpponents: string[];
-  HasPlayedTeam: Record<string, boolean>;
-  Matches: string[];
-  PriorMap?: string;
-};
-
-export type ArenaState = {
-  AllMultiplayParams: Record<
-    string,
-    { MultiplayClusterSlug: string; MultiplayProfileId: string; MultiplayRegionId: string }
-  >;
-  PlayerInfo: Record<string, ArenaPlayerInfo>;
-  CurrentRound: number;
-  TeamInfo: Record<string, ArenaTeamInfo>;
-  Players: string[];
-};
-
-export type ArenaMatchFoundMessage = {
-  arenaId: string;
-  matchId: string;
-  playerIds: string[];
-  arenaState: ArenaState;
-  matchConfig: any;
-  matchKey: string;
-};
-
 // ─── Arena constants (tweak here to tune gameplay) ───────────────────────────
 
-export function getArenaConstants() {
+export function getArenaConstants(): ArenaConstants {
   return {
     FaceoffWaitTime: 10,
     CurrencyPerRingout: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
@@ -363,9 +283,9 @@ return redis.call('JSON.GET', KEYS[1])
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export async function getArenaState(lobbyId: string): Promise<ArenaState | null> {
+export async function getArenaState(lobbyId: string): Promise<ArenaData | null> {
   const state = await redisClient.json.get(arenaStateKey(lobbyId));
-  return (state ?? null) as ArenaState | null;
+  return (state ?? null) as ArenaData | null;
 }
 
 export async function createArenaLobby(accountId: string): Promise<ArenaLobby> {
@@ -454,7 +374,7 @@ export async function joinArenaLobby(
   return updatedLobby;
 }
 
-export async function startArenaMatch(arenaLobbyId: string, leaderId: string) {
+export async function assembleArenaMatch(arenaLobbyId: string, leaderId: string) {
   const lobby = (await getLobby(arenaLobbyId)) as ArenaLobby | null;
   if (!lobby || lobby.LeaderID !== leaderId) return null;
 
@@ -553,7 +473,7 @@ export async function startArenaMatch(arenaLobbyId: string, leaderId: string) {
     };
   }
 
-  const arenaState: ArenaState = {
+  const arenaState: ArenaData = {
     AllMultiplayParams: lobby.AllMultiplayParams,
     PlayerInfo: playerInfo,
     CurrentRound: 1,
@@ -649,56 +569,70 @@ export async function startArenaMatch(arenaLobbyId: string, leaderId: string) {
 
     const map = arenaState.TeamInfo[teamAId].PriorMap ?? getRandomMap2v2();
 
-    const matchConfig = {
-      ArenaModeInfo: {
-        FaceoffWaitTime: arenaConstants.FaceoffWaitTime,
-        bReadyToStart: false,
-        ShopTime: arenaConstants.CharacterSelectTime,
+    const gameplayConfig: GameplayConfig = {
+      GameplayConfig: {
+        ArenaModeInfo: {
+          FaceoffWaitTime: arenaConstants.FaceoffWaitTime,
+          bReadyToStart: false,
+          ShopTime: arenaConstants.CharacterSelectTime,
+        },
+        RiftNodeId: "",
+        ScoreEvaluationRule: "TargetScoreIsWin",
+        bIsPvP: true,
+        ScoreAttributionRule: "AttributeToAttacker",
+        MatchDurationSeconds: arenaConstants.RoundLength,
+        Created: new Date(),
+        EventQueueSlug: "",
+        bModeGrantsProgress: true,
+        TeamData: [],
+        Spectators: {},
+        bIsRanked: false,
+        bIsCustomGame: false,
+        Players: matchPlayers,
+        CustomGameSettings: {
+          bHazardsEnabled: true,
+          bShieldsEnabled: true,
+          MatchTime: 420,
+          NumRingouts: -1,
+        },
+        HudSettings: { bDisplayPortraits: true, bDisplayTimer: true, bDisplayStocks: true },
+        bIsCasualSpecial: false,
+        bAllowMapHazards: true,
+        RiftNodeAttunement: "Attunements:Any",
+        CountdownDisplay: "CountdownTypes:ArenaRound",
+        Cluster: "ec2-us-east-1-dokken",
+        WorldBuffs: [],
+        bIsTutorial: false,
+        MatchId: matchId,
+        bIsOnlineMatch: true,
+        ModeString: "arena",
+        Map: map,
+        bIsRift: false,
       },
-      RiftNodeId: "",
-      ScoreEvaluationRule: "TargetScoreIsWin",
-      bIsPvP: true,
-      ScoreAttributionRule: "AttributeToAttacker",
-      MatchDurationSeconds: arenaConstants.RoundLength,
-      Created: new Date(),
-      EventQueueSlug: "",
-      bModeGrantsProgress: true,
-      TeamData: [],
-      Spectators: {},
-      bIsRanked: false,
-      bIsCustomGame: false,
-      Players: matchPlayers,
-      CustomGameSettings: {
-        bHazardsEnabled: true,
-        bShieldsEnabled: true,
-        MatchTime: 420,
-        NumRingouts: -1,
-      },
-      HudSettings: { bDisplayPortraits: true, bDisplayTimer: true, bDisplayStocks: true },
-      bIsCasualSpecial: false,
-      bAllowMapHazards: true,
-      RiftNodeAttunement: "Attunements:Any",
-      CountdownDisplay: "CountdownTypes:ArenaRound",
-      Cluster: "ec2-us-east-1-dokken",
-      WorldBuffs: [],
-      bIsTutorial: false,
-      MatchId: matchId,
-      bIsOnlineMatch: true,
-      ModeString: "arena",
-      Map: map,
-      bIsRift: false,
     };
 
+    await notifyActiveMatchCreated(gameplayConfig);
+
     if (isRealMatch) {
-      const msg: ArenaMatchFoundMessage = {
-        arenaId: arenaLobbyId,
+      const msg: MatchFoundChannelMessage = {
         matchId,
-        playerIds: realInMatch,
-        arenaState,
-        matchConfig,
         matchKey: randomBytes(32).toString("base64"),
+        playerIds: realInMatch,
+        gameNotification: {
+          data: {
+            ArenaId: arenaLobbyId,
+            ArenaData: arenaState,
+            ArenaConstants: getArenaConstants(),
+            MatchId: matchId,
+            GameplayConfig: gameplayConfig,
+            template_id: "OnGameplayConfigNotified",
+          },
+          payload: { match: { id: matchId }, custom_notification: "realtime" },
+          header: "",
+          cmd: "update",
+        },
       };
-      await redisClient.publish(ARENA_MATCH_FOUND_CHANNEL, JSON.stringify(msg));
+      await redisClient.publish(MATCHMAKING_MATCH_FOUND_CHANNEL, JSON.stringify(msg));
     }
   }
 
@@ -753,7 +687,7 @@ export async function arenaCheckin(
 
 export async function arenaRerollCharacters(arenaLobbyId: string, accountId: string) {
   const stateKey = arenaStateKey(arenaLobbyId);
-  const state = (await redisClient.json.get(stateKey)) as ArenaState | null;
+  const state = (await redisClient.json.get(stateKey)) as ArenaData | null;
   if (!state) return null;
 
   const player = state.PlayerInfo[accountId];

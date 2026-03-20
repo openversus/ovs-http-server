@@ -9,7 +9,7 @@ import { MAP_ROTATIONS } from "../../data/maps";
 import { sleep } from "../../utils/sleep";
 import { TeamStyle } from "../gameModes/gameModes.config";
 import { notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
-import { MATCH_TYPES, type MatchmakingActiveMatch } from "../matchmaking/matchmaking.types";
+import { MATCH_TYPES, type GameplayConfig } from "../matchmaking/matchmaking.types";
 import type {
   RealtimeNotificationTopicMessage,
   RealtimeNotificationUsersMessage,
@@ -1190,6 +1190,7 @@ export async function addCustomGameBot(
     Skin: { AssetPath: string; Slug: string };
   },
 ) {
+  console.log("BOT INFO", JSON.stringify(botConfig, null, 2));
   const pdata = {
     Account: { id: botConfig.BotAccountID },
     AccountID: botConfig.BotAccountID,
@@ -1526,7 +1527,6 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
     return null;
   }
   const matchId = new ObjectId().toHexString();
-  const resultId = new ObjectId().toHexString();
   const selectedMaps = lobby.Maps.filter((m) => m.IsSelected);
   const randomMap = selectedMaps[Math.floor(Math.random() * selectedMaps.length)] ?? lobby.Maps[0];
 
@@ -1623,8 +1623,8 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
     }
   }
 
-  const match: MatchmakingActiveMatch = {
-    matchConfig: {
+  const gameplayConfig: GameplayConfig = {
+    GameplayConfig: {
       Spectators,
       TeamData: [],
       bIsTutorial: false,
@@ -1663,14 +1663,9 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
       ModeString: lobby.ModeString ?? "",
       Players,
     },
-    state: "pending",
-    matchKey: randomBytes(32).toString("base64"),
-    resultId,
   };
 
-  console.log(`Match Created: ${JSON.stringify(match, null, 2)}`);
+  console.log(`Match Created: ${JSON.stringify(gameplayConfig, null, 2)}`);
 
-  await notifyActiveMatchCreated(match.matchConfig.MatchId, match);
-
-  return match;
+  await notifyActiveMatchCreated(gameplayConfig);
 }

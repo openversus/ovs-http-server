@@ -14,10 +14,12 @@ import {
   MATCHMAKING_MATCH_FOUND_CHANNEL,
   MATCHMAKING_PERKS_LOCKED_CHANNEL,
   type MatchEndMessage,
-  type MatchmakingActiveMatch,
+  type MatchFoundChannelMessage,
+  type GameplayConfig,
   type MatchmakingCancelMessage,
   type MatchmakingCompleteMessage,
   type MatchmakingTicket,
+  ActiveMatch,
 } from "./matchmaking.types";
 
 const MATCHMAKING_TICKET_KEY = (matchmakingRequestId: string) =>
@@ -124,18 +126,48 @@ export async function requestMatchmakingByLobby(
 }
 
 export async function getActiveMatch(matchId: string) {
-  const match = (await redisClient.json.get(MATCH_KEY(matchId))) as MatchmakingActiveMatch | null;
+  const match = (await redisClient.json.get(MATCH_KEY(matchId))) as ActiveMatch | null;
   return match;
 }
 
-export async function notifyActiveMatchCreated(
-  containerMatchId: string,
-  match: MatchmakingActiveMatch,
-) {
+export async function notifyActiveMatchCreated(gameplayConfig: GameplayConfig) {
   const EX = 60 * 20;
-  await redisClient.json.set(MATCH_KEY(containerMatchId), "$", match);
-  await redisClient.expire(MATCH_KEY(containerMatchId), EX);
-  await redisClient.publish(MATCHMAKING_MATCH_FOUND_CHANNEL, JSON.stringify(match));
+  gameplayConfig.GameplayConfig.MatchId = new ObjectId().toHexString();
+  const matchmakingMatchConfig: ActiveMatch = {
+    matchKey: randomUUID(),
+    state: "active",
+    GameplayConfig: gameplayConfig,
+  };
+  await redisClient.json.set(
+    MATCH_KEY(gameplayConfig.GameplayConfig.MatchId),
+    "$",
+    matchmakingMatchConfig,
+  );
+
+  await redisClient.expire(MATCH_KEY(gameplayConfig.GameplayConfig.MatchId), EX);
+
+  const msg: MatchFoundChannelMessage = {
+    matchId: gameplayConfig.GameplayConfig.MatchId,
+    matchKey: matchmakingMatchConfig.matchKey,
+    playerIds: Object.keys(gameplayConfig.GameplayConfig.Players),
+    gameNotification: {
+      data: {
+        MatchId: gameplayConfig.GameplayConfig.MatchId,
+        template_id: "OnGameplayConfigNotified",
+        ...gameplayConfig,
+      },
+      payload: {
+        match: {
+          id: gameplayConfig.GameplayConfig.MatchId,
+        },
+        custom_notification: "realtime",
+      },
+      header: "",
+      cmd: "update",
+    },
+  };
+  await redisClient.publish(MATCHMAKING_MATCH_FOUND_CHANNEL, JSON.stringify(msg));
+  return gameplayConfig.GameplayConfig.MatchId;
 }
 
 export async function queueMatchmaking(

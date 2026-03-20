@@ -1,3 +1,5 @@
+import { ArenaConstants, ArenaData } from "../lobby/arena.lobby.types";
+import { NotificationTemplate } from "../notifications/notifications.types";
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
 
 export const MATCHMAKING_MATCH_FOUND_CHANNEL = "matchmaking:matchfound";
@@ -71,10 +73,16 @@ export type MatchmakingPerksLockMessage = {
   playerIds: string[];
 };
 
-export type MatchmakingActiveMatch = {
+export type GameplayConfig = {
+  ArenaId?: string;
+  ArenaData?: ArenaData;
+  ArenaConstants?: ArenaConstants;
+  GameplayConfig: MatchConfig;
+};
+
+export type ActiveMatch = {
   matchKey: string;
-  resultId: string;
-  matchConfig: MatchConfig;
+  GameplayConfig: GameplayConfig;
   state: string;
 };
 
@@ -92,7 +100,11 @@ type HudSettings = {
 };
 
 type MatchConfig = {
-  ArenaModeInfo: null | string;
+  ArenaModeInfo: {
+    FaceoffWaitTime: number;
+    bReadyToStart: boolean;
+    ShopTime: number;
+  } | null;
   RiftNodeId: string;
   ScoreEvaluationRule: string;
   bIsPvP: boolean;
@@ -133,6 +145,7 @@ type MatchData = {
   MatchId: string;
   GameplayConfig: MatchConfig;
   template_id: string;
+  [key: string]: unknown;
 };
 
 export type GameNotification = {
@@ -140,4 +153,11 @@ export type GameNotification = {
   payload: Payload;
   header: string;
   cmd: string;
+};
+
+export type MatchFoundChannelMessage = {
+  matchId: string;
+  matchKey: string;
+  playerIds: string[];
+  gameNotification: NotificationTemplate;
 };

@@ -251,16 +251,16 @@ mvsi_match_routes.post(
     if (match?.matchKey !== body.key) {
       return "";
     }
-    const playerKeys = Object.keys(match.matchConfig.Players);
+    const playerKeys = Object.keys(match.GameplayConfig.Players);
     const players = playerKeys.map((playerKey) => {
-      const player = match.matchConfig.Players[playerKey];
+      const player = match.GameplayConfig.Players[playerKey];
       return {
         player_index: player.PlayerIndex,
         ip: player.Ip,
         is_host: player.IsHost,
       };
     });
-    const humanCount = playerKeys.filter((k) => !match.matchConfig.Players[k].bIsBot).length;
+    const humanCount = playerKeys.filter((k) => !match.GameplayConfig.Players[k].bIsBot).length;
     const result = {
       max_players: humanCount,
       match_duration: 36000,
@@ -285,8 +285,10 @@ mvsi_match_routes.post(
     }
     if (match) {
       await notifyActiveMatchEnded(
-        Object.keys(match.matchConfig.Players).map((p) => match.matchConfig.Players[p].AccountId),
-        match.matchConfig.MatchId,
+        Object.keys(match.GameplayConfig.Players).map(
+          (p) => match.GameplayConfig.Players[p].AccountId,
+        ),
+        match.GameplayConfig.MatchId,
       );
       return "";
     }

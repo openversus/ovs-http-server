@@ -6,9 +6,9 @@ import {
   arenaPlayerShopClosed,
   arenaRerollCharacters,
   arenaSelectCharacter,
+  assembleArenaMatch,
   createArenaLobby,
   joinArenaLobby,
-  startArenaMatch,
 } from "./arena.lobby.service";
 import {
   addCustomGameBot,
@@ -711,7 +711,7 @@ router.put(
 router.put(
   "/ssc/invoke/start_arena_match",
   async ({ claims, body }) => {
-    await startArenaMatch(body.LobbyId, claims.id);
+    // TODO: start matchmaking
     return { body: {}, metadata: null, return_code: 0 };
   },
   {

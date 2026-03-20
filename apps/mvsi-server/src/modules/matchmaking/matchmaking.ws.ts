@@ -4,13 +4,12 @@ import { encodeHydraWS, MAIN_WEBSOCKET, type MVSI_Websocket } from "../../websoc
 import { getActiveMatch } from "./matchmaking.service";
 import {
   ACTIVEMATCH_END_CHANNEL,
-  type GameNotification,
   MATCHMAKING_CANCEL_CHANNEL,
   MATCHMAKING_COMPLETE_CHANNEL,
   MATCHMAKING_MATCH_FOUND_CHANNEL,
   MATCHMAKING_PERKS_LOCKED_CHANNEL,
   type MatchEndMessage,
-  type MatchmakingActiveMatch,
+  type MatchFoundChannelMessage,
   type MatchmakingCancelMessage,
   type MatchmakingCompleteMessage,
   type MatchmakingPerksLockMessage,
@@ -32,7 +31,7 @@ subscriber.subscribe(MATCHMAKING_CANCEL_CHANNEL, (message) => {
 });
 
 subscriber.subscribe(MATCHMAKING_MATCH_FOUND_CHANNEL, (message) => {
-  const notification = JSON.parse(message) as MatchmakingActiveMatch;
+  const notification = JSON.parse(message) as MatchFoundChannelMessage;
   handleMatchFound(notification);
 });
 
@@ -51,54 +50,32 @@ subscriber.subscribe(MATCHMAKING_MATCH_TICK_CHANNEL, (message) => {
   handleMatchTick(notification);
 });
 
-async function handleMatchFound(notification: MatchmakingActiveMatch) {
-  const arr = [env.UDP_SERVER_IP];
-  const randomIndex = Math.floor(Math.random() * arr.length);
-  const matchId = notification.matchConfig.MatchId;
-  for (const [_id, player] of Object.entries(notification.matchConfig.Players)) {
-    const client = clients.get(player.AccountId);
+function handleMatchFound(notification: MatchFoundChannelMessage) {
+  const { matchId, matchKey, playerIds, gameNotification } = notification;
+
+  for (const playerId of playerIds) {
+    const client = clients.get(playerId);
     if (client) {
       client.subscribe(matchId);
     }
   }
-  const message = {
+
+  const serverReadyMessage = {
     data: {
-      MatchKey: notification.matchKey,
+      MatchKey: matchKey,
       MatchID: matchId,
       Port: env.UDP_PORT,
       template_id: "GameServerReadyNotification",
-      IPAddress: arr[randomIndex],
+      IPAddress: env.UDP_SERVER_IP,
     },
-    payload: {
-      match: {
-        id: matchId,
-      },
-      custom_notification: "realtime",
-    },
+    payload: { match: { id: matchId }, custom_notification: "realtime" },
     header: "",
     cmd: "update",
   };
+  MAIN_WEBSOCKET.server?.publish(matchId, encodeHydraWS(serverReadyMessage));
 
-  MAIN_WEBSOCKET.server?.publish(matchId, encodeHydraWS(message));
-  logger.info(`Sent match to all players for match ${matchId}`);
-
-  const gamePlayConfigMessage: GameNotification = {
-    data: {
-      MatchId: matchId,
-      GameplayConfig: notification.matchConfig,
-      template_id: "OnGameplayConfigNotified",
-    },
-    payload: {
-      match: {
-        id: matchId,
-      },
-      custom_notification: "realtime",
-    },
-    header: "",
-    cmd: "update",
-  };
-  MAIN_WEBSOCKET.server?.publish(matchId, encodeHydraWS(gamePlayConfigMessage));
-  logger.info(`Sent game play config to all players for match ${matchId}`);
+  MAIN_WEBSOCKET.server?.publish(matchId, encodeHydraWS(gameNotification));
+  logger.info(`Sent match notifications to all players for match ${matchId}`);
 
   const gameServerReadyMessage = {
     data: {},
@@ -116,7 +93,6 @@ async function handleMatchFound(notification: MatchmakingActiveMatch) {
     cmd: "game-server-instance-ready",
   };
   MAIN_WEBSOCKET.server?.publish(matchId, encodeHydraWS(gameServerReadyMessage));
-  logger.info(`Sent game server ready to all players for match ${matchId}`);
 }
 
 async function handleOnMatchEnd(notification: MatchEndMessage) {
@@ -127,10 +103,15 @@ async function handleOnMatchEnd(notification: MatchEndMessage) {
   const matchId = notification.matchId;
   const activeMatch = await getActiveMatch(matchId);
 
+  if (!activeMatch) {
+    logger.error("Match not found");
+    return;
+  }
+
   for (const client of connectedClients) {
     const data = {
       data: {
-        GameplayConfig: activeMatch?.matchConfig ?? {},
+        GameplayConfig: activeMatch.GameplayConfig,
         template_id: "EndOfMatchPayload",
         ClientReturnData: {},
       },
@@ -250,12 +231,12 @@ async function handleAllPerksLocked(notification: MatchmakingPerksLockMessage) {
   }
   const message = {
     data: {
-      GameplayConfig: activeMatch.matchConfig,
+      GameplayConfig: activeMatch.GameplayConfig,
       template_id: "PerksLockedNotification",
     },
     payload: {
       match: {
-        id: activeMatch.matchConfig.MatchId,
+        id: activeMatch.GameplayConfig.GameplayConfig.MatchId,
       },
       custom_notification: "realtime",
     },

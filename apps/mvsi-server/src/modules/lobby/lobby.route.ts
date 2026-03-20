@@ -36,7 +36,7 @@ import {
 } from "./lobby.service";
 import { updatePlayerLoadout } from "../playerConfig/playerConfig.service";
 import { TeamStyle } from "../gameModes/gameModes.config";
-import { CustomLobbyMatchConfig } from "./lobby.types";
+import { CustomLobbyMatchConfig, lobbyTypesMap } from "./lobby.types";
 import { GAME_MODES_CONFIG } from "../../data/gameModes";
 
 const router = new Elysia().use(MVSI_HYDRA_WITH_JWT);
@@ -216,7 +216,13 @@ router.put(
 router.put(
   "/ssc/invoke/invite_to_player_lobby",
   async ({ claims, body }) => {
-    await invitePlayerToLobby(body.LobbyId, claims.id, body.InviteeAccountID, body.IsSpectator);
+    await invitePlayerToLobby(
+      body.LobbyId,
+      claims.id,
+      body.InviteeAccountID,
+      body.IsSpectator,
+      body.LobbyTemplate as keyof typeof lobbyTypesMap,
+    );
     return {
       body: {
         MatchID: body.LobbyId,
@@ -703,33 +709,6 @@ router.put(
 );
 
 router.put(
-  "/ssc/invoke/invite_to_arena_lobby",
-  async ({ claims, body }) => {
-    await invitePlayerToLobby(body.LobbyId, claims.id, body.InviteeAccountID, body.IsSpectator, "Arena");
-    return {
-      body: { MatchID: body.LobbyId, IsSpectator: body.IsSpectator },
-      metadata: null,
-      return_code: 0,
-    };
-  },
-  {
-    body: t.Object({
-      AutoPartyPreference: t.Boolean(),
-      CrossplayPreference: t.Number(),
-      GameplayPreferences: t.Number(),
-      HissCrc: t.Number(),
-      InviteeAccountID: t.String(),
-      IsSpectator: t.Boolean(),
-      LobbyId: t.String(),
-      LobbyTemplate: t.String(),
-      MatchID: t.String(),
-      Platform: t.String(),
-      Version: t.String(),
-    }),
-  },
-);
-
-router.put(
   "/ssc/invoke/start_arena_match",
   async ({ claims, body }) => {
     await startArenaMatch(body.LobbyId, claims.id);
@@ -760,7 +739,12 @@ router.put(
 router.put(
   "/ssc/invoke/arena_player_shop_closed",
   async ({ claims, body }) => {
-    await arenaPlayerShopClosed(body.ArenaLobbyId, body.ArenaRound, claims.id, body.ShopPhaseDetails);
+    await arenaPlayerShopClosed(
+      body.ArenaLobbyId,
+      body.ArenaRound,
+      claims.id,
+      body.ShopPhaseDetails,
+    );
     return { body: {}, metadata: null, return_code: 0 };
   },
   {

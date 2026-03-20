@@ -1,10 +1,11 @@
 import { env } from "@mvsi/env";
 import Elysia, { t } from "elysia";
+import { randomUUID } from "node:crypto";
 import { getCurrentCRC } from "../../data/config";
 import { MAIN_APP, MVSI_HYDRA_WITH_JWT } from "../../middleware/middlewares";
 import { HydraQueryPaginated } from "../../types";
-import { getActiveMatch, notifyActiveMatchEnded } from "../matchmaking/matchmaking.service";
 import { getLobby, getLobbyIdFromCode } from "../lobby/lobby.service";
+import { getActiveMatch, notifyActiveMatchEnded } from "../matchmaking/matchmaking.service";
 
 const router = new Elysia().use(MVSI_HYDRA_WITH_JWT);
 
@@ -168,7 +169,7 @@ router.put("/matches/:lobbyId", async ({ claims, params }) => {
 
 router.get(
   "/matches/:lobbyId",
-  async ({ claims, params }) => {
+  async ({ params }) => {
     const lobbyId = await getLobbyIdFromCode(params.lobbyId);
     if (!lobbyId) {
       return {
@@ -194,7 +195,7 @@ router.get(
       created_at: new Date(),
       account_id: null,
       completion_time: null,
-      name: "white-green-wind-breeze-OS5dF",
+      name: randomUUID().slice(0, 30),
       state: "open",
       access_level: "public",
       origin: "client",
@@ -212,8 +213,8 @@ router.get(
       last_warning_time: null,
       template: {
         type: "async",
-        name: "custom_game_lobby",
-        slug: "custom_game_lobby",
+        name: lobby.Template,
+        slug: lobby.Template,
         min_players: 1,
         max_players: 8,
         game_server_integration_enabled: false,

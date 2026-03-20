@@ -1,9 +1,16 @@
-import { GAME_MODES_CONFIG } from "../../data/gameModes";
-import { TeamStyle } from "../gameModes/gameModes.config";
+import type { GAME_MODES_CONFIG } from "../../data/gameModes";
+import type { TeamStyle } from "../gameModes/gameModes.config";
 import type { MATCH_TYPES } from "../matchmaking/matchmaking.types";
 
 export const LOBBY_JOINED_CHANNEL = "lobby:joined";
 export const LOBBY_QUEUED_CHANNEL = "lobby:queued";
+
+export const lobbyTypesMap = {
+  party_lobby: "Party",
+  custom_game_lobby: "Custom",
+  arena_lobby: "Arena",
+  rift_lobby: "Rift",
+};
 
 export type LobbyPlayerStatus = {
   id: string;
@@ -55,6 +62,7 @@ export type BaseLobby = {
   LockedLoadouts: Record<string, LockedLoadout>;
   IsLobbyJoinable: boolean;
   MatchID: string;
+  Template: keyof typeof lobbyTypesMap;
 };
 
 // Regular Lobby requires ModeString

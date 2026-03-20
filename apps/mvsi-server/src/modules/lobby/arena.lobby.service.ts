@@ -35,38 +35,77 @@ function evalLua(script: string, keys: string[], args: string[]) {
 // ─── Bot cosmetics pools ──────────────────────────────────────────────────────
 
 const BOT_NAMES = [
-  "AuntieKim", "SkyIsBlue", "SweetieDown", "RoboNickPhD", "BristleKemp",
-  "Laney03", "Florrekko", "HarmonicMelody", "FelixDcat", "DMah",
-  "Dark", "CelestialBard", "NightOwl777", "PixelPulse", "StarChaser",
-  "IronGlitch", "ChaosTheory", "ZeroGravity", "LunarTide", "QuantumByte",
+  "AuntieKim",
+  "SkyIsBlue",
+  "SweetieDown",
+  "RoboNickPhD",
+  "BristleKemp",
+  "Laney03",
+  "Florrekko",
+  "HarmonicMelody",
+  "FelixDcat",
+  "DMah",
+  "Dark",
+  "CelestialBard",
+  "NightOwl777",
+  "PixelPulse",
+  "StarChaser",
+  "IronGlitch",
+  "ChaosTheory",
+  "ZeroGravity",
+  "LunarTide",
+  "QuantumByte",
 ];
 
 const BOT_RINGOUT_VFX = [
-  "ring_out_vfx_default", "ring_out_vfx_aku_fire", "ring_out_vfx_adam_west",
-  "ring_out_vfx_monster_reveal", "ring_out_vfx_firework_show",
-  "ring_out_vfx_omega_beam", "ring_out_vfx_bat_signal",
-  "ring_out_vfx_lunar_rabbit", "ring_out_vfx_lasso_of_truth",
-  "ring_out_vfx_boom_tube", "ring_out_vfx_soothing_energy",
-  "ring_out_vfx_house_lannister", "ring_out_vfx_house_Targeryen",
-  "ring_out_vfx_happy_birday_tweetie", "ring_out_vfx_monster_tweety",
+  "ring_out_vfx_default",
+  "ring_out_vfx_aku_fire",
+  "ring_out_vfx_adam_west",
+  "ring_out_vfx_monster_reveal",
+  "ring_out_vfx_firework_show",
+  "ring_out_vfx_omega_beam",
+  "ring_out_vfx_bat_signal",
+  "ring_out_vfx_lunar_rabbit",
+  "ring_out_vfx_lasso_of_truth",
+  "ring_out_vfx_boom_tube",
+  "ring_out_vfx_soothing_energy",
+  "ring_out_vfx_house_lannister",
+  "ring_out_vfx_house_Targeryen",
+  "ring_out_vfx_happy_birday_tweetie",
+  "ring_out_vfx_monster_tweety",
   "ring_out_vfx_sugar_spice_everything_nice",
 ];
 
 const BOT_BANNERS = [
-  "banner_default", "banner_cheesy_temptations", "banner_hole_sweet_hole",
-  "banner_lannister_banner", "banner_slushy_plushy", "banner_scoobtober_bats",
-  "banner_presently_shocked_epic", "banner_marcyshouse", "banner_jokerhaha",
-  "banner_foretold_champion_rare", "banner_test", "banner_3rror_mvs",
-  "banner_marvin_wardrobe_v2", "banner_housetargaryen_01",
-  "banner_tools_of_the_trade", "banner_chestnuts_not_included",
+  "banner_default",
+  "banner_cheesy_temptations",
+  "banner_hole_sweet_hole",
+  "banner_lannister_banner",
+  "banner_slushy_plushy",
+  "banner_scoobtober_bats",
+  "banner_presently_shocked_epic",
+  "banner_marcyshouse",
+  "banner_jokerhaha",
+  "banner_foretold_champion_rare",
+  "banner_test",
+  "banner_3rror_mvs",
+  "banner_marvin_wardrobe_v2",
+  "banner_housetargaryen_01",
+  "banner_tools_of_the_trade",
+  "banner_chestnuts_not_included",
 ];
 
 const BOT_PROFILE_ICONS = [
-  "profile_icon_default", "profile_icon_dc_bat_batman_1",
-  "profile_icon_wb_watertower", "profile_icon_cn_at_finn_adventure_time",
-  "profile_icon_wb_sd_scooby_snack", "profile_icon_wb_sd_mysterymachine",
-  "profile_icon_mvs_beach_day", "profile_icon_bugsbunny_thewabbit",
-  "profileicon_stripe_mogwaistripe", "profileicon_wb_sj_oldschooljam",
+  "profile_icon_default",
+  "profile_icon_dc_bat_batman_1",
+  "profile_icon_wb_watertower",
+  "profile_icon_cn_at_finn_adventure_time",
+  "profile_icon_wb_sd_scooby_snack",
+  "profile_icon_wb_sd_mysterymachine",
+  "profile_icon_mvs_beach_day",
+  "profile_icon_bugsbunny_thewabbit",
+  "profileicon_stripe_mogwaistripe",
+  "profileicon_wb_sj_oldschooljam",
   "profile_icon_c036_data_corrupted",
 ];
 
@@ -148,7 +187,10 @@ export type ArenaTeamInfo = {
 };
 
 export type ArenaState = {
-  AllMultiplayParams: Record<string, { MultiplayClusterSlug: string; MultiplayProfileId: string; MultiplayRegionId: string }>;
+  AllMultiplayParams: Record<
+    string,
+    { MultiplayClusterSlug: string; MultiplayProfileId: string; MultiplayRegionId: string }
+  >;
   PlayerInfo: Record<string, ArenaPlayerInfo>;
   CurrentRound: number;
   TeamInfo: Record<string, ArenaTeamInfo>;
@@ -172,16 +214,16 @@ export function getArenaConstants() {
     CurrencyPerRingout: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     MaxInterest: 10,
     ShopLevelWeights: [
-      { RarityWeight: { Uncommon: 0.05, Rare: 0,    Epic: 0,    Legendary: 0,    Common: 0.95 } },
-      { RarityWeight: { Uncommon: 0.2,  Rare: 0.05, Epic: 0,    Legendary: 0,    Common: 0.75 } },
-      { RarityWeight: { Uncommon: 0.25, Rare: 0.15, Epic: 0.05, Legendary: 0,    Common: 0.55 } },
-      { RarityWeight: { Uncommon: 0.3,  Rare: 0.2,  Epic: 0.1,  Legendary: 0,    Common: 0.4  } },
-      { RarityWeight: { Uncommon: 0.3,  Rare: 0.25, Epic: 0.15, Legendary: 0.05, Common: 0.3  } },
-      { RarityWeight: { Uncommon: 0.2,  Rare: 0.3,  Epic: 0.2,  Legendary: 0.1,  Common: 0.2  } },
-      { RarityWeight: { Uncommon: 0.2,  Rare: 0.3,  Epic: 0.25, Legendary: 0.15, Common: 0.1  } },
-      { RarityWeight: { Uncommon: 0.15, Rare: 0.3,  Epic: 0.3,  Legendary: 0.2,  Common: 0.05 } },
-      { RarityWeight: { Uncommon: 0.1,  Rare: 0.3,  Epic: 0.3,  Legendary: 0.25, Common: 0.05 } },
-      { RarityWeight: { Uncommon: 0.05, Rare: 0.3,  Epic: 0.3,  Legendary: 0.3,  Common: 0.05 } },
+      { RarityWeight: { Uncommon: 0.05, Rare: 0, Epic: 0, Legendary: 0, Common: 0.95 } },
+      { RarityWeight: { Uncommon: 0.2, Rare: 0.05, Epic: 0, Legendary: 0, Common: 0.75 } },
+      { RarityWeight: { Uncommon: 0.25, Rare: 0.15, Epic: 0.05, Legendary: 0, Common: 0.55 } },
+      { RarityWeight: { Uncommon: 0.3, Rare: 0.2, Epic: 0.1, Legendary: 0, Common: 0.4 } },
+      { RarityWeight: { Uncommon: 0.3, Rare: 0.25, Epic: 0.15, Legendary: 0.05, Common: 0.3 } },
+      { RarityWeight: { Uncommon: 0.2, Rare: 0.3, Epic: 0.2, Legendary: 0.1, Common: 0.2 } },
+      { RarityWeight: { Uncommon: 0.2, Rare: 0.3, Epic: 0.25, Legendary: 0.15, Common: 0.1 } },
+      { RarityWeight: { Uncommon: 0.15, Rare: 0.3, Epic: 0.3, Legendary: 0.2, Common: 0.05 } },
+      { RarityWeight: { Uncommon: 0.1, Rare: 0.3, Epic: 0.3, Legendary: 0.25, Common: 0.05 } },
+      { RarityWeight: { Uncommon: 0.05, Rare: 0.3, Epic: 0.3, Legendary: 0.3, Common: 0.05 } },
     ],
     CurrencyForWin: 2,
     InterestPerBoost: [4, 3, 1],
@@ -190,7 +232,14 @@ export function getArenaConstants() {
     ItemXpPerLevel: [0, 1, 3],
     CurrencyForWinStreak: [0, 0, 2, 4, 6],
     CharacterSelectTime: 30,
-    ItemAmountsByRarity: { Uncommon: 40, Rare: 35, Epic: 30, Legendary: 25, Mythic: 10, Common: 50 },
+    ItemAmountsByRarity: {
+      Uncommon: 40,
+      Rare: 35,
+      Epic: 30,
+      Legendary: 25,
+      Mythic: 10,
+      Common: 50,
+    },
     CurrencyForLoseStreak: [0, 0, 2, 4, 6],
     RoundLength: 90,
     HealthRoundValues: [22, 24, 26, 28, 30, 31, 32, 33, 34, 35],
@@ -204,9 +253,14 @@ export function getArenaConstants() {
 
 function createMatchStats(): MatchStats {
   return {
-    KnockbackMitigated: 0, KnockbackAdded: 0, HealingReceived: 0,
-    Ringouts: 0, GreyHealthReceived: 0, DamagedAdded: 0,
-    DamageMitigated: 0, Damage: 0,
+    KnockbackMitigated: 0,
+    KnockbackAdded: 0,
+    HealingReceived: 0,
+    Ringouts: 0,
+    GreyHealthReceived: 0,
+    DamagedAdded: 0,
+    DamageMitigated: 0,
+    Damage: 0,
   };
 }
 
@@ -215,22 +269,33 @@ function createArenaPlayerData(): ArenaPlayerData {
     ShopRerollCost: 3,
     FreeShopRerolls: 0,
     InterestPer: 6,
-    Inventory: Array(4).fill(null).map(() => ({ Xp: 0, Level: 0, Slug: "", NextLevelXp: 0 })),
+    Inventory: Array(4)
+      .fill(null)
+      .map(() => ({ Xp: 0, Level: 0, Slug: "", NextLevelXp: 0 })),
     CurrencyAmount: 20,
   };
 }
 
 function createArenaPlayerStats(): ArenaPlayerStats {
   return {
-    bRandomCharacter: false, ShopRerolls: 0, ItemsPurchased: 0,
-    ItemsSold: 0, InterestGained: 0, MatchStats: createMatchStats(),
-    CurrencySpent: 0, ItemsLeveled: 0,
+    bRandomCharacter: false,
+    ShopRerolls: 0,
+    ItemsPurchased: 0,
+    ItemsSold: 0,
+    InterestGained: 0,
+    MatchStats: createMatchStats(),
+    CurrencySpent: 0,
+    ItemsLeveled: 0,
   };
 }
 
 function createArenaTeamStats() {
   return {
-    Wins: 0, WinStreak: 0, Losses: 0, LoseStreak: 0, Draws: 0,
+    Wins: 0,
+    WinStreak: 0,
+    Losses: 0,
+    LoseStreak: 0,
+    Draws: 0,
     MatchStats: createMatchStats(),
   };
 }
@@ -304,7 +369,7 @@ export async function getArenaState(lobbyId: string): Promise<ArenaState | null>
 }
 
 export async function createArenaLobby(accountId: string): Promise<ArenaLobby> {
-  const base = await createBaseLobby(accountId);
+  const base = await createBaseLobby(accountId, "arena_lobby");
 
   const arenaLobby: ArenaLobby = {
     ...base,
@@ -338,14 +403,18 @@ export async function joinArenaLobby(
     Version: string;
   },
 ): Promise<ArenaLobby | null> {
-  const result = await evalLua(LUA_JOIN_ARENA_LOBBY, [lobbyKey(matchId)], [
-    accountId,
-    new Date().toISOString(),
-    prefs.GameplayPreferences.toString(),
-    prefs.AutoPartyPreference.toString(),
-    prefs.CrossplayPreference.toString(),
-    prefs.Platform,
-  ]);
+  const result = await evalLua(
+    LUA_JOIN_ARENA_LOBBY,
+    [lobbyKey(matchId)],
+    [
+      accountId,
+      new Date().toISOString(),
+      prefs.GameplayPreferences.toString(),
+      prefs.AutoPartyPreference.toString(),
+      prefs.CrossplayPreference.toString(),
+      prefs.Platform,
+    ],
+  );
 
   if (!result) return null;
   const raw = result as string;
@@ -386,7 +455,7 @@ export async function joinArenaLobby(
 }
 
 export async function startArenaMatch(arenaLobbyId: string, leaderId: string) {
-  const lobby = await getLobby(arenaLobbyId) as ArenaLobby | null;
+  const lobby = (await getLobby(arenaLobbyId)) as ArenaLobby | null;
   if (!lobby || lobby.LeaderID !== leaderId) return null;
 
   const arenaConstants = getArenaConstants();
@@ -444,7 +513,8 @@ export async function startArenaMatch(arenaLobbyId: string, leaderId: string) {
         PlayerData: createArenaPlayerData(),
         CharacterClass: 0,
         AccountInfo: {
-          RingoutVfx: config?.RingoutVfx ?? (isBot ? randomItem(BOT_RINGOUT_VFX) : "ring_out_vfx_default"),
+          RingoutVfx:
+            config?.RingoutVfx ?? (isBot ? randomItem(BOT_RINGOUT_VFX) : "ring_out_vfx_default"),
           Taunts: config?.Taunts ?? [],
           Banner: config?.Banner ?? (isBot ? randomItem(BOT_BANNERS) : "banner_default"),
           ProfileIcon: config?.ProfileIcon ?? (isBot ? randomItem(BOT_PROFILE_ICONS) : ""),
@@ -694,7 +764,11 @@ export async function arenaRerollCharacters(arenaLobbyId: string, accountId: str
   if (player.PlayerData.CurrencyAmount < rerollCost) {
     return {
       Result: {
-        BaseResponse: { bSuccess: false, PlayerId: accountId, FailureReason: "Insufficient currency" },
+        BaseResponse: {
+          bSuccess: false,
+          PlayerId: accountId,
+          FailureReason: "Insufficient currency",
+        },
         SelectableCharacters: player.SelectableCharacters,
         PlayerData: player.PlayerData,
       },

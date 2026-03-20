@@ -22,6 +22,7 @@ import { getPlayerConfig, getPlayersConfig } from "../playerConfig/playerConfig.
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
 import {
   LOBBY_JOINED_CHANNEL,
+  lobbyTypesMap,
   type BaseLobby,
   type CustomLobby,
   type CustomLobbyMatchConfig,
@@ -215,7 +216,8 @@ return redis.call('JSON.GET', KEYS[1])
 `;
 
 // ARGV[1]=playerId, ARGV[2]=targetTeamIndex (0-based).
-// Duos: only teams 0/1, max 2 per team. Any mode: team 4 (spectators) max 4.
+// Custom lobbies: TeamStyle-based capacity rules, team 4 = spectators (max 4).
+// Arena lobbies (no match_config): any team, max 2 players, no spectators.
 const LUA_SWITCH_TEAM = `
 local s = redis.call('JSON.GET', KEYS[1])
 if not s then return nil end
@@ -223,7 +225,8 @@ local l = cjson.decode(s)
 
 local pid = ARGV[1]
 local targetIdx = tonumber(ARGV[2])
-local style = l.match_config.TeamStyle
+local isCustom = l.match_config ~= nil
+local style = isCustom and l.match_config.TeamStyle or nil
 
 -- Find player's current team
 local fromJsonIdx = nil
@@ -256,12 +259,15 @@ if fromJsonIdx == targetJsonIdx then
   return cjson.encode({ playerData = pdata, gameModeSlug = l.GameModeSlug })
 end
 
--- Capacity rules per direction:
-if targetIdx == 4 then
-  -- → Spectator: any mode, max 4
+-- Capacity rules:
+if not isCustom then
+  -- Arena lobby: any team, max 2 players, no spectators
+  if targetLen >= 2 then return nil end
+elseif targetIdx == 4 then
+  -- Custom → Spectator: any mode, max 4
   if targetLen >= 4 then return nil end
 elseif fromTeamIdx == 4 then
-  -- Spectator → player: capacity depends on game mode
+  -- Custom Spectator → player: capacity depends on game mode
   if style == 'Duos' then
     if targetIdx ~= 0 and targetIdx ~= 1 then return nil end
     if targetLen >= 2 then return nil end
@@ -274,7 +280,7 @@ elseif fromTeamIdx == 4 then
     if targetLen >= 1 then return nil end
   end
 else
-  -- Player → player: Duos only, teams 0/1, max 2
+  -- Custom Player → player: Duos only, teams 0/1, max 2
   if style ~= 'Duos' then return nil end
   if targetIdx ~= 0 and targetIdx ~= 1 then return nil end
   if targetLen >= 2 then return nil end
@@ -466,7 +472,7 @@ return redis.call('JSON.GET', KEYS[1])
 `;
 
 // ARGV[1]=accountId
-const LUA_LEAVE_CUSTOM_LOBBY = `
+const LUA_LEAVE_LOBBY = `
 local s = redis.call('JSON.GET', KEYS[1])
 if not s then return nil end
 local l = cjson.decode(s)
@@ -622,7 +628,7 @@ export async function invitePlayerToLobby(
   InviterAccountId: string,
   InviteeAccountId: string,
   IsSpectator: boolean,
-  lobbyType = "Custom",
+  lobbyType: keyof typeof lobbyTypesMap = "party_lobby",
 ) {
   const message: RealtimeNotificationTopicMessage = {
     topic: InviteeAccountId,
@@ -631,7 +637,7 @@ export async function invitePlayerToLobby(
         LobbyType: 0,
         MatchID,
         ContextData: {
-          LobbyType: lobbyType,
+          LobbyType: lobbyTypesMap[lobbyType],
         },
         template_id: "InviteReceivedForLobby",
         IsSpectator,
@@ -653,7 +659,7 @@ export async function invitePlayerToLobby(
   await broadcastNotificationToTopic(message);
 }
 
-export async function createBaseLobby(accountId: string) {
+export async function createBaseLobby(accountId: string, template: keyof typeof lobbyTypesMap) {
   const playerConfig = await getPlayerConfig(accountId);
 
   if (!playerConfig) {
@@ -709,6 +715,7 @@ export async function createBaseLobby(accountId: string) {
     LockedLoadouts: { [accountId]: { Character: playerConfig.Character, Skin: playerConfig.Skin } },
     IsLobbyJoinable: true,
     MatchID: new ObjectId().toHexString(),
+    Template: template,
   };
   return baseLobby;
 }
@@ -717,7 +724,7 @@ export async function createPartyLobby(
   accountId: string,
   lobbyMode: MATCH_TYPES = MATCH_TYPES.ONE_V_ONE,
 ) {
-  const baseLobby = await createBaseLobby(accountId);
+  const baseLobby = await createBaseLobby(accountId, "party_lobby");
   const partyLobby: PartyLobby = {
     ...baseLobby,
     ModeString: lobbyMode,
@@ -775,46 +782,41 @@ export async function leaveLobby(lobbyId: string, accountId: string, createParty
     if (createParty) {
       newLobby = await createPartyLobby(accountId);
     }
-    if ((lobby as CustomLobby).match_config) {
-      const result = await evalLua(LUA_LEAVE_CUSTOM_LOBBY, [lobbyKey(lobbyId)], [accountId]);
-      if (result) {
-        const { playerData, readyPlayers, leaderID, gameModeSlug } = JSON.parse(
-          result as string,
-        ) as {
-          playerData: LobbyTeam["Players"][string];
-          readyPlayers: Record<string, boolean>;
-          leaderID: string;
-          gameModeSlug: keyof typeof GAME_MODES_CONFIG | undefined;
-        };
 
-        const message: RealtimeNotificationTopicMessage = {
-          topic: lobbyId,
+    const result = await evalLua(LUA_LEAVE_LOBBY, [lobbyKey(lobbyId)], [accountId]);
+    if (result) {
+      const { playerData, readyPlayers, leaderID, gameModeSlug } = JSON.parse(result as string) as {
+        playerData: LobbyTeam["Players"][string];
+        readyPlayers: Record<string, boolean>;
+        leaderID: string;
+        gameModeSlug: keyof typeof GAME_MODES_CONFIG | undefined;
+      };
+
+      const message: RealtimeNotificationTopicMessage = {
+        topic: lobbyId,
+        data: {
           data: {
-            data: {
-              MatchID: lobbyId,
-              template_id: "PlayerLeftLobby",
-              Player: playerData,
-              ReadyPlayers: readyPlayers,
-              NewLeader: leaderID,
-            },
-            payload: {
-              custom_notification: "realtime",
-              match: {
-                id: lobbyId,
-              },
-            },
-            cmd: "update",
-            header: "",
+            MatchID: lobbyId,
+            template_id: "PlayerLeftLobby",
+            Player: playerData,
+            ReadyPlayers: readyPlayers,
+            NewLeader: leaderID,
           },
-        };
+          payload: {
+            custom_notification: "realtime",
+            match: {
+              id: lobbyId,
+            },
+          },
+          cmd: "update",
+          header: "",
+        },
+      };
 
-        await Promise.all([
-          gameModeSlug ? refreshPlayerBuffs(lobbyId, gameModeSlug) : Promise.resolve(),
-          broadcastNotificationToTopic(message),
-        ]);
-      }
-    } else {
-      await redisClient.del(lobbyKey(lobbyId));
+      await Promise.all([
+        gameModeSlug ? refreshPlayerBuffs(lobbyId, gameModeSlug) : Promise.resolve(),
+        broadcastNotificationToTopic(message),
+      ]);
     }
   }
   return newLobby;
@@ -885,7 +887,7 @@ export function getCustomLobbyDefaultSettings(
 }
 
 export async function createCustomLobby(accountId: string) {
-  const baseLobby = await createBaseLobby(accountId);
+  const baseLobby = await createBaseLobby(accountId, "custom_game_lobby");
   const customLobby: CustomLobby = {
     ...baseLobby,
     ReadyPlayers: {
@@ -968,7 +970,7 @@ export async function updateIntSettingForCustomLobby(
   lobbyId: string,
   leaderId: string,
   settingKey: keyof CustomLobbyMatchConfig,
-  settingValue: any,
+  settingValue: unknown,
 ) {
   const result = await evalLua(
     LUA_UPDATE_INT_SETTING,
@@ -1134,17 +1136,24 @@ export async function switchTeamForCustomLobby(
   playerId: string,
   teamIndex: number,
 ) {
+  const lobby = await getLobby(lobbyId);
   const result = await evalLua(
     LUA_SWITCH_TEAM,
     [lobbyKey(lobbyId)],
     [playerId, teamIndex.toString()],
   );
-  if (!result) return null;
+
+  if (!result) {
+    return null;
+  }
+
   const { playerData, gameModeSlug } = JSON.parse(result as string) as {
     playerData: LobbyTeam["Players"][string];
     gameModeSlug: keyof typeof GAME_MODES_CONFIG;
   };
-  await refreshPlayerBuffs(lobbyId, gameModeSlug);
+  if (gameModeSlug) {
+    await refreshPlayerBuffs(lobbyId, gameModeSlug);
+  }
 
   const message: RealtimeNotificationTopicMessage = {
     topic: lobbyId,
@@ -1445,10 +1454,11 @@ export async function kickFromLobby(lobbyId: string, leaderId: string, kickeeId:
     },
   };
 
-  await Promise.all([
-    refreshPlayerBuffs(lobbyId, kickGameModeSlug),
-    broadcastNotificationToTopic(message),
-  ]);
+  if (kickGameModeSlug) {
+    refreshPlayerBuffs(lobbyId, kickGameModeSlug);
+  }
+
+  await Promise.all([broadcastNotificationToTopic(message)]);
   return player;
 }
 

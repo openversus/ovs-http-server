@@ -3,7 +3,7 @@ import { InvitationModel } from "@mvsi/database/models/Invitations";
 import { PlayerModel } from "@mvsi/database/models/Player";
 import { logger } from "@mvsi/logger";
 import { redisClient } from "@mvsi/redis";
-import { ObjectId, } from "mongodb";
+import { ObjectId } from "mongodb";
 import { getAssetsByType } from "../../loadAssets";
 import { getPlayersPresence } from "../playerPresence/playerPresence.service";
 import { FRIEND_REQUEST_RECEIVED_CHANNEL, type FriendRequestNotification } from "./friends.types";
@@ -146,24 +146,58 @@ export async function getUserFriendsList(userId: string) {
     logger.error("Tried to query friends from an invalid userId");
     return [];
   }
-  return userFriends.friends.map((f) => f.toHexString());
+  const players = await PlayerModel.find({
+    _id: { $in: userFriends.friends.map((id) => new ObjectId(id)) },
+  });
+  const friendDetais = [];
+
+  for (const friend of userFriends.friends) {
+    const player = players.find((p) => p._id.toHexString() === friend.toHexString());
+    if (player) {
+      friendDetais.push({
+        created_at: new Date().toISOString(),
+        account: {
+          public_id: player._id.toHexString(),
+          username: player.name,
+          avatar: {
+            name: "MultiVersus",
+            image_url:
+              "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-finn.jpg",
+          },
+        },
+      });
+    }
+  }
+  return friendDetais;
 }
 
 export async function getUserFriendDetails(publicIds: readonly string[]) {
   const players = await PlayerModel.find({ _id: { $in: publicIds.map((id) => new ObjectId(id)) } });
   const playersPresenceState = await getPlayersPresence(players.map((f) => f._id.toHexString()));
-  return players.map((f) => {
-    const presenceState = playersPresenceState.find((p) => p.id === f._id.toHexString())
+  return players.map((playerFriend) => {
+    const presenceState = playersPresenceState.find((p) => p.id === playerFriend._id.toHexString())
       ? "online"
       : "offline";
     return {
-      id: f._id,
+      id: playerFriend._id,
+      public_id: playerFriend._id,
+      "identity.avatar":
+        "https://s3.amazonaws.com/wb-agora-hydra-ugc-dokken/identicons/identicon.584.png",
       "identity.default_username": true,
-      presence: presenceState,
-      "identity.alternate.wb_network": [{ id: f._id, username: f.name, avatar: null }],
+      "identity.alternate.wb_network": [
+        {
+          id: playerFriend._id,
+          username: playerFriend.name,
+          avatar: null,
+        },
+      ],
+      "data.LastLoginPlatform": "EPlatform::PC",
+      "server_data.ProfileIcon.Slug": playerFriend.profile_icon,
       "server_data.ProfileIcon.AssetPath": getAssetsByType("ProfileIconData").find(
-        (p) => p.slug === f.profile_icon,
+        (icon) => icon.slug === playerFriend.profile_icon,
       )?.assetPath,
+      "identity.username": playerFriend.name,
+      presence: presenceState,
     };
   });
 }

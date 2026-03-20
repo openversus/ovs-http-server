@@ -99,3 +99,5 @@ export type CustomLobbyMatchConfig = {
   num_set_wins_required: number;
   EnableShields: number;
 };
+
+export type ArenaLobby = BaseLobby;

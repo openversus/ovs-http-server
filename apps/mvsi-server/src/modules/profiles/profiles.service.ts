@@ -11,24 +11,27 @@ export async function getProfileBulk(userIds: string[]) {
     const profileData = {
       id: profile._id.toHexString(),
       account_id: profile._id.toHexString(),
-      updated_at: profile.updatedAt,
-      created_at: profile.createdAt,
       account: {
         deleted: false,
         orphaned: false,
         orphaned_reason: null,
         public_id: profile._id.toHexString(),
-        "identity.default_username": true,
+        identity: {
+          default_username: true,
+          username: profile.name,
+        },
         state: "normal",
         wbplay_data_synced: false,
         wbplay_identity: null,
         locale: "en-US",
-        "data.LastLoginPlatform": "EPlatform::PC",
+        data: { LastLoginPlatform: "EPlatform::PC" },
         id: profile._id.toHexString(),
-        "identity.username": profile.name,
-
-        "server_data.ProfileIcon.Slug": profile.profile_icon,
-        "server_data.ProfileIcon.AssetPath": profileIcon,
+        server_data: {
+          ProfileIcon: {
+            Slug: profile.profile_icon || "profile_icon_default",
+            AssetPath: profileIcon,
+          },
+        },
       },
     };
     return profileData;
@@ -46,7 +49,7 @@ export async function searchProfiles(query: string) {
   const profiles = accounts.map((account) => {
     const presenceState = playersPresence.find((p) => p.id === account._id.toHexString());
     const profileIcon = (I_DEF[account.profile_icon].data as InventoryDefData).AssetPath;
-    const accountId = account._id.toHexString();
+    const accountId = account._id;
     const profileData = {
       score: null,
       result: {
@@ -58,23 +61,22 @@ export async function searchProfiles(query: string) {
           deleted: false,
           orphaned: false,
           orphaned_reason: null,
-          public_id: account._id.toHexString(),
+          public_id: accountId,
           "identity.default_username": true,
           state: "normal",
           wbplay_data_synced: false,
           wbplay_identity: null,
           locale: "en-US",
           "data.LastLoginPlatform": "EPlatform::PC",
-          id: account._id,
+          id: accountId,
           "identity.username": account.name,
           "identity.alternate.wb_network": [
             {
-              id: account._id.toHexString(),
+              id: accountId,
               username: account.name,
               avatar: null,
             },
           ],
-
           presence: presenceState ? "online" : "offline",
           "server_data.ProfileIcon.Slug": account.profile_icon,
           "server_data.ProfileIcon.AssetPath": profileIcon,

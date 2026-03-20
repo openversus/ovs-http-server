@@ -13,6 +13,10 @@ import {
 
 const router = new Elysia().use(MVSI_HYDRA_WITH_JWT);
 
+router.get("/social/me/blocked", async () => {
+  return { total: 0, page: 1, page_size: 20, results: [] };
+});
+
 router.get(
   "/friends/me",
   async ({ claims }) => {
@@ -64,7 +68,10 @@ router.post(
 router.put(
   "/ssc/invoke/send_profile_notification",
   async ({ body }) => {
-    console.log("Received request to send profile notification with body:", JSON.stringify(body, null, 2));
+    console.log(
+      "Received request to send profile notification with body:",
+      JSON.stringify(body, null, 2),
+    );
     try {
       await sendProfileInvitation(body.AccountId, body.SenderWBPNAccountID, body.WBPNInvitationID);
     } catch (error) {
@@ -72,20 +79,21 @@ router.put(
       return "";
     }
   },
-/*   {
+  {
     body: t.Object({
       AccountId: t.String(),
       SenderWBPNAccountID: t.String(),
       WBPNInvitationID: t.String(),
       template_id: t.String(),
     }),
-  }, */
+  },
 );
 
 router.put(
   "/accounts/wb_network/bulk",
   async ({ body }) => {
     const friends = await getUserFriendDetails(body.ids);
+    console.log("Fetched friend details for IDs", body.ids, ":", JSON.stringify(friends, null, 2));
     return friends;
   },
   {

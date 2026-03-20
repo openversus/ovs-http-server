@@ -3,6 +3,7 @@ import { logger } from "@mvsi/logger";
 import { startRedis } from "@mvsi/redis";
 import "./modules/matchmaking/matchmaking.ws";
 import "./modules/lobby/lobby.ws";
+import "./modules/lobby/arena.lobby.ws";
 import "./modules/friends/friends.ws";
 import "./modules/notifications/notifications.ws";
 import { MAIN_WEBSOCKET } from "./websocket.elysia";

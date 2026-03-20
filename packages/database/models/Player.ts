@@ -13,8 +13,6 @@ const playerSchema = schema(
     ip: types.string({ required: true }),
     steam_id: types.string({ required: true }),
     blocked: types.boolean({ required: true }),
-    profile_id: types.objectId({ required: true }),
-    public_id: types.string({ required: true }),
     profile_icon: types.string({ required: true }),
     character: types.string({ required: true }),
     variant: types.string({ required: true }),
@@ -36,8 +34,6 @@ const playerSchema = schema(
       last_login: new Date(),
       name: "",
       profile_icon: "profile_icon_default",
-      profile_id: new ObjectId(),
-      public_id: randomUUID(),
       steam_id: "",
       steam_name: "",
       gameplay_preferences: 544,
@@ -49,7 +45,6 @@ const playerSchema = schema(
 );
 
 dbEmitter.once("connected", async () => {
-  await PlayerModel.collection.createIndex({ public_id: 1 });
   await PlayerModel.collection.createIndex({ name: 1 });
   await PlayerModel.collection.createIndex({ steam_id: 1 });
 });

@@ -182,7 +182,7 @@ async function generateGameConfig_hiss() {
           SkipForceReloadingLocalPlayerProfile: true,
           IsFighterRoadEnabled: false,
           EnablePostMatchV2: true,
-          Arena: false,
+          Arena: true,
           IsStoreLayoutObjectPoolingEnabled: true,
           IsStoreWidgetPoolingEnabled: true,
           IsLabV2Enabled: true,

@@ -2,6 +2,15 @@ import Elysia, { t } from "elysia";
 import { MAIN_APP, MVSI_HYDRA_WITH_JWT } from "../../middleware/middlewares";
 import { MATCH_TYPES } from "../matchmaking/matchmaking.types";
 import {
+  arenaCheckin,
+  arenaPlayerShopClosed,
+  arenaRerollCharacters,
+  arenaSelectCharacter,
+  createArenaLobby,
+  joinArenaLobby,
+  startArenaMatch,
+} from "./arena.lobby.service";
+import {
   addCustomGameBot,
   updateCustomGameBotFighter,
   createCustomLobby,
@@ -615,6 +624,191 @@ router.put(
       MultiplayRegionSearchID: t.Number(),
       Platform: t.String(),
       Version: t.String(),
+    }),
+  },
+);
+
+// ─── Arena Lobby Routes ───────────────────────────────────────────────────────
+
+router.put(
+  "/ssc/invoke/create_arena_lobby",
+  async ({ claims }) => {
+    const lobby = await createArenaLobby(claims.id);
+    return {
+      body: {
+        lobby,
+        Cluster: "ec2-us-east-1-dokken",
+      },
+      metadata: null,
+      return_code: 0,
+    };
+  },
+  {
+    body: t.Object({
+      AllMultiplayParams: t.Record(
+        t.String(),
+        t.Object({
+          MultiplayClusterSlug: t.String(),
+          MultiplayProfileId: t.String(),
+          MultiplayRegionId: t.String(),
+        }),
+      ),
+      AutoPartyPreference: t.Boolean(),
+      CrossplayPreference: t.Number(),
+      GameplayPreferences: t.Number(),
+      HissCrc: t.Number(),
+      LobbyTemplate: t.String(),
+      LobbyType: t.Number(),
+      Platform: t.String(),
+      Version: t.String(),
+    }),
+  },
+);
+
+router.put(
+  "/ssc/invoke/join_arena_lobby",
+  async ({ claims, body }) => {
+    const lobby = await joinArenaLobby(body.HostId, claims.id, {
+      AutoPartyPreference: body.AutoPartyPreference,
+      CrossplayPreference: body.CrossplayPreference,
+      GameplayPreferences: body.GameplayPreferences,
+      Platform: body.Platform,
+      HissCrc: body.HissCrc,
+      Version: body.Version,
+    });
+    return {
+      body: {
+        lobby,
+        Cluster: "ec2-us-east-1-dokken",
+        bIsJoiningCrossPlatform: false,
+        ConnectionQuality: 0,
+      },
+      metadata: null,
+      return_code: lobby ? 0 : 1,
+    };
+  },
+  {
+    body: t.Object({
+      AutoPartyPreference: t.Boolean(),
+      CrossplayPreference: t.Number(),
+      GameplayPreferences: t.Number(),
+      HissCrc: t.Number(),
+      HostId: t.String(),
+      IsSpectator: t.Boolean(),
+      LobbyTemplate: t.String(),
+      Platform: t.String(),
+      Version: t.String(),
+    }),
+  },
+);
+
+router.put(
+  "/ssc/invoke/invite_to_arena_lobby",
+  async ({ claims, body }) => {
+    await invitePlayerToLobby(body.LobbyId, claims.id, body.InviteeAccountID, body.IsSpectator, "Arena");
+    return {
+      body: { MatchID: body.LobbyId, IsSpectator: body.IsSpectator },
+      metadata: null,
+      return_code: 0,
+    };
+  },
+  {
+    body: t.Object({
+      AutoPartyPreference: t.Boolean(),
+      CrossplayPreference: t.Number(),
+      GameplayPreferences: t.Number(),
+      HissCrc: t.Number(),
+      InviteeAccountID: t.String(),
+      IsSpectator: t.Boolean(),
+      LobbyId: t.String(),
+      LobbyTemplate: t.String(),
+      MatchID: t.String(),
+      Platform: t.String(),
+      Version: t.String(),
+    }),
+  },
+);
+
+router.put(
+  "/ssc/invoke/start_arena_match",
+  async ({ claims, body }) => {
+    await startArenaMatch(body.LobbyId, claims.id);
+    return { body: {}, metadata: null, return_code: 0 };
+  },
+  {
+    body: t.Object({
+      LobbyId: t.String(),
+    }),
+  },
+);
+
+router.put(
+  "/ssc/invoke/arena_select_character",
+  async ({ claims, body }) => {
+    await arenaSelectCharacter(body.ArenaLobbyId, claims.id, body.CharacterSlug, body.SkinSlug);
+    return { body: {}, metadata: null, return_code: 0 };
+  },
+  {
+    body: t.Object({
+      ArenaLobbyId: t.String(),
+      CharacterSlug: t.String(),
+      SkinSlug: t.String(),
+    }),
+  },
+);
+
+router.put(
+  "/ssc/invoke/arena_player_shop_closed",
+  async ({ claims, body }) => {
+    await arenaPlayerShopClosed(body.ArenaLobbyId, body.ArenaRound, claims.id, body.ShopPhaseDetails);
+    return { body: {}, metadata: null, return_code: 0 };
+  },
+  {
+    body: t.Object({
+      ArenaLobbyId: t.String(),
+      ArenaRound: t.Number(),
+      ShopPhaseDetails: t.Object({
+        ItemTransactions: t.Array(
+          t.Object({
+            ItemIndex: t.Number(),
+            LocalShopIndex: t.Number(),
+            bPurchase: t.Boolean(),
+          }),
+        ),
+        NumRerolls: t.Number(),
+      }),
+    }),
+  },
+);
+
+router.put(
+  "/ssc/invoke/arena_checkin",
+  async ({ claims, body }) => {
+    await arenaCheckin(body.ArenaParentId, body.ArenaRound, body.ContainerMatchId, claims.id);
+    return { body: {}, metadata: null, return_code: 0 };
+  },
+  {
+    body: t.Object({
+      ArenaParentId: t.String(),
+      ArenaRound: t.Number(),
+      ContainerMatchId: t.String(),
+    }),
+  },
+);
+
+router.put(
+  "/ssc/invoke/arena_reroll_characters",
+  async ({ claims, body }) => {
+    const result = await arenaRerollCharacters(body.ArenaLobbyId, claims.id);
+    return {
+      body: result ?? {},
+      metadata: null,
+      return_code: result?.Result?.BaseResponse?.bSuccess === false ? 1 : 0,
+    };
+  },
+  {
+    body: t.Object({
+      ArenaLobbyId: t.String(),
     }),
   },
 );

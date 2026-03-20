@@ -23,13 +23,11 @@ export async function refreshPlayersPresence(playerIds: string[]) {
 }
 
 export async function getPlayersPresence(playerIds: string[]) {
-  console.log("Getting player presence for playerIds", playerIds);
   const multi = await redisClient.multi();
   for (const playerId of playerIds) {
     multi.hGetAll(`player:${playerId}`);
   }
   const results = (await multi.exec()) as unknown as PlayerPresence[];
-  console.log("Fetched player presence for playerIds", playerIds, ":", results);
   const playersWithIds = playerIds
     .map((playerId, index) => {
       const data = results[index];

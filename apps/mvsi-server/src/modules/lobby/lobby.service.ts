@@ -622,37 +622,35 @@ export async function invitePlayerToLobby(
   InviterAccountId: string,
   InviteeAccountId: string,
   IsSpectator: boolean,
+  lobbyType = "Custom",
 ) {
-  const lobby = await getLobby(MatchID);
-  if (lobby) {
-    const message: RealtimeNotificationTopicMessage = {
-      topic: InviteeAccountId,
+  const message: RealtimeNotificationTopicMessage = {
+    topic: InviteeAccountId,
+    data: {
       data: {
-        data: {
-          LobbyType: 0,
-          MatchID,
-          ContextData: {
-            LobbyType: "Custom",
-          },
-          template_id: "InviteReceivedForLobby",
-          IsSpectator,
-          InviterAccountId,
+        LobbyType: 0,
+        MatchID,
+        ContextData: {
+          LobbyType: lobbyType,
         },
-        payload: {
-          frm: {
-            id: "internal-server",
-            type: "server-api-key",
-          },
-          template: "realtime",
-          account_id: InviteeAccountId,
-          profile_id: InviteeAccountId,
-        },
-        header: "",
-        cmd: "profile-notification",
+        template_id: "InviteReceivedForLobby",
+        IsSpectator,
+        InviterAccountId,
       },
-    };
-    await broadcastNotificationToTopic(message);
-  }
+      payload: {
+        frm: {
+          id: "internal-server",
+          type: "server-api-key",
+        },
+        template: "realtime",
+        account_id: InviteeAccountId,
+        profile_id: InviteeAccountId,
+      },
+      header: "",
+      cmd: "profile-notification",
+    },
+  };
+  await broadcastNotificationToTopic(message);
 }
 
 export async function createBaseLobby(accountId: string) {

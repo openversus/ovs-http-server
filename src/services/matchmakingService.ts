@@ -98,6 +98,12 @@ export async function cancelMatchmaking(accountId: string, matchmakingId: string
     matchmakingId,
   };
   await redisClient.publish(ON_CANCEL_MATCHMAKING, JSON.stringify(notification));
+
+  // Clear party ready states
+  const lobbyId = await redisClient.get(`player_lobby:${accountId}`);
+  if (lobbyId) {
+    await redisClient.del(`party_ready:${lobbyId}`);
+  }
 }
 
 export async function cancelMatchmakingForAll(playerIds: string[], matchmakingId: string) {
@@ -107,4 +113,12 @@ export async function cancelMatchmakingForAll(playerIds: string[], matchmakingId
   };
   await redisClient.publish(ON_CANCEL_MATCHMAKING, JSON.stringify(notification));
   logger.info(`Canceling matchmaking ${matchmakingId} for all players: ${playerIds.join(", ")}`);
+
+  // Clear party ready states for all players' lobbies so they must re-ready
+  for (const pid of playerIds) {
+    const lobbyId = await redisClient.get(`player_lobby:${pid}`);
+    if (lobbyId) {
+      await redisClient.del(`party_ready:${lobbyId}`);
+    }
+  }
 }

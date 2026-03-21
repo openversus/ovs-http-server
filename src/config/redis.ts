@@ -7,7 +7,6 @@ import { cancelMatchmaking, MATCH_TYPES } from "../services/matchmakingService";
 import { Cosmetics } from "../database/Cosmetics";
 import { GAME_SERVER_PORT } from "../game/udp";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
-import { IDeployInfo } from "../services/rollbackService";
 import { num } from "envalid";
 
 const serviceName: string = "Config.Redis";
@@ -31,6 +30,15 @@ export const ON_MATCH_MAKER_STARTED_CHANNEL = "party:queued";
 export const ON_CANCEL_MATCHMAKING = "matchmaking:cancel";
 export const ON_END_OF_MATCH = "match:end";
 export const LOBBY_REJOIN_CHANNEL = "lobby:rejoin";
+export const PLAYER_LOADOUT_LOCKED_CHANNEL = "lobby:loadout_locked";
+export const LOBBY_RETURN_CHANNEL = "lobby:return";
+export const FRIEND_REQUEST_WS_CHANNEL = "friend:request:ws";
+
+export interface RedisFriendRequestWSNotification {
+  receiverAccountId: string;
+  senderAccountId: string;
+  invitationId: string;
+}
 
 export type RedisClient = RedisClientType<redis.RedisModules, redis.RedisFunctions, redis.RedisScripts>;
 
@@ -125,6 +133,14 @@ export interface MATCH_FOUND_NOTIFICATION extends MVS_NOTIFICATION {
   map: string;
   mode: string;
   rollbackPort: number;
+  // Custom game settings (injected into handleSendGamePlayConfig)
+  isCustomGame?: boolean;
+  customNumRingouts?: number;
+  customMatchTime?: number;
+  customHazards?: boolean;
+  customShields?: boolean;
+  worldBuffs?: string[];
+  playerBuffs?: Record<string, string[]>;
 }
 
 export interface RedisMatchEndNotification extends MVS_NOTIFICATION {
@@ -522,47 +538,6 @@ export async function redisDeleteConnectionKeysById(playerId: string): Promise<v
   await redisDeleteKeysByPattern(`connections`, `${playerId}`);
 }
 
-export async function redisAddDeployedRollbackServer(containerMatchId: string, deployInfo: IDeployInfo): Promise<void> {
-  await redisClient.set(`rollback:${containerMatchId}`, JSON.stringify(deployInfo));
-}
-
-export async function redisDeleteDeployedRollbackServer(containerMatchId: string): Promise<void> {
-  await redisClient.del(`rollback:${containerMatchId}`);
-}
-
-export async function redisGetDeployedRollbackServer(containerMatchId: string): Promise<IDeployInfo | null> {
-  const deployInfoStr = await redisClient.get(`rollback:${containerMatchId}`);
-  if (deployInfoStr) {
-    return JSON.parse(deployInfoStr) as IDeployInfo;
-  }
-  return null;
-}
-
-export async function redisGetAllDeployedRollbackServers(): Promise<Record<string, IDeployInfo>> {
-  const rollbackServers: Record<string, IDeployInfo> = {};
-  let cursor = 0;
-
-  do {
-    const result = await redisClient.scan(cursor, {
-      MATCH: `rollback:*`,
-      COUNT: 100,
-    });
-
-    cursor = Number(result.cursor);
-    const keys = result.keys;
-
-    for (const key of keys) {
-      const containerMatchId = key.split(":")[1];
-      const deployInfoStr = await redisClient.get(key);
-      if (deployInfoStr) {
-        rollbackServers[containerMatchId] = JSON.parse(deployInfoStr) as IDeployInfo;
-      }
-    }
-  } while (cursor !== 0);
-  
-  return rollbackServers;
-}
-
 // --- Online Players Tracking ---
 
 const ONLINE_PLAYERS_SET = "online_players";
@@ -597,6 +572,39 @@ export interface RedisPartyInviteNotification {
 export async function redisPublishPartyInvite(notification: RedisPartyInviteNotification): Promise<void> {
   await redisClient.publish(PARTY_INVITE_CHANNEL, JSON.stringify(notification));
   logger.info(`${logPrefix} Published party invite from ${notification.inviterAccountId} to ${notification.invitedAccountId} for match ${notification.matchId}`);
+}
+
+// --- DLL Notification Queue ---
+// Pending notifications polled by the DLL via GET /ovs/notifications/:playerId
+
+export interface DLLNotification {
+  type: string;           // "party_invite", etc.
+  title: string;
+  message: string;
+  data: Record<string, any>;
+  timestamp: number;
+}
+
+const DLL_NOTIF_KEY_PREFIX = "dll_notifications:";
+const DLL_NOTIF_TTL = 60; // expire after 60 seconds if unpolled
+
+export async function redisPushDLLNotification(playerId: string, notification: DLLNotification): Promise<void> {
+  const key = `${DLL_NOTIF_KEY_PREFIX}${playerId}`;
+  await redisClient.rPush(key, JSON.stringify(notification));
+  await redisClient.expire(key, DLL_NOTIF_TTL);
+  logger.info(`${logPrefix} Queued DLL notification for ${playerId}: ${notification.type}`);
+}
+
+export async function redisPopDLLNotifications(playerId: string): Promise<DLLNotification[]> {
+  const key = `${DLL_NOTIF_KEY_PREFIX}${playerId}`;
+  const items: string[] = [];
+  // Pop all items from the list
+  let item = await redisClient.lPop(key);
+  while (item) {
+    items.push(item);
+    item = await redisClient.lPop(key);
+  }
+  return items.map((s) => JSON.parse(s) as DLLNotification);
 }
 
 // --- Toast Notifications ---
@@ -636,7 +644,9 @@ export interface RedisPlayerJoinedLobbyNotification {
 }
 
 export async function redisSaveLobbyState(lobbyId: string, state: RedisLobbyState): Promise<void> {
-  const EX = 60 * 60; // 1 hour expiry
+  // Solo lobbies expire in 1 hour, party lobbies in 8 hours.
+  // Solo lobbies are cheap to recreate; party lobbies must survive long sessions.
+  const EX = state.playerIds.length >= 2 ? 8 * 60 * 60 : 60 * 60;
   await redisClient.set(`lobby:${lobbyId}`, JSON.stringify(state), { EX });
   logger.info(`${logPrefix} Saved lobby state for ${lobbyId} with players: ${state.playerIds.join(", ")}`);
 }
@@ -654,6 +664,26 @@ export async function redisPublishPlayerJoinedLobby(notification: RedisPlayerJoi
   logger.info(`${logPrefix} Published player joined lobby: ${notification.joinedPlayerId} joined ${notification.lobbyId}`);
 }
 
+// --- Targeted Lobby Join (sent to ONE player to transition them into a lobby) ---
+export const LOBBY_TRANSITION_CHANNEL = "lobby:transition";
+
+export interface RedisLobbyTransitionNotification {
+  targetPlayerId: string;   // The specific player who should receive lobby-join
+  lobbyId: string;          // The real lobby ID (inviter's lobby) — used for data lookups
+  wsLobbyId?: string;       // Override lobby ID in WS messages (invitee's old lobby ID)
+                            // so the game accepts them (it filters by current lobby ID)
+  ownerId: string;
+  joinedPlayerId: string;   // The player who is joining (for PlayerJoinedLobby msg)
+  joinedPlayerUsername: string;
+  allPlayerIds: string[];
+  mode: string;
+}
+
+export async function redisPublishLobbyTransition(notification: RedisLobbyTransitionNotification): Promise<void> {
+  await redisClient.publish(LOBBY_TRANSITION_CHANNEL, JSON.stringify(notification));
+  logger.info(`${logPrefix} Published lobby transition for ${notification.targetPlayerId} to lobby ${notification.lobbyId}`);
+}
+
 export interface RedisLobbyRejoinNotification {
   playerId: string;  // The player who needs to rejoin (owner/Player 1)
   lobbyId: string;
@@ -662,6 +692,56 @@ export interface RedisLobbyRejoinNotification {
 export async function redisPublishLobbyRejoin(notification: RedisLobbyRejoinNotification): Promise<void> {
   await redisClient.publish(LOBBY_REJOIN_CHANNEL, JSON.stringify(notification));
   logger.info(`${logPrefix} Published lobby rejoin request for player ${notification.playerId} lobby ${notification.lobbyId}`);
+}
+
+// --- OnPlayerLoadoutLocked notification ---
+// Sent to party members when a player locks their loadout or joins a lobby.
+// Triggers the game's native HandleOnLoadoutLockedForPlayer handler,
+// which shows the golden swirl character spawn animation.
+export interface RedisPlayerLoadoutLockedNotification {
+  lobbyId: string;
+  targetPlayerIds: string[];  // Players who should RECEIVE this notification
+  lockedPlayerId: string;     // The player whose loadout is being reported
+  character: string;
+  skin: string;
+  isJoining?: boolean;        // If true, also send PlayerJoinedLobby to update game roster
+}
+
+export async function redisPublishPlayerLoadoutLocked(notification: RedisPlayerLoadoutLockedNotification): Promise<void> {
+  await redisClient.publish(PLAYER_LOADOUT_LOCKED_CHANNEL, JSON.stringify(notification));
+  logger.info(`${logPrefix} Published loadout locked: ${notification.lockedPlayerId} in ${notification.lobbyId} (char: ${notification.character})`);
+}
+
+export async function redisPublishOnLobbyModeUpdated(notification: RedisOnGameModeUpdatedNotification): Promise<void> {
+  await redisClient.publish(ON_LOBBY_MODE_UPDATED, JSON.stringify(notification));
+  logger.info(`${logPrefix} Published lobby mode update: ${notification.lobbyId} mode=${notification.modeString} to players ${notification.playersIds.join(", ")}`);
+}
+
+// --- Lobby Return (RematchDeclinedNotification) ---
+// Sends RematchDeclinedNotification via WS to force the game to "return to lobby",
+// which triggers the native create_party_lobby call. Used for party invite accept
+// so the invitee's game re-fetches the shared lobby without a WS disconnect.
+export interface RedisLobbyReturnNotification {
+  playerId: string;
+  matchId: string;  // Can be any ID — game uses it for internal tracking
+}
+
+export async function redisPublishLobbyReturn(notification: RedisLobbyReturnNotification): Promise<void> {
+  await redisClient.publish(LOBBY_RETURN_CHANNEL, JSON.stringify(notification));
+  logger.info(`${logPrefix} Published lobby return (RematchDeclined) for player ${notification.playerId}`);
+}
+
+// --- Party Member Join Notification (AccelByte text-format via Hydra WS) ---
+export const PARTY_MEMBER_JOIN_CHANNEL = "party:member_joined";
+
+export interface RedisPartyMemberJoinNotification {
+  targetPlayerId: string;  // who to send to (the inviter)
+  joinedUserId: string;    // who joined (the invitee)
+}
+
+export async function redisPublishPartyMemberJoin(notification: RedisPartyMemberJoinNotification): Promise<void> {
+  await redisClient.publish(PARTY_MEMBER_JOIN_CHANNEL, JSON.stringify(notification));
+  logger.info(`${logPrefix} Published partyMemberJoinNotif: ${notification.joinedUserId} joined → notify ${notification.targetPlayerId}`);
 }
 
 // --- Lobby Redirects ---
@@ -679,7 +759,7 @@ export async function redisGetLobbyRedirect(lobbyId: string): Promise<string | n
 
 // Store which lobby a player is currently in (so we can redirect their match fetches)
 export async function redisSavePlayerLobby(playerId: string, lobbyId: string): Promise<void> {
-  const EX = 60 * 60;
+  const EX = 8 * 60 * 60; // 8 hours — long enough for any gaming session
   await redisClient.set(`player_lobby:${playerId}`, lobbyId, { EX });
   logger.info(`${logPrefix} Player ${playerId} is now in lobby ${lobbyId}`);
 }
@@ -696,6 +776,22 @@ export async function redisDeletePlayerLobby(playerId: string): Promise<void> {
 export async function redisDeleteLobbyState(lobbyId: string): Promise<void> {
   await redisClient.del(`lobby:${lobbyId}`);
   logger.info(`${logPrefix} Deleted lobby state for ${lobbyId}`);
+}
+
+// pending_join_lobby — set by accept-invite / party_joined, consumed by join_party_lobby.
+// This keeps player_lobby pointing at the OLD (solo) lobby so leave_player_lobby
+// destroys the right thing while the player transitions between lobbies.
+export async function redisSetPendingJoinLobby(playerId: string, lobbyId: string): Promise<void> {
+  await redisClient.set(`pending_join_lobby:${playerId}`, lobbyId, { EX: 60 });
+  logger.info(`${logPrefix} Set pending_join_lobby for ${playerId} → ${lobbyId}`);
+}
+
+export async function redisGetPendingJoinLobby(playerId: string): Promise<string | null> {
+  return await redisClient.get(`pending_join_lobby:${playerId}`);
+}
+
+export async function redisDeletePendingJoinLobby(playerId: string): Promise<void> {
+  await redisClient.del(`pending_join_lobby:${playerId}`);
 }
 
 // Clean up a player's lobby data on disconnect.
@@ -785,4 +881,3 @@ export async function redisAcquireMatchmakingLock(accountId: string): Promise<bo
 export async function redisReleaseMatchmakingLock(accountId: string): Promise<void> {
   await redisClient.del(`matchmaking_lock:${accountId}`);
 }
-

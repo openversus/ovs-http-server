@@ -8,18 +8,14 @@ import {
   redisMatchMakingComplete,
   redisUpdateMatch,
 } from "../config/redis";
-import { logger, logwrapper } from "../config/logger";
+import { logger } from "../config/logger";
 import { getCustomRandomMapByType, getMapList } from "../data/maps";
 import { PlayerTesterModel } from "../database/PlayerTester";
 import ObjectID from "bson-objectid";
 import { randomBytes, randomInt } from "crypto";
-import { IDeployInfo, DeployInfo, getDefaultDeployInfo } from "./rollbackService";
 import env from "../env/env";
 
 const logPrefix = "[CustomLobby]:";
-const useOnDemandRollback: boolean = env.ON_DEMAND_ROLLBACK === 1;
-let customLobbyUDPPortLow: number = useOnDemandRollback ? env.ON_DEMAND_ROLLBACK_PORT_LOW : env.ROLLBACK_UDP_PORT_LOW
-let customLobbyUDPPortHigh: number = useOnDemandRollback ? env.ON_DEMAND_ROLLBACK_PORT_HIGH : env.ROLLBACK_UDP_PORT_HIGH
 
 // --- Interfaces ---
 
@@ -374,6 +370,39 @@ export async function moveToPlayer(
   return { success: true };
 }
 
+export async function kickPlayer(
+  requesterId: string,
+  targetId: string,
+): Promise<{ success: boolean } | { error: string }> {
+  const code = await getPlayerLobby(requesterId);
+  if (!code) return { error: "Not in a lobby." };
+
+  const lobby = await getLobby(code);
+  if (!lobby) return { error: "Lobby not found." };
+
+  if (lobby.leaderId !== requesterId) {
+    return { error: "Only the lobby leader can kick players." };
+  }
+
+  if (requesterId === targetId) {
+    return { error: "You can't kick yourself." };
+  }
+
+  const targetPlayer = lobby.players.find((p) => p.playerId === targetId);
+  if (!targetPlayer) {
+    return { error: "Player not in this lobby." };
+  }
+
+  // Remove the player
+  lobby.players = lobby.players.filter((p) => p.playerId !== targetId);
+  await deletePlayerLobby(targetId);
+  await saveLobby(lobby);
+  await publishUpdate(code);
+
+  logger.info(`${logPrefix} ${targetPlayer.username} (${targetId}) kicked from lobby ${code} by leader ${requesterId}`);
+  return { success: true };
+}
+
 export async function toggleReady(
   playerId: string,
 ): Promise<{ success: boolean; ready: boolean } | { error: string }> {
@@ -558,16 +587,6 @@ export async function startMatch(
     const matchId = ObjectID().toHexString();
     const resultId = ObjectID().toHexString();
     const matchmakingRequestId = ObjectID().toHexString();
-    let tempCustomLobbyRollbackPort: number = 0;
-    if (useOnDemandRollback)
-    {
-      tempCustomLobbyRollbackPort = randomInt(customLobbyUDPPortLow, customLobbyUDPPortHigh);
-    }
-    else
-    {
-      tempCustomLobbyRollbackPort = randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH);
-    }
-    const customLobbyRollbackPort = tempCustomLobbyRollbackPort;
 
     // Build RedisTeamEntry[] from lobby teams (game players only)
     // Use same interleaved spawn formula as matchmaking-worker: playerIndex = idxInTeam * 2 + teamIndex
@@ -597,8 +616,8 @@ export async function startMatch(
     const spectatorEntries: RedisTeamEntry[] = spectators.map((p, idx) => ({
       playerId: p.playerId,
       partyId: matchId,
-      playerIndex: allPlayers.length + idx,
-      teamIndex: 0 as 0 | 1, // doesn't matter for spectators
+      playerIndex: 8888, // rollback server detects spectators by playerIndex 8888
+      teamIndex: 0 as 0 | 1,
       isHost: false,
       ip: p.ip,
       isSpectator: true,
@@ -628,7 +647,7 @@ export async function startMatch(
       createdAt: Date.now(),
       matchType: lobby.mode,
       totalPlayers: allPlayers.length,
-      rollbackPort: customLobbyRollbackPort,
+      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
       isPasswordMatch: true, // Custom lobby = no ELO
     };
     await redisUpdateMatch(matchId, match);
@@ -638,22 +657,6 @@ export async function startMatch(
       ? lobby.mapPool[Math.floor(Math.random() * lobby.mapPool.length)]
       : await getCustomRandomMapByType(lobby.mode);
 
-    if (useOnDemandRollback) {
-      logwrapper.info(`${logPrefix} Deploying rollback server for match ${matchId} with port: ${match.rollbackPort}`)
-      let deployInfo: IDeployInfo = getDefaultDeployInfo();
-      deployInfo.port = customLobbyRollbackPort;
-      deployInfo.entrypoint = deployInfo.entrypoint.replace("CHANGEMEDEFAULTPORT", deployInfo.port.toString());
-      deployInfo.ovs_server = env.OVS_SERVER;
-      const isDeployed = DeployInfo.Deploy(deployInfo);
-      if (!isDeployed) {
-        logger.error(`${logPrefix} Failed to deploy rollback server for match ${matchId} on port ${deployInfo.port}`);
-        // Depending on the desired behavior, you might want to:
-        // - Mark the match as failed and notify players
-        // - Fall back to an internal rollback server if available
-        // For now, we'll just log the error and proceed, but this means the match will likely fail when clients try to connect.
-      }
-    }
-
     // Build notification (include spectators so they receive the match config)
     const notification: MATCH_FOUND_NOTIFICATION = {
       players: [...players, ...spectatorEntries],
@@ -661,7 +664,7 @@ export async function startMatch(
       matchKey: randomBytes(32).toString("base64"),
       map,
       mode: lobby.mode,
-      rollbackPort: customLobbyRollbackPort,
+      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
     };
 
     // Include spectators in playerIds so they receive all match notifications
@@ -981,16 +984,6 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
     const matchId = ObjectID().toHexString();
     const resultId = ObjectID().toHexString();
     const matchmakingRequestId = ObjectID().toHexString();
-    let tempCustomLobbyRollbackPort: number = 0;
-    if (useOnDemandRollback)
-    {
-      tempCustomLobbyRollbackPort = randomInt(customLobbyUDPPortLow, customLobbyUDPPortHigh);
-    }
-    else
-    {
-      tempCustomLobbyRollbackPort = randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH);
-    }
-    const customLobbyRollbackPort = tempCustomLobbyRollbackPort;
 
     // Use same interleaved spawn formula as matchmaking-worker: playerIndex = idxInTeam * 2 + teamIndex
     const allPlayers = [...team0, ...team1];
@@ -1018,7 +1011,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
     const rematchSpectatorEntries: RedisTeamEntry[] = rematchSpectators.map((p, idx) => ({
       playerId: p.playerId,
       partyId: matchId,
-      playerIndex: allPlayers.length + idx,
+      playerIndex: 8888, // rollback server detects spectators by playerIndex 8888
       teamIndex: 0 as 0 | 1,
       isHost: false,
       ip: p.ip,
@@ -1047,7 +1040,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
       createdAt: Date.now(),
       matchType: lobby.mode,
       totalPlayers: allPlayers.length,
-      rollbackPort: customLobbyRollbackPort,
+      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
       isPasswordMatch: true,
     };
     await redisUpdateMatch(matchId, match);
@@ -1057,29 +1050,13 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
       ? lobby.mapPool[Math.floor(Math.random() * lobby.mapPool.length)]
       : await getCustomRandomMapByType(lobby.mode);
 
-    if (useOnDemandRollback) {
-      logwrapper.info(`${logPrefix} Deploying rollback server for match ${matchId} with port: ${match.rollbackPort}`)
-      let deployInfo: IDeployInfo = getDefaultDeployInfo();
-      deployInfo.port = customLobbyRollbackPort;
-      deployInfo.entrypoint = deployInfo.entrypoint.replace("CHANGEMEDEFAULTPORT", deployInfo.port.toString());
-      deployInfo.ovs_server = env.OVS_SERVER;
-      const isDeployed = DeployInfo.Deploy(deployInfo);
-      if (!isDeployed) {
-        logger.error(`${logPrefix} Failed to deploy rollback server for match ${matchId} on port ${deployInfo.port}`);
-        // Depending on the desired behavior, you might want to:
-        // - Mark the match as failed and notify players
-        // - Fall back to an internal rollback server if available
-        // For now, we'll just log the error and proceed, but this means the match will likely fail when clients try to connect.
-      }
-    }
-
     const notification: MATCH_FOUND_NOTIFICATION = {
       players: [...players, ...rematchSpectatorEntries],
       matchId,
       matchKey: randomBytes(32).toString("base64"),
       map,
       mode: lobby.mode,
-      rollbackPort: customLobbyRollbackPort,
+      rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
     };
 
     const playerIds = [...players, ...rematchSpectatorEntries].map((p) => p.playerId);

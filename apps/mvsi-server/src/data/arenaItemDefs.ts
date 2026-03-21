@@ -22,13 +22,12 @@ export type ArenaItemDef = {
 export type ShopItem = {
   Item: {
     Slug: string;
-    Gem: string;
-    Cost: number;
     SellValue: number;
     Level: number;
     Xp: number;
     NextLevelXp: number;
   };
+  Cost: number;
 };
 
 export type ShopOption = {
@@ -159,13 +158,12 @@ export function generateShopOptions(
       shopItems.push({
         Item: {
           Slug: item.slug,
-          Gem: item.gemName,
-          Cost: item.cost,
           SellValue: item.cost - 1,
           Level: 1,
           Xp: 0,
           NextLevelXp: 1,
         },
+        Cost: item.cost,
       });
     }
     options.push({ CurrentShop: shopItems });

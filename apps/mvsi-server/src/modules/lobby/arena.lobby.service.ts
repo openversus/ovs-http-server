@@ -256,7 +256,6 @@ async function onAllCharactersSelected(arenaId: string): Promise<void> {
           header: "",
         },
       };
-      console.log("Notifying match of character selection:", JSON.stringify(notification, null, 2));
       await broadcastNotificationToUsers(notification);
     }
   }
@@ -333,17 +332,7 @@ async function notifyMatchReadyToStart(arenaId: string): Promise<void> {
             ArenaId: arenaId,
             MatchId: matchId,
             template_id: "ArenaInventoryLockedNotification",
-            GameplayConfig: {
-              ...activeMatch.GameplayConfig,
-              GameplayConfig: {
-                ...activeMatch.GameplayConfig.GameplayConfig,
-                Players: updatedPlayers,
-                ArenaModeInfo: {
-                  ...activeMatch.GameplayConfig.GameplayConfig.ArenaModeInfo,
-                  bReadyToStart: true,
-                },
-              },
-            },
+            GameplayConfig: activeMatch.GameplayConfig.GameplayConfig,
             ArenaPlayerInfo: arenaPlayerInfo,
           },
           payload: {

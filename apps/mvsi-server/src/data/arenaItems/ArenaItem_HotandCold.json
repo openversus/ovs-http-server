@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_HotandCold",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_HotAndCold.Gem_Arena_HotAndCold",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Rare",
+      "StartingWeight": 35,
+      "WeightPerRound": 1,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Mage"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 0
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "89A53EF64E022398013D339C60D64359",
+          "SourceString": "Hot and Cold",
+          "LocalizedString": "Hot and Cold"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "D1277B284FCBF817A1B7FE8B9CA90A1E",
+          "SourceString": "Hitting an enemy with a projectile will add stacks of ignite or freeze, randomly",
+          "LocalizedString": "Hitting an enemy with a projectile will add stacks of ignite or freeze, randomly"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_HotAndCold.T_ArenaBuff_HotAndCold",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_hotandcold"
+    }
+  }
+]

@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_TriggerHappy",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_TriggerHappy.Gem_Arena_TriggerHappy",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Uncommon",
+      "StartingWeight": 55,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Mage"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 5
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "C90275474FCA7210866790958260632D",
+          "SourceString": "Trigger Happy",
+          "LocalizedString": "Trigger Happy"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "A541C082498332D8943A0F95090F4F07",
+          "SourceString": "Cooldowns refresh faster",
+          "LocalizedString": "Cooldowns refresh faster"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_TriggerHappy.T_ArenaBuff_TriggerHappy",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_triggerhappy"
+    }
+  }
+]

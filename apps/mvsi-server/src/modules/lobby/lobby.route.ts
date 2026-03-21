@@ -717,7 +717,7 @@ router.put(
     if (!lobby || lobby.LeaderID !== claims.id) {
       return { body: {}, metadata: null, return_code: 1 };
     }
-    await assembleArenaMatch([lobby]);
+    await assembleArenaMatch(lobby);
     return { body: {}, metadata: null, return_code: 0 };
   },
   {

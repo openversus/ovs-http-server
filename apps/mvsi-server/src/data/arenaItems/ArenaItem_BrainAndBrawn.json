@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_BrainAndBrawn",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_BrainAndBrawn.Gem_Arena_BrainAndBrawn",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Uncommon",
+      "StartingWeight": 55,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Bruiser"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 10
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "B97F88DC4862AC5E1402C68D1C477B80",
+          "SourceString": "Brain and Brawn",
+          "LocalizedString": "Brain and Brawn"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "DC55918E4764A28D2B43A09B0C90A5C8",
+          "SourceString": "Damage & knockback for each Bruiser or Mage on your team.",
+          "LocalizedString": "Damage & knockback for each Bruiser or Mage on your team."
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_BrainAndBrawn.T_ArenaBuff_BrainAndBrawn",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_brainandbrawn"
+    }
+  }
+]

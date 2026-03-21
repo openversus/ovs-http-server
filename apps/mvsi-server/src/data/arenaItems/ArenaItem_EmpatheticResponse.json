@@ -1,0 +1,59 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_EmpatheticResponse",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_EmpatheticResponse.Gem_Arena_EmpatheticResponse",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Epic",
+      "StartingWeight": 20,
+      "WeightPerRound": 1,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Assassin"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        },
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Mage"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        }
+      ],
+      "CostPerLevel": [
+        16
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "DB17008444E5DB04270F3E8854139019",
+          "SourceString": "Empathetic Response",
+          "LocalizedString": "Empathetic Response"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "D0B3DBFD4752CBB82836CC8918B83265",
+          "SourceString": "Defense boost for a time after ally dies",
+          "LocalizedString": "Defense boost for a time after ally dies"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_EmpatheticResponse.T_ArenaBuff_EmpatheticResponse",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_empatheticresponse"
+    }
+  }
+]

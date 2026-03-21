@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_WhatAChicken",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_WhatAChicken.Gem_Arena_WhatAChicken",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Uncommon",
+      "StartingWeight": 55,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Tank"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 0
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "E2F20201422CC9628A7273858D922A72",
+          "SourceString": "What a Chicken!",
+          "LocalizedString": "What a Chicken!"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "DD6DFF3348CB37271A13A0AED5BCE578",
+          "SourceString": "Parrying an enemy will turn them into a chicken for a limited duration",
+          "LocalizedString": "Parrying an enemy will turn them into a chicken for a limited duration"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_WhatAChicken.T_ArenaBuff_WhatAChicken",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_whatachicken"
+    }
+  }
+]

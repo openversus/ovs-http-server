@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_ColdBreeze",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_ColdBreeze.Gem_Arena_ColdBreeze",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Rare",
+      "StartingWeight": 35,
+      "WeightPerRound": 1,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Bruiser"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 5
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "A66B5EE843742F74D3FF95A7BA41FA96",
+          "SourceString": "Cold Breeze",
+          "LocalizedString": "Cold Breeze"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "EF3197BA4E38CE677A8A7986F2FDA2F0",
+          "SourceString": "Dodging through an enemy grants ice gauntlets",
+          "LocalizedString": "Dodging through an enemy grants ice gauntlets"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_ColdBreeze.T_ArenaBuff_ColdBreeze",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_coldbreeze"
+    }
+  }
+]

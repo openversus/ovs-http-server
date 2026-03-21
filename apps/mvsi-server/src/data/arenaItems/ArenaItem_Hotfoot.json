@@ -1,0 +1,56 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_Hotfoot",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_Hotfoot.Gem_Arena_Hotfoot",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Uncommon",
+      "StartingWeight": 55,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Bruiser"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        }
+      ],
+      "CostPerLevel": [
+        7
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "84F651EE422247DD4498989859DE0FC8",
+          "SourceString": "Hot Foot",
+          "LocalizedString": "Hot Foot"
+        },
+        "AbbreviatedName": {
+          "Namespace": "",
+          "Key": "ED5BC6604D36C0F1BA5778852643E98A",
+          "SourceString": "Hot Foot",
+          "LocalizedString": "Hot Foot"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "CE0D11E04EE464DF569DD7B94FBA60A2",
+          "SourceString": "Jumping off the ground spawns a firewall.",
+          "LocalizedString": "Jumping off the ground spawns a firewall."
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_HotFoot.T_ArenaBuff_HotFoot",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_ddd"
+    }
+  }
+]

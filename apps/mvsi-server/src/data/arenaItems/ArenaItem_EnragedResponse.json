@@ -1,0 +1,59 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_EnragedResponse",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_EnragedResponse.Gem_Arena_EnragedResponse",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Epic",
+      "StartingWeight": 20,
+      "WeightPerRound": 1,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Tank"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        },
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Bruiser"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        }
+      ],
+      "CostPerLevel": [
+        16
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "AC893C6F497750A4615F2FA052CA6A02",
+          "SourceString": "Enraged Response",
+          "LocalizedString": "Enraged Response"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "96EC2CD74E9D6EB32198DBA46F7FC99B",
+          "SourceString": "Offensive boost for a time after ally dies",
+          "LocalizedString": "Offensive boost for a time after ally dies"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_EnragedResponse.T_ArenaBuff_EnragedResponse",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_enragedresponse"
+    }
+  }
+]

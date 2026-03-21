@@ -1,0 +1,59 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_ReactivePlating",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_ReactivePlating.Gem_Arena_ReactivePlating",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Rare",
+      "StartingWeight": 35,
+      "WeightPerRound": 1,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Tank"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        },
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Bruiser"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        }
+      ],
+      "CostPerLevel": [
+        16
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "6D8CDEC7478CD389A7516D8F86B009BE",
+          "SourceString": "Reactive Plating",
+          "LocalizedString": "Reactive Plating"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "BD0827F248FE0FF62E0D3490E91C3131",
+          "SourceString": "Enemy hits that break your shield create an explosion around you",
+          "LocalizedString": "Enemy hits that break your shield create an explosion around you"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_ReactivePlating.T_ArenaBuff_ReactivePlating",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_reactiveplating"
+    }
+  }
+]

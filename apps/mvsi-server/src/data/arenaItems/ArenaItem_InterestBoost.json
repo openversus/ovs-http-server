@@ -1,0 +1,40 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_InterestBoost",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_Investor.Gem_Arena_Investor",
+        "SubPathString": ""
+      },
+      "StartingWeight": 70,
+      "WeightPerRound": -2,
+      "StartingWeightModifier": 30,
+      "WeightPerRoundModifier": -10,
+      "CostPerLevel": [
+        7
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "5FFDD2844F2DB707F6B02B891429D655",
+          "SourceString": "Investor",
+          "LocalizedString": "Investor"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "B5337D8E483043FCB6486C87EB6BE242",
+          "SourceString": "Increase interest gained per round",
+          "LocalizedString": "Increase interest gained per round"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_Investor.T_ArenaBuff_Investor",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_interestboost"
+    }
+  }
+]

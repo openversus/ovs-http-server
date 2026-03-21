@@ -1,0 +1,39 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_ArmorCrush",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_ArmorCrush.Gem_Arena_ArmorCrush",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Rare",
+      "StartingWeight": 35,
+      "WeightPerRound": 1,
+      "CostPerLevel": [
+        12
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "5EE6E01B485A34203DF764903EE5B2F1",
+          "SourceString": "Armor Crush",
+          "LocalizedString": "Armor Crush"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "7F669F00452FABE3B76A21B3CCBC48E3",
+          "SourceString": "Charged basic attacks will crush armor and deal more damage!",
+          "LocalizedString": "Charged basic attacks will crush armor and deal more damage!"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/UI/Assets/Icons/perk_icons_posthiatus/t_ui_perks_armorcrush.t_ui_perks_armorcrush",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_armorcrush"
+    }
+  }
+]

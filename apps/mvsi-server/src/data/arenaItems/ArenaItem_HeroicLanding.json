@@ -1,0 +1,39 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_HeroicLanding",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_HeroicLanding.Gem_Arena_HeroicLanding",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Rare",
+      "StartingWeight": 35,
+      "WeightPerRound": 1,
+      "CostPerLevel": [
+        16
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "4E9F8436427AF9905C4783932CDB9D77",
+          "SourceString": "Heroic Landing",
+          "LocalizedString": "Heroic Landing"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "9DA6979D4E9F4DDE75AFEE8D5AAC51AE",
+          "SourceString": "Fast fall to briefly grant yourself armor and knockback resist. Taking damage during this armor will make your next attack crit!",
+          "LocalizedString": "Fast fall to briefly grant yourself armor and knockback resist. Taking damage during this armor will make your next attack crit!"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_HeroicLanding.T_ArenaBuff_HeroicLanding",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_heroiclanding"
+    }
+  }
+]

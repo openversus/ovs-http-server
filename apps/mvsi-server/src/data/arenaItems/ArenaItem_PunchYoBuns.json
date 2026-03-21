@@ -1,0 +1,55 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_PunchYoBuns",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_PunchYoBuns.Gem_Arena_PunchYoBuns",
+        "SubPathString": ""
+      },
+      "StartingWeight": 70,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Assassin"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 5
+          }
+        },
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Bruiser"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 0
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "827364CE420F77B85B0716B0CA7BE704",
+          "SourceString": "Punch Yo Buns",
+          "LocalizedString": "Punch Yo Buns"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "375D2B7C427999757CD0948ADCB4526F",
+          "SourceString": "Deal extra damage from behind",
+          "LocalizedString": "Deal extra damage from behind"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_PunchYoBuns.T_ArenaBuff_PunchYoBuns",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_punchyobuns"
+    }
+  }
+]

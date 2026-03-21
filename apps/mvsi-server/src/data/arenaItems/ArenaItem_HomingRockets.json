@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_HomingRockets",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_HomingRockets.Gem_Arena_HomingRockets",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Epic",
+      "StartingWeight": 20,
+      "WeightPerRound": 1,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Mage"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 0
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "DB2A798C48B14EF38FAE359BFC7C8525",
+          "SourceString": "Homing Rockets",
+          "LocalizedString": "Homing Rockets"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "B282CFDF4D17D52C86412588DB973351",
+          "SourceString": "Press interact to launch Rockets!",
+          "LocalizedString": "Press interact to launch Rockets!"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_HomingRockets.T_ArenaBuff_HomingRockets",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_homingrockets"
+    }
+  }
+]

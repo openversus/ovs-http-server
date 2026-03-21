@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_EmbraceTheElements",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_EmbraceTheElements.Gem_Arena_EmbraceTheElements",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Rare",
+      "StartingWeight": 35,
+      "WeightPerRound": 1,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Mage"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 0
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "F607C5744D1263146B017D8183AD9A0B",
+          "SourceString": "Embrace the Elements",
+          "LocalizedString": "Embrace the Elements"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "85B5B595450D2BC2D0E269ADF3B648D5",
+          "SourceString": "Gain a defense boost when enemies are afflicted with elemental statuses.",
+          "LocalizedString": "Gain a defense boost when enemies are afflicted with elemental statuses."
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_EmbraceTheElements.T_ArenaBuff_EmbraceTheElements",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_embracetheelements"
+    }
+  }
+]

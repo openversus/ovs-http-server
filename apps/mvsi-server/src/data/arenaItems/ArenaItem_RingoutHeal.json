@@ -1,0 +1,58 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_RingoutHeal",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_RingoutHeal.Gem_Arena_RingoutHeal",
+        "SubPathString": ""
+      },
+      "StartingWeight": 70,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Assassin"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        },
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Bruiser"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 5
+          }
+        }
+      ],
+      "CostPerLevel": [
+        12
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "8F1D82A449B238F7DAEE37A6BDCFB6B5",
+          "SourceString": "Ringout Refresh",
+          "LocalizedString": "Ringout Refresh"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "0A15251F4ADAFA1CCF67A0B98BCB6E2A",
+          "SourceString": "Heal a portion of your current damage on ringout",
+          "LocalizedString": "Heal a portion of your current damage on ringout"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_RingoutHeal.T_ArenaBuff_RingoutHeal",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_ringoutheal"
+    }
+  }
+]

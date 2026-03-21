@@ -1,0 +1,40 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_GroundPound",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_GroundPound.Gem_Arena_GroundPound",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Epic",
+      "StartingWeight": 20,
+      "WeightPerRound": 1,
+      "CostPerLevel": [
+        16
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "089E3E9042842F69AA90CAA49C98CB6B",
+          "SourceString": "Ground Pound",
+          "LocalizedString": "Ground Pound"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "F95E67654B61CBE7E424CDADB1EF8DE2",
+          "SourceString": "Fast fall from a great height to damage and greatly knockup enemies around you! You'll also briefly create a Smoke Bomb where you land! [DoNotShip]",
+          "LocalizedString": "Fast fall from a great height to damage and greatly knockup enemies around you! You'll also briefly create a Smoke Bomb where you land! [DoNotShip]"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/UI/Assets/Icons/perk_icons_posthiatus/t_ui_perks_igottagetinthere.t_ui_perks_igottagetinthere",
+          "SubPathString": ""
+        }
+      },
+      "bIsEnabled": false,
+      "Slug": "arenaitem_groundpound"
+    }
+  }
+]

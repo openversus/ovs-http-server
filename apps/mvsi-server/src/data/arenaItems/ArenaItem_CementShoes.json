@@ -1,0 +1,59 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_CementShoes",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_CementShoes.Gem_Arena_CementShoes",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Uncommon",
+      "StartingWeight": 55,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Assassin"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        },
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Bruiser"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        }
+      ],
+      "CostPerLevel": [
+        16
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "D9C47EC64E612EBE198DA3B6D441F23F",
+          "SourceString": "Cement Shoes",
+          "LocalizedString": "Cement Shoes"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "7B5A2C69440140C890F0669CB228B53E",
+          "SourceString": "Reduced knockback and jump height",
+          "LocalizedString": "Reduced knockback and jump height"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_CementShoes.T_ArenaBuff_CementShoes",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_cementshoes"
+    }
+  }
+]

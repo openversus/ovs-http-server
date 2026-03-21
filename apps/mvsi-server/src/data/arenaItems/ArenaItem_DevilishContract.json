@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_DevilishContract",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_DevilishContract.Gem_Arena_DevilishContract",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Legendary",
+      "StartingWeight": 0,
+      "WeightPerRound": 2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Tank"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 10
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "7B446C6746B887205F53E380684FFD8A",
+          "SourceString": "Devilish Contract",
+          "LocalizedString": "Devilish Contract"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "8F22CF25467E9575C1EDDD9AB17A2881",
+          "SourceString": "Redirect half of the damage your ally takes to you. Deal more damage when high health.",
+          "LocalizedString": "Redirect half of the damage your ally takes to you. Deal more damage when high health."
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_DevilishContract.T_ArenaBuff_DevilishContract",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_devilishcontract"
+    }
+  }
+]

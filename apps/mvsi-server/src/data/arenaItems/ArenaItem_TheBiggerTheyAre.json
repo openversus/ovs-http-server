@@ -1,0 +1,62 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_TheBiggerTheyAre",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_TheBiggerTheyAre.Gem_Arena_TheBiggerTheyAre",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Legendary",
+      "StartingWeight": 0,
+      "WeightPerRound": 2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Assassin"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 5
+          }
+        },
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Bruiser"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 0
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "9207BB7148B37DBF20C534A81B4ED326",
+          "SourceString": "The Bigger They Are",
+          "LocalizedString": "The Bigger They Are"
+        },
+        "AbbreviatedName": {
+          "Namespace": "",
+          "Key": "C4E3D8404D9FC7995ED99F8AB821B573",
+          "SourceString": "The Bigger They Are",
+          "LocalizedString": "The Bigger They Are"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "4365E5034B2683FE5D74DEA090AAA3CC",
+          "SourceString": "Grow large with increased damage. Shrink if you take damage.",
+          "LocalizedString": "Grow large with increased damage. Shrink if you take damage."
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_TheBiggerTheyAre.T_ArenaBuff_TheBiggerTheyAre",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_thebiggertheyare"
+    }
+  }
+]

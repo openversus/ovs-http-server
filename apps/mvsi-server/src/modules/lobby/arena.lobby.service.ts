@@ -3,7 +3,7 @@ import { redisClient } from "@mvsi/redis";
 import { ObjectId } from "mongodb";
 import { randomUUID } from "node:crypto";
 import { getRandomMap2v2 } from "../../data/maps";
-import { getAssetsByType } from "../../loadAssets";
+import { REDIS_CHARACTER_SLUGS_KEY } from "../../loadAssets";
 import type { GameplayConfig } from "../matchmaking/matchmaking.types";
 import { notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
 import { broadcastNotificationToUsers } from "../notifications/notifications.utils";
@@ -22,6 +22,7 @@ import type {
   ArenaTeamInfo,
   MatchStats,
 } from "./arena.lobby.types";
+import { pl } from "zod/locales";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -136,11 +137,12 @@ function createArenaTeamStats() {
   };
 }
 
-function getRandomCharacters(count: number): string[] {
-  const chars = getAssetsByType("CharacterData");
-  if (chars.length === 0) return [];
-  const shuffled = [...chars].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, Math.min(count, shuffled.length)).map((c) => c.slug);
+async function getRandomCharacters(count: number): Promise<string[]> {
+  const raw = await redisClient.get(REDIS_CHARACTER_SLUGS_KEY);
+  if (!raw) return [];
+  const slugs: string[] = JSON.parse(raw);
+  const shuffled = [...slugs].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, Math.min(count, shuffled.length));
 }
 
 // ─── Lua scripts ──────────────────────────────────────────────────────────────
@@ -291,27 +293,25 @@ export async function joinArenaLobby(
 // ─── Arena assembly ───────────────────────────────────────────────────────────
 
 /**
- * Assemble an arena match from one or more ArenaLobbies.
- * Called either from the start_arena_match route (single lobby) or
- * from the matchmaking worker (multiple matched lobbies).
+ * Assemble an arena match from a single ArenaLobby.
+ * The lobby's Teams represent the real-player teams already assembled by the
+ * caller (route for a manual start, or the matchmaking worker for queued play).
+ * Any missing teams / players are padded with bots.
+ *
+ * Returns the arenaId string on success, or null on failure.
  */
-export async function assembleArenaMatch(lobbies: ArenaLobby[]): Promise<ArenaData | null> {
-  if (lobbies.length === 0) return null;
-
+export async function assembleArenaMatch(lobby: ArenaLobby): Promise<string | null> {
   const arenaId = new ObjectId().toHexString();
   const arenaConstants = getArenaConstants();
 
-  // ── 1. Extract real-player teams from all lobbies, preserving pairs ──────
-  // A team slot in a lobby with at least 1 real player becomes one arena team.
+  // ── 1. Extract real-player teams from the lobby, preserving pairs ─────────
   const rawTeams: string[][] = [];
-  for (const lobby of lobbies) {
-    for (const team of lobby.Teams) {
-      const realPlayers = Object.entries(team.Players)
-        .filter(([, p]) => p.BotSettingSlug === "")
-        .map(([id]) => id);
-      if (realPlayers.length > 0) {
-        rawTeams.push(realPlayers);
-      }
+  for (const team of lobby.Teams) {
+    const realPlayers = Object.entries(team.Players)
+      .filter(([, p]) => p.BotSettingSlug === "")
+      .map(([id]) => id);
+    if (realPlayers.length > 0) {
+      rawTeams.push(realPlayers);
     }
   }
 
@@ -364,7 +364,7 @@ export async function assembleArenaMatch(lobbies: ArenaLobby[]): Promise<ArenaDa
       const isBot = config.bIsBot;
       playerInfo[pid] = {
         Loadout: { Character: "", Skin: "" },
-        SelectableCharacters: isBot ? [] : getRandomCharacters(SELECTABLE_CHARACTER_COUNT),
+        SelectableCharacters: isBot ? [] : await getRandomCharacters(SELECTABLE_CHARACTER_COUNT),
         AccountId: pid,
         GameplayPreferences: config.GameplayPreferences,
         TeamId: teamId,
@@ -375,7 +375,7 @@ export async function assembleArenaMatch(lobbies: ArenaLobby[]): Promise<ArenaDa
           Taunts: config.Taunts,
           Banner: config.Banner,
           ProfileIcon: config.ProfileIcon,
-          Name: config.Username as string,
+          Name: isBot ? (config.Username as string) : "",
         },
         bIsBot: isBot,
         ...(isBot
@@ -414,14 +414,27 @@ export async function assembleArenaMatch(lobbies: ArenaLobby[]): Promise<ArenaDa
   }
 
   const arenaData: ArenaData = {
-    AllMultiplayParams: lobbies[0].AllMultiplayParams,
+    AllMultiplayParams: lobby.AllMultiplayParams,
     PlayerInfo: playerInfo,
     CurrentRound: 1,
     TeamInfo: teamInfo,
     Players: realPlayerIds,
   };
 
-  // ── 8. Create per-match GameplayConfig, store, and notify real matches ─────
+  // ── 8. Two-pass match assembly ────────────────────────────────────────────
+  //
+  // Pass A: assign every matchId to TeamInfo.Matches FIRST (for all 4 pairs,
+  // including Sim matches for bot-only pairs). This ensures arenaData is
+  // fully populated before any WS notification is serialised in Pass B.
+
+  type PairInfo = {
+    matchId: string;
+    isRealMatch: boolean;
+    matchPlayers: Record<string, PlayerConfig>;
+    map: string;
+  };
+  const pairs: PairInfo[] = [];
+
   for (let i = 0; i < TOTAL_TEAMS; i += 2) {
     const { teamId: teamAId, players: teamAPlayers } = teams[i];
     const { teamId: teamBId, players: teamBPlayers } = teams[i + 1];
@@ -430,6 +443,7 @@ export async function assembleArenaMatch(lobbies: ArenaLobby[]): Promise<ArenaDa
     const isRealMatch = realInMatch.length > 0;
     const matchId = isRealMatch ? new ObjectId().toHexString() : `Sim${randomUUID()}`;
 
+    // Assign match IDs now — before any notification is sent
     arenaData.TeamInfo[teamAId].Matches.push(matchId);
     arenaData.TeamInfo[teamBId].Matches.push(matchId);
 
@@ -437,8 +451,13 @@ export async function assembleArenaMatch(lobbies: ArenaLobby[]): Promise<ArenaDa
     const matchPlayers: Record<string, PlayerConfig> = {};
     for (let j = 0; j < teamAPlayers.length; j++) {
       const pid = teamAPlayers[j];
+      const playerConfig = playerConfigMap.get(pid)!;
+      if (playerConfig.bIsBot) {
+        continue;
+      }
       matchPlayers[pid] = {
-        ...playerConfigMap.get(pid)!,
+        ...playerConfig,
+        Username: {},
         PlayerIndex: j,
         TeamIndex: 0,
         Character: "",
@@ -452,8 +471,13 @@ export async function assembleArenaMatch(lobbies: ArenaLobby[]): Promise<ArenaDa
     }
     for (let j = 0; j < teamBPlayers.length; j++) {
       const pid = teamBPlayers[j];
+      const playerConfig = playerConfigMap.get(pid)!;
+      if (playerConfig.bIsBot) {
+        continue;
+      }
       matchPlayers[pid] = {
-        ...playerConfigMap.get(pid)!,
+        ...playerConfig,
+        Username: {},
         PlayerIndex: j,
         TeamIndex: 1,
         Character: "",
@@ -465,6 +489,14 @@ export async function assembleArenaMatch(lobbies: ArenaLobby[]): Promise<ArenaDa
         IsHost: false,
       };
     }
+
+    pairs.push({ matchId, isRealMatch, matchPlayers, map: roundMap });
+  }
+
+  // Pass B: now that arenaData.TeamInfo.Matches is fully populated for every
+  // team, build and publish GameplayConfig for each real match pair.
+  for (const { matchId, isRealMatch, matchPlayers, map } of pairs) {
+    if (!isRealMatch) continue;
 
     const gameplayConfig: GameplayConfig = {
       ArenaId: arenaId,
@@ -506,28 +538,22 @@ export async function assembleArenaMatch(lobbies: ArenaLobby[]): Promise<ArenaDa
         MatchId: matchId,
         bIsOnlineMatch: true,
         ModeString: "arena",
-        Map: roundMap,
+        Map: map,
         bIsRift: false,
       },
     };
 
-    if (isRealMatch) {
-      await notifyActiveMatchCreated(gameplayConfig);
-    }
+    await notifyActiveMatchCreated(gameplayConfig);
   }
 
   // ── 9. Persist ArenaData ──────────────────────────────────────────────────
-  const stateKey = arenaStateKey(arenaId);
+  const arenaDataKey = arenaStateKey(arenaId);
   await redisClient
     .multi()
-    .json.set(stateKey, "$", arenaData as Parameters<typeof redisClient.json.set>[2])
-    .expire(stateKey, ARENA_EX)
+    .json.set(arenaDataKey, "$", arenaData as Parameters<typeof redisClient.json.set>[2])
+    .expire(arenaDataKey, ARENA_EX)
     .exec();
-
-  logger.info(
-    `Arena match assembled: arenaId=${arenaId}, teams=${TOTAL_TEAMS}, realPlayers=${realPlayerIds.length}`,
-  );
-  return arenaData;
+  return arenaId;
 }
 
 // ─── Per-round actions ────────────────────────────────────────────────────────
@@ -568,11 +594,11 @@ export async function arenaCheckin(
 }
 
 export async function arenaRerollCharacters(arenaLobbyId: string, accountId: string) {
-  const stateKey = arenaStateKey(arenaLobbyId);
-  const state = (await redisClient.json.get(stateKey)) as ArenaData | null;
-  if (!state) return null;
+  const arenaKey = arenaStateKey(arenaLobbyId);
+  const arenaData = (await redisClient.json.get(arenaKey)) as ArenaData | null;
+  if (!arenaData) return null;
 
-  const player = state.PlayerInfo[accountId];
+  const player = arenaData.PlayerInfo[accountId];
   if (!player) return null;
 
   const rerollCost = getArenaConstants().ShopCharacterRerollCost;
@@ -592,18 +618,16 @@ export async function arenaRerollCharacters(arenaLobbyId: string, accountId: str
   }
 
   const newCurrency = player.PlayerData.CurrencyAmount - rerollCost;
-  const newCharacters = getRandomCharacters(SELECTABLE_CHARACTER_COUNT);
+  const newCharacters = await getRandomCharacters(SELECTABLE_CHARACTER_COUNT);
 
-  await redisClient.json.set(
-    stateKey,
-    `$.PlayerInfo.${accountId}.PlayerData.CurrencyAmount`,
-    newCurrency,
-  );
-  await redisClient.json.set(
-    stateKey,
-    `$.PlayerInfo.${accountId}.SelectableCharacters`,
-    newCharacters,
-  );
+  await Promise.all([
+    redisClient.json.set(
+      arenaKey,
+      `$.PlayerInfo.${accountId}.PlayerData.CurrencyAmount`,
+      newCurrency,
+    ),
+    redisClient.json.set(arenaKey, `$.PlayerInfo.${accountId}.SelectableCharacters`, newCharacters),
+  ]);
 
   return {
     Result: {

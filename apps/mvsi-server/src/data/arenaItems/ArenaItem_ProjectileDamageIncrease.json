@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_ProjectileDamageIncrease",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_ProjectileDamageIncrease.Gem_Arena_ProjectileDamageIncrease",
+        "SubPathString": ""
+      },
+      "StartingWeight": 70,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Mage"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 0
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "87CC8CC04D3765140B026286AB3114DE",
+          "SourceString": "Projectile Damage Up",
+          "LocalizedString": "Projectile Damage Up"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "113F8B974648087EA147EDB2400B7E1F",
+          "SourceString": "Increase damage dealt by projectiles",
+          "LocalizedString": "Increase damage dealt by projectiles"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_ProjectileDamageIncrease.T_ArenaBuff_ProjectileDamageIncrease",
+          "SubPathString": ""
+        }
+      },
+      "bIsEnabled": false,
+      "Slug": "arenaitem_projectiledamageincrease"
+    }
+  }
+]

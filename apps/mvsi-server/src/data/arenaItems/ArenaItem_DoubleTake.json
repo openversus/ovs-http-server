@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_DoubleTake",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_DoubleTake.Gem_Arena_DoubleTake",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Epic",
+      "StartingWeight": 20,
+      "WeightPerRound": 1,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Mage"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 0
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "5B04112F41ACC2A2B9D63DADBFF567B2",
+          "SourceString": "Double Take",
+          "LocalizedString": "Double Take"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "F35DF5C646B4BDD8C8390C81FA79D2F5",
+          "SourceString": "Recieve a free use of a cooldown ability every so often.",
+          "LocalizedString": "Recieve a free use of a cooldown ability every so often."
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_DoubleTake.T_ArenaBuff_DoubleTake",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_doubletake"
+    }
+  }
+]

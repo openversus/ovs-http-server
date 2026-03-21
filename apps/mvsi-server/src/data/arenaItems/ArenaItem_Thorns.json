@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_Thorns",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_Thorns.Gem_Arena_Thorns",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Uncommon",
+      "StartingWeight": 55,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Tank"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 5
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "5E331F2843C64C3A1317F3A73966C2E5",
+          "SourceString": "Thorns",
+          "LocalizedString": "Thorns"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "4EF3BC0643BD683DF43081950F9175D8",
+          "SourceString": "Deal damage back to your attacker",
+          "LocalizedString": "Deal damage back to your attacker"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_Thorns.T_ArenaBuff_Thorns",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_thorns"
+    }
+  }
+]

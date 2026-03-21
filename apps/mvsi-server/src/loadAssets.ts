@@ -1,4 +1,7 @@
 import { DataAsset, DataAssetModel } from "@mvsi/database/models/DataAssets";
+import { redisClient } from "@mvsi/redis";
+
+export const REDIS_CHARACTER_SLUGS_KEY = "assets:characterSlugs";
 
 export type AssetType =
   | "AnnouncerPackData"
@@ -29,6 +32,10 @@ export function getAllAssets() {
 
 export async function loadAssets() {
   ALL_ASSETS = await DataAssetModel.find({ enabled: true });
+  const characterSlugs = ALL_ASSETS.filter((a) => a.assetType === "CharacterData").map((a) => a.slug);
+  if (characterSlugs.length > 0) {
+    await redisClient.set(REDIS_CHARACTER_SLUGS_KEY, JSON.stringify(characterSlugs));
+  }
 }
 
 export async function loadAssetsByType(assetType: AssetType) {

@@ -1,0 +1,50 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_AirSpecialist",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_AirSpecialist.Gem_Arena_AirSpecialist",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Uncommon",
+      "StartingWeight": 55,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Assassin"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        }
+      ],
+      "CostPerLevel": [
+        14
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "B70A23434713195B110883BDEB84B95B",
+          "SourceString": "Air Specialist",
+          "LocalizedString": "Air Specialist"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "613ACA1E49245A8720A5389B79C2F25A",
+          "SourceString": "Improved manuverability in air",
+          "LocalizedString": "Improved manuverability in air"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_Assassin.T_ArenaBuff_Assassin",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_airspecialist"
+    }
+  }
+]

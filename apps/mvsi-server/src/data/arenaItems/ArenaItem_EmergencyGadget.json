@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_EmergencyGadget",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_EmergencyGadget.Gem_Arena_EmergencyGadget",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Legendary",
+      "StartingWeight": 0,
+      "WeightPerRound": 2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Mage"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 0
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "65BFA3FC400B9F829BCC11ADA89EC061",
+          "SourceString": "Emergency Gadget",
+          "LocalizedString": "Emergency Gadget"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "B2BDBA98481E1C839875BF8F08A52E2A",
+          "SourceString": "Press interact to throw a Batarang. Earn charges on Ringout.",
+          "LocalizedString": "Press interact to throw a Batarang. Earn charges on Ringout."
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_EmergencyGadget.T_ArenaBuff_EmergencyGadget",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_emergencygadget"
+    }
+  }
+]

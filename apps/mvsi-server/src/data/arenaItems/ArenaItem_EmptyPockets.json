@@ -1,0 +1,41 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_EmptyPockets",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_EmptyPockets.Gem_Arena_EmptyPockets",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Rare",
+      "StartingWeight": 35,
+      "WeightPerRound": 1,
+      "StartingWeightModifier": 30,
+      "WeightPerRoundModifier": -10,
+      "CostPerLevel": [
+        7
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "BE0D073240FE131BC380DF8274F56D3D",
+          "SourceString": "Empty Pockets",
+          "LocalizedString": "Empty Pockets"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "3C73AAB14C8815142D94D387AB3EC285",
+          "SourceString": "Gain extra gold for every empty inventory slot",
+          "LocalizedString": "Gain extra gold for every empty inventory slot"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_EmptyPockets.T_ArenaBuff_EmptyPockets",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_emptypockets"
+    }
+  }
+]

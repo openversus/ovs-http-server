@@ -36,6 +36,8 @@ export type MatchmakingTicket = {
   region: string;
   skill: number;
   playerIds: string[];
+  /** For arena: each inner array is one preserved team; for regular modes: [[...playerIds]] */
+  teams: string[][];
   created_at: Date;
   partyId: string;
   matchmakingRequestId: string;
@@ -83,7 +85,7 @@ export type GameplayConfig = {
 
 export type ActiveMatch = {
   matchKey: string;
-  MatchConfig: MatchConfig;
+  GameplayConfig: GameplayConfig;
   state: string;
 };
 

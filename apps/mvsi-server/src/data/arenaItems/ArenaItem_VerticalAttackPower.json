@@ -1,0 +1,35 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_VerticalAttackPower",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_VerticalAttackPower.Gem_Arena_VerticalAttackPower",
+        "SubPathString": ""
+      },
+      "StartingWeight": 70,
+      "WeightPerRound": -2,
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "3E7DC51D4865447CF051A0B6A5CB60B6",
+          "SourceString": "Vertigo",
+          "LocalizedString": "Vertigo"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "1022021146DB1F86435FB3914187BAF7",
+          "SourceString": "Increase Aerial Up and Down attacks",
+          "LocalizedString": "Increase Aerial Up and Down attacks"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_Vertigo.T_ArenaBuff_Vertigo",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_verticalattackpower"
+    }
+  }
+]

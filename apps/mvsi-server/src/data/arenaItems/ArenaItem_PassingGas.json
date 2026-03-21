@@ -1,0 +1,56 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_PassingGas",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_PassingGas.Gem_Arena_PassingGas",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Uncommon",
+      "StartingWeight": 55,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Assassin"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        }
+      ],
+      "CostPerLevel": [
+        7
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "29903ED84613E937C0226FAA879A8F95",
+          "SourceString": "Passing Gas",
+          "LocalizedString": "Passing Gas"
+        },
+        "AbbreviatedName": {
+          "Namespace": "",
+          "Key": "C1E4A9EA40728CA788D77AA51E44445C",
+          "SourceString": "Passing Gas",
+          "LocalizedString": "Passing Gas"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "402795014025F4E9FBD111AF8D5F90A8",
+          "SourceString": "Directional dodge to spawn a stink cloud.",
+          "LocalizedString": "Directional dodge to spawn a stink cloud."
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_PassingGas.T_ArenaBuff_PassingGas",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_passinggas"
+    }
+  }
+]

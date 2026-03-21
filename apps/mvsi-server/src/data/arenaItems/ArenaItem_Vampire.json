@@ -1,0 +1,59 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_Vampire",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_Vampire.Gem_Arena_Vampire",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Epic",
+      "StartingWeight": 20,
+      "WeightPerRound": 1,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Assassin"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        },
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Bruiser"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        }
+      ],
+      "CostPerLevel": [
+        16
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "D7F257E64EE27321D60A9DADE54C79AC",
+          "SourceString": "Vampiric",
+          "LocalizedString": "Vampiric"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "3F3354954F290A1DF46032A7BBBDCBBD",
+          "SourceString": "Heal when dealing damage",
+          "LocalizedString": "Heal when dealing damage"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_Vampiric.T_ArenaBuff_Vampiric",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_vampire"
+    }
+  }
+]

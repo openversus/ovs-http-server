@@ -139,7 +139,7 @@ router.put(
       return {
         body: {
           message: "Perks were locked",
-          GameplayConfig: activeMatch.MatchConfig,
+          GameplayConfig: activeMatch.GameplayConfig.GameplayConfig,
         },
         metadata: null,
         return_code: 0,

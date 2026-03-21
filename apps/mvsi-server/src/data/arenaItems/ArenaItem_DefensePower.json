@@ -1,0 +1,46 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_DefensePower",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_DefensePower.Gem_Arena_DefensePower",
+        "SubPathString": ""
+      },
+      "StartingWeight": 70,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Tank"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 5
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "179A463545B78D86AA12CF9BCAD51FB8",
+          "SourceString": "Brick Wall",
+          "LocalizedString": "Brick Wall"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "9AB92C564AB8FBC679B8C9832E3C8798",
+          "SourceString": "Defense boost",
+          "LocalizedString": "Defense boost"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_BrickWall.T_ArenaBuff_BrickWall",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_defensepower"
+    }
+  }
+]

@@ -1,0 +1,55 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_AttackPower",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_AttackPower.Gem_Arena_AttackPower",
+        "SubPathString": ""
+      },
+      "StartingWeight": 70,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Assassin"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 5
+          }
+        },
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Bruiser"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 5
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "7A6AC829426FFAEBEDFAB58A954376F8",
+          "SourceString": "Hard Hitter",
+          "LocalizedString": "Hard Hitter"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "D2A075764D45F4C545CE3FB786BA136D",
+          "SourceString": "Strength boost",
+          "LocalizedString": "Strength boost"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_HardHitter.T_ArenaBuff_HardHitter",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_attackpower"
+    }
+  }
+]

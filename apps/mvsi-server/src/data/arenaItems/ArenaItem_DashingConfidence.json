@@ -1,0 +1,39 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_DashingConfidence",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_DashingConfidence.Gem_Arena_DashingConfidence",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Rare",
+      "StartingWeight": 35,
+      "WeightPerRound": 1,
+      "CostPerLevel": [
+        12
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "E18E6D864F97B75A65A2BA97DB90A6E7",
+          "SourceString": "Dashing Confidence",
+          "LocalizedString": "Dashing Confidence"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "A67EF762495B2A7F637B11993F977E1D",
+          "SourceString": "Dash attacks significantly improve!",
+          "LocalizedString": "Dash attacks significantly improve!"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_DashingConfidence.T_ArenaBuff_DashingConfidence",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_dashingconfidence"
+    }
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_Dodger",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_Dodger.Gem_Arena_Dodger",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Rare",
+      "StartingWeight": 35,
+      "WeightPerRound": 1,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Assassin"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        }
+      ],
+      "CostPerLevel": [
+        16
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "49420F764663D6493D7103974ACF43DA",
+          "SourceString": "Can't Hit Me",
+          "LocalizedString": "Can't Hit Me"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "A94ED78E4BFF211A4CDDF9886E27908A",
+          "SourceString": "Reduced cost on dodging",
+          "LocalizedString": "Reduced cost on dodging"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_Dodger.T_ArenaBuff_Dodger",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_dodger"
+    }
+  }
+]

@@ -1,0 +1,55 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_WallThemOut",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_WallThemOut.Gem_Arena_WallThemOut",
+        "SubPathString": ""
+      },
+      "StartingWeight": 70,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Tank"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 5
+          }
+        },
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Bruiser"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 5
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "4692AE874F92D40C5D334497ECC9BB0B",
+          "SourceString": "Damage Sponge",
+          "LocalizedString": "Damage Sponge"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "59B0065F49D561BB6D272F9419316CE1",
+          "SourceString": "Start each life with grey health",
+          "LocalizedString": "Start each life with grey health"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_DamageSponge.T_ArenaBuff_DamageSponge",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_wallthemout"
+    }
+  }
+]

@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_BladeAndShield",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_BladeAndShield.Gem_Arena_BladeAndShield",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Uncommon",
+      "StartingWeight": 55,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Bruiser"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 10
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "B58C8E8742437D4FBE19B99203DFFB32",
+          "SourceString": "Blade and Shield",
+          "LocalizedString": "Blade and Shield"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "7E101F52434D87B3A3F28A81B3F084A0",
+          "SourceString": "Damage & knockback boost for each Tank or Assassin on your team.",
+          "LocalizedString": "Damage & knockback boost for each Tank or Assassin on your team."
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_BladeAndShield.T_ArenaBuff_BladeAndShield",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_bladeandshield"
+    }
+  }
+]

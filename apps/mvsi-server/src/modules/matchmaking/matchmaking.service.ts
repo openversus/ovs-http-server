@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { env } from "@mvsi/env";
 import { logger } from "@mvsi/logger";
 import { redisClient } from "@mvsi/redis";
@@ -8,18 +8,18 @@ import { LOBBY_QUEUED_CHANNEL } from "../lobby/lobby.types";
 import {
   ACTIVEMATCH_END_CHANNEL,
   MATCH_STATE,
-  type MATCH_TYPES,
+  MATCH_TYPES,
   MATCHMAKING_CANCEL_CHANNEL,
   MATCHMAKING_COMPLETE_CHANNEL,
   MATCHMAKING_MATCH_FOUND_CHANNEL,
   MATCHMAKING_PERKS_LOCKED_CHANNEL,
+  type ActiveMatch,
+  type GameplayConfig,
   type MatchEndMessage,
   type MatchFoundChannelMessage,
-  type GameplayConfig,
   type MatchmakingCancelMessage,
   type MatchmakingCompleteMessage,
   type MatchmakingTicket,
-  ActiveMatch,
 } from "./matchmaking.types";
 
 const MATCHMAKING_TICKET_KEY = (matchmakingRequestId: string) =>
@@ -41,6 +41,22 @@ export async function requestMatchmakingByLobby(
     return;
   }
 
+  // For arena: extract every real-player team from the lobby so the worker can
+  // preserve teammate pairs when assembling the match.
+  let teams: string[][];
+  let playerIds: string[];
+  if (matchType === MATCH_TYPES.ARENA) {
+    teams = lobby.Teams.map((team) =>
+      Object.entries(team.Players)
+        .filter(([, p]) => p.BotSettingSlug === "")
+        .map(([id]) => id),
+    ).filter((t) => t.length > 0);
+    playerIds = teams.flat();
+  } else {
+    playerIds = Object.keys(lobby.Teams[0].Players);
+    teams = [playerIds];
+  }
+
   const newMatchId = new ObjectId().toHexString();
   const data = {
     id: newMatchId,
@@ -54,7 +70,7 @@ export async function requestMatchmakingByLobby(
       crossplay_buckets: ["All", "PC"],
       version: env.GAME_VERSION,
       matchmaking_rating: 724.7928014055103,
-      player_count: lobby.Teams[0].Length,
+      player_count: playerIds.length,
       double_character_key: "character_TODO_SAME_CHAR_IN_SAME_TEAM",
       rp: 0,
       allowed_buckets: ["Any"],
@@ -64,23 +80,19 @@ export async function requestMatchmakingByLobby(
     criteria_slug: slug,
     cluster: MultiplayParams.MultiplayClusterSlug,
     players_connection_info: Object.fromEntries(
-      Object.entries(lobby.Teams[0].Players).map(([accountId]) => [
-        accountId,
-        {
-          game_server_region_data: [{ region_id: region_id, latency: latency }],
-        },
+      playerIds.map((pid) => [
+        pid,
+        { game_server_region_data: [{ region_id: region_id, latency: latency }] },
       ]),
     ),
-    player_connections: Object.fromEntries(
-      Object.keys(lobby.Teams[0].Players).map((accountId) => [accountId, [randomUUID()]]),
-    ),
+    player_connections: Object.fromEntries(playerIds.map((pid) => [pid, [randomUUID()]])),
     players: Object.fromEntries(
-      Object.entries(lobby.Teams[0].Players).map(([accountId, player]) => [
-        accountId,
+      playerIds.map((pid) => [
+        pid,
         {
-          id: accountId,
+          id: pid,
           updated_at: null,
-          account_id: accountId,
+          account_id: pid,
           created_at: null,
           last_login: null,
           last_inbox_read: null,
@@ -95,11 +107,9 @@ export async function requestMatchmakingByLobby(
         },
       ]),
     ),
-    groups: [lobby.Teams[0].Length],
+    groups: [playerIds.length],
     relationships: [],
-    recently_played: Object.fromEntries(
-      Object.keys(lobby.Teams[0].Players).map((accountId) => [accountId, []]),
-    ),
+    recently_played: Object.fromEntries(playerIds.map((pid) => [pid, []])),
     from_match: lobbyId,
     reuse_match: false,
     party_id: null,
@@ -121,7 +131,7 @@ export async function requestMatchmakingByLobby(
     server_submitted: false,
   };
 
-  await queueMatchmaking(accountId, Object.keys(lobby.Teams[0].Players), data.from_match, data.id, matchType);
+  await queueMatchmaking(accountId, playerIds, teams, data.from_match, data.id, matchType);
   return data;
 }
 
@@ -132,23 +142,24 @@ export async function getActiveMatch(matchId: string) {
 
 export async function notifyActiveMatchCreated(gameplayConfig: GameplayConfig) {
   const EX = 60 * 20;
-  const matchmakingMatchConfig: ActiveMatch = {
-    matchKey: randomUUID(),
+  const activeMatch: ActiveMatch = {
+    matchKey: randomBytes(24).toString("hex"),
     state: "active",
-    MatchConfig: gameplayConfig.GameplayConfig,
+    GameplayConfig: gameplayConfig,
   };
   await redisClient.json.set(
     MATCH_KEY(gameplayConfig.GameplayConfig.MatchId),
     "$",
-    matchmakingMatchConfig,
+    activeMatch as Parameters<typeof redisClient.json.set>[2],
   );
-
   await redisClient.expire(MATCH_KEY(gameplayConfig.GameplayConfig.MatchId), EX);
 
   const msg: MatchFoundChannelMessage = {
     matchId: gameplayConfig.GameplayConfig.MatchId,
-    matchKey: matchmakingMatchConfig.matchKey,
-    playerIds: Object.keys(gameplayConfig.GameplayConfig.Players),
+    matchKey: activeMatch.matchKey,
+    playerIds: Object.keys(gameplayConfig.GameplayConfig.Players).filter(
+      (pid) => !gameplayConfig.GameplayConfig.Players[pid].bIsBot,
+    ),
     gameNotification: {
       data: {
         MatchId: gameplayConfig.GameplayConfig.MatchId,
@@ -165,6 +176,8 @@ export async function notifyActiveMatchCreated(gameplayConfig: GameplayConfig) {
       cmd: "update",
     },
   };
+  
+  console.log("Publishing match found message to channel", JSON.stringify(msg, null, 2));
   await redisClient.publish(MATCHMAKING_MATCH_FOUND_CHANNEL, JSON.stringify(msg));
   return gameplayConfig.GameplayConfig.MatchId;
 }
@@ -172,6 +185,7 @@ export async function notifyActiveMatchCreated(gameplayConfig: GameplayConfig) {
 export async function queueMatchmaking(
   partyLeaderId: string,
   playerIds: string[],
+  teams: string[][],
   partyId: string,
   matchmakingRequestId: string,
   matchType: MATCH_TYPES,
@@ -187,6 +201,7 @@ export async function queueMatchmaking(
       partyId,
       partySize: playerIds.length,
       playerIds,
+      teams,
     };
     await lockLobby(matchmakingRequestId, partyLeaderId);
     await notifyLobbyPartyQueuedStarted(ticket);
@@ -245,11 +260,11 @@ export async function completeMatchmaking(
 
 export async function lockPerks(containerMatchId: string, accountId: string, perks: string[]) {
   const script = `
-    redis.call('JSON.SET', KEYS[1], '$.MatchConfig.Players["' .. ARGV[1] .. '"].Perks', ARGV[2])
-    local result = redis.call('JSON.GET', KEYS[1], '$.MatchConfig.Players')
+    redis.call('JSON.SET', KEYS[1], '$.GameplayConfig.GameplayConfig.Players["' .. ARGV[1] .. '"].Perks', ARGV[2])
+    local result = redis.call('JSON.GET', KEYS[1], '$.GameplayConfig.GameplayConfig.Players')
     local decoded = cjson.decode(result)
     local players = decoded[1]
-    
+
     local ids = {}
     local ready = true
     for id, config in pairs(players) do
@@ -295,7 +310,7 @@ export async function removeTicketsFromQueue(queueType: MATCH_TYPES, tickets: Ma
 export async function addTicketToQueue(queueKey: string, data: MatchmakingTicket) {
   const pipeline = redisClient.multi();
   pipeline.zAdd(queueKey, {
-    score: data.created_at.getTime(),
+    score: new Date(data.created_at).getTime(),
     value: data.matchmakingRequestId,
   });
   const datStr = JSON.stringify(data);

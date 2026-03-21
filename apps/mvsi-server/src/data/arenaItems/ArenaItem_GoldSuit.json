@@ -1,0 +1,39 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_GoldSuit",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_GoldSuit.Gem_Arena_GoldSuit",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Epic",
+      "StartingWeight": 20,
+      "WeightPerRound": 1,
+      "CostPerLevel": [
+        7
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "1397D47C40FA432F77EF71AE9B0798CC",
+          "SourceString": "Gold Suit",
+          "LocalizedString": "Gold Suit"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "8EE192DA46E9B59035EB35AFCDD072DB",
+          "SourceString": "Weight is increased for the amount of gold you have",
+          "LocalizedString": "Weight is increased for the amount of gold you have"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_GoldSuit.T_ArenaBuff_GoldSuit",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_goldsuit"
+    }
+  }
+]

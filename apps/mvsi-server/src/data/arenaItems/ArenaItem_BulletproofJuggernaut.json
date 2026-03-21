@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_BulletproofJuggernaut",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_BulletproofJuggernaut.Gem_Arena_BulletproofJuggernaut",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Rare",
+      "StartingWeight": 35,
+      "WeightPerRound": 1,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Tank"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 10
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "84123A7A47E8FAE6EDFF4F996B7EB293",
+          "SourceString": "Bulletproof Juggernaut",
+          "LocalizedString": "Bulletproof Juggernaut"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "5AA9AAD24A8686F0174300ACF2525B84",
+          "SourceString": "Gain a defensive boost against projectiles by staying on the ground for a few seconds.",
+          "LocalizedString": "Gain a defensive boost against projectiles by staying on the ground for a few seconds."
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_UnstopableJuggernaut.T_ArenaBuff_UnstopableJuggernaut",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_bulletproofjuggernaut"
+    }
+  }
+]

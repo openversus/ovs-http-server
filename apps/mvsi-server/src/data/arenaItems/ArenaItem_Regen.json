@@ -1,0 +1,50 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_Regen",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_Regen.Gem_Arena_Regen",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Epic",
+      "StartingWeight": 20,
+      "WeightPerRound": 1,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Tank"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        }
+      ],
+      "CostPerLevel": [
+        12
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "D9A1717640106FE5F6371E91B2EA1196",
+          "SourceString": "Regeneration",
+          "LocalizedString": "Regeneration"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "B4F9980247C9D63C72E285B6E8E638C5",
+          "SourceString": "Grant a regen + cleanse buff when you taunt. If allies are nearby, they also gain the buff.",
+          "LocalizedString": "Grant a regen + cleanse buff when you taunt. If allies are nearby, they also gain the buff."
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_Regeneration.T_ArenaBuff_Regeneration",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_regen"
+    }
+  }
+]

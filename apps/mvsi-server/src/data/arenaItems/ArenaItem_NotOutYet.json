@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_NotOutYet",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_NotOutYet.Gem_Arena_NotOutYet",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Epic",
+      "StartingWeight": 20,
+      "WeightPerRound": 1,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Tank"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 0
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "9FDDBC1444C8862E89C9B1B6CFAA7228",
+          "SourceString": "Not Out Yet!",
+          "LocalizedString": "Not Out Yet!"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "1A461761481555CC3BCF3BB7C749E19C",
+          "SourceString": "Receive a grey health shield upon reaching a damage threshold.",
+          "LocalizedString": "Receive a grey health shield upon reaching a damage threshold."
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_NotOutYet.T_ArenaBuff_NotOutYet",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_notoutyet"
+    }
+  }
+]

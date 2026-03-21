@@ -1,0 +1,56 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_FinishThem",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_FinishThem.Gem_Arena_FinishThem",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Rare",
+      "StartingWeight": 35,
+      "WeightPerRound": 1,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Assassin"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 5
+          }
+        },
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Mage"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 5
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "62B8E967487A51AC88F30EA84401A0B4",
+          "SourceString": "Finish Them",
+          "LocalizedString": "Finish Them"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "06ACA6C444C41AD7DC9159B1E1B8B9B9",
+          "SourceString": "Gain knockback and damage when enemies are high HP",
+          "LocalizedString": "Gain knockback and damage when enemies are high HP"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_FinishThem.T_ArenaBuff_FinishThem",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_finishthem"
+    }
+  }
+]

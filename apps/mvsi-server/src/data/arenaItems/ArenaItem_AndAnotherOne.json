@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_AndAnotherOne",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_AndAnotherOne.Gem_Arena_AndAnotherOne",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Uncommon",
+      "StartingWeight": 55,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Mage"
+          },
+          "Value": {
+            "Scalar": 21.0,
+            "Absolute": 5
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "DCD9EFB34B4FACBDB1D0A9B4B0245538",
+          "SourceString": "Two In The Chamber",
+          "LocalizedString": "Two In The Chamber"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "BE377B6C4F2561509447C8BA8E6053BF",
+          "SourceString": "All moves with ammo have additional ammo",
+          "LocalizedString": "All moves with ammo have additional ammo"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_TwoInTheChamber.T_ArenaBuff_TwoInTheChamber",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_andanotherone"
+    }
+  }
+]

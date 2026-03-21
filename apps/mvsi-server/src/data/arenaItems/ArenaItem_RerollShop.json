@@ -1,0 +1,41 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_RerollShop",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_RerollShop.Gem_Arena_RerollShop",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Uncommon",
+      "StartingWeight": 55,
+      "WeightPerRound": -2,
+      "StartingWeightModifier": 30,
+      "WeightPerRoundModifier": -10,
+      "CostPerLevel": [
+        8
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "7A16CCA8448A33C5653BDE8E37D2C261",
+          "SourceString": "Shopper",
+          "LocalizedString": "Shopper"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "413D8A0A4FD36897B71E28970C1FD949",
+          "SourceString": "Free rerolls each shop phase",
+          "LocalizedString": "Free rerolls each shop phase"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_Shopper.T_ArenaBuff_Shopper",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_rerollshop"
+    }
+  }
+]

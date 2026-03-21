@@ -1,0 +1,56 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_ExplosivePanic",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_ExplosivePanic.Gem_Arena_ExplosivePanic",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Uncommon",
+      "StartingWeight": 55,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Bruiser"
+          },
+          "Value": {
+            "Scalar": 1.5,
+            "Absolute": 5
+          }
+        }
+      ],
+      "CostPerLevel": [
+        7
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "5E13089C41F656F72DAE5ABCDEECBA4D",
+          "SourceString": "Explosive Panic",
+          "LocalizedString": "Explosive Panic"
+        },
+        "AbbreviatedName": {
+          "Namespace": "",
+          "Key": "1DBB8CA340FEAB26DBC32CBDE18905A9",
+          "SourceString": "Explosive Panic",
+          "LocalizedString": "Explosive Panic"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "6A76B9234489738FEC58EEB158E39E60",
+          "SourceString": "If evade meter is depleted, spawn tiny bombs.",
+          "LocalizedString": "If evade meter is depleted, spawn tiny bombs."
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_ExplosivePanic.T_ArenaBuff_ExplosivePanic",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_explosivepanic"
+    }
+  }
+]

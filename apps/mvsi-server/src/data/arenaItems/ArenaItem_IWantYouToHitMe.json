@@ -1,0 +1,47 @@
+[
+  {
+    "Type": "MvsArenaItemHsda",
+    "Name": "ArenaItem_IWantYouToHitMe",
+    "Class": "UScriptClass'MvsArenaItemHsda'",
+    "Flags": "RF_Public | RF_Standalone | RF_Transactional | RF_WasLoaded | RF_LoadCompleted",
+    "Properties": {
+      "Gem": {
+        "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/Gem_Arena_IWantYouToHitMe.Gem_Arena_IWantYouToHitMe",
+        "SubPathString": ""
+      },
+      "Rarity": "EArenaItemRarity::Uncommon",
+      "StartingWeight": 55,
+      "WeightPerRound": -2,
+      "TagWeightScalars": [
+        {
+          "Key": {
+            "TagName": "TS.Fixed.Class.Tank"
+          },
+          "Value": {
+            "Scalar": 2.0,
+            "Absolute": 5
+          }
+        }
+      ],
+      "UiData": {
+        "DisplayName": {
+          "Namespace": "",
+          "Key": "BF77BDEF46FFC428DF75B88500A9E96B",
+          "SourceString": "Come At Me",
+          "LocalizedString": "Come At Me"
+        },
+        "FlavorText": {
+          "Namespace": "",
+          "Key": "EC67C07D438FB50589D323894F612595",
+          "SourceString": "After taking hits your next attack is a critical",
+          "LocalizedString": "After taking hits your next attack is a critical"
+        },
+        "Icon": {
+          "AssetPathName": "/Game/Panda_Main/Arenas/Items/ArenaGems/ArenaGemTextures/T_ArenaBuff_IWantYouToHitMe.T_ArenaBuff_IWantYouToHitMe",
+          "SubPathString": ""
+        }
+      },
+      "Slug": "arenaitem_iwantyoutohitme"
+    }
+  }
+]

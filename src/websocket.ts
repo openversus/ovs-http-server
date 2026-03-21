@@ -63,6 +63,19 @@ import {
   TOAST_RECEIVED_CHANNEL,
   RedisToastNotification,
   redisGetMatchConfig,
+  PLAYER_LOADOUT_LOCKED_CHANNEL,
+  RedisPlayerLoadoutLockedNotification,
+  LOBBY_RETURN_CHANNEL,
+  RedisLobbyReturnNotification,
+  LOBBY_TRANSITION_CHANNEL,
+  RedisLobbyTransitionNotification,
+  FRIEND_REQUEST_WS_CHANNEL,
+  RedisFriendRequestWSNotification,
+  DLLNotification,
+  RedisLobbyState,
+  redisUpdatePartyKeyLobby,
+  redisSetPendingJoinLobby,
+  // PARTY_MEMBER_JOIN_CHANNEL — moved to AccelByteLobbyWsService
 } from "./config/redis";
 import { Server } from "https";
 import { Server as HttpServer } from "http";
@@ -70,6 +83,8 @@ import { GAME_SERVER_PORT } from "./game/udp";
 import { logger, logwrapper, BE_VERBOSE } from "./config/logger";
 import { MVSTime } from "./utils/date";
 import { getCustomLobbyForMatch, handleCustomLobbyMatchEnd, leaveLobby } from "./services/customLobbyService";
+import { leaveLobby as leaveSscCustomLobby, getSscCustomLobbyForMatch, handleSscCustomLobbyMatchEnd } from "./modules/customLobby/lobby.service";
+import { createLobby, LOBBY_MODES } from "./services/lobbyService";
 import { getMapHazards } from "./data/maps";
 import ObjectID from "bson-objectid";
 import { RedisClientType } from "@redis/client";
@@ -311,42 +326,87 @@ export class WebSocketService {
       }
 
       // Check if this player was in a multi-player lobby — if so, disband the party
-      // so remaining players aren't stuck with a ghost teammate
+      // so remaining players aren't stuck with a ghost teammate.
+      // Uses DLL notifications instead of WS force-close (no 4s main menu flash).
       try {
         const lobbyId = await redisGetPlayerLobby(playerId);
-        logger.info(
-          `[${serviceName}]: DISCONNECT-DIAG: Player ${playerId} disconnect handler running. ` +
-          `lobbyId=${lobbyId || "NONE"}, pendingRejoin=${this.pendingRejoin.has(playerId)}, ` +
-          `wsReadyState=${playerWS.ws.readyState}, deleted=${playerWS.deleted}`,
-        );
         if (lobbyId) {
           const lobbyState = await redisGetLobbyState(lobbyId);
-          logger.info(
-            `[${serviceName}]: DISCONNECT-DIAG: Player ${playerId} lobby ${lobbyId} state: ` +
-            `${lobbyState ? `playerIds=[${lobbyState.playerIds.join(",")}], mode=${(lobbyState as any).mode || "unknown"}` : "NULL (already deleted!)"}`,
-          );
           if (lobbyState && lobbyState.playerIds.length > 1) {
             const otherPlayerIds = lobbyState.playerIds.filter(pid => pid !== playerId);
             logger.info(
-              `[${serviceName}]: Player ${playerId} disconnected from multi-player lobby ${lobbyId} — disbanding party. Remaining players: ${otherPlayerIds.join(", ")}`,
+              `[${serviceName}]: Player ${playerId} disconnected from multi-player lobby ${lobbyId} — disbanding party. Remaining: [${otherPlayerIds.join(", ")}]`,
             );
 
-            // Delete the entire lobby
-            await redisDeleteLobbyState(lobbyId);
+            const isDisconnectedPlayerOwner = playerId === lobbyState.ownerId;
 
-            // Clear player_lobby for ALL players (including the disconnected one)
-            for (const pid of lobbyState.playerIds) {
-              await redisDeletePlayerLobby(pid);
-            }
+            // Send PlayerLeftLobby WS notification to remaining players
+            const leftMsg = {
+              targetPlayerIds: otherPlayerIds,
+              excludePlayerIds: [],
+              notification: {
+                data: {
+                  MatchID: lobbyId,
+                  template_id: "PlayerLeftLobby",
+                  Player: {
+                    Account: { id: playerId },
+                    LobbyPlayerIndex: 0,
+                    JoinedAt: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
+                    BotSettingSlug: "",
+                    CrossplayPreference: 1,
+                  },
+                  ReadyPlayers: {},
+                  NewLeader: otherPlayerIds[0],
+                },
+                payload: { custom_notification: "realtime", match: { id: lobbyId } },
+                cmd: "update",
+                header: "",
+              },
+            };
+            await redisClient.publish("custom_lobby:notification", JSON.stringify(leftMsg));
+            logger.info(`[${serviceName}]: Sent PlayerLeftLobby to remaining players after ${playerId} disconnected`);
 
-            // Force-rejoin remaining players so they get fresh solo lobbies
-            for (const pid of otherPlayerIds) {
-              const rejoinNotification: RedisLobbyRejoinNotification = {
-                playerId: pid,
-                lobbyId,
-              };
-              await redisPublishLobbyRejoin(rejoinNotification);
-              logger.info(`[${serviceName}]: Triggered lobby rejoin for remaining player ${pid} after party disband`);
+            // Also clear ready states
+            await redisClient.del(`party_ready:${lobbyId}`);
+
+            if (isDisconnectedPlayerOwner) {
+              // Owner disconnected — delete the shared lobby, give remaining players new solo lobbies
+              await redisDeleteLobbyState(lobbyId);
+              await redisDeletePlayerLobby(playerId);
+
+              for (const pid of otherPlayerIds) {
+                try {
+                  const rConn = (await redisClient.hGetAll(`connections:${pid}`)) as unknown as RedisPlayerConnection;
+                  const newLobby = await createLobby(pid, LOBBY_MODES.ONE_V_ONE);
+                  const newLobbyState: RedisLobbyState = {
+                    lobbyId: newLobby.id,
+                    ownerId: pid,
+                    ownerUsername: rConn?.username || rConn?.hydraUsername || "Unknown",
+                    mode: LOBBY_MODES.ONE_V_ONE.toString(),
+                    playerIds: [pid],
+                    createdAt: Date.now(),
+                  };
+                  await redisSaveLobbyState(newLobby.id, newLobbyState);
+                  await redisSavePlayerLobby(pid, newLobby.id);
+
+                  const partyKey = await redisClient.hGet(`connections:${pid}`, "party_key");
+                  if (partyKey) await redisUpdatePartyKeyLobby(partyKey, newLobby.id);
+
+                  await redisSetPendingJoinLobby(pid, newLobby.id);
+                  logger.info(`[${serviceName}]: Created solo lobby ${newLobby.id} for remaining player ${pid}`);
+                } catch (innerErr) {
+                  logger.error(`[${serviceName}]: Error creating solo lobby for ${pid}: ${innerErr}`);
+                }
+              }
+            } else {
+              // Non-owner disconnected — owner keeps their lobby, just remove the disconnected player
+              lobbyState.playerIds = [lobbyState.ownerId];
+              lobbyState.mode = LOBBY_MODES.ONE_V_ONE.toString();
+              await redisSaveLobbyState(lobbyId, lobbyState);
+              await redisDeletePlayerLobby(playerId);
+
+              await redisSetPendingJoinLobby(lobbyState.ownerId, lobbyId);
+              logger.info(`[${serviceName}]: Owner ${lobbyState.ownerId} keeps lobby ${lobbyId}, removed disconnected player ${playerId}`);
             }
           }
         }
@@ -373,6 +433,66 @@ export class WebSocketService {
         await leaveLobby(playerId);
       } catch (e) {
         // ignore — they may not be in a custom lobby
+      }
+
+      // Remove from SSC custom lobby if they're in one
+      try {
+        const lobbyKeys = await redisClient.keys("custom_lobby_ssc:*");
+        for (const key of lobbyKeys) {
+          const raw = await redisClient.get(key);
+          if (raw && raw.includes(playerId)) {
+            const lobbyId = key.replace("custom_lobby_ssc:", "");
+            logger.info(`[${serviceName}]: Removing disconnected player ${playerId} from SSC custom lobby ${lobbyId}`);
+            await leaveSscCustomLobby(lobbyId, playerId, false);
+            break;
+          }
+        }
+      } catch (e) {
+        // ignore — they may not be in a custom lobby
+      }
+
+      // Remove from party lobby if they're in one — notify remaining player
+      try {
+        const partyLobbyId = await redisClient.get(`player_lobby:${playerId}`);
+        if (partyLobbyId) {
+          const partyRaw = await redisClient.get(`lobby:${partyLobbyId}`);
+          if (partyRaw) {
+            const partyState = JSON.parse(partyRaw);
+            if (partyState.playerIds && partyState.playerIds.includes(playerId) && partyState.playerIds.length > 1) {
+              partyState.playerIds = partyState.playerIds.filter((pid: string) => pid !== playerId);
+              await redisClient.set(`lobby:${partyLobbyId}`, JSON.stringify(partyState), { EX: 3600 });
+              await redisClient.del(`party_ready:${partyLobbyId}`);
+
+              // Notify remaining players via PlayerLeftLobby
+              const msg = {
+                targetPlayerIds: partyState.playerIds,
+                excludePlayerIds: [],
+                notification: {
+                  data: {
+                    MatchID: partyLobbyId,
+                    template_id: "PlayerLeftLobby",
+                    Player: {
+                      Account: { id: playerId },
+                      LobbyPlayerIndex: 0,
+                      JoinedAt: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
+                      BotSettingSlug: "",
+                      CrossplayPreference: 1,
+                    },
+                    ReadyPlayers: {},
+                    NewLeader: partyState.playerIds[0],
+                  },
+                  payload: { custom_notification: "realtime", match: { id: partyLobbyId } },
+                  cmd: "update",
+                  header: "",
+                },
+              };
+              await redisClient.publish("custom_lobby:notification", JSON.stringify(msg));
+              logger.info(`[${serviceName}]: Sent PlayerLeftLobby to remaining players in party lobby ${partyLobbyId} after ${playerId} disconnected`);
+            }
+          }
+        }
+      } catch (e) {
+        // ignore
       }
 
       playerWS.deleted = true;
@@ -638,8 +758,8 @@ export class WebSocketService {
   }
 
   async handleSendGamePlayConfig(notification: MATCH_FOUND_NOTIFICATION) {
-    const MatchTime = 420;
-    const NumRingouts = this.getNumRingouts(notification);
+    const MatchTime = notification.customMatchTime ?? 420;
+    const NumRingouts = notification.customNumRingouts ?? this.getNumRingouts(notification);
 
     // Get the player configs from redis
     const playerIds = notification.players.map((p) => p.playerId);
@@ -802,7 +922,7 @@ export class WebSocketService {
           PartyId: player.partyId,
           // Username: { default: rPlayerConnectionByID.username || "Player" },
           Username: {},
-          Buffs: [],
+          Buffs: notification.playerBuffs?.[player.playerId] ?? [],
           Skin: skin,
           BotDifficultyMin: 0,
         };
@@ -864,7 +984,7 @@ export class WebSocketService {
           PartyId: player.partyId,
 //          Username: { default: rPlayerConnectionByID.username || "Player" },
           Username: {},
-          Buffs: [],
+          Buffs: notification.playerBuffs?.[player.playerId] ?? [],
           Skin: skin,
           BotDifficultyMin: 0,
         };
@@ -975,7 +1095,7 @@ export class WebSocketService {
           ScoreEvaluationRule: "TargetScoreIsWin",
           bIsPvP: true,
           ScoreAttributionRule: "AttributeToAttacker",
-          MatchDurationSeconds: MatchTime,
+          MatchDurationSeconds: notification.customMatchTime ?? MatchTime,
           Created: {
             _hydra_unix_date: MVSTime(new Date()),
           },
@@ -984,11 +1104,11 @@ export class WebSocketService {
           TeamData: [],
           Spectators,
           bIsRanked: false,
-          bIsCustomGame: false,
+          bIsCustomGame: notification.isCustomGame ?? false,
           Players,
           CustomGameSettings: {
-            bHazardsEnabled: stageHazards,
-            bShieldsEnabled: true,
+            bHazardsEnabled: notification.customHazards ?? stageHazards,
+            bShieldsEnabled: notification.customShields ?? true,
             MatchTime,
             NumRingouts,
           },
@@ -1002,11 +1122,11 @@ export class WebSocketService {
           RiftNodeAttunement: "Attunements:None",
           CountdownDisplay: "CountdownTypes:XvY",
           Cluster: "ec2-us-east-1-dokken",
-          WorldBuffs: [],
+          WorldBuffs: notification.worldBuffs ?? [],
           bIsTutorial: false,
           MatchId: notification.matchId,
           bIsOnlineMatch: true,
-          ModeString: notification.mode,
+          ModeString: notification.isCustomGame ? "" : notification.mode,
           Map: notification.map,
           bIsRift: false,
         },
@@ -1189,157 +1309,139 @@ export class WebSocketService {
 
   handlePartyInvite(notification: RedisPartyInviteNotification) {
     const client = this.clients.get(notification.invitedAccountId);
-    if (client) {
-      logger.info(
-        `[${serviceName}]: Sending party invite to ${notification.invitedAccountId} from ${notification.inviterAccountId}`,
-      );
-
-      const invitationToken = randomUUID();
-      const notificationId = randomUUID();
-
-      // ============================================================
-      // APPROACH 1: "profile-notification" cmd
-      // This matches the same delivery mechanism used for EndOfMatchPayload
-      // and RematchDeclinedNotification, which are proven to work.
-      // The game's UHydraNotificationManager processes these with
-      // NotificationTemplateID, NotificationID, NotificationData fields.
-      // ============================================================
-      const profileNotifMessage = {
-        data: {
-          template_id: "MatchInviteNotification",
-          sender_id: notification.inviterAccountId,
-          party_id: notification.lobbyId,
-          party_type_slug: "player",
-          InvitedAcccountID: notification.invitedAccountId, // triple 'c' matches game binary typo
-          invitationToken: invitationToken,
-          InviterAccountId: notification.inviterAccountId,
-          InviterUsername: notification.inviterUsername,
-          LobbyId: notification.lobbyId,
-        },
-        payload: {
-          frm: {
-            id: notification.inviterAccountId,
-            type: "account",
-          },
-          template: "realtime",
-          account_id: notification.invitedAccountId,
-          profile_id: notification.invitedAccountId,
-        },
-        header: "",
-        cmd: "profile-notification",
-      };
-      client.send(profileNotifMessage);
-      logger.info(`[${serviceName}]: Sent "profile-notification" cmd with template_id="MatchInviteNotification" to ${notification.invitedAccountId}`);
-
-      // ============================================================
-      // APPROACH 2: "party-invite-player" Hydra cmd
-      // This is the dedicated Hydra WS command for party invites.
-      // Restructured with data containing notification fields and
-      // payload matching the party state structure from the binary.
-      // ============================================================
-      const partyInviteMessage = {
-        data: {
-          sender_id: notification.inviterAccountId,
-          party_id: notification.lobbyId,
-          party_type_slug: "player",
-          invitees: [notification.invitedAccountId],
-          InvitedAcccountID: notification.invitedAccountId,
-          invitationToken: invitationToken,
-        },
-        payload: {
-          frm: {
-            id: notification.inviterAccountId,
-            type: "account",
-          },
-          to: {
-            id: notification.invitedAccountId,
-            type: "account",
-          },
-          party: {
-            id: notification.lobbyId,
-            leader_id: notification.inviterAccountId,
-            party_id: notification.lobbyId,
-            party_type_slug: "player",
-            Leader: notification.inviterAccountId,
-            Joined: [notification.inviterAccountId],
-            DeclinedInvite: [],
-            Invited: [notification.invitedAccountId],
-          },
-          match: {
-            id: notification.lobbyId,
-          },
-          sender_id: notification.inviterAccountId,
-          party_id: notification.lobbyId,
-        },
-        header: "",
-        cmd: "party-invite-player",
-      };
-      client.send(partyInviteMessage);
-      logger.info(`[${serviceName}]: Sent Hydra cmd="party-invite-player" to ${notification.invitedAccountId}`);
-
-      // ============================================================
-      // APPROACH 3: "update" cmd with MatchInviteNotification template
-      // Same as before but kept as additional attempt.
-      // ============================================================
-      const updateMessage = {
-        data: {
-          template_id: "MatchInviteNotification",
-          sender_id: notification.inviterAccountId,
-          party_id: notification.lobbyId,
-          party_type_slug: "player",
-          InvitedAcccountID: notification.invitedAccountId,
-          invitationToken: invitationToken,
-          InviterAccountId: notification.inviterAccountId,
-          InviterUsername: notification.inviterUsername,
-          LobbyId: notification.lobbyId,
-        },
-        payload: {
-          match: {
-            id: notification.lobbyId,
-          },
-          custom_notification: "realtime",
-        },
-        header: "",
-        cmd: "update",
-      };
-      client.send(updateMessage);
-      logger.info(`[${serviceName}]: Sent "update" cmd with template_id="MatchInviteNotification" to ${notification.invitedAccountId}`);
-
-    } else {
-      logger.warn(
-        `[${serviceName}]: Could not find player ${notification.invitedAccountId} to send party invite from ${notification.inviterAccountId}`,
-      );
+    if (!client) {
+      logger.warn(`[${serviceName}]: Party invite — invitee ${notification.invitedAccountId} not connected to WS`);
+      return;
     }
+    logger.info(`[${serviceName}]: Sending InviteReceivedForLobby to ${notification.invitedAccountId} from ${notification.inviterAccountId}`);
+    client.send({
+      data: {
+        template_id: "InviteReceivedForLobby",
+        LobbyType: 0,
+        MatchID: notification.lobbyId,
+        ContextData: {
+          LobbyType: "Party",
+        },
+        IsSpectator: false,
+        InviterAccountId: notification.inviterAccountId,
+      },
+      payload: {
+        frm: {
+          id: "internal-server",
+          type: "server-api-key",
+        },
+        template: "realtime",
+        account_id: notification.invitedAccountId,
+        profile_id: notification.invitedAccountId,
+      },
+      header: "",
+      cmd: "profile-notification",
+    });
   }
 
-  handleToastReceived(notification: RedisToastNotification) {
+  async handleToastReceived(notification: RedisToastNotification) {
     const client = this.clients.get(notification.toasteeAccountId);
     if (client) {
+      // Send both formats — the game might process one depending on context
+      // Format 1: profile-notification (native Hydra notification)
       const toastMessage = {
         data: {
           template_id: "ToastReceived",
+          ToasterAccountID: notification.toasterAccountId,
+          ToasterUsername: notification.toasterUsername,
+          ContainerMatchId: notification.containerMatchId || "",
           ToastInfo: {
             ToasterAccountID: notification.toasterAccountId,
             ToasterUsername: notification.toasterUsername,
+            ContainerMatchId: notification.containerMatchId || "",
             Rewards: [],
           },
         },
         payload: {
-          frm: {
-            id: "internal-server",
-            type: "server-api-key",
-          },
+          frm: { id: "internal-server", type: "server-api-key" },
           template: "realtime",
           account_id: notification.toasteeAccountId,
           profile_id: notification.toasteeAccountId,
+          custom_notification: "realtime",
+          match: { id: notification.containerMatchId || "" },
         },
         header: "",
         cmd: "profile-notification",
       };
       client.send(toastMessage);
-      logger.info(`[${serviceName}]: Sent toast notification to ${notification.toasteeAccountId} from ${notification.toasterUsername} (${notification.toasterAccountId})`);
+
+      // Format 2: update notification (same pattern as PlayerJoinedLobby)
+      const toastUpdate = {
+        data: {
+          template_id: "ToastReceived",
+          ToasterAccountID: notification.toasterAccountId,
+          ToasterUsername: notification.toasterUsername,
+          ContainerMatchId: notification.containerMatchId || "",
+        },
+        payload: {
+          custom_notification: "realtime",
+          match: { id: notification.containerMatchId || "" },
+        },
+        header: "",
+        cmd: "update",
+      };
+      client.send(toastUpdate);
+      logger.info(`[${serviceName}]: Sent toast notification (both formats) to ${notification.toasteeAccountId} from ${notification.toasterUsername} (${notification.toasterAccountId})`);
     } else {
       logger.warn(`[${serviceName}]: Could not find player ${notification.toasteeAccountId} to deliver toast from ${notification.toasterAccountId}`);
+    }
+  }
+
+  handlePlayerLoadoutLocked(notification: RedisPlayerLoadoutLockedNotification) {
+    for (const playerId of notification.targetPlayerIds) {
+      const client = this.clients.get(playerId);
+      if (client) {
+        // If this is a join event, also send PlayerJoinedLobby first
+        // to update the game's internal lobby roster (adds the player to Teams)
+        if (notification.isJoining) {
+          const joinMsg = {
+            data: {
+              template_id: "PlayerJoinedLobby",
+              LobbyId: notification.lobbyId,
+              JoinedPlayerId: notification.lockedPlayerId,
+            },
+            payload: {
+              custom_notification: "realtime",
+            },
+            header: "",
+            cmd: "update",
+          };
+          client.send(joinMsg);
+          logger.info(
+            `[${serviceName}]: Sent PlayerJoinedLobby to ${playerId} — player ${notification.lockedPlayerId} joined lobby ${notification.lobbyId}`,
+          );
+        }
+
+        // Send OnPlayerLoadoutLocked — shows the character with golden swirl
+        const message = {
+          data: {
+            template_id: "OnPlayerLoadoutLocked",
+            LobbyId: notification.lobbyId,
+            AccountId: notification.lockedPlayerId,
+            Loadout: {
+              Character: notification.character,
+              Skin: notification.skin,
+            },
+            bAreAllLoadoutsLocked: true,
+          },
+          payload: {
+            custom_notification: "realtime",
+          },
+          header: "",
+          cmd: "update",
+        };
+        client.send(message);
+        logger.info(
+          `[${serviceName}]: Sent OnPlayerLoadoutLocked to ${playerId} — locked player ${notification.lockedPlayerId} (${notification.character}) in lobby ${notification.lobbyId}`,
+        );
+      } else {
+        logger.warn(`[${serviceName}]: Could not find player ${playerId} to deliver OnPlayerLoadoutLocked`);
+      }
     }
   }
 
@@ -1360,13 +1462,15 @@ export class WebSocketService {
       };
     }
 
-    // Build per-player data from Redis
+    // Build per-player data from Redis — includes identity info for visual UI
     const gameplayPrefs: any = {};
     const autoPartyPrefs: any = {};
     const platforms: any = {};
     const lockedLoadouts: any = {};
+    const playerConnections: Map<string, any> = new Map();
     for (const pid of allPlayerIds) {
       const conn = await redisClient.hGetAll(`connections:${pid}`) as any;
+      playerConnections.set(pid, conn);
       gameplayPrefs[pid] = Number(conn?.GameplayPreferences) || 964;
       autoPartyPrefs[pid] = false;
       platforms[pid] = "PC";
@@ -1404,34 +1508,120 @@ export class WebSocketService {
       MatchID: lobbyId,
     };
 
-    // Send lobby state to ALL players using multiple approaches
+    // Build players identity section — matches PUT /matches/:id response format.
+    // The game's visual lobby UI needs player identity data (username, avatar, platform)
+    // to render character displays and player names.
+    const playersAll: any[] = [];
+    for (const pid of allPlayerIds) {
+      const conn = playerConnections.get(pid) || {};
+      const displayUsername = conn.username || conn.hydraUsername || notification.joinedPlayerUsername || "Unknown";
+      const hydraUsername = conn.hydraUsername || displayUsername;
+      const wbNetworkId = conn.wb_network_id || pid;
+      playersAll.push({
+        account_id: pid,
+        source: {},
+        state: "join",
+        data: {},
+        identity: {
+          username: hydraUsername,
+          avatar: "https://s3.amazonaws.com/wb-agora-hydra-ugc-dokken/identicons/identicon.584.png",
+          default_username: true,
+          personal_data: {},
+          alternate: {
+            wb_network: [{ id: wbNetworkId, username: displayUsername, avatar: null, email: null }],
+            steam: [{ id: "76561195177950873", username: displayUsername, avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg", email: null }],
+          },
+          usernames: [
+            { auth: "hydra", username: hydraUsername },
+            { auth: "steam", username: displayUsername },
+            { auth: "wb_network", username: displayUsername },
+          ],
+          platforms: ["steam"],
+          current_platform: "steam",
+          is_cross_platform: false,
+        },
+      });
+    }
+
+    const playersSection = {
+      all: playersAll,
+      current: allPlayerIds,
+      count: allPlayerIds.length,
+    };
+
+    // Full match response wrapper — same structure as PUT /matches/:id
+    const now = Math.floor(Date.now() / 1000);
+    const fullMatchResponse = {
+      updated_at: { _hydra_unix_date: now },
+      created_at: { _hydra_unix_date: now },
+      account_id: null,
+      completion_time: null,
+      name: "white-green-wind-breeze-OS5dF",
+      state: "open",
+      access_level: "public",
+      origin: "client",
+      rand: Math.random(),
+      winning_team: [],
+      win: [],
+      loss: [],
+      draw: null,
+      arbitration: null,
+      data: {},
+      server_data: lobbyData,
+      players: playersSection,
+      matchmaking: null,
+      cluster: "ec2-us-east-1-dokken",
+      last_warning_time: null,
+      template: {
+        type: "async",
+        name: "party_lobby",
+        slug: "party_lobby",
+        min_players: 2,
+        max_players: 2,
+        game_server_integration_enabled: false,
+        game_server_config: null,
+        created_at: { _hydra_unix_date: now },
+        updated_at: { _hydra_unix_date: now },
+        data: {},
+        id: lobbyId,
+      },
+      criteria: { slug: null },
+      shortcode: null,
+      id: lobbyId,
+      access: "public",
+    };
+
+    // Send lobby state to ALL players using multiple message formats.
+    // We include players identity data in every message — the game's visual lobby UI
+    // needs this to render character displays and player names.
     for (const playerId of allPlayerIds) {
       const client = this.clients.get(playerId);
       if (client) {
-        // 1) "lobby-join" — dedicated cmd found in game binary (same hyphenated format
-        //    as game-server-instance-ready, matchmaking-complete, party-invite-player).
-        //    Follows the pattern: data={}, all data in payload.
+        // 1) "lobby-join" — dedicated cmd found in game binary.
+        //    Include full match response as the payload so the game has access to
+        //    both server_data (lobby state) and players (identity/visual data).
         const lobbyJoinMsg = {
           data: {},
           payload: {
             lobby: lobbyData,
-            match: { id: lobbyId },
+            match: fullMatchResponse,
             party_id: lobbyId,
+            players: playersSection,
           },
           header: "",
           cmd: "lobby-join",
         };
         client.send(lobbyJoinMsg);
-        logger.info(`[${serviceName}]: Sent lobby-join to ${playerId} for lobby ${lobbyId}`);
+        logger.info(`[${serviceName}]: Sent lobby-join to ${playerId} for lobby ${lobbyId} (with players identity)`);
 
-        // 2) OnLobbyRuntimeDataUpdated — found in binary, specifically for updating
-        //    lobby runtime data (player roster, mode, etc.)
+        // 2) OnLobbyRuntimeDataUpdated — lobby runtime data update
         const runtimeUpdateMsg = {
           data: {
             template_id: "OnLobbyRuntimeDataUpdated",
             LobbyId: lobbyId,
             ModeString: notification.mode,
             lobby: lobbyData,
+            players: playersSection,
           },
           payload: { match: { id: lobbyId }, custom_notification: "realtime" },
           header: "",
@@ -1440,7 +1630,7 @@ export class WebSocketService {
         client.send(runtimeUpdateMsg);
         logger.info(`[${serviceName}]: Sent OnLobbyRuntimeDataUpdated to ${playerId} for lobby ${lobbyId}`);
 
-        // 3) PlayerJoinedLobby — found in binary as a direct event name
+        // 3) PlayerJoinedLobby — player join event
         const playerJoinedMsg = {
           data: {
             template_id: "PlayerJoinedLobby",
@@ -1448,6 +1638,7 @@ export class WebSocketService {
             ModeString: notification.mode,
             lobby: lobbyData,
             JoinedPlayerId: notification.joinedPlayerId,
+            players: playersSection,
           },
           payload: { match: { id: lobbyId }, custom_notification: "realtime" },
           header: "",
@@ -1457,6 +1648,210 @@ export class WebSocketService {
         logger.info(`[${serviceName}]: Sent PlayerJoinedLobby to ${playerId} for lobby ${lobbyId}`);
       }
     }
+  }
+
+  // Targeted lobby transition — sends lobby-join + updates to ONE specific player.
+  // Used for party invites: the invitee gets pushed into the inviter's lobby
+  // without a WS reconnect. The key difference from handlePlayerJoinedLobby is
+  // that this targets a single player and hopes the game's "lobby-join" cmd
+  // overrides the current lobby context (rather than being filtered by lobby ID).
+  async handleLobbyTransition(notification: RedisLobbyTransitionNotification) {
+    const { targetPlayerId, lobbyId, ownerId, allPlayerIds, mode, joinedPlayerId, joinedPlayerUsername } = notification;
+    // wsLobbyId: the lobby ID to put in WS messages. If provided, use the invitee's
+    // OLD lobby ID so the game accepts the messages (it filters by current lobby ID).
+    // The actual lobby data (Teams, Players, etc.) is built from the real lobby.
+    const msgLobbyId = notification.wsLobbyId || lobbyId;
+    const client = this.clients.get(targetPlayerId);
+    if (!client) {
+      logger.warn(`[${serviceName}]: Cannot send lobby transition to ${targetPlayerId} - not connected`);
+      return;
+    }
+
+    // Build Teams.Players with all players in the lobby
+    const teamPlayers: any = {};
+    for (let i = 0; i < allPlayerIds.length; i++) {
+      teamPlayers[allPlayerIds[i]] = {
+        Account: { id: allPlayerIds[i] },
+        JoinedAt: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
+        BotSettingSlug: "",
+        LobbyPlayerIndex: i,
+        CrossplayPreference: 1,
+      };
+    }
+
+    // Build per-player data from Redis
+    const gameplayPrefs: any = {};
+    const autoPartyPrefs: any = {};
+    const platforms: any = {};
+    const lockedLoadouts: any = {};
+    const playerConnections: Map<string, any> = new Map();
+    for (const pid of allPlayerIds) {
+      const conn = await redisClient.hGetAll(`connections:${pid}`) as any;
+      playerConnections.set(pid, conn);
+      gameplayPrefs[pid] = Number(conn?.GameplayPreferences) || 964;
+      autoPartyPrefs[pid] = false;
+      platforms[pid] = "PC";
+      lockedLoadouts[pid] = {
+        Character: conn?.character || "character_shaggy",
+        Skin: conn?.skin || "skin_shaggy_default",
+      };
+    }
+
+    const lobbyData = {
+      Teams: [
+        { TeamIndex: 0, Players: teamPlayers, Length: allPlayerIds.length },
+        { TeamIndex: 1, Players: {}, Length: 0 },
+        { TeamIndex: 2, Players: {}, Length: 0 },
+        { TeamIndex: 3, Players: {}, Length: 0 },
+        { TeamIndex: 4, Players: {}, Length: 0 },
+      ],
+      LeaderID: ownerId,
+      LobbyType: 0,
+      ReadyPlayers: {},
+      PlayerGameplayPreferences: gameplayPrefs,
+      PlayerAutoPartyPreferences: autoPartyPrefs,
+      GameVersion: "local",
+      HissCrc: 1167552915,
+      Platforms: platforms,
+      AllMultiplayParams: {
+        "1": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252499", MultiplayRegionId: "" },
+        "2": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252922", MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682" },
+        "3": { MultiplayClusterSlug: "", MultiplayProfileId: "1252925", MultiplayRegionId: "" },
+        "4": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252928", MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682" },
+      },
+      LockedLoadouts: lockedLoadouts,
+      ModeString: mode,
+      IsLobbyJoinable: true,
+      MatchID: msgLobbyId,
+    };
+
+    // Build players identity section
+    const playersAll: any[] = [];
+    for (const pid of allPlayerIds) {
+      const conn = playerConnections.get(pid) || {};
+      const displayUsername = conn.username || conn.hydraUsername || joinedPlayerUsername || "Unknown";
+      const hydraUsername = conn.hydraUsername || displayUsername;
+      const wbNetworkId = conn.wb_network_id || pid;
+      playersAll.push({
+        account_id: pid,
+        source: {},
+        state: "join",
+        data: {},
+        identity: {
+          username: hydraUsername,
+          avatar: "https://s3.amazonaws.com/wb-agora-hydra-ugc-dokken/identicons/identicon.584.png",
+          default_username: true,
+          personal_data: {},
+          alternate: {
+            wb_network: [{ id: wbNetworkId, username: displayUsername, avatar: null, email: null }],
+            steam: [{ id: "76561195177950873", username: displayUsername, avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg", email: null }],
+          },
+          usernames: [
+            { auth: "hydra", username: hydraUsername },
+            { auth: "steam", username: displayUsername },
+            { auth: "wb_network", username: displayUsername },
+          ],
+          platforms: ["steam"],
+          current_platform: "steam",
+          is_cross_platform: false,
+        },
+      });
+    }
+
+    const playersSection = {
+      all: playersAll,
+      current: allPlayerIds,
+      count: allPlayerIds.length,
+    };
+
+    const now = Math.floor(Date.now() / 1000);
+    const fullMatchResponse = {
+      updated_at: { _hydra_unix_date: now },
+      created_at: { _hydra_unix_date: now },
+      account_id: null,
+      completion_time: null,
+      name: "white-green-wind-breeze-OS5dF",
+      state: "open",
+      access_level: "public",
+      origin: "client",
+      rand: Math.random(),
+      winning_team: [],
+      win: [],
+      loss: [],
+      draw: null,
+      arbitration: null,
+      data: {},
+      server_data: lobbyData,
+      players: playersSection,
+      matchmaking: null,
+      cluster: "ec2-us-east-1-dokken",
+      last_warning_time: null,
+      template: {
+        type: "async",
+        name: "party_lobby",
+        slug: "party_lobby",
+        min_players: 2,
+        max_players: 2,
+        game_server_integration_enabled: false,
+        game_server_config: null,
+        created_at: { _hydra_unix_date: now },
+        updated_at: { _hydra_unix_date: now },
+        data: {},
+        id: msgLobbyId,
+      },
+      criteria: { slug: null },
+      shortcode: null,
+      id: msgLobbyId,
+      access: "public",
+    };
+
+    // Send lobby-join using msgLobbyId (invitee's own lobby ID so the game accepts it).
+    // The game filters ALL WS messages by current lobby ID, so we must use the
+    // invitee's existing lobby ID. The actual player data inside is the real merged roster.
+    const lobbyJoinMsg = {
+      data: {},
+      payload: {
+        lobby: lobbyData,
+        match: fullMatchResponse,
+        party_id: msgLobbyId,
+        players: playersSection,
+      },
+      header: "",
+      cmd: "lobby-join",
+    };
+    client.send(lobbyJoinMsg);
+    logger.info(`[${serviceName}]: Sent lobby-join (transition) to ${targetPlayerId} for lobby ${msgLobbyId} (real: ${lobbyId})`);
+
+    // Also send OnLobbyRuntimeDataUpdated and PlayerJoinedLobby
+    const runtimeUpdateMsg = {
+      data: {
+        template_id: "OnLobbyRuntimeDataUpdated",
+        LobbyId: msgLobbyId,
+        ModeString: mode,
+        lobby: lobbyData,
+        players: playersSection,
+      },
+      payload: { match: { id: msgLobbyId }, custom_notification: "realtime" },
+      header: "",
+      cmd: "update",
+    };
+    client.send(runtimeUpdateMsg);
+
+    const playerJoinedMsg = {
+      data: {
+        template_id: "PlayerJoinedLobby",
+        LobbyId: msgLobbyId,
+        ModeString: mode,
+        lobby: lobbyData,
+        JoinedPlayerId: joinedPlayerId,
+        players: playersSection,
+      },
+      payload: { match: { id: msgLobbyId }, custom_notification: "realtime" },
+      header: "",
+      cmd: "update",
+    };
+    client.send(playerJoinedMsg);
+    logger.info(`[${serviceName}]: Sent lobby transition complete to ${targetPlayerId} (3 messages, wsLobbyId=${msgLobbyId}, real=${lobbyId})`);
   }
 
   handleLobbyRejoin(notification: RedisLobbyRejoinNotification) {
@@ -1530,7 +1925,15 @@ export class WebSocketService {
       }
     }
 
-    // Check if this match belongs to a custom lobby
+    // Check if this match belongs to an SSC custom lobby (new system)
+    const sscLobbyId = await getSscCustomLobbyForMatch(notification.matchId);
+    if (sscLobbyId) {
+      logger.info(`[${serviceName}]: Match ${notification.matchId} is an SSC custom lobby match (${sscLobbyId}), handling rematch`);
+      await handleSscCustomLobbyMatchEnd(notification.matchId);
+      return;
+    }
+
+    // Check if this match belongs to a web-based custom lobby (old system)
     const customLobbyCode = await getCustomLobbyForMatch(notification.matchId);
     if (customLobbyCode) {
       // Custom lobby match — DON'T send RematchDeclinedNotification.
@@ -1689,6 +2092,7 @@ export class WebSocketService {
       await this.handleOnMatchEnd(notification);
     });
 
+    // Party invite via Hydra WS using InviteReceivedForLobby template
     this.redisSub.subscribe(PARTY_INVITE_CHANNEL, (message) => {
       const notification = JSON.parse(message) as RedisPartyInviteNotification;
       this.handlePartyInvite(notification);
@@ -1704,9 +2108,82 @@ export class WebSocketService {
       this.handleLobbyRejoin(notification);
     });
 
+    this.redisSub.subscribe(LOBBY_TRANSITION_CHANNEL, async (message) => {
+      const notification = JSON.parse(message) as RedisLobbyTransitionNotification;
+      await this.handleLobbyTransition(notification);
+    });
+
     this.redisSub.subscribe(TOAST_RECEIVED_CHANNEL, (message) => {
       const notification = JSON.parse(message) as RedisToastNotification;
       this.handleToastReceived(notification);
+    });
+
+    this.redisSub.subscribe(PLAYER_LOADOUT_LOCKED_CHANNEL, (message) => {
+      const notification = JSON.parse(message) as RedisPlayerLoadoutLockedNotification;
+      this.handlePlayerLoadoutLocked(notification);
+    });
+
+    // Lobby return — send RematchDeclinedNotification to make the game
+    // "return to lobby" and call create_party_lobby natively.
+    // Used for party invite accept so invitee re-fetches the shared lobby.
+    this.redisSub.subscribe(LOBBY_RETURN_CHANNEL, (message) => {
+      const notification = JSON.parse(message) as RedisLobbyReturnNotification;
+      const client = this.clients.get(notification.playerId);
+      if (client) {
+        logger.info(`[${serviceName}]: Sending RematchDeclinedNotification to ${notification.playerId} for lobby return`);
+        const data = {
+          data: {
+            AccountId: notification.playerId,
+            MatchId: notification.matchId,
+            template_id: "RematchDeclinedNotification",
+          },
+          payload: {
+            frm: {
+              id: "internal-server",
+              type: "server-api-key",
+            },
+            template: "realtime",
+            account_id: notification.playerId,
+            profile_id: notification.playerId,
+          },
+          header: "",
+          cmd: "profile-notification",
+        };
+        client.send(data);
+      }
+    });
+
+    // NOTE: partyMemberJoinNotif subscription MOVED to AccelByteLobbyWsService.
+    // The game processes AccelByte text-format messages on the AccelByte Lobby WS
+    // (/lobby/ path), NOT on the Hydra WS. Sending it here had no effect because
+    // the game ignores AccelByte-format text on this connection.
+
+    // Friend request WS notification — sends native WBPNFriendRequestReceivedNotification
+    this.redisSub.subscribe(FRIEND_REQUEST_WS_CHANNEL, (message) => {
+      try {
+        const notification = JSON.parse(message) as RedisFriendRequestWSNotification;
+        const client = this.clients.get(notification.receiverAccountId);
+        if (client) {
+          logger.info(`[${serviceName}]: Sending WBPNFriendRequestReceivedNotification to ${notification.receiverAccountId}`);
+          client.send({
+            data: {
+              template_id: "WBPNFriendRequestReceivedNotification",
+              SenderWBPNAccountID: notification.senderAccountId,
+              WBPNInvitationID: notification.invitationId,
+            },
+            payload: {
+              match: {
+                id: notification.receiverAccountId,
+              },
+              custom_notification: "realtime",
+            },
+            header: "",
+            cmd: "profile-notification",
+          });
+        }
+      } catch (e) {
+        logger.error(`[${serviceName}]: Error handling friend request WS notification: ${e}`);
+      }
     });
 
     // Custom lobby rematch decline — send RematchDeclinedNotification to all affected players
@@ -1736,6 +2213,28 @@ export class WebSocketService {
           };
           client.send(data);
         }
+      }
+    });
+
+    // Custom lobby notifications (from new SSC-based lobby system)
+    // Dispatches profile-notification / update messages to specific players
+    this.redisSub.subscribe("custom_lobby:notification", (message) => {
+      try {
+        const msg = JSON.parse(message) as {
+          targetPlayerIds: string[];
+          excludePlayerIds: string[];
+          notification: any;
+        };
+        const excludeSet = new Set(msg.excludePlayerIds || []);
+        for (const playerId of msg.targetPlayerIds) {
+          if (excludeSet.has(playerId)) continue;
+          const client = this.clients.get(playerId);
+          if (client) {
+            client.send(msg.notification);
+          }
+        }
+      } catch (e) {
+        logger.error(`[${serviceName}]: Error handling custom lobby notification: ${e}`);
       }
     });
   }

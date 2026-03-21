@@ -3,10 +3,13 @@ import { redisClient } from "@mvsi/redis";
 import { ObjectId } from "mongodb";
 import { randomUUID } from "node:crypto";
 import { getRandomMap2v2 } from "../../data/maps";
-import { REDIS_CHARACTER_SLUGS_KEY } from "../../loadAssets";
+import { REDIS_CHARACTER_SLUGS_KEY, getAssetsByType } from "../../loadAssets";
 import type { GameplayConfig } from "../matchmaking/matchmaking.types";
-import { notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
-import { broadcastNotificationToUsers } from "../notifications/notifications.utils";
+import { getActiveMatch, notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
+import {
+  broadcastNotificationToTopic,
+  broadcastNotificationToUsers,
+} from "../notifications/notifications.utils";
 import { generateBotId, isBotId } from "../bots/bots.service";
 import { getPlayerConfig } from "../playerConfig/playerConfig.service";
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
@@ -22,7 +25,9 @@ import type {
   ArenaTeamInfo,
   MatchStats,
 } from "./arena.lobby.types";
-import { pl } from "zod/locales";
+import { generateShopOptions, getGemName, ALL_ARENA_ITEMS } from "../../data/arenaItemDefs";
+import { INVENTORY_DEFINITIONS } from "../../data/inventoryDefs";
+import { RealtimeNotificationUsersMessage } from "../notifications/notifications.types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -108,7 +113,7 @@ function createArenaPlayerData(): ArenaPlayerData {
     InterestPer: 6,
     Inventory: Array(4)
       .fill(null)
-      .map(() => ({ Xp: 0, Level: 0, Slug: "", NextLevelXp: 0 })),
+      .map(() => ({ Xp: 0, Level: 0, Slug: "", NextLevelXp: 0, SellValue: 0 })),
     CurrencyAmount: 20,
   };
 }
@@ -143,6 +148,222 @@ async function getRandomCharacters(count: number): Promise<string[]> {
   const slugs: string[] = JSON.parse(raw);
   const shuffled = [...slugs].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, Math.min(count, shuffled.length));
+}
+
+const FIGHTER_CLASS_MAP: Record<string, number> = {
+  Support: 0,
+  Assassin: 1,
+  Bruiser: 2,
+  Tank: 3,
+  Mage: 4,
+};
+
+function getCharacterClass(characterSlug: string): number {
+  const def = INVENTORY_DEFINITIONS[characterSlug];
+  const fighterClass = (def?.data as any)?.FighterClass as string | undefined;
+  return FIGHTER_CLASS_MAP[fighterClass ?? ""] ?? 2; // default Bruiser
+}
+
+function getRandomSkinForCharacter(characterSlug: string): string {
+  const skins = getAssetsByType("SkinData");
+  const matching = skins.filter((s) => s.character_slug === characterSlug).map((s) => s.slug);
+  if (matching.length === 0) return "";
+  return matching[Math.floor(Math.random() * matching.length)];
+}
+
+function getBotBuildType(charClass: number): string {
+  // Tank=3, Bruiser=2 → "defense"; Assassin=1, Mage=4, Support=0 → "attack"
+  return charClass === 3 || charClass === 2 ? "defense" : "attack";
+}
+
+async function onAllCharactersSelected(arenaId: string): Promise<void> {
+  const stateKey = arenaStateKey(arenaId);
+  const arenaData = (await redisClient.json.get(stateKey)) as ArenaData | null;
+  if (!arenaData) return;
+
+  // ── Assign bots random char/skin ──────────────────────────────────────────
+  for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
+    if (!info.bIsBot) continue;
+    const chars = await getRandomCharacters(1);
+    const character = chars[0] ?? "";
+    const skin = character ? getRandomSkinForCharacter(character) : "";
+    const charClass = getCharacterClass(character);
+    arenaData.PlayerInfo[pid].Loadout = { Character: character, Skin: skin };
+    arenaData.PlayerInfo[pid].CharacterClass = charClass;
+  }
+
+  // ── Generate shops for each real player ───────────────────────────────────
+  for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
+    if (info.bIsBot) continue;
+    const shopOptions = generateShopOptions(info.CharacterClass, arenaData.CurrentRound);
+    arenaData.PlayerInfo[pid].CurrentShopLocal = shopOptions;
+  }
+
+  // Persist updated arenaData
+  await redisClient.json.set(
+    stateKey,
+    "$",
+    arenaData as Parameters<typeof redisClient.json.set>[2],
+  );
+
+  // ── Notify each real match ────────────────────────────────────────────────
+  for (const teamInfo of Object.values(arenaData.TeamInfo)) {
+    for (const matchId of teamInfo.Matches) {
+      if (matchId.startsWith("Sim")) continue;
+
+      const activeMatch = await getActiveMatch(matchId);
+      if (!activeMatch) continue;
+
+      // Build updated Players map: overlay character/skin from arenaData
+      const updatedPlayers = { ...activeMatch.GameplayConfig.GameplayConfig.Players };
+      for (const [pid, player] of Object.entries(updatedPlayers)) {
+        const info = arenaData.PlayerInfo[pid];
+        if (info) {
+          updatedPlayers[pid] = {
+            ...player,
+            Character: info.Loadout.Character,
+            Skin: info.Loadout.Skin,
+          };
+        }
+      }
+
+      // Collect all ArenaPlayerInfo for players in this match
+      const matchPlayerIds = Object.keys(activeMatch.GameplayConfig.GameplayConfig.Players);
+      const arenaPlayerInfo: Record<string, ArenaPlayerInfo> = {};
+      for (const pid of matchPlayerIds) {
+        if (arenaData.PlayerInfo[pid]) {
+          arenaPlayerInfo[pid] = arenaData.PlayerInfo[pid];
+        }
+      }
+
+      const notification: RealtimeNotificationUsersMessage = {
+        exclude: [],
+        users: matchPlayerIds,
+        data: {
+          data: {
+            ArenaId: arenaId,
+            MatchId: matchId,
+            template_id: "ArenaInventoryLockedNotification",
+            GameplayConfig: {
+              ...activeMatch.GameplayConfig,
+              GameplayConfig: {
+                ...activeMatch.GameplayConfig.GameplayConfig,
+                Players: updatedPlayers,
+                ArenaModeInfo: {
+                  ...activeMatch.GameplayConfig.GameplayConfig.ArenaModeInfo,
+                  bReadyToStart: false,
+                },
+              },
+            },
+            ArenaPlayerInfo: arenaPlayerInfo,
+          },
+          payload: {
+            custom_notification: "realtime",
+            match: { id: matchId },
+          },
+          cmd: "update",
+          header: "",
+        },
+      };
+      console.log("Notifying match of character selection:", JSON.stringify(notification, null, 2));
+      await broadcastNotificationToUsers(notification);
+    }
+  }
+}
+
+async function notifyMatchReadyToStart(arenaId: string): Promise<void> {
+  const stateKey = arenaStateKey(arenaId);
+  const arenaData = (await redisClient.json.get(stateKey)) as ArenaData | null;
+  if (!arenaData) return;
+
+  // ── Assign bots random items ───────────────────────────────────────────────
+  for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
+    if (!info.bIsBot) continue;
+    const charClass = info.CharacterClass;
+    const buildType = getBotBuildType(charClass);
+    const randomItems = [...ALL_ARENA_ITEMS].sort(() => Math.random() - 0.5).slice(0, 4);
+    arenaData.PlayerInfo[pid].PlayerData.Inventory = randomItems.map((item) => ({
+      Slug: item.slug,
+      Level: 1,
+      Xp: 0,
+      NextLevelXp: 1,
+      SellValue: item.cost - 1,
+    }));
+    arenaData.PlayerInfo[pid].BotSettings = { BuildType: buildType };
+  }
+
+  // Persist
+  await redisClient.json.set(
+    stateKey,
+    "$",
+    arenaData as Parameters<typeof redisClient.json.set>[2],
+  );
+
+  // ── Notify each real match ────────────────────────────────────────────────
+  for (const teamInfo of Object.values(arenaData.TeamInfo)) {
+    for (const matchId of teamInfo.Matches) {
+      if (matchId.startsWith("Sim")) continue;
+
+      const activeMatch = await getActiveMatch(matchId);
+      if (!activeMatch) continue;
+
+      const updatedPlayers = { ...activeMatch.GameplayConfig.GameplayConfig.Players };
+      for (const [pid, player] of Object.entries(updatedPlayers)) {
+        const info = arenaData.PlayerInfo[pid];
+        if (!info) continue;
+        const gems = info.PlayerData.Inventory.filter((slot) => slot.Slug !== "").map((slot) => ({
+          Gem: getGemName(slot.Slug),
+          ChargeLevel: Math.max(0, slot.Level - 1),
+        }));
+        updatedPlayers[pid] = {
+          ...player,
+          Character: info.Loadout.Character,
+          Skin: info.Loadout.Skin,
+          Gems: gems,
+        };
+      }
+
+      const matchPlayerIds = Object.keys(activeMatch.GameplayConfig.GameplayConfig.Players);
+      const arenaPlayerInfo: Record<string, ArenaPlayerInfo> = {};
+      for (const pid of matchPlayerIds) {
+        if (arenaData.PlayerInfo[pid]) {
+          arenaPlayerInfo[pid] = arenaData.PlayerInfo[pid];
+        }
+      }
+
+      const notification: RealtimeNotificationUsersMessage = {
+        exclude: [],
+        users: matchPlayerIds,
+        data: {
+          data: {
+            ArenaId: arenaId,
+            MatchId: matchId,
+            template_id: "ArenaInventoryLockedNotification",
+            GameplayConfig: {
+              ...activeMatch.GameplayConfig,
+              GameplayConfig: {
+                ...activeMatch.GameplayConfig.GameplayConfig,
+                Players: updatedPlayers,
+                ArenaModeInfo: {
+                  ...activeMatch.GameplayConfig.GameplayConfig.ArenaModeInfo,
+                  bReadyToStart: true,
+                },
+              },
+            },
+            ArenaPlayerInfo: arenaPlayerInfo,
+          },
+          payload: {
+            custom_notification: "realtime",
+            match: { id: matchId },
+          },
+          cmd: "update",
+          header: "",
+        },
+      };
+
+      await broadcastNotificationToUsers(notification);
+    }
+  }
 }
 
 // ─── Lua scripts ──────────────────────────────────────────────────────────────
@@ -380,7 +601,7 @@ export async function assembleArenaMatch(lobby: ArenaLobby): Promise<string | nu
         bIsBot: isBot,
         ...(isBot
           ? {}
-          : { Stats: createArenaPlayerStats(), CurrentShop: [], CurrentShopLocal: [] }),
+          : { Stats: createArenaPlayerStats(), CurrentShop: [], CurrentShopLocal: null }),
       };
     }
   }
@@ -558,6 +779,47 @@ export async function assembleArenaMatch(lobby: ArenaLobby): Promise<string | nu
 
 // ─── Per-round actions ────────────────────────────────────────────────────────
 
+// Returns: "already_set" | "all_selected" | "ok" | "not_found"
+// Atomically sets character/skin/class on the player and checks if all real players are done.
+const LUA_SELECT_CHARACTER = `
+local s = redis.call('JSON.GET', KEYS[1])
+if not s then return 'not_found' end
+local data = cjson.decode(s)
+
+local accountId   = ARGV[1]
+local character   = ARGV[2]
+local skin        = ARGV[3]
+local charClass   = tonumber(ARGV[4])
+local bRandom     = ARGV[5] == 'true'
+
+local player = data.PlayerInfo[accountId]
+if not player then return 'not_found' end
+
+-- Idempotency: if already set, do nothing
+if player.Loadout.Character ~= '' then return 'already_set' end
+
+player.Loadout.Character = character
+player.Loadout.Skin      = skin
+player.CharacterClass    = charClass
+if bRandom and player.Stats then
+  player.Stats.bRandomCharacter = true
+end
+
+-- Check if all real (non-bot) players have now selected
+local allSelected = true
+for _, p in pairs(data.PlayerInfo) do
+  if not p.bIsBot and p.Loadout.Character == '' then
+    allSelected = false
+    break
+  end
+end
+
+redis.call('JSON.SET', KEYS[1], '$', cjson.encode(data))
+
+if allSelected then return 'all_selected' end
+return 'ok'
+`;
+
 export async function arenaSelectCharacter(
   arenaLobbyId: string,
   accountId: string,
@@ -565,22 +827,200 @@ export async function arenaSelectCharacter(
   skinSlug: string,
 ) {
   const stateKey = arenaStateKey(arenaLobbyId);
-  await redisClient.json.set(stateKey, `$.PlayerInfo.${accountId}.Loadout`, {
-    Character: characterSlug,
-    Skin: skinSlug,
-  });
+
+  // Resolve character/skin/class before the atomic write
+  // (random selection needs the player's SelectableCharacters pool)
+  const arenaData = (await redisClient.json.get(stateKey)) as ArenaData | null;
+  if (!arenaData) return {};
+
+  const playerInfo = arenaData.PlayerInfo[accountId];
+  if (!playerInfo) return {};
+
+  // Already selected — nothing to do
+  if (playerInfo.Loadout.Character !== "") return {};
+
+  let character = characterSlug;
+  let bRandomCharacter = false;
+  if (!character) {
+    const pool = playerInfo.SelectableCharacters;
+    if (pool.length > 0) {
+      character = pool[Math.floor(Math.random() * pool.length)];
+      bRandomCharacter = true;
+    }
+  }
+
+  let skin = skinSlug;
+  if (!skin && character) {
+    skin = getRandomSkinForCharacter(character);
+  }
+
+  const charClass = getCharacterClass(character);
+
+  const result = await evalLua(
+    LUA_SELECT_CHARACTER,
+    [stateKey],
+    [accountId, character, skin, String(charClass), String(bRandomCharacter)],
+  );
+
+  if (result === "all_selected") {
+    onAllCharactersSelected(arenaLobbyId).catch((err) =>
+      logger.error(`onAllCharactersSelected error: ${err}`),
+    );
+  }
+
   return {};
+}
+
+export async function arenaSelectCharacterAbsent(arenaLobbyId: string) {
+  const arenaData = await getArenaState(arenaLobbyId);
+  if (!arenaData) return { body: {}, metadata: null, return_code: 0 };
+  return {
+    body: { ArenaData: arenaData, ArenaId: arenaLobbyId },
+    metadata: null,
+    return_code: 20,
+  };
 }
 
 export async function arenaPlayerShopClosed(
   arenaLobbyId: string,
   _arenaRound: number,
-  _accountId: string,
-  _shopDetails: {
+  accountId: string,
+  shopDetails: {
     ItemTransactions: { ItemIndex: number; LocalShopIndex: number; bPurchase: boolean }[];
     NumRerolls: number;
   },
 ) {
+  const stateKey = arenaStateKey(arenaLobbyId);
+  const arenaData = (await redisClient.json.get(stateKey)) as ArenaData | null;
+  if (!arenaData) return {};
+
+  const playerInfo = arenaData.PlayerInfo[accountId];
+  if (!playerInfo || playerInfo.bIsBot) return {};
+
+  // Already submitted — ignore duplicate calls
+  if (playerInfo.CurrentShopLocal !== null && (playerInfo.CurrentShopLocal?.length ?? -1) === 0) {
+    return {};
+  }
+
+  const playerData = playerInfo.PlayerData;
+  const stats = playerInfo.Stats!;
+  const shopLocal = playerInfo.CurrentShopLocal ?? [];
+  const constants = getArenaConstants();
+  const itemXpPerLevel = constants.ItemXpPerLevel; // [0, 1, 3]
+
+  let currencySpent = 0;
+  let itemsPurchased = 0;
+  let itemsSold = 0;
+  let itemsLeveled = 0;
+
+  // Process reroll cost
+  const freeRerolls = playerData.FreeShopRerolls;
+  const rerollCost = Math.max(0, shopDetails.NumRerolls - freeRerolls) * playerData.ShopRerollCost;
+  playerData.CurrencyAmount -= rerollCost;
+  stats.ShopRerolls += shopDetails.NumRerolls;
+
+  for (const tx of shopDetails.ItemTransactions) {
+    if (tx.bPurchase) {
+      // Buy: find shop item
+      const option = shopLocal[tx.LocalShopIndex];
+      if (!option) continue;
+      const shopItem = option.CurrentShop?.[tx.ItemIndex];
+      if (!shopItem) continue;
+
+      const cost = shopItem.Cost;
+      if (playerData.CurrencyAmount < cost) continue;
+
+      playerData.CurrencyAmount -= cost;
+      currencySpent += cost;
+      itemsPurchased++;
+
+      // Find empty slot or existing slot with same slug (stack)
+      const slug = shopItem.Slug;
+      const existingSlot = playerData.Inventory.find(
+        (slot) => slot.Slug === slug && slot.Level < itemXpPerLevel.length,
+      );
+
+      if (existingSlot) {
+        existingSlot.Xp += 1;
+        existingSlot.SellValue += cost - 1;
+        // Level up while Xp >= NextLevelXp
+        while (
+          existingSlot.Level < itemXpPerLevel.length - 1 &&
+          existingSlot.Xp >= existingSlot.NextLevelXp
+        ) {
+          existingSlot.Xp -= existingSlot.NextLevelXp;
+          existingSlot.Level += 1;
+          existingSlot.NextLevelXp = itemXpPerLevel[existingSlot.Level] ?? 0;
+          itemsLeveled++;
+        }
+      } else {
+        // Find empty slot
+        const emptySlot = playerData.Inventory.find((slot) => slot.Slug === "");
+        if (emptySlot) {
+          emptySlot.Slug = slug;
+          emptySlot.Level = 1;
+          emptySlot.Xp = 0;
+          emptySlot.NextLevelXp = itemXpPerLevel[1] ?? 1;
+          emptySlot.SellValue = cost - 1;
+        }
+      }
+    } else {
+      // Sell: clear inventory slot at ItemIndex
+      const slot = playerData.Inventory[tx.ItemIndex];
+      if (!slot || slot.Slug === "") continue;
+
+      playerData.CurrencyAmount += slot.SellValue;
+      slot.Slug = "";
+      slot.Level = 0;
+      slot.Xp = 0;
+      slot.NextLevelXp = 0;
+      slot.SellValue = 0;
+      itemsSold++;
+    }
+  }
+
+  // Update interest boost if arenaitem_interestboost is in inventory
+  const interestBoostSlot = playerData.Inventory.find(
+    (slot) => slot.Slug === "arenaitem_interestboost",
+  );
+  if (interestBoostSlot) {
+    const interestPerBoost = constants.InterestPerBoost;
+    playerData.InterestPer =
+      interestPerBoost[interestBoostSlot.Level - 1] ?? playerData.InterestPer;
+  }
+
+  // Update stats
+  stats.ItemsPurchased += itemsPurchased;
+  stats.ItemsSold += itemsSold;
+  stats.ItemsLeveled += itemsLeveled;
+  stats.CurrencySpent += currencySpent;
+
+  // Mark player done: clear CurrentShopLocal
+  arenaData.PlayerInfo[accountId].PlayerData = playerData;
+  arenaData.PlayerInfo[accountId].Stats = stats;
+  arenaData.PlayerInfo[accountId].CurrentShopLocal = [];
+
+  // Persist
+  await redisClient.json.set(
+    stateKey,
+    "$",
+    arenaData as Parameters<typeof redisClient.json.set>[2],
+  );
+
+  // Check if all real players are done (CurrentShopLocal empty)
+  const refreshed = (await redisClient.json.get(stateKey)) as ArenaData | null;
+  if (!refreshed) return {};
+
+  const allDone = Object.values(refreshed.PlayerInfo)
+    .filter((p) => !p.bIsBot)
+    .every((p) => p.CurrentShopLocal !== null && (p.CurrentShopLocal?.length ?? -1) === 0);
+
+  if (allDone) {
+    notifyMatchReadyToStart(arenaLobbyId).catch((err) =>
+      logger.error(`notifyMatchReadyToStart error: ${err}`),
+    );
+  }
+
   return {};
 }
 

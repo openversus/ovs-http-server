@@ -6,6 +6,7 @@ import {
   arenaPlayerShopClosed,
   arenaRerollCharacters,
   arenaSelectCharacter,
+  arenaSelectCharacterAbsent,
   assembleArenaMatch,
   createArenaLobby,
   joinArenaLobby,
@@ -795,6 +796,18 @@ router.put(
       metadata: null,
       return_code: result?.Result?.BaseResponse?.bSuccess === false ? 1 : 0,
     };
+  },
+  {
+    body: t.Object({
+      ArenaLobbyId: t.String(),
+    }),
+  },
+);
+
+router.put(
+  "/ssc/invoke/arena_select_character_absent",
+  async ({ body }) => {
+    return arenaSelectCharacterAbsent(body.ArenaLobbyId);
   },
   {
     body: t.Object({

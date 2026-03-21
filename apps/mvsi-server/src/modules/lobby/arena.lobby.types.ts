@@ -1,10 +1,18 @@
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export type ArenaInventorySlot = {
+  Xp: number;
+  Level: number;
+  Slug: string;
+  NextLevelXp: number;
+  SellValue: number;
+};
+
 export type ArenaPlayerData = {
   ShopRerollCost: number;
   FreeShopRerolls: number;
   InterestPer: number;
-  Inventory: { Xp: number; Level: number; Slug: string; NextLevelXp: number }[];
+  Inventory: ArenaInventorySlot[];
   CurrencyAmount: number;
 };
 
@@ -48,7 +56,8 @@ export type ArenaPlayerInfo = {
   bIsBot: boolean;
   Stats?: ArenaPlayerStats;
   CurrentShop?: any[];
-  CurrentShopLocal?: any[];
+  CurrentShopLocal?: any[] | null;
+  BotSettings?: { BuildType: string };
 };
 
 export type ArenaTeamInfo = {

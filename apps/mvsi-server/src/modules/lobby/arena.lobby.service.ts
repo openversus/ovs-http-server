@@ -183,13 +183,17 @@ async function onAllCharactersSelected(arenaId: string): Promise<void> {
 
   // ── Assign bots random char/skin ──────────────────────────────────────────
   for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
-    if (!info.bIsBot) continue;
+    if (!info.bIsBot) {
+      arenaData.PlayerInfo[pid].SelectableCharacters = [];
+      continue;
+    }
     const chars = await getRandomCharacters(1);
     const character = chars[0] ?? "";
     const skin = character ? getRandomSkinForCharacter(character) : "";
     const charClass = getCharacterClass(character);
     arenaData.PlayerInfo[pid].Loadout = { Character: character, Skin: skin };
     arenaData.PlayerInfo[pid].CharacterClass = charClass;
+    arenaData.PlayerInfo[pid].SelectableCharacters = [];
   }
 
   // ── Generate shops for each real player ───────────────────────────────────
@@ -206,35 +210,32 @@ async function onAllCharactersSelected(arenaId: string): Promise<void> {
     arenaData as Parameters<typeof redisClient.json.set>[2],
   );
 
-  // ── Notify each real match ────────────────────────────────────────────────
+  // ── Notify each real match (deduplicated — each matchId appears in 2 teams) ─
+  const notifiedMatchIds = new Set<string>();
   for (const teamInfo of Object.values(arenaData.TeamInfo)) {
     for (const matchId of teamInfo.Matches) {
       if (matchId.startsWith("Sim")) continue;
+      if (notifiedMatchIds.has(matchId)) continue;
+      notifiedMatchIds.add(matchId);
 
       const activeMatch = await getActiveMatch(matchId);
       if (!activeMatch) continue;
 
       // Build updated Players map: overlay character/skin from arenaData
-      const updatedPlayers = { ...activeMatch.GameplayConfig.GameplayConfig.Players };
-      for (const [pid, player] of Object.entries(updatedPlayers)) {
-        const info = arenaData.PlayerInfo[pid];
-        if (info) {
-          updatedPlayers[pid] = {
-            ...player,
-            Character: info.Loadout.Character,
-            Skin: info.Loadout.Skin,
-          };
-        }
+      for (const pid of Object.keys(activeMatch.GameplayConfig.GameplayConfig.Players)) {
+        activeMatch.GameplayConfig.GameplayConfig.Players[pid].Skin =
+          arenaData.PlayerInfo[pid].Loadout.Skin;
+        activeMatch.GameplayConfig.GameplayConfig.Players[pid].Character =
+          arenaData.PlayerInfo[pid].Loadout.Character;
       }
+
+      console.log(
+        `PLAYERS`,
+        JSON.stringify(activeMatch.GameplayConfig.GameplayConfig.Players, null, 2),
+      );
 
       // Collect all ArenaPlayerInfo for players in this match
       const matchPlayerIds = Object.keys(activeMatch.GameplayConfig.GameplayConfig.Players);
-      const arenaPlayerInfo: Record<string, ArenaPlayerInfo> = {};
-      for (const pid of matchPlayerIds) {
-        if (arenaData.PlayerInfo[pid]) {
-          arenaPlayerInfo[pid] = arenaData.PlayerInfo[pid];
-        }
-      }
 
       const notification: RealtimeNotificationUsersMessage = {
         exclude: [],
@@ -244,18 +245,8 @@ async function onAllCharactersSelected(arenaId: string): Promise<void> {
             ArenaId: arenaId,
             MatchId: matchId,
             template_id: "ArenaInventoryLockedNotification",
-            GameplayConfig: {
-              ...activeMatch.GameplayConfig,
-              GameplayConfig: {
-                ...activeMatch.GameplayConfig.GameplayConfig,
-                Players: updatedPlayers,
-                ArenaModeInfo: {
-                  ...activeMatch.GameplayConfig.GameplayConfig.ArenaModeInfo,
-                  bReadyToStart: false,
-                },
-              },
-            },
-            ArenaPlayerInfo: arenaPlayerInfo,
+            GameplayConfig: activeMatch.GameplayConfig.GameplayConfig,
+            ArenaPlayerInfo: arenaData.PlayerInfo,
           },
           payload: {
             custom_notification: "realtime",
@@ -299,10 +290,13 @@ async function notifyMatchReadyToStart(arenaId: string): Promise<void> {
     arenaData as Parameters<typeof redisClient.json.set>[2],
   );
 
-  // ── Notify each real match ────────────────────────────────────────────────
+  // ── Notify each real match (deduplicated — each matchId appears in 2 teams) ─
+  const notifiedMatchIds = new Set<string>();
   for (const teamInfo of Object.values(arenaData.TeamInfo)) {
     for (const matchId of teamInfo.Matches) {
       if (matchId.startsWith("Sim")) continue;
+      if (notifiedMatchIds.has(matchId)) continue;
+      notifiedMatchIds.add(matchId);
 
       const activeMatch = await getActiveMatch(matchId);
       if (!activeMatch) continue;
@@ -798,9 +792,10 @@ if not player then return 'not_found' end
 -- Idempotency: if already set, do nothing
 if player.Loadout.Character ~= '' then return 'already_set' end
 
-player.Loadout.Character = character
-player.Loadout.Skin      = skin
-player.CharacterClass    = charClass
+player.Loadout.Character      = character
+player.Loadout.Skin           = skin
+player.CharacterClass         = charClass
+player.SelectableCharacters   = {}
 if bRandom and player.Stats then
   player.Stats.bRandomCharacter = true
 end
@@ -855,7 +850,6 @@ export async function arenaSelectCharacter(
   }
 
   const charClass = getCharacterClass(character);
-
   const result = await evalLua(
     LUA_SELECT_CHARACTER,
     [stateKey],
@@ -863,6 +857,7 @@ export async function arenaSelectCharacter(
   );
 
   if (result === "all_selected") {
+    console.log(`All characters selected for arena ${arenaLobbyId}, notifying matches...`);
     onAllCharactersSelected(arenaLobbyId).catch((err) =>
       logger.error(`onAllCharactersSelected error: ${err}`),
     );

@@ -20,13 +20,15 @@ export type ArenaItemDef = {
 };
 
 export type ShopItem = {
-  Slug: string;
-  Gem: string;
-  Cost: number;
-  SellValue: number;
-  Level: number;
-  Xp: number;
-  NextLevelXp: number;
+  Item: {
+    Slug: string;
+    Gem: string;
+    Cost: number;
+    SellValue: number;
+    Level: number;
+    Xp: number;
+    NextLevelXp: number;
+  };
 };
 
 export type ShopOption = {
@@ -155,13 +157,15 @@ export function generateShopOptions(
     for (let j = 0; j < itemsPerOption; j++) {
       const item = weightedSample(ALL_ARENA_ITEMS, weights);
       shopItems.push({
-        Slug: item.slug,
-        Gem: item.gemName,
-        Cost: item.cost,
-        SellValue: item.cost - 1,
-        Level: 1,
-        Xp: 0,
-        NextLevelXp: 1,
+        Item: {
+          Slug: item.slug,
+          Gem: item.gemName,
+          Cost: item.cost,
+          SellValue: item.cost - 1,
+          Level: 1,
+          Xp: 0,
+          NextLevelXp: 1,
+        },
       });
     }
     options.push({ CurrentShop: shopItems });

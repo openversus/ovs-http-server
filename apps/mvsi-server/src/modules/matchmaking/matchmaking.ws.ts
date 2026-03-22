@@ -72,6 +72,7 @@ function handleMatchFound(notification: MatchFoundChannelMessage) {
     header: "",
     cmd: "update",
   };
+  console.log("GameServerReadyNotification", JSON.stringify(serverReadyMessage, null, 2));
   MAIN_WEBSOCKET.server?.publish(matchId, encodeHydraWS(serverReadyMessage));
 
   MAIN_WEBSOCKET.server?.publish(matchId, encodeHydraWS(gameNotification));

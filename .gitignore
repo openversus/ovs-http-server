@@ -17,3 +17,4 @@ keys/
 *.pem
 /out
 .claude
+**/logs/**

@@ -143,7 +143,7 @@ export async function getActiveMatch(matchId: string) {
 export async function notifyActiveMatchCreated(gameplayConfig: GameplayConfig) {
   const EX = 60 * 20;
   const activeMatch: ActiveMatch = {
-    matchKey: randomBytes(24).toString("hex"),
+    matchKey: randomBytes(32).toString("base64"),
     state: "active",
     GameplayConfig: gameplayConfig,
   };
@@ -177,7 +177,7 @@ export async function notifyActiveMatchCreated(gameplayConfig: GameplayConfig) {
     },
   };
   
-  console.log("Publishing match found message to channel", JSON.stringify(msg, null, 2));
+  console.log("notifyActiveMatchCreated", JSON.stringify(msg, null, 2));
   await redisClient.publish(MATCHMAKING_MATCH_FOUND_CHANNEL, JSON.stringify(msg));
   return gameplayConfig.GameplayConfig.MatchId;
 }

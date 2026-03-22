@@ -229,6 +229,7 @@ const mvsi_match_routes = new Elysia();
 mvsi_match_routes.post(
   "/mvsi_register",
   async ({ body }) => {
+    console.log("Registering match", JSON.stringify(body, null, 2));
     const match = await getActiveMatch(body.matchId);
     if (match?.matchKey !== body.key) {
       return "";

@@ -220,22 +220,26 @@ async function onAllCharactersSelected(arenaId: string): Promise<void> {
 
       const activeMatch = await getActiveMatch(matchId);
       if (!activeMatch) continue;
+      const gameplayConfig = activeMatch.GameplayConfig.GameplayConfig;
 
       // Build updated Players map: overlay character/skin from arenaData
-      for (const pid of Object.keys(activeMatch.GameplayConfig.GameplayConfig.Players)) {
-        activeMatch.GameplayConfig.GameplayConfig.Players[pid].Skin =
-          arenaData.PlayerInfo[pid].Loadout.Skin;
-        activeMatch.GameplayConfig.GameplayConfig.Players[pid].Character =
-          arenaData.PlayerInfo[pid].Loadout.Character;
+      for (const pid of Object.keys(gameplayConfig.Players)) {
+        gameplayConfig.Players[pid].Skin = arenaData.PlayerInfo[pid].Loadout.Skin;
+        gameplayConfig.Players[pid].Character = arenaData.PlayerInfo[pid].Loadout.Character;
       }
 
       console.log(
         `PLAYERS`,
-        JSON.stringify(activeMatch.GameplayConfig.GameplayConfig.Players, null, 2),
+        JSON.stringify(gameplayConfig.Players, null, 2),
       );
 
+        await redisClient.json.set(`match:${matchId}`,
+          "$",
+          activeMatch as Parameters<typeof redisClient.json.set>[2],
+        );
+
       // Collect all ArenaPlayerInfo for players in this match
-      const matchPlayerIds = Object.keys(activeMatch.GameplayConfig.GameplayConfig.Players);
+      const matchPlayerIds = Object.keys(gameplayConfig.Players);
 
       const notification: RealtimeNotificationUsersMessage = {
         exclude: [],
@@ -245,7 +249,7 @@ async function onAllCharactersSelected(arenaId: string): Promise<void> {
             ArenaId: arenaId,
             MatchId: matchId,
             template_id: "ArenaInventoryLockedNotification",
-            GameplayConfig: activeMatch.GameplayConfig.GameplayConfig,
+            GameplayConfig: gameplayConfig,
             ArenaPlayerInfo: arenaData.PlayerInfo,
           },
           payload: {
@@ -256,6 +260,7 @@ async function onAllCharactersSelected(arenaId: string): Promise<void> {
           header: "",
         },
       };
+      console.log(`Notifying match ${matchId} ready to start, ${JSON.stringify(notification, null, 2)}`);
       await broadcastNotificationToUsers(notification);
     }
   }
@@ -317,12 +322,6 @@ async function notifyMatchReadyToStart(arenaId: string): Promise<void> {
       }
 
       const matchPlayerIds = Object.keys(activeMatch.GameplayConfig.GameplayConfig.Players);
-      const arenaPlayerInfo: Record<string, ArenaPlayerInfo> = {};
-      for (const pid of matchPlayerIds) {
-        if (arenaData.PlayerInfo[pid]) {
-          arenaPlayerInfo[pid] = arenaData.PlayerInfo[pid];
-        }
-      }
 
       const notification: RealtimeNotificationUsersMessage = {
         exclude: [],
@@ -332,8 +331,15 @@ async function notifyMatchReadyToStart(arenaId: string): Promise<void> {
             ArenaId: arenaId,
             MatchId: matchId,
             template_id: "ArenaInventoryLockedNotification",
-            GameplayConfig: activeMatch.GameplayConfig.GameplayConfig,
-            ArenaPlayerInfo: arenaPlayerInfo,
+            GameplayConfig: {
+              ...activeMatch.GameplayConfig.GameplayConfig,
+              Players: updatedPlayers,
+              ArenaModeInfo: {
+                ...activeMatch.GameplayConfig.GameplayConfig.ArenaModeInfo,
+                bReadyToStart: true,
+              },
+            },
+            ArenaPlayerInfo: arenaData.PlayerInfo,
           },
           payload: {
             custom_notification: "realtime",
@@ -343,7 +349,7 @@ async function notifyMatchReadyToStart(arenaId: string): Promise<void> {
           header: "",
         },
       };
-
+      console.log(`Notifying match ${matchId} ready to start, ${JSON.stringify(notification, null, 2)}`);
       await broadcastNotificationToUsers(notification);
     }
   }
@@ -652,17 +658,17 @@ export async function assembleArenaMatch(lobby: ArenaLobby): Promise<string | nu
     arenaData.TeamInfo[teamBId].Matches.push(matchId);
 
     // Build match Players for this 2v2
+    // PlayerIndex interleaves: Team 0 → 0, 2; Team 1 → 1, 3
     const matchPlayers: Record<string, PlayerConfig> = {};
     for (let j = 0; j < teamAPlayers.length; j++) {
       const pid = teamAPlayers[j];
       const playerConfig = playerConfigMap.get(pid)!;
-      if (playerConfig.bIsBot) {
-        continue;
-      }
+      const isBot = playerConfig.bIsBot;
       matchPlayers[pid] = {
         ...playerConfig,
-        Username: {},
-        PlayerIndex: j,
+        Username: isBot ? (playerConfig.Username as string) : {},
+        bUseCharacterDisplayName: false,
+        PlayerIndex: j * 2,
         TeamIndex: 0,
         Character: "",
         Skin: "",
@@ -676,13 +682,12 @@ export async function assembleArenaMatch(lobby: ArenaLobby): Promise<string | nu
     for (let j = 0; j < teamBPlayers.length; j++) {
       const pid = teamBPlayers[j];
       const playerConfig = playerConfigMap.get(pid)!;
-      if (playerConfig.bIsBot) {
-        continue;
-      }
+      const isBot = playerConfig.bIsBot;
       matchPlayers[pid] = {
         ...playerConfig,
-        Username: {},
-        PlayerIndex: j,
+        Username: isBot ? (playerConfig.Username as string) : {},
+        bUseCharacterDisplayName: false,
+        PlayerIndex: j * 2 + 1,
         TeamIndex: 1,
         Character: "",
         Skin: "",

@@ -1,5 +1,5 @@
 {
     "search.exclude": {
-        "**/logs": true
+        "**/logs/**": true
     }
 }

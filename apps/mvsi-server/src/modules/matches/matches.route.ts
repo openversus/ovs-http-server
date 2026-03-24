@@ -5,6 +5,7 @@ import { getCurrentCRC } from "../../data/config";
 import { MAIN_APP, MVSI_HYDRA_WITH_JWT } from "../../middleware/middlewares";
 import { HydraQueryPaginated } from "../../types";
 import { getLobby, getLobbyIdFromCode } from "../lobby/lobby.service";
+import { submitArenaMatchStats } from "../lobby/arena.lobby.service";
 import { getActiveMatch, notifyActiveMatchEnded } from "../matchmaking/matchmaking.service";
 
 const router = new Elysia().use(MVSI_HYDRA_WITH_JWT);
@@ -219,17 +220,34 @@ router.get(
   },
 );
 
-router.put("/ssc/invoke/submit_end_of_match_stats", async () => {
-  // TODO : Implement
-  return { body: {}, metadata: null, return_code: 0 };
-});
+router.put(
+  "/ssc/invoke/submit_end_of_match_stats",
+  async ({ body }) => {
+    console.log("----------------------RECEIVED END OF MATCH STATS-------------------------- -");
+    const match = await getActiveMatch(body.ContainerMatchId);
+    if (match?.GameplayConfig.ArenaId) {
+      await submitArenaMatchStats(body.ContainerMatchId, body.EndOfMatchStats, body.MatchLength);
+    }
+    return { body: {}, metadata: null, return_code: 0 };
+  },
+  {
+    body: t.Object({
+      ContainerMatchId: t.String(),
+      EndOfMatchStats: t.Object({
+        PlayerMissionUpdates: t.Record(t.String(), t.Record(t.String(), t.Number())),
+        Score: t.Array(t.Number()),
+        WinningTeamIndex: t.Number(),
+      }),
+      MatchLength: t.Number(),
+    }),
+  },
+);
 
 const mvsi_match_routes = new Elysia();
 
 mvsi_match_routes.post(
   "/mvsi_register",
   async ({ body }) => {
-    console.log("Registering match", JSON.stringify(body, null, 2));
     const match = await getActiveMatch(body.matchId);
     if (match?.matchKey !== body.key) {
       return "";
@@ -243,7 +261,9 @@ mvsi_match_routes.post(
         is_host: player.IsHost,
       };
     });
-    const humanCount = playerKeys.filter((k) => !match.GameplayConfig.GameplayConfig.Players[k].bIsBot).length;
+    const humanCount = playerKeys.filter(
+      (k) => !match.GameplayConfig.GameplayConfig.Players[k].bIsBot,
+    ).length;
     const result = {
       max_players: humanCount,
       match_duration: 36000,
@@ -268,7 +288,9 @@ mvsi_match_routes.post(
     }
     if (match) {
       await notifyActiveMatchEnded(
-        Object.keys(match.GameplayConfig.GameplayConfig.Players).map((p) => match.GameplayConfig.GameplayConfig.Players[p].AccountId),
+        Object.keys(match.GameplayConfig.GameplayConfig.Players).map(
+          (p) => match.GameplayConfig.GameplayConfig.Players[p].AccountId,
+        ),
         match.GameplayConfig.GameplayConfig.MatchId,
       );
       return "";

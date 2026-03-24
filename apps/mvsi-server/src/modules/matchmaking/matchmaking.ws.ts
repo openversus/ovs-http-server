@@ -72,7 +72,6 @@ function handleMatchFound(notification: MatchFoundChannelMessage) {
     header: "",
     cmd: "update",
   };
-  console.log("GameServerReadyNotification", JSON.stringify(serverReadyMessage, null, 2));
   MAIN_WEBSOCKET.server?.publish(matchId, encodeHydraWS(serverReadyMessage));
 
   MAIN_WEBSOCKET.server?.publish(matchId, encodeHydraWS(gameNotification));
@@ -131,7 +130,7 @@ async function handleOnMatchEnd(notification: MatchEndMessage) {
     client.data.sendHydra(client, data);
     setTimeout(() => {
       if (client.readyState === 1) {
-        sendRematchDecline(client, matchId);
+        //sendRematchDecline(client, matchId);
       }
     }, 1000);
   }

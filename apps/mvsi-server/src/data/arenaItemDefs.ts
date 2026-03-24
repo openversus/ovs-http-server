@@ -117,44 +117,99 @@ function loadArenaItems(): ArenaItemDef[] {
 
 export const ALL_ARENA_ITEMS: ArenaItemDef[] = loadArenaItems();
 
-// ─── Weighted selection ───────────────────────────────────────────────────────
+// ─── Rarity helpers ──────────────────────────────────────────────────────────
 
-function getItemWeight(item: ArenaItemDef, characterClass: number, round: number): number {
-  const base = Math.max(0, item.startingWeight + (round - 1) * item.weightPerRound);
-  const scalar = item.tagWeightScalars.find((s) => s.classIndex === characterClass);
-  if (!scalar) return base;
-  return Math.max(0, base * scalar.scalar + scalar.absolute);
+const RARITY_NAME_TO_NUM: Record<string, number> = {
+  Common: 0,
+  Uncommon: 1,
+  Rare: 2,
+  Epic: 3,
+  Legendary: 4,
+  Mythic: 5,
+};
+
+// Group items by rarity at load time for fast lookup
+const ITEMS_BY_RARITY: Record<number, ArenaItemDef[]> = {};
+for (const item of ALL_ARENA_ITEMS) {
+  if (!ITEMS_BY_RARITY[item.rarity]) ITEMS_BY_RARITY[item.rarity] = [];
+  ITEMS_BY_RARITY[item.rarity].push(item);
 }
 
-function weightedSample<T>(items: T[], weights: number[]): T {
-  const total = weights.reduce((a, b) => a + b, 0);
-  let r = Math.random() * total;
-  for (let i = 0; i < items.length; i++) {
-    r -= weights[i];
-    if (r <= 0) return items[i];
+// ─── Item pool generation ────────────────────────────────────────────────────
+
+/**
+ * Generate the shared item pool for an arena.
+ * For each rarity, randomly picks N items (with replacement) from the
+ * available items of that rarity. Returns slug → count.
+ */
+export function generateItemPool(
+  itemAmounts: Record<string, number>,
+): Record<string, number> {
+  const pool: Record<string, number> = {};
+
+  for (const [rarityName, totalCount] of Object.entries(itemAmounts)) {
+    const rarityNum = RARITY_NAME_TO_NUM[rarityName];
+    if (rarityNum === undefined) continue;
+    const items = ITEMS_BY_RARITY[rarityNum];
+    if (!items || items.length === 0) continue;
+
+    for (let i = 0; i < totalCount; i++) {
+      const item = items[Math.floor(Math.random() * items.length)];
+      pool[item.slug] = (pool[item.slug] ?? 0) + 1;
+    }
   }
-  return items[items.length - 1];
+
+  return pool;
 }
 
 // ─── Shop generation ──────────────────────────────────────────────────────────
 
 /**
  * Generate `count` shop options, each containing `itemsPerOption` items.
- * Items can repeat across options (and within an option) to allow levelling.
+ * Uses the shared item pool and ShopLevelWeights to determine rarity
+ * distribution per round. Items shown in shop are NOT removed from pool —
+ * only actual purchases remove items.
  */
 export function generateShopOptions(
-  characterClass: number,
+  pool: Record<string, number>,
+  shopLevelWeights: { RarityWeight: Record<string, number> }[],
   round: number,
   count = 6,
   itemsPerOption = 4,
 ): ShopOption[] {
-  const weights = ALL_ARENA_ITEMS.map((item) => getItemWeight(item, characterClass, round));
-  const options: ShopOption[] = [];
+  const weightIdx = Math.min(round - 1, shopLevelWeights.length - 1);
+  const rarityWeights = shopLevelWeights[weightIdx].RarityWeight;
 
+  // Build weighted rarity entries (only rarities with weight > 0)
+  const rarities: { num: number; weight: number }[] = [];
+  for (const [name, weight] of Object.entries(rarityWeights)) {
+    if (weight > 0) {
+      rarities.push({ num: RARITY_NAME_TO_NUM[name] ?? 0, weight });
+    }
+  }
+
+  function rollRarity(): number {
+    const total = rarities.reduce((a, r) => a + r.weight, 0);
+    let r = Math.random() * total;
+    for (const rar of rarities) {
+      r -= rar.weight;
+      if (r <= 0) return rar.num;
+    }
+    return rarities[rarities.length - 1].num;
+  }
+
+  const options: ShopOption[] = [];
   for (let i = 0; i < count; i++) {
     const shopItems: ShopItem[] = [];
     for (let j = 0; j < itemsPerOption; j++) {
-      const item = weightedSample(ALL_ARENA_ITEMS, weights);
+      const rarity = rollRarity();
+      // Prefer items that still have copies in the pool
+      const items = ITEMS_BY_RARITY[rarity] ?? [];
+      const available = items.filter((it) => (pool[it.slug] ?? 0) > 0);
+      const candidates = available.length > 0 ? available : items;
+      if (candidates.length === 0) continue;
+
+      const item = candidates[Math.floor(Math.random() * candidates.length)];
       shopItems.push({
         Item: {
           Slug: item.slug,

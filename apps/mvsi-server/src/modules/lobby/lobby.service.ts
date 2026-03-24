@@ -1191,7 +1191,6 @@ export async function addCustomGameBot(
     Skin: { AssetPath: string; Slug: string };
   },
 ) {
-  console.log("BOT INFO", JSON.stringify(botConfig, null, 2));
   const pdata = {
     Account: { id: botConfig.BotAccountID },
     AccountID: botConfig.BotAccountID,

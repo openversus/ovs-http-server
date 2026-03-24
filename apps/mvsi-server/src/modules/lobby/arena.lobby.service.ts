@@ -25,7 +25,7 @@ import type {
   ArenaTeamInfo,
   MatchStats,
 } from "./arena.lobby.types";
-import { generateShopOptions, getGemName, ALL_ARENA_ITEMS } from "../../data/arenaItemDefs";
+import { generateShopOptions, generateItemPool, getGemName, ALL_ARENA_ITEMS } from "../../data/arenaItemDefs";
 import { INVENTORY_DEFINITIONS } from "../../data/inventoryDefs";
 import { RealtimeNotificationUsersMessage } from "../notifications/notifications.types";
 
@@ -197,9 +197,14 @@ async function onAllCharactersSelected(arenaId: string): Promise<void> {
   }
 
   // ── Generate shops for each real player ───────────────────────────────────
+  const constants = getArenaConstants();
   for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
     if (info.bIsBot) continue;
-    const shopOptions = generateShopOptions(info.CharacterClass, arenaData.CurrentRound);
+    const shopOptions = generateShopOptions(
+      arenaData.ItemPool,
+      constants.ShopLevelWeights,
+      arenaData.CurrentRound,
+    );
     arenaData.PlayerInfo[pid].CurrentShopLocal = shopOptions;
   }
 
@@ -228,15 +233,11 @@ async function onAllCharactersSelected(arenaId: string): Promise<void> {
         gameplayConfig.Players[pid].Character = arenaData.PlayerInfo[pid].Loadout.Character;
       }
 
-      console.log(
-        `PLAYERS`,
-        JSON.stringify(gameplayConfig.Players, null, 2),
+      await redisClient.json.set(
+        `match:${matchId}`,
+        "$",
+        activeMatch as Parameters<typeof redisClient.json.set>[2],
       );
-
-        await redisClient.json.set(`match:${matchId}`,
-          "$",
-          activeMatch as Parameters<typeof redisClient.json.set>[2],
-        );
 
       // Collect all ArenaPlayerInfo for players in this match
       const matchPlayerIds = Object.keys(gameplayConfig.Players);
@@ -260,7 +261,6 @@ async function onAllCharactersSelected(arenaId: string): Promise<void> {
           header: "",
         },
       };
-      console.log(`Notifying match ${matchId} ready to start, ${JSON.stringify(notification, null, 2)}`);
       await broadcastNotificationToUsers(notification);
     }
   }
@@ -349,7 +349,6 @@ async function notifyMatchReadyToStart(arenaId: string): Promise<void> {
           header: "",
         },
       };
-      console.log(`Notifying match ${matchId} ready to start, ${JSON.stringify(notification, null, 2)}`);
       await broadcastNotificationToUsers(notification);
     }
   }
@@ -590,7 +589,7 @@ export async function assembleArenaMatch(lobby: ArenaLobby): Promise<string | nu
         bIsBot: isBot,
         ...(isBot
           ? {}
-          : { Stats: createArenaPlayerStats(), CurrentShop: [], CurrentShopLocal: null }),
+          : { Stats: createArenaPlayerStats(), CurrentShop: [] }),
       };
     }
   }
@@ -629,6 +628,7 @@ export async function assembleArenaMatch(lobby: ArenaLobby): Promise<string | nu
     CurrentRound: 1,
     TeamInfo: teamInfo,
     Players: realPlayerIds,
+    ItemPool: generateItemPool(arenaConstants.ItemAmountsByRarity),
   };
 
   // ── 8. Two-pass match assembly ────────────────────────────────────────────
@@ -640,8 +640,8 @@ export async function assembleArenaMatch(lobby: ArenaLobby): Promise<string | nu
   type PairInfo = {
     matchId: string;
     isRealMatch: boolean;
-    matchPlayers: Record<string, PlayerConfig>;
-    map: string;
+    teamAId: string;
+    teamBId: string;
   };
   const pairs: PairInfo[] = [];
 
@@ -653,104 +653,25 @@ export async function assembleArenaMatch(lobby: ArenaLobby): Promise<string | nu
     const isRealMatch = realInMatch.length > 0;
     const matchId = isRealMatch ? new ObjectId().toHexString() : `Sim${randomUUID()}`;
 
-    // Assign match IDs now — before any notification is sent
     arenaData.TeamInfo[teamAId].Matches.push(matchId);
     arenaData.TeamInfo[teamBId].Matches.push(matchId);
 
-    // Build match Players for this 2v2
-    // PlayerIndex interleaves: Team 0 → 0, 2; Team 1 → 1, 3
-    const matchPlayers: Record<string, PlayerConfig> = {};
-    for (let j = 0; j < teamAPlayers.length; j++) {
-      const pid = teamAPlayers[j];
-      const playerConfig = playerConfigMap.get(pid)!;
-      const isBot = playerConfig.bIsBot;
-      matchPlayers[pid] = {
-        ...playerConfig,
-        Username: isBot ? (playerConfig.Username as string) : {},
-        bUseCharacterDisplayName: false,
-        PlayerIndex: j * 2,
-        TeamIndex: 0,
-        Character: "",
-        Skin: "",
-        Buffs: [],
-        Handicap: 0,
-        PartyId: null,
-        PartyMember: null,
-        IsHost: false,
-      };
-    }
-    for (let j = 0; j < teamBPlayers.length; j++) {
-      const pid = teamBPlayers[j];
-      const playerConfig = playerConfigMap.get(pid)!;
-      const isBot = playerConfig.bIsBot;
-      matchPlayers[pid] = {
-        ...playerConfig,
-        Username: isBot ? (playerConfig.Username as string) : {},
-        bUseCharacterDisplayName: false,
-        PlayerIndex: j * 2 + 1,
-        TeamIndex: 1,
-        Character: "",
-        Skin: "",
-        Buffs: [],
-        Handicap: 0,
-        PartyId: null,
-        PartyMember: null,
-        IsHost: false,
-      };
-    }
-
-    pairs.push({ matchId, isRealMatch, matchPlayers, map: roundMap });
+    pairs.push({ matchId, isRealMatch, teamAId, teamBId });
   }
 
-  // Pass B: now that arenaData.TeamInfo.Matches is fully populated for every
-  // team, build and publish GameplayConfig for each real match pair.
-  for (const { matchId, isRealMatch, matchPlayers, map } of pairs) {
+  // Pass B: build and publish GameplayConfig for each real match pair.
+  for (const { matchId, isRealMatch, teamAId, teamBId } of pairs) {
     if (!isRealMatch) continue;
 
-    const gameplayConfig: GameplayConfig = {
-      ArenaId: arenaId,
-      ArenaData: arenaData,
-      ArenaConstants: arenaConstants,
-      GameplayConfig: {
-        ArenaModeInfo: {
-          FaceoffWaitTime: arenaConstants.FaceoffWaitTime,
-          bReadyToStart: false,
-          ShopTime: arenaConstants.CharacterSelectTime,
-        },
-        RiftNodeId: "",
-        ScoreEvaluationRule: "TargetScoreIsWin",
-        bIsPvP: true,
-        ScoreAttributionRule: "AttributeToAttacker",
-        MatchDurationSeconds: arenaConstants.RoundLength,
-        Created: new Date(),
-        EventQueueSlug: "",
-        bModeGrantsProgress: true,
-        TeamData: [],
-        Spectators: {},
-        bIsRanked: false,
-        bIsCustomGame: false,
-        Players: matchPlayers,
-        CustomGameSettings: {
-          bHazardsEnabled: true,
-          bShieldsEnabled: true,
-          MatchTime: 420,
-          NumRingouts: -1,
-        },
-        HudSettings: { bDisplayPortraits: true, bDisplayTimer: true, bDisplayStocks: true },
-        bIsCasualSpecial: false,
-        bAllowMapHazards: true,
-        RiftNodeAttunement: "Attunements:Any",
-        CountdownDisplay: "CountdownTypes:ArenaRound",
-        Cluster: "ec2-us-east-1-dokken",
-        WorldBuffs: [],
-        bIsTutorial: false,
-        MatchId: matchId,
-        bIsOnlineMatch: true,
-        ModeString: "arena",
-        Map: map,
-        bIsRift: false,
-      },
-    };
+    const gameplayConfig = await buildMatchGameplayConfig(
+      arenaId,
+      matchId,
+      arenaData,
+      arenaConstants,
+      teamAId,
+      teamBId,
+      roundMap,
+    );
 
     await notifyActiveMatchCreated(gameplayConfig);
   }
@@ -851,7 +772,6 @@ export async function arenaSelectCharacter(
   );
 
   if (result === "all_selected") {
-    console.log(`All characters selected for arena ${arenaLobbyId}, notifying matches...`);
     onAllCharactersSelected(arenaLobbyId).catch((err) =>
       logger.error(`onAllCharactersSelected error: ${err}`),
     );
@@ -887,7 +807,8 @@ export async function arenaPlayerShopClosed(
   if (!playerInfo || playerInfo.bIsBot) return {};
 
   // Already submitted — ignore duplicate calls
-  if (playerInfo.CurrentShopLocal !== null && (playerInfo.CurrentShopLocal?.length ?? -1) === 0) {
+  // "done" = CurrentShopLocal is an empty array; "not started" = undefined
+  if (Array.isArray(playerInfo.CurrentShopLocal) && playerInfo.CurrentShopLocal.length === 0) {
     return {};
   }
 
@@ -906,6 +827,7 @@ export async function arenaPlayerShopClosed(
   const freeRerolls = playerData.FreeShopRerolls;
   const rerollCost = Math.max(0, shopDetails.NumRerolls - freeRerolls) * playerData.ShopRerollCost;
   playerData.CurrencyAmount -= rerollCost;
+  currencySpent += rerollCost;
   stats.ShopRerolls += shopDetails.NumRerolls;
 
   for (const tx of shopDetails.ItemTransactions) {
@@ -923,8 +845,13 @@ export async function arenaPlayerShopClosed(
       currencySpent += cost;
       itemsPurchased++;
 
+      // Remove from shared item pool
+      const slug = shopItem.Item.Slug;
+      if (arenaData.ItemPool[slug] !== undefined && arenaData.ItemPool[slug] > 0) {
+        arenaData.ItemPool[slug] -= 1;
+      }
+
       // Find empty slot or existing slot with same slug (stack)
-      const slug = shopItem.Slug;
       const existingSlot = playerData.Inventory.find(
         (slot) => slot.Slug === slug && slot.Level < itemXpPerLevel.length,
       );
@@ -957,6 +884,9 @@ export async function arenaPlayerShopClosed(
       // Sell: clear inventory slot at ItemIndex
       const slot = playerData.Inventory[tx.ItemIndex];
       if (!slot || slot.Slug === "") continue;
+
+      // Return item to shared pool
+      arenaData.ItemPool[slot.Slug] = (arenaData.ItemPool[slot.Slug] ?? 0) + 1;
 
       playerData.CurrencyAmount += slot.SellValue;
       slot.Slug = "";
@@ -1002,7 +932,7 @@ export async function arenaPlayerShopClosed(
 
   const allDone = Object.values(refreshed.PlayerInfo)
     .filter((p) => !p.bIsBot)
-    .every((p) => p.CurrentShopLocal !== null && (p.CurrentShopLocal?.length ?? -1) === 0);
+    .every((p) => Array.isArray(p.CurrentShopLocal) && p.CurrentShopLocal.length === 0);
 
   if (allDone) {
     notifyMatchReadyToStart(arenaLobbyId).catch((err) =>
@@ -1013,13 +943,451 @@ export async function arenaPlayerShopClosed(
   return {};
 }
 
-export async function arenaCheckin(
-  _arenaParentId: string,
-  _arenaRound: number,
-  _containerMatchId: string,
-  _accountId: string,
+// ─── End-of-match stat submission (arena) ────────────────────────────────────
+
+export async function submitArenaMatchStats(
+  containerMatchId: string,
+  endOfMatchStats: {
+    PlayerMissionUpdates: Record<string, Record<string, number>>;
+    Score: number[];
+    WinningTeamIndex: number;
+  },
+  matchLength: number,
 ) {
+  // Find which arenaId owns this match
+  const activeMatch = await getActiveMatch(containerMatchId);
+  if (!activeMatch) return;
+  const arenaId = activeMatch.GameplayConfig.ArenaId;
+  if (!arenaId) return;
+
+  const stateKey = arenaStateKey(arenaId);
+  const arenaData = (await redisClient.json.get(stateKey)) as ArenaData | null;
+  if (!arenaData) return;
+
+  const matchPlayers = activeMatch.GameplayConfig.GameplayConfig.Players;
+  const { PlayerMissionUpdates, Score, WinningTeamIndex } = endOfMatchStats;
+
+  // ── Map stat keys to MatchStats fields ──────────────────────────────────
+  const statMap: Record<string, keyof MatchStats> = {
+    "Stat:Game:Character:TotalRingouts": "Ringouts",
+    "Stat:Game:Character:TotalDamageDealt": "Damage",
+    "Stat:Game:Character:TotalDamageAdded": "DamagedAdded",
+    "Stat:Game:Character:TotalDamageMitigated": "DamageMitigated",
+    "Stat:Game:Character:TotalKnockbackAdded": "KnockbackAdded",
+    "Stat:Game:Character:TotalKnockbackMitigated": "KnockbackMitigated",
+    "Stat:Game:Character:TotalHealingReceived": "HealingReceived",
+    "Stat:Game:Character:TotalGreyHealthReceived": "GreyHealthReceived",
+  };
+
+  // ── Update per-player Stats.MatchStats ──────────────────────────────────
+  for (const [pid, rawStats] of Object.entries(PlayerMissionUpdates)) {
+    const info = arenaData.PlayerInfo[pid];
+    if (!info?.Stats) continue;
+    for (const [key, field] of Object.entries(statMap)) {
+      if (rawStats[key] !== undefined) {
+        info.Stats.MatchStats[field] += rawStats[key];
+      }
+    }
+  }
+
+  // ── Determine which two teams fought in this match ──────────────────────
+  const teamIds = new Set<string>();
+  for (const pid of Object.keys(matchPlayers)) {
+    const info = arenaData.PlayerInfo[pid];
+    if (info) teamIds.add(info.TeamId);
+  }
+  const teamIdArr = [...teamIds];
+  if (teamIdArr.length !== 2) {
+    // Unexpected — persist what we have and bail
+    await redisClient.json.set(stateKey, "$", arenaData as Parameters<typeof redisClient.json.set>[2]);
+    return;
+  }
+
+  // Map WinningTeamIndex (0/1 from the match) to the actual arena teamId.
+  // Team 0 in the match is the first team, team 1 is the second.
+  // We need to figure out which teamId corresponds to WinningTeamIndex.
+  // TeamIndex 0 in the match = first team players, TeamIndex 1 = second team players.
+  const teamByMatchIdx: [string, string] = [teamIdArr[0], teamIdArr[1]];
+  // Verify by checking a player's TeamIndex in the match
+  for (const [pid, playerCfg] of Object.entries(matchPlayers)) {
+    const info = arenaData.PlayerInfo[pid];
+    if (info) {
+      teamByMatchIdx[playerCfg.TeamIndex] = info.TeamId;
+    }
+  }
+
+  const winTeamId = teamByMatchIdx[WinningTeamIndex];
+  const loseTeamId = teamByMatchIdx[WinningTeamIndex === 0 ? 1 : 0];
+
+  // ── Update team stats ───────────────────────────────────────────────────
+  const winTeam = arenaData.TeamInfo[winTeamId];
+  const loseTeam = arenaData.TeamInfo[loseTeamId];
+
+  if (winTeam) {
+    winTeam.Stats.Wins += 1;
+    winTeam.Stats.WinStreak += 1;
+    winTeam.Stats.LoseStreak = 0;
+  }
+  if (loseTeam) {
+    loseTeam.Stats.Losses += 1;
+    loseTeam.Stats.LoseStreak += 1;
+    loseTeam.Stats.WinStreak = 0;
+
+    // Reduce LifeRemaining for the losing team based on round
+    const constants = getArenaConstants();
+    const round = arenaData.CurrentRound;
+    const healthIdx = Math.min(round - 1, constants.HealthRoundValues.length - 1);
+    const damage = constants.HealthRoundValues[healthIdx];
+    loseTeam.LifeRemaining = Math.max(0, loseTeam.LifeRemaining - damage);
+  }
+
+  // Aggregate MatchStats per team from their players
+  for (const tid of teamIdArr) {
+    const team = arenaData.TeamInfo[tid];
+    if (!team) continue;
+    // Reset team match stats for this round (accumulate from players)
+    const teamMatchStats = createMatchStats();
+    for (const pid of team.Players) {
+      const info = arenaData.PlayerInfo[pid];
+      if (!info?.Stats) continue;
+      for (const key of Object.keys(teamMatchStats) as (keyof MatchStats)[]) {
+        teamMatchStats[key] += info.Stats.MatchStats[key];
+      }
+    }
+    team.Stats.MatchStats = teamMatchStats;
+  }
+
+  await redisClient.json.set(stateKey, "$", arenaData as Parameters<typeof redisClient.json.set>[2]);
+}
+
+// ─── Reusable match-pairing helpers ──────────────────────────────────────────
+
+/**
+ * Pair teams for a new round. Returns array of [teamAId, teamBId] pairs.
+ * Tries to avoid rematches by checking HasPlayedTeam.
+ * Only pairs teams that are still alive (LifeRemaining > 0).
+ */
+function pairTeamsForRound(arenaData: ArenaData): [string, string][] {
+  const aliveTeamIds = Object.values(arenaData.TeamInfo)
+    .filter((t) => t.LifeRemaining > 0)
+    .map((t) => t.TeamId);
+
+  // Sort by TeamIndex for consistency
+  aliveTeamIds.sort(
+    (a, b) => arenaData.TeamInfo[a].TeamIndex - arenaData.TeamInfo[b].TeamIndex,
+  );
+
+  const paired = new Set<string>();
+  const pairs: [string, string][] = [];
+
+  // First pass: try to pair with teams not yet faced
+  for (const teamId of aliveTeamIds) {
+    if (paired.has(teamId)) continue;
+    const team = arenaData.TeamInfo[teamId];
+    const opponent = aliveTeamIds.find(
+      (otherId) =>
+        otherId !== teamId &&
+        !paired.has(otherId) &&
+        !team.HasPlayedTeam[otherId],
+    );
+    if (opponent) {
+      pairs.push([teamId, opponent]);
+      paired.add(teamId);
+      paired.add(opponent);
+    }
+  }
+
+  // Second pass: pair remaining with anyone available
+  for (const teamId of aliveTeamIds) {
+    if (paired.has(teamId)) continue;
+    const opponent = aliveTeamIds.find(
+      (otherId) => otherId !== teamId && !paired.has(otherId),
+    );
+    if (opponent) {
+      pairs.push([teamId, opponent]);
+      paired.add(teamId);
+      paired.add(opponent);
+    }
+  }
+
+  return pairs;
+}
+
+/**
+ * Build a GameplayConfig for a 2v2 match between two arena teams.
+ * Reusable for both initial assembly and next-round match creation.
+ */
+async function buildMatchGameplayConfig(
+  arenaId: string,
+  matchId: string,
+  arenaData: ArenaData,
+  arenaConstants: ArenaConstants,
+  teamAId: string,
+  teamBId: string,
+  map: string,
+): Promise<GameplayConfig> {
+  const teamAPlayers = arenaData.TeamInfo[teamAId].Players;
+  const teamBPlayers = arenaData.TeamInfo[teamBId].Players;
+
+  const matchPlayers: Record<string, any> = {};
+
+  for (let j = 0; j < teamAPlayers.length; j++) {
+    const pid = teamAPlayers[j];
+    const config = await getPlayerConfig(pid);
+    if (!config) continue;
+    const isBot = config.bIsBot;
+    const info = arenaData.PlayerInfo[pid];
+    matchPlayers[pid] = {
+      ...config,
+      Username: isBot ? (config.Username as string) : {},
+      bUseCharacterDisplayName: false,
+      PlayerIndex: j * 2,
+      TeamIndex: 0,
+      Character: info?.Loadout.Character ?? "",
+      Skin: info?.Loadout.Skin ?? "",
+      Buffs: [],
+      Handicap: 0,
+      PartyId: null,
+      PartyMember: null,
+      IsHost: false,
+    };
+  }
+
+  for (let j = 0; j < teamBPlayers.length; j++) {
+    const pid = teamBPlayers[j];
+    const config = await getPlayerConfig(pid);
+    if (!config) continue;
+    const isBot = config.bIsBot;
+    const info = arenaData.PlayerInfo[pid];
+    matchPlayers[pid] = {
+      ...config,
+      Username: isBot ? (config.Username as string) : {},
+      bUseCharacterDisplayName: false,
+      PlayerIndex: j * 2 + 1,
+      TeamIndex: 1,
+      Character: info?.Loadout.Character ?? "",
+      Skin: info?.Loadout.Skin ?? "",
+      Buffs: [],
+      Handicap: 0,
+      PartyId: null,
+      PartyMember: null,
+      IsHost: false,
+    };
+  }
+
+  return {
+    ArenaId: arenaId,
+    ArenaData: arenaData,
+    ArenaConstants: arenaConstants,
+    GameplayConfig: {
+      ArenaModeInfo: {
+        FaceoffWaitTime: arenaConstants.FaceoffWaitTime,
+        bReadyToStart: false,
+        ShopTime: arenaConstants.CharacterSelectTime,
+      },
+      RiftNodeId: "",
+      ScoreEvaluationRule: "TargetScoreIsWin",
+      bIsPvP: true,
+      ScoreAttributionRule: "AttributeToAttacker",
+      MatchDurationSeconds: arenaConstants.RoundLength,
+      Created: new Date(),
+      EventQueueSlug: "",
+      bModeGrantsProgress: true,
+      TeamData: [],
+      Spectators: {},
+      bIsRanked: false,
+      bIsCustomGame: false,
+      Players: matchPlayers,
+      CustomGameSettings: {
+        bHazardsEnabled: true,
+        bShieldsEnabled: true,
+        MatchTime: 420,
+        NumRingouts: -1,
+      },
+      HudSettings: { bDisplayPortraits: true, bDisplayTimer: true, bDisplayStocks: true },
+      bIsCasualSpecial: false,
+      bAllowMapHazards: true,
+      RiftNodeAttunement: "Attunements:Any",
+      CountdownDisplay: "CountdownTypes:ArenaRound",
+      Cluster: "ec2-us-east-1-dokken",
+      WorldBuffs: [],
+      bIsTutorial: false,
+      MatchId: matchId,
+      bIsOnlineMatch: true,
+      ModeString: "arena",
+      Map: map,
+      bIsRift: false,
+    },
+  };
+}
+
+// ─── Arena check-in ──────────────────────────────────────────────────────────
+
+/**
+ * Per-player checkin: calculate currency, generate shop, mark as checked in.
+ * Uses CurrentShopLocal non-empty as "checked in" marker.
+ * When all real players have checked in, triggers next round match creation.
+ */
+export async function arenaCheckin(
+  arenaParentId: string,
+  arenaRound: number,
+  containerMatchId: string,
+  accountId: string,
+) {
+  const stateKey = arenaStateKey(arenaParentId);
+  const arenaData = (await redisClient.json.get(stateKey)) as ArenaData | null;
+  if (!arenaData) return {};
+
+  const playerInfo = arenaData.PlayerInfo[accountId];
+  if (!playerInfo || playerInfo.bIsBot) return {};
+
+  // Already checked in — CurrentShopLocal is non-empty array
+  if (Array.isArray(playerInfo.CurrentShopLocal) && playerInfo.CurrentShopLocal.length > 0) {
+    return {};
+  }
+
+  const constants = getArenaConstants();
+  const round = arenaData.CurrentRound;
+  const roundIdx = Math.min(round - 1, constants.CurrencyPerRound.length - 1);
+  const baseCurrency = constants.CurrencyPerRound[roundIdx];
+
+  const teamInfo = arenaData.TeamInfo[playerInfo.TeamId];
+  if (!teamInfo) return {};
+
+  // ── Calculate currency payout for this player ───────────────────────────
+  let payout = baseCurrency;
+
+  // Ringout bonus
+  const teamRingouts = teamInfo.Stats.MatchStats.Ringouts;
+  const ringoutIdx = Math.min(teamRingouts, constants.CurrencyPerRingout.length - 1);
+  payout += constants.CurrencyPerRingout[ringoutIdx];
+
+  // Win/Lose + streak bonuses
+  if (teamInfo.Stats.WinStreak > 0) {
+    payout += constants.CurrencyForWin;
+    const streakIdx = Math.min(teamInfo.Stats.WinStreak, constants.CurrencyForWinStreak.length - 1);
+    payout += constants.CurrencyForWinStreak[streakIdx];
+  }
+  if (teamInfo.Stats.LoseStreak > 0) {
+    const streakIdx = Math.min(teamInfo.Stats.LoseStreak, constants.CurrencyForLoseStreak.length - 1);
+    payout += constants.CurrencyForLoseStreak[streakIdx];
+  }
+
+  // Interest (calculated on gold BEFORE payout)
+  const interest = Math.min(
+    Math.floor(playerInfo.PlayerData.CurrencyAmount / playerInfo.PlayerData.InterestPer),
+    constants.MaxInterest,
+  );
+  payout += interest;
+  if (playerInfo.Stats) {
+    playerInfo.Stats.InterestGained += interest;
+  }
+
+  playerInfo.PlayerData.CurrencyAmount += payout;
+
+  // ── Generate new shop for this player ───────────────────────────────────
+  const shopOptions = generateShopOptions(
+    arenaData.ItemPool,
+    constants.ShopLevelWeights,
+    round,
+  );
+  playerInfo.CurrentShopLocal = shopOptions;
+
+  // Persist
+  await redisClient.json.set(
+    stateKey,
+    "$",
+    arenaData as Parameters<typeof redisClient.json.set>[2],
+  );
+
+  // ── Check if all real players have now checked in ───────────────────────
+  const refreshed = (await redisClient.json.get(stateKey)) as ArenaData | null;
+  if (!refreshed) return {};
+
+  const allCheckedIn = Object.values(refreshed.PlayerInfo)
+    .filter((p) => !p.bIsBot)
+    .every((p) => Array.isArray(p.CurrentShopLocal) && p.CurrentShopLocal.length > 0);
+
+  if (allCheckedIn) {
+    onAllPlayersCheckedIn(arenaParentId).catch((err) =>
+      logger.error(`onAllPlayersCheckedIn error: ${err}`),
+    );
+  }
+
   return {};
+}
+
+async function onAllPlayersCheckedIn(arenaId: string): Promise<void> {
+  const stateKey = arenaStateKey(arenaId);
+  const arenaData = (await redisClient.json.get(stateKey)) as ArenaData | null;
+  if (!arenaData) return;
+
+  const arenaConstants = getArenaConstants();
+
+  // Advance round
+  arenaData.CurrentRound += 1;
+
+  // ── Pair teams for the new round ────────────────────────────────────────
+  const pairs = pairTeamsForRound(arenaData);
+  const roundMap = getRandomMap2v2();
+
+  // Clear old match references and update HasPlayedTeam / RoundOpponents
+  for (const team of Object.values(arenaData.TeamInfo)) {
+    team.Matches = [];
+    team.RoundOpponents = [];
+    team.PriorMap = roundMap;
+  }
+
+  // ── Create matches for each pair ────────────────────────────────────────
+  type PairMatch = {
+    matchId: string;
+    isRealMatch: boolean;
+    teamAId: string;
+    teamBId: string;
+  };
+  const pairMatches: PairMatch[] = [];
+
+  for (const [teamAId, teamBId] of pairs) {
+    const teamAPlayers = arenaData.TeamInfo[teamAId].Players;
+    const teamBPlayers = arenaData.TeamInfo[teamBId].Players;
+    const realInMatch = [...teamAPlayers, ...teamBPlayers].filter((pid) => !isBotId(pid));
+    const isRealMatch = realInMatch.length > 0;
+    const matchId = isRealMatch ? new ObjectId().toHexString() : `Sim${randomUUID()}`;
+
+    // Assign match IDs and update HasPlayedTeam
+    arenaData.TeamInfo[teamAId].Matches.push(matchId);
+    arenaData.TeamInfo[teamBId].Matches.push(matchId);
+    arenaData.TeamInfo[teamAId].RoundOpponents.push(teamBId);
+    arenaData.TeamInfo[teamBId].RoundOpponents.push(teamAId);
+    arenaData.TeamInfo[teamAId].HasPlayedTeam[teamBId] = true;
+    arenaData.TeamInfo[teamBId].HasPlayedTeam[teamAId] = true;
+
+    pairMatches.push({ matchId, isRealMatch, teamAId, teamBId });
+  }
+
+  // Persist arenaData before sending notifications (so ArenaData in GameplayConfig is up-to-date)
+  await redisClient.json.set(
+    stateKey,
+    "$",
+    arenaData as Parameters<typeof redisClient.json.set>[2],
+  );
+
+  // ── Build and publish GameplayConfig for each real match ────────────────
+  for (const { matchId, isRealMatch, teamAId, teamBId } of pairMatches) {
+    if (!isRealMatch) continue;
+
+    const gameplayConfig = await buildMatchGameplayConfig(
+      arenaId,
+      matchId,
+      arenaData,
+      arenaConstants,
+      teamAId,
+      teamBId,
+      roundMap,
+    );
+
+    await notifyActiveMatchCreated(gameplayConfig, "OnArenaNextMatch");
+  }
 }
 
 export async function arenaRerollCharacters(arenaLobbyId: string, accountId: string) {

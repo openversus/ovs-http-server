@@ -56,8 +56,17 @@ export type ArenaPlayerInfo = {
   bIsBot: boolean;
   Stats?: ArenaPlayerStats;
   CurrentShop?: any[];
-  CurrentShopLocal?: any[] | null;
+  CurrentShopLocal?: ArenaCurrentShopLocal[];
   BotSettings?: { BuildType: string };
+};
+
+export type ArenaCurrentShopLocal = {
+  CurrentShop: ArenaCurrentShop[];
+};
+
+export type ArenaCurrentShop = {
+  Item: ArenaInventorySlot;
+  Cost: number;
 };
 
 export type ArenaTeamInfo = {
@@ -89,6 +98,7 @@ export type ArenaData = {
   CurrentRound: number;
   TeamInfo: Record<string, ArenaTeamInfo>;
   Players: string[];
+  ItemPool: Record<string, number>;
 };
 
 export type ArenaConstants = {

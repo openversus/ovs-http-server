@@ -10,7 +10,7 @@ import {
   type RedisTeamEntry,
   type MATCH_FOUND_NOTIFICATION,
 } from "../../config/redis";
-import { logger } from "../../config/logger";
+import { logger, logwrapper } from "../../config/logger";
 import env from "../../env/env";
 import { GAME_MODES_CONFIG } from "./gameModes.data";
 import { MAP_ROTATIONS } from "./maps.data";
@@ -29,10 +29,15 @@ import {
   type PartyLobby,
   type PlayerConfig,
 } from "./lobby.types";
+import { IDeployInfo, DeployInfo, getDefaultDeployInfo } from "../../services/rollbackService";
 
 const logPrefix = "[CustomLobby.Service]:";
 const LOBBY_EX = 2 * 24 * 60 * 60; // 2 days
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+const useOnDemandRollback: boolean = env.ON_DEMAND_ROLLBACK === 1;
+let customLobbyUDPPortLow: number = useOnDemandRollback ? env.ON_DEMAND_ROLLBACK_PORT_LOW : env.ROLLBACK_UDP_PORT_LOW
+let customLobbyUDPPortHigh: number = useOnDemandRollback ? env.ON_DEMAND_ROLLBACK_PORT_HIGH : env.ROLLBACK_UDP_PORT_HIGH
 
 function lobbyKey(lobbyId: string) {
   return `custom_lobby_ssc:${lobbyId}`;
@@ -1719,7 +1724,17 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
   };
 
   // Store match in Redis
-  const rollbackPort = randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH);
+  let tempCustomLobbyRollbackPort: number = 0;
+  if (useOnDemandRollback)
+  {
+    tempCustomLobbyRollbackPort = randomInt(customLobbyUDPPortLow, customLobbyUDPPortHigh);
+  }
+  else
+  {
+    tempCustomLobbyRollbackPort = randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH);
+  }
+
+  const rollbackPort = tempCustomLobbyRollbackPort;
   const match: RedisMatch = {
     matchId,
     resultId,
@@ -1734,7 +1749,23 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
   await redisUpdateMatch(matchId, match);
 
   // Select map
-  const map = randomMap?.Map ?? "";
+  const map = randomMap?.Map ?? "M003_V1";
+
+  if (useOnDemandRollback) {
+    logwrapper.info(`${logPrefix} Deploying rollback server for match ${matchId} with port: ${match.rollbackPort}`)
+    let deployInfo: IDeployInfo = getDefaultDeployInfo();
+    deployInfo.port = rollbackPort;
+    deployInfo.entrypoint = deployInfo.entrypoint.replace("CHANGEMEDEFAULTPORT", deployInfo.port.toString());
+    deployInfo.ovs_server = env.OVS_SERVER;
+    const isDeployed = DeployInfo.Deploy(deployInfo);
+    if (!isDeployed) {
+      logger.error(`${logPrefix} Failed to deploy rollback server for match ${matchId} on port ${deployInfo.port}`);
+      // Depending on the desired behavior, you might want to:
+      // - Mark the match as failed and notify players
+      // - Fall back to an internal rollback server if available
+      // For now, we'll just log the error and proceed, but this means the match will likely fail when clients try to connect.
+    }
+  }
 
   // Collect player buffs for injection into match config
   const playerBuffsMap: Record<string, string[]> = {};

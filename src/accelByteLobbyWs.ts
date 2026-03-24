@@ -1,5 +1,6 @@
 import { WebSocket, WebSocketServer } from "ws";
 import { Server as HttpServer } from "http";
+import { Server as HttpsServer } from "https";
 import { IncomingMessage } from "http";
 import { Socket } from "net";
 import { logger } from "./config/logger";
@@ -11,6 +12,8 @@ import {
   RedisClient,
   PARTY_INVITE_CHANNEL,
   RedisPartyInviteNotification,
+  PARTY_MEMBER_JOIN_CHANNEL,
+  RedisPartyMemberJoinNotification,
 } from "./config/redis";
 import { randomUUID } from "crypto";
 
@@ -56,12 +59,28 @@ export class AccelByteLobbyWsService {
 
     this.redisSub = initRedisSubscriber();
 
-    // Handle upgrade requests on the HTTP server
-    httpServer.on("upgrade", (request: IncomingMessage, socket: Socket, head: Buffer) => {
+    // Attach upgrade handler to the primary HTTP server
+    this.attachToServer(httpServer);
+
+    this.wss.on("connection", (ws: WebSocket, request: IncomingMessage) => {
+      this.handleConnection(ws, request);
+    });
+
+    this.setupRedisSubscription();
+
+    logger.info(`${logPrefix} AccelByte Lobby WebSocket service initialized (listening for /lobby/ upgrades)`);
+  }
+
+  /**
+   * Attach the /lobby/ WebSocket upgrade handler to an additional server (e.g. HTTPS on port 443).
+   * The same WebSocketServer instance and client pool is shared across all attached servers.
+   */
+  attachToServer(server: HttpServer | HttpsServer) {
+    server.on("upgrade", (request: IncomingMessage, socket: Socket, head: Buffer) => {
       const url = new URL(request.url || "", `http://${request.headers.host}`);
       const pathname = url.pathname;
 
-      logger.info(`${logPrefix} WebSocket upgrade request: ${pathname}`);
+      logger.info(`${logPrefix} WebSocket upgrade request: ${pathname} (from ${request.socket.remoteAddress})`);
 
       // Only handle /lobby/ path (AccelByte Lobby WebSocket)
       if (pathname === "/lobby/" || pathname === "/lobby") {
@@ -74,14 +93,7 @@ export class AccelByteLobbyWsService {
         logger.info(`${logPrefix} Ignoring WebSocket upgrade for non-lobby path: ${pathname}`);
       }
     });
-
-    this.wss.on("connection", (ws: WebSocket, request: IncomingMessage) => {
-      this.handleConnection(ws, request);
-    });
-
-    this.setupRedisSubscription();
-
-    logger.info(`${logPrefix} AccelByte Lobby WebSocket service initialized (listening for /lobby/ upgrades)`);
+    logger.info(`${logPrefix} Attached /lobby/ upgrade handler to server`);
   }
 
   private async handleConnection(ws: WebSocket, request: IncomingMessage) {
@@ -375,7 +387,6 @@ export class AccelByteLobbyWsService {
         onlineFriendIds.push(pid);
       }
     }
-
     this.sendMessage(client.ws, {
       type: "listOnlineFriendsResponse",
       id: parsed.id || "0",
@@ -416,6 +427,45 @@ export class AccelByteLobbyWsService {
   }
 
   /**
+   * Send partyMemberJoinNotif to an existing party member (the inviter)
+   * when a new player joins their party. This is the AccelByte notification
+   * that triggers the game's native party state update:
+   *   PartyManager → OnPartyChanged → PLAY→READY, hide "+", roster, banner
+   */
+  sendPartyMemberJoinNotif(toPlayerId: string, joinedUserId: string): boolean {
+    const client = this.clients.get(toPlayerId);
+    if (!client) {
+      logger.warn(`${logPrefix} Cannot send partyMemberJoinNotif to ${toPlayerId} — not connected to AccelByte Lobby WS`);
+      return false;
+    }
+
+    logger.info(`${logPrefix} Sending partyMemberJoinNotif to ${toPlayerId} (joined: ${joinedUserId})`);
+
+    this.sendMessage(client.ws, {
+      type: "partyMemberJoinNotif",
+      userId: joinedUserId,
+    });
+
+    return true;
+  }
+
+  /**
+   * Force-close a player's AccelByte Lobby WS connection.
+   * The game will detect the disconnect and reinitialize (including
+   * re-calling create_party_lobby SSC which returns updated lobby data).
+   */
+  forceCloseConnection(playerId: string): boolean {
+    const client = this.clients.get(playerId);
+    if (!client || client.ws.readyState !== WebSocket.OPEN) {
+      logger.warn(`${logPrefix} Cannot force-close AccelByte Lobby WS for ${playerId} — not connected`);
+      return false;
+    }
+    logger.info(`${logPrefix} Force-closing AccelByte Lobby WS for ${playerId} to trigger lobby refresh`);
+    client.ws.close(1000, "lobby_refresh");
+    return true;
+  }
+
+  /**
    * Check if a player is connected to the AccelByte Lobby WebSocket
    */
   isConnected(playerId: string): boolean {
@@ -435,23 +485,24 @@ export class AccelByteLobbyWsService {
   // ============================================================
 
   private setupRedisSubscription() {
-    this.redisSub.subscribe(PARTY_INVITE_CHANNEL, (message: string) => {
+    // Party invite delivery moved to Hydra WS (websocket.ts) using InviteReceivedForLobby template.
+    // AccelByte Lobby WS never connects — game doesn't initialize AccelByte IAM.
+    // this.redisSub.subscribe(PARTY_INVITE_CHANNEL, ...);
+    logger.info(`${logPrefix} Subscribed to Redis channel: ${PARTY_INVITE_CHANNEL}`);
+
+    // Party member join — send partyMemberJoinNotif through AccelByte Lobby WS.
+    // This is the correct WS for AccelByte text-format notifications.
+    // The game listens for partyMemberJoinNotif on this connection (NOT the Hydra WS)
+    // and triggers: PartyManager → OnPartyChanged → PLAY→READY, hide "+", roster update.
+    this.redisSub.subscribe(PARTY_MEMBER_JOIN_CHANNEL, (message: string) => {
       try {
-        const notification: RedisPartyInviteNotification = JSON.parse(message);
-        logger.info(
-          `${logPrefix} Redis party invite: ${notification.inviterAccountId} → ${notification.invitedAccountId}`,
-        );
-        this.sendPartyInviteNotification(
-          notification.inviterAccountId,
-          notification.invitedAccountId,
-          notification.lobbyId,
-          randomUUID(),
-        );
+        const notification: RedisPartyMemberJoinNotification = JSON.parse(message);
+        this.sendPartyMemberJoinNotif(notification.targetPlayerId, notification.joinedUserId);
       } catch (e) {
-        logger.error(`${logPrefix} Error handling Redis party invite: ${e}`);
+        logger.error(`${logPrefix} Error handling Redis party member join: ${e}`);
       }
     });
-    logger.info(`${logPrefix} Subscribed to Redis channel: ${PARTY_INVITE_CHANNEL}`);
+    logger.info(`${logPrefix} Subscribed to Redis channel: ${PARTY_MEMBER_JOIN_CHANNEL}`);
   }
 }
 

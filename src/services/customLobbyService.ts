@@ -374,6 +374,39 @@ export async function moveToPlayer(
   return { success: true };
 }
 
+export async function kickPlayer(
+  requesterId: string,
+  targetId: string,
+): Promise<{ success: boolean } | { error: string }> {
+  const code = await getPlayerLobby(requesterId);
+  if (!code) return { error: "Not in a lobby." };
+
+  const lobby = await getLobby(code);
+  if (!lobby) return { error: "Lobby not found." };
+
+  if (lobby.leaderId !== requesterId) {
+    return { error: "Only the lobby leader can kick players." };
+  }
+
+  if (requesterId === targetId) {
+    return { error: "You can't kick yourself." };
+  }
+
+  const targetPlayer = lobby.players.find((p) => p.playerId === targetId);
+  if (!targetPlayer) {
+    return { error: "Player not in this lobby." };
+  }
+
+  // Remove the player
+  lobby.players = lobby.players.filter((p) => p.playerId !== targetId);
+  await deletePlayerLobby(targetId);
+  await saveLobby(lobby);
+  await publishUpdate(code);
+
+  logger.info(`${logPrefix} ${targetPlayer.username} (${targetId}) kicked from lobby ${code} by leader ${requesterId}`);
+  return { success: true };
+}
+
 export async function toggleReady(
   playerId: string,
 ): Promise<{ success: boolean; ready: boolean } | { error: string }> {
@@ -597,8 +630,8 @@ export async function startMatch(
     const spectatorEntries: RedisTeamEntry[] = spectators.map((p, idx) => ({
       playerId: p.playerId,
       partyId: matchId,
-      playerIndex: allPlayers.length + idx,
-      teamIndex: 0 as 0 | 1, // doesn't matter for spectators
+      playerIndex: 8888, // rollback server detects spectators by playerIndex 8888
+      teamIndex: 0 as 0 | 1,
       isHost: false,
       ip: p.ip,
       isSpectator: true,
@@ -1018,7 +1051,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
     const rematchSpectatorEntries: RedisTeamEntry[] = rematchSpectators.map((p, idx) => ({
       playerId: p.playerId,
       partyId: matchId,
-      playerIndex: allPlayers.length + idx,
+      playerIndex: 8888, // rollback server detects spectators by playerIndex 8888
       teamIndex: 0 as 0 | 1,
       isHost: false,
       ip: p.ip,

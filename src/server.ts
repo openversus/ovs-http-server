@@ -9,8 +9,9 @@ import * as path from "path";
 import { hydraTokenMiddleware } from "./middleware/auth";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
-import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby, redisGameServerInstanceReady } from "./config/redis";
+import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby, redisGameServerInstanceReady, redisSetPendingJoinLobby } from "./config/redis";
 import { getLeaderboard, getPlayerRank, processMatchLeave } from "./services/eloService";
+import { performGenuineLeave } from "./ssc/ssc";
 import {
   createLobby,
   joinLobby,
@@ -23,6 +24,7 @@ import {
   getLobbyWithStatus,
   moveToSpectator,
   moveToPlayer,
+  kickPlayer,
 } from "./services/customLobbyService";
 import { getMapList } from "./data/maps";
 import { GAME_SERVER_PORT } from "./game/udp";
@@ -41,8 +43,8 @@ import * as AuthUtils from "./utils/auth";
 import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { NameGenerator } from "./utils/namegeneration";
-import { initAccelByteLobbyWs } from "./accelByteLobbyWs";
 import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
+import { initAccelByteLobbyWs, accelByteLobbyWs } from "./accelByteLobbyWs";
 
 // HTML Rendering
 const handlebars = require("handlebars");
@@ -190,6 +192,16 @@ app.post("/namechange", async (req, res, next) => {
       name = name.substring(0, 24);
     }
 
+    // Check for unique name (case-insensitive)
+    if (!error) {
+      const existing = await PlayerTesterModel.findOne({
+        name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+      });
+      if (existing && existing.ip !== ip) {
+        error = `The name "${name}" is already taken by another player. Please choose a different name.`;
+      }
+    }
+
     // Upsert the player's name based on IP
     let filtered;
     if(!error) {
@@ -235,7 +247,7 @@ app.post("/ovs_register", async (req, res, next) => {
     return;
   }
   logwrapper.verbose(`${logPrefix} OVS GET REGISTRY body: ${JSON.stringify(body)}`);
-  
+
   let rollbackHostname: string = "Unknown";
   if (body.hostname)
   {
@@ -287,7 +299,7 @@ app.post("/ovs_end_match", async (req, res, next) => {
     return;
   }
   logwrapper.verbose(`${logPrefix} OVS END MATCH body: ${JSON.stringify(body)}`);
-  
+
   let rollbackHostname: string = "Unknown";
   if (body.hostname)
   {
@@ -300,7 +312,7 @@ app.post("/ovs_end_match", async (req, res, next) => {
     res.send("");
     return;
   }
-  
+
   logwrapper.verbose(`${logPrefix} OVS END MATCH body: ${JSON.stringify(body)}`);
   if (config) {
     await redisPublisdEndOfMatch(
@@ -548,6 +560,85 @@ app.post("/party/join", async (req, res) => {
 // Password matchmaking removed — use /custom for custom lobbies instead
 
 // ============================================================
+// DLL invite accept — IP-based (no JWT), called by the DLL
+// when the player clicks "Accept" on the party invite dialog.
+// Follows the same pattern as POST /party/join above.
+// ============================================================
+
+app.put("/ovs/accept-invite/:lobbyId", async (req, res) => {
+  try {
+    const ip = req.ip!.replace(/^::ffff:/, "");
+    const lobbyId = req.params.lobbyId;
+
+    const player = await PlayerTesterModel.findOne({ ip });
+    if (!player) {
+      res.status(401).json({ error: "not_connected" });
+      return;
+    }
+
+    const lobby = await redisGetLobbyState(lobbyId);
+    if (!lobby) {
+      res.status(404).json({ error: "lobby_not_found" });
+      return;
+    }
+
+    if (lobby.playerIds.includes(player.id)) {
+      res.json({ success: true, lobbyId }); // idempotent
+      return;
+    }
+
+    if (lobby.playerIds.length >= 2) {
+      res.status(409).json({ error: "lobby_full" });
+      return;
+    }
+
+    // Block if lobby owner is queued or in a match
+    const ownerStatus = await redisClient.hGet(`player:${lobby.ownerId}`, "status");
+    if (ownerStatus === "queued") {
+      res.status(409).json({ error: "owner_queued" });
+      return;
+    }
+    if (ownerStatus === "in_match") {
+      res.status(409).json({ error: "owner_in_match" });
+      return;
+    }
+
+    // If joining player is already in a party, auto-leave it first.
+    // The old partner goes solo, then this player joins the new lobby.
+    const joinerLobbyId = await redisGetPlayerLobby(player.id);
+    if (joinerLobbyId) {
+      const joinerLobby = await redisGetLobbyState(joinerLobbyId);
+      if (joinerLobby && joinerLobby.playerIds.length >= 2) {
+        logger.info(`${logPrefix} Player ${player.id} is in party ${joinerLobbyId} — auto-leaving before accepting invite`);
+        await performGenuineLeave(player.id, joinerLobbyId, joinerLobby);
+      }
+    }
+
+    // Add player to lobby and force 2v2
+    lobby.playerIds.push(player.id);
+    if (lobby.playerIds.length >= 2) {
+      lobby.mode = "2v2";
+    }
+    await redisSaveLobbyState(lobbyId, lobby);
+    // DON'T change player_lobby here — it still points to the invitee's old solo lobby.
+    // The game's JoinLobby will call leave_player_lobby first (to leave the old solo lobby),
+    // and if player_lobby pointed at the shared lobby, leave_player_lobby would destroy it.
+    // Instead, store the target in pending_join_lobby — join_party_lobby reads it.
+    await redisSetPendingJoinLobby(player.id, lobbyId);
+
+    logger.info(`${logPrefix} Player ${player.name} (${ip}) accepted invite to lobby ${lobbyId}. Players: ${lobby.playerIds.join(", ")}`);
+    res.json({ success: true, lobbyId });
+
+    // Inviter notification happens LATER — when the invitee's game calls
+    // join_party_lobby SSC and completes loading. The SSC handler sends
+    // a single party_joined DLL notification at the right time.
+  } catch (e) {
+    logger.error(`${logPrefix} Error in PUT /ovs/accept-invite: ${e}`);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ============================================================
 // Leaderboard — Top 100 rankings for 1v1 and 2v2
 // ============================================================
 
@@ -602,6 +693,59 @@ app.get("/api/leaderboard/:mode/me", async (req, res) => {
 });
 
 // ============================================================
+// DLL Version Check — GitHub Releases API
+// ============================================================
+
+let cachedGitHubRelease: { data: any; fetchedAt: number } | null = null;
+const GITHUB_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+app.get("/ovs/client-version", async (req, res) => {
+  try {
+    const clientVersion = (req.query.v as string) || "";
+
+    // Fetch latest release from GitHub (cached)
+    if (!cachedGitHubRelease || Date.now() - cachedGitHubRelease.fetchedAt > GITHUB_CACHE_TTL) {
+      const ghRes = await fetch("https://api.github.com/repos/openversus/ovs-client/releases/latest", {
+        headers: { "User-Agent": "OpenVersus-Server", "Accept": "application/vnd.github+json" },
+      });
+      if (!ghRes.ok) {
+        logger.warn(`${logPrefix} GitHub API returned ${ghRes.status}`);
+        res.json({ latest_version: clientVersion, download_url: "", is_latest: true, release_name: "" });
+        return;
+      }
+      const data = await ghRes.json();
+      cachedGitHubRelease = { data, fetchedAt: Date.now() };
+      logger.info(`${logPrefix} Cached GitHub release: ${data.tag_name || data.name}`);
+    }
+
+    const release = cachedGitHubRelease.data;
+    const latestVersion = (release.tag_name || release.name || "").replace(/^v/i, "");
+    const assets: any[] = release.assets || [];
+
+    // Find the .asi asset (or .zip fallback)
+    const asiAsset = assets.find((a: any) => a.name.endsWith(".asi"))
+      || assets.find((a: any) => a.name.endsWith(".zip"));
+    const downloadUrl = asiAsset?.browser_download_url || "";
+
+    const isLatest = clientVersion === latestVersion;
+
+    if (!isLatest && clientVersion) {
+      logger.info(`${logPrefix} Client version ${clientVersion} is outdated (latest: ${latestVersion})`);
+    }
+
+    res.json({
+      latest_version: latestVersion,
+      download_url: downloadUrl,
+      is_latest: isLatest,
+      release_name: release.name || "",
+    });
+  } catch (e) {
+    logger.error(`${logPrefix} Error in /ovs/client-version: ${e}`);
+    res.json({ latest_version: "", download_url: "", is_latest: true, release_name: "" });
+  }
+});
+
+// ============================================================
 // Custom Lobby — Web-based custom game lobbies
 // ============================================================
 
@@ -624,123 +768,117 @@ app.get("/custom", async (req, res) => {
 });
 
 app.get("/api/custom/whoami", async (req, res) => {
-  const player = await getPlayerFromReq(req);
-  if (!player) {
-    res.json({ error: "Not connected to game" });
-    return;
-  }
-  res.json({ playerId: player.id, username: player.username });
+  try {
+    const player = await getPlayerFromReq(req);
+    if (!player) { res.json({ error: "Not connected to game" }); return; }
+    res.json({ playerId: player.id, username: player.username });
+  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/whoami: ${e}`); res.status(500).json({ error: "Internal error" }); }
 });
 
 app.post("/api/custom/create", async (req, res) => {
-  const player = await getPlayerFromReq(req);
-  if (!player) {
-    res.status(401).json({ error: "Not connected to game. Launch the game first." });
-    return;
-  }
-  const result = await createLobby(player.id, player.username, player.ip);
-  res.json(result);
+  try {
+    const player = await getPlayerFromReq(req);
+    if (!player) { res.status(401).json({ error: "Not connected to game. Launch the game first." }); return; }
+    const result = await createLobby(player.id, player.username, player.ip);
+    res.json(result);
+  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/create: ${e}`); res.status(500).json({ error: "Internal error" }); }
 });
 
 app.post("/api/custom/join", async (req, res) => {
-  const player = await getPlayerFromReq(req);
-  if (!player) {
-    res.status(401).json({ error: "Not connected to game. Launch the game first." });
-    return;
-  }
-  const lobbyCode = req.body?.lobbyCode;
-  if (!lobbyCode) {
-    res.status(400).json({ error: "Lobby code is required." });
-    return;
-  }
-  const result = await joinLobby(lobbyCode, player.id, player.username, player.ip);
-  res.json(result);
+  try {
+    const player = await getPlayerFromReq(req);
+    if (!player) { res.status(401).json({ error: "Not connected to game. Launch the game first." }); return; }
+    const lobbyCode = req.body?.lobbyCode;
+    if (!lobbyCode) { res.status(400).json({ error: "Lobby code is required." }); return; }
+    const result = await joinLobby(lobbyCode, player.id, player.username, player.ip);
+    res.json(result);
+  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/join: ${e}`); res.status(500).json({ error: "Internal error" }); }
 });
 
 app.post("/api/custom/leave", async (req, res) => {
-  const player = await getPlayerFromReq(req);
-  if (!player) {
-    res.status(401).json({ error: "Not connected to game." });
-    return;
-  }
-  const result = await leaveLobby(player.id);
-  res.json(result);
+  try {
+    const player = await getPlayerFromReq(req);
+    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
+    const result = await leaveLobby(player.id);
+    res.json(result);
+  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/leave: ${e}`); res.status(500).json({ error: "Internal error" }); }
 });
 
 app.post("/api/custom/switch-team", async (req, res) => {
-  const player = await getPlayerFromReq(req);
-  if (!player) {
-    res.status(401).json({ error: "Not connected to game." });
-    return;
-  }
-  const result = await switchTeam(player.id);
-  res.json(result);
+  try {
+    const player = await getPlayerFromReq(req);
+    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
+    const result = await switchTeam(player.id);
+    res.json(result);
+  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/switch-team: ${e}`); res.status(500).json({ error: "Internal error" }); }
 });
 
 app.post("/api/custom/spectate", async (req, res) => {
-  const player = await getPlayerFromReq(req);
-  if (!player) {
-    res.status(401).json({ error: "Not connected to game." });
-    return;
-  }
-  const result = await moveToSpectator(player.id);
-  res.json(result);
+  try {
+    const player = await getPlayerFromReq(req);
+    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
+    const result = await moveToSpectator(player.id);
+    res.json(result);
+  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/spectate: ${e}`); res.status(500).json({ error: "Internal error" }); }
 });
 
 app.post("/api/custom/unspectate", async (req, res) => {
-  const player = await getPlayerFromReq(req);
-  if (!player) {
-    res.status(401).json({ error: "Not connected to game." });
-    return;
-  }
-  const result = await moveToPlayer(player.id);
-  res.json(result);
+  try {
+    const player = await getPlayerFromReq(req);
+    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
+    const result = await moveToPlayer(player.id);
+    res.json(result);
+  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/unspectate: ${e}`); res.status(500).json({ error: "Internal error" }); }
 });
 
 app.post("/api/custom/ready", async (req, res) => {
-  const player = await getPlayerFromReq(req);
-  if (!player) {
-    res.status(401).json({ error: "Not connected to game." });
-    return;
-  }
-  const result = await toggleReady(player.id);
-  res.json(result);
+  try {
+    const player = await getPlayerFromReq(req);
+    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
+    const result = await toggleReady(player.id);
+    res.json(result);
+  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/ready: ${e}`); res.status(500).json({ error: "Internal error" }); }
+});
+
+app.post("/api/custom/kick", async (req, res) => {
+  try {
+    const player = await getPlayerFromReq(req);
+    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
+    const targetId = req.body?.targetId;
+    if (!targetId) { res.status(400).json({ error: "targetId required." }); return; }
+    const result = await kickPlayer(player.id, targetId);
+    res.json(result);
+  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/kick: ${e}`); res.status(500).json({ error: "Internal error" }); }
 });
 
 app.post("/api/custom/select-map", async (req, res) => {
-  const player = await getPlayerFromReq(req);
-  if (!player) {
-    res.status(401).json({ error: "Not connected to game." });
-    return;
-  }
-  const maps = Array.isArray(req.body?.maps) ? req.body.maps : [];
-  const result = await setMapPool(player.id, maps);
-  res.json(result);
+  try {
+    const player = await getPlayerFromReq(req);
+    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
+    const maps = Array.isArray(req.body?.maps) ? req.body.maps : [];
+    const result = await setMapPool(player.id, maps);
+    res.json(result);
+  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/select-map: ${e}`); res.status(500).json({ error: "Internal error" }); }
 });
 
 app.post("/api/custom/select-mode", async (req, res) => {
-  const player = await getPlayerFromReq(req);
-  if (!player) {
-    res.status(401).json({ error: "Not connected to game." });
-    return;
-  }
-  const mode = req.body?.mode;
-  if (mode !== "1v1" && mode !== "2v2") {
-    res.status(400).json({ error: "Invalid mode. Must be '1v1' or '2v2'." });
-    return;
-  }
-  const result = await selectMode(player.id, mode);
-  res.json(result);
+  try {
+    const player = await getPlayerFromReq(req);
+    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
+    const mode = req.body?.mode;
+    if (mode !== "1v1" && mode !== "2v2") { res.status(400).json({ error: "Invalid mode. Must be '1v1' or '2v2'." }); return; }
+    const result = await selectMode(player.id, mode);
+    res.json(result);
+  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/select-mode: ${e}`); res.status(500).json({ error: "Internal error" }); }
 });
 
 app.post("/api/custom/start", async (req, res) => {
-  const player = await getPlayerFromReq(req);
-  if (!player) {
-    res.status(401).json({ error: "Not connected to game." });
-    return;
-  }
-  const result = await startMatch(player.id);
-  res.json(result);
+  try {
+    const player = await getPlayerFromReq(req);
+    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
+    const result = await startMatch(player.id);
+    res.json(result);
+  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/start: ${e}`); res.status(500).json({ error: "Internal error" }); }
 });
 
 app.get("/api/custom/status/:lobbyCode", async (req, res) => {
@@ -824,11 +962,134 @@ app.post("/api/testing/destroy-rollback-server", async (req, res) => {
   await handleDestroyRollbackServer(req, res);
 });
 
+// ============================================================================
+// AccelByte IAM Fake Endpoints (MUST be BEFORE hydraTokenMiddleware)
+//
+// The game's AccelByte SDK hits these HTTPS endpoints during initialization.
+// We return minimal valid responses so the SDK proceeds to connect to the
+// Lobby WebSocket at /lobby/ — which is our actual target for partyMemberJoinNotif.
+//
+// The game uses DNS redirect (accelbyte.io → our IP) so these requests arrive
+// here on port 443 (HTTPS). They also work on port 8000 (HTTP) as fallback.
+// ============================================================================
+
+// OAuth2 token endpoint — client credentials or platform login
+app.post("/iam/v3/oauth/token", (req, res) => {
+  logger.info(`${logPrefix} [AccelByte-IAM] POST /iam/v3/oauth/token — grant_type=${req.body?.grant_type || "unknown"}`);
+  res.json({
+    access_token: "ovs_fake_token_" + Date.now(),
+    token_type: "Bearer",
+    expires_in: 86400,
+    refresh_token: "ovs_fake_refresh_" + Date.now(),
+    refresh_expires_in: 86400 * 30,
+    namespace: "multiversus",
+    display_name: "OpenVersusPlayer",
+    user_id: "ovs_fake_user_" + Date.now(),
+    platform_id: "",
+    platform_user_id: "",
+    jflgs: 0,
+    is_comply: true,
+  });
+});
+
+// Platform-specific token exchange (Steam, Epic, etc.)
+app.post("/iam/v3/oauth/platforms/:platform/token", (req, res) => {
+  logger.info(`${logPrefix} [AccelByte-IAM] POST /iam/v3/oauth/platforms/${req.params.platform}/token`);
+  res.json({
+    access_token: "ovs_fake_platform_token_" + Date.now(),
+    token_type: "Bearer",
+    expires_in: 86400,
+    refresh_token: "ovs_fake_refresh_" + Date.now(),
+    refresh_expires_in: 86400 * 30,
+    namespace: "multiversus",
+    display_name: "OpenVersusPlayer",
+    user_id: "ovs_fake_user_" + Date.now(),
+    platform_id: req.params.platform,
+    platform_user_id: "",
+    jflgs: 0,
+    is_comply: true,
+  });
+});
+
+// Token verification/revocation
+app.post("/iam/v3/oauth/revoke", (req, res) => {
+  logger.info(`${logPrefix} [AccelByte-IAM] POST /iam/v3/oauth/revoke`);
+  res.status(200).send();
+});
+
+app.post("/iam/v3/oauth/verify", (req, res) => {
+  logger.info(`${logPrefix} [AccelByte-IAM] POST /iam/v3/oauth/verify`);
+  res.json({ exp: Math.floor(Date.now() / 1000) + 86400, namespace: "multiversus" });
+});
+
+// User info
+app.get("/iam/v3/public/users/me", (req, res) => {
+  logger.info(`${logPrefix} [AccelByte-IAM] GET /iam/v3/public/users/me`);
+  res.json({
+    userId: "ovs_fake_user",
+    displayName: "OpenVersusPlayer",
+    namespace: "multiversus",
+    emailVerified: true,
+    platformId: "steam",
+    country: "US",
+  });
+});
+
+// Namespace config (SDK might check this during init)
+app.get("/iam/v3/public/namespaces/:namespace", (req, res) => {
+  logger.info(`${logPrefix} [AccelByte-IAM] GET /iam/v3/public/namespaces/${req.params.namespace}`);
+  res.json({
+    namespace: req.params.namespace,
+    displayName: "MultiVersus",
+    status: "ACTIVE",
+  });
+});
+
+// AccelByte Basic service — input validation config
+app.get("/basic/v1/public/namespaces/:namespace/misc/input/validation", (req, res) => {
+  logger.info(`${logPrefix} [AccelByte-Basic] GET input validation config`);
+  res.json({ data: [] });
+});
+
+// AccelByte config/discovery endpoints the SDK might check
+app.get("/agreement/public/policies/namespaces/:namespace", (req, res) => {
+  logger.info(`${logPrefix} [AccelByte-Agreement] GET policies for ${req.params.namespace}`);
+  res.json([]);
+});
+
+// ============================================================================
+
 app.use(hydraDecoderMiddleware);
 app.use(hydraTokenMiddleware);
 
+// New friends/search/accounts routes — BEFORE old router for priority
+import { friendsRouter } from "./modules/friends/friends.routes";
+app.use(friendsRouter);
+
 app.use(router);
 app.use(sscRouter);
+
+// Catch-all for AccelByte endpoints — AFTER router
+app.all("/iam/*", (req, res) => {
+  logger.warn(`${logPrefix} [AccelByte-IAM] UNHANDLED: ${req.method} ${req.url}`);
+  res.json({ status: "ok" });
+});
+app.all("/basic/*", (req, res) => {
+  logger.warn(`${logPrefix} [AccelByte-Basic] UNHANDLED: ${req.method} ${req.url}`);
+  res.json({ status: "ok" });
+});
+app.all("/platform/*", (req, res) => {
+  logger.warn(`${logPrefix} [AccelByte-Platform] UNHANDLED: ${req.method} ${req.url}`);
+  res.json({ status: "ok" });
+});
+app.all("/social/*", (req, res) => {
+  logger.warn(`${logPrefix} [AccelByte-Social] UNHANDLED: ${req.method} ${req.url}`);
+  res.json({ status: "ok" });
+});
+app.all("/lobby/*", (req, res) => {
+  logger.warn(`${logPrefix} [AccelByte-Lobby] UNHANDLED HTTP: ${req.method} ${req.url}`);
+  res.json({ status: "ok" });
+});
 app.get("/ssc/invoke/hiss_amalgamation", (req, res, next) => {
   logger.info(`${logPrefix} Missing Crc, sending fresh one`);
   res.send(generate_hiss());
@@ -881,7 +1142,36 @@ app.use((req, res, next) => {
 });
 
 export const MVSHTTPServer = http.createServer(app);
-// export const MVSHTTPServer = https.createServer(options,app);
+
+// HTTPS server for AccelByte SDK (port 443)
+// The game's AccelByte SDK connects via HTTPS to IAM endpoints and WSS to /lobby/.
+// DNS redirect (accelbyte.io → our IP) routes these requests here.
+let MVSHTTPSServer: https.Server | null = null;
+
+function createHTTPSServer(): https.Server | null {
+  const certDir = path.join(__dirname, "..", "certs");
+  const certPath = path.join(certDir, "server-cert.pem");
+  const keyPath = path.join(certDir, "server-key.pem");
+
+  if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
+    logger.warn(`${logPrefix} TLS certs not found at ${certDir} — HTTPS/WSS on port 443 will be DISABLED`);
+    logger.warn(`${logPrefix} AccelByte Lobby WS (partyMemberJoinNotif) will not work without HTTPS`);
+    return null;
+  }
+
+  try {
+    const options: https.ServerOptions = {
+      cert: fs.readFileSync(certPath),
+      key: fs.readFileSync(keyPath),
+    };
+    const server = https.createServer(options, app);
+    logger.info(`${logPrefix} HTTPS server created with certs from ${certDir}`);
+    return server;
+  } catch (e) {
+    logger.error(`${logPrefix} Failed to create HTTPS server: ${e}`);
+    return null;
+  }
+}
 
 export async function start() {
   await connect();
@@ -899,8 +1189,30 @@ export async function start() {
     logger.info(`${logPrefix} OVS Server running on ${port}`);
   });
 
-  // Initialize AccelByte Lobby WebSocket service on the same HTTP server
-  // This handles WebSocket upgrades to /lobby/ for party invites, friends, etc.
-  initAccelByteLobbyWs(MVSHTTPServer);
+  // Initialize AccelByte Lobby WebSocket service on the HTTP server (port 8000)
+  const lobbyWs = initAccelByteLobbyWs(MVSHTTPServer);
   logger.info(`${logPrefix} AccelByte Lobby WebSocket initialized on HTTP server (port ${port})`);
+
+  // Start HTTPS server on port 443 for AccelByte SDK (IAM + Lobby WSS)
+  MVSHTTPSServer = createHTTPSServer();
+  if (MVSHTTPSServer) {
+    MVSHTTPSServer.listen(443, "0.0.0.0", () => {
+      logger.info(`${logPrefix} HTTPS server running on port 443 (AccelByte IAM + Lobby WSS)`);
+    });
+
+    // Attach AccelByte Lobby WS upgrade handler to HTTPS server too
+    // This way /lobby/ WebSocket upgrades work on both HTTP (8000) and HTTPS (443)
+    lobbyWs.attachToServer(MVSHTTPSServer);
+    logger.info(`${logPrefix} AccelByte Lobby WebSocket attached to HTTPS server (port 443)`);
+
+    MVSHTTPSServer.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        logger.error(`${logPrefix} Port 443 already in use — HTTPS disabled. Kill the process using port 443.`);
+      } else if (err.code === "EACCES") {
+        logger.error(`${logPrefix} Port 443 access denied — run as administrator or use a non-privileged port.`);
+      } else {
+        logger.error(`${logPrefix} HTTPS server error: ${err.message}`);
+      }
+    });
+  }
 }

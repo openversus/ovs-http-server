@@ -57,7 +57,7 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
   const playerLobbyId = await redisGetPlayerLobby(aID);
   if (playerLobbyId && playerLobbyId !== matchId) {
     const playerLobby = await redisGetLobbyState(playerLobbyId);
-    if (playerLobby && playerLobby.playerIds.includes(aID) && playerLobby.ownerId !== aID) {
+    if (playerLobby && playerLobby.playerIds && playerLobby.playerIds.includes(aID) && playerLobby.ownerId !== aID) {
       logger.info(`${logPrefix} Player ${aID} was force-joined into lobby ${playerLobbyId}, redirecting from ${matchId}`);
       matchId = playerLobbyId;
     }
@@ -65,7 +65,10 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
 
   const existingLobby = matchId ? await redisGetLobbyState(matchId) : null;
 
-  if (existingLobby && existingLobby.ownerId !== aID) {
+  // Skip if lobby data is from the new custom lobby system (has Teams/LeaderID instead of ownerId/playerIds)
+  if (existingLobby && !existingLobby.playerIds) {
+    logger.info(`${logPrefix} Lobby ${matchId} is a custom SSC lobby (no playerIds), skipping old join path`);
+  } else if (existingLobby && existingLobby.ownerId !== aID) {
     // This is a JOIN — player is accepting an invite to an existing lobby
     logger.info(`${logPrefix} Player ${aID} (${playerUsername}) joining existing lobby ${matchId} owned by ${existingLobby.ownerId}`);
 
@@ -242,6 +245,138 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
         updated_at: { _hydra_unix_date: MVSTime(new Date()) },
         data: {},
         id: ObjectID().toHexString(),
+      },
+      criteria: { slug: null },
+      shortcode: null,
+      id: matchId,
+      access: "public",
+    });
+    return;
+  }
+
+  // OWNER REFRESH: If the owner calls PUT /matches/:id and their lobby has 2+ players,
+  // return the full multi-player response so the game updates its party UI.
+  // This handles the inviter's side — when the DLL calls TriggerJoinLobby after the
+  // invitee joined, the owner gets back 2-player data and the game processes it natively.
+  if (existingLobby && existingLobby.ownerId === aID && existingLobby.playerIds.length > 1) {
+    logger.info(`${logPrefix} OWNER REFRESH: Player ${aID} (${playerUsername}) refreshing their own lobby ${matchId} with ${existingLobby.playerIds.length} players`);
+
+    // Build full multi-player response (same format as JOIN path)
+    const refreshTeamsPlayers: any = {};
+    const refreshGameplayPrefs: any = {};
+    const refreshAutoParty: any = {};
+    const refreshPlatforms: any = {};
+    const refreshLoadouts: any = {};
+    const refreshPlayersAll: any[] = [];
+
+    for (let i = 0; i < existingLobby.playerIds.length; i++) {
+      const pid = existingLobby.playerIds[i];
+      const pConn = (await redisClient.hGetAll(`connections:${pid}`)) as unknown as RedisPlayerConnection;
+      const pLoadout = await redisGetPlayer(pid);
+
+      refreshTeamsPlayers[pid] = {
+        Account: { id: pid },
+        JoinedAt: { _hydra_unix_date: MVSTime(new Date(i === 0 ? existingLobby.createdAt : Date.now())) },
+        BotSettingSlug: "",
+        LobbyPlayerIndex: i,
+        CrossplayPreference: 1,
+      };
+      refreshGameplayPrefs[pid] = Number(pConn?.GameplayPreferences) || 964;
+      refreshAutoParty[pid] = false;
+      refreshPlatforms[pid] = "PC";
+      refreshLoadouts[pid] = {
+        Character: pLoadout?.character || "character_shaggy",
+        Skin: pLoadout?.skin || "skin_shaggy_default",
+      };
+
+      refreshPlayersAll.push({
+        account_id: pid,
+        source: {},
+        state: "join",
+        data: {},
+        identity: {
+          username: pConn?.hydraUsername || pConn?.username || "Unknown",
+          avatar: "https://s3.amazonaws.com/wb-agora-hydra-ugc-dokken/identicons/identicon.584.png",
+          default_username: true,
+          personal_data: {},
+          alternate: {
+            wb_network: [{ id: pConn?.wb_network_id || pid, username: pConn?.username || "Unknown", avatar: null, email: null }],
+            steam: [{ id: "76561195177950873", username: pConn?.username || "Unknown", avatar: "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg", email: null }],
+          },
+          usernames: [
+            { auth: "hydra", username: pConn?.hydraUsername || "Unknown" },
+            { auth: "steam", username: pConn?.username || "Unknown" },
+            { auth: "wb_network", username: pConn?.username || "Unknown" },
+          ],
+          platforms: ["steam"],
+          current_platform: "steam",
+          is_cross_platform: false,
+        },
+      });
+    }
+
+    res.send({
+      updated_at: { _hydra_unix_date: MVSTime(new Date()) },
+      created_at: { _hydra_unix_date: MVSTime(new Date(existingLobby.createdAt)) },
+      account_id: null,
+      completion_time: null,
+      name: "white-green-wind-breeze-OS5dF",
+      state: "open",
+      access_level: "public",
+      origin: "client",
+      rand: Math.random(),
+      winning_team: [],
+      win: [],
+      loss: [],
+      draw: null,
+      arbitration: null,
+      data: {},
+      server_data: {
+        Teams: [
+          { TeamIndex: 0, Players: refreshTeamsPlayers, Length: existingLobby.playerIds.length },
+          { TeamIndex: 1, Players: {}, Length: 0 },
+          { TeamIndex: 2, Players: {}, Length: 0 },
+          { TeamIndex: 3, Players: {}, Length: 0 },
+          { TeamIndex: 4, Players: {}, Length: 0 },
+        ],
+        LeaderID: existingLobby.ownerId,
+        LobbyType: 0,
+        ReadyPlayers: {},
+        PlayerGameplayPreferences: refreshGameplayPrefs,
+        PlayerAutoPartyPreferences: refreshAutoParty,
+        GameVersion: env.GAME_VERSION,
+        HissCrc: 1167552915,
+        Platforms: refreshPlatforms,
+        AllMultiplayParams: {
+          "1": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252499", MultiplayRegionId: "" },
+          "2": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252922", MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682" },
+          "3": { MultiplayClusterSlug: "", MultiplayProfileId: "1252925", MultiplayRegionId: "" },
+          "4": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252928", MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682" },
+        },
+        LockedLoadouts: refreshLoadouts,
+        ModeString: existingLobby.playerIds.length >= 2 ? "2v2" : (existingLobby.mode || "1v1"),
+        IsLobbyJoinable: true,
+      },
+      players: {
+        all: refreshPlayersAll,
+        current: existingLobby.playerIds,
+        count: existingLobby.playerIds.length,
+      },
+      matchmaking: null,
+      cluster: "ec2-us-east-1-dokken",
+      last_warning_time: null,
+      template: {
+        type: "async",
+        name: "party_lobby",
+        slug: "party_lobby",
+        min_players: 2,
+        max_players: 2,
+        game_server_integration_enabled: false,
+        game_server_config: null,
+        created_at: { _hydra_unix_date: MVSTime(new Date()) },
+        updated_at: { _hydra_unix_date: MVSTime(new Date()) },
+        data: {},
+        id: matchId,
       },
       criteria: { slug: null },
       shortcode: null,

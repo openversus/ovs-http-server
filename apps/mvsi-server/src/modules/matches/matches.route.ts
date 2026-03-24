@@ -223,7 +223,6 @@ router.get(
 router.put(
   "/ssc/invoke/submit_end_of_match_stats",
   async ({ body }) => {
-    console.log("----------------------RECEIVED END OF MATCH STATS-------------------------- -");
     const match = await getActiveMatch(body.ContainerMatchId);
     if (match?.GameplayConfig.ArenaId) {
       await submitArenaMatchStats(body.ContainerMatchId, body.EndOfMatchStats, body.MatchLength);

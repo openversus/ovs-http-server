@@ -60,15 +60,6 @@ export class HydraBufferReader {
                 }
                 case CODES.DOUBLE: {
                     result = buffer.readDoubleBE(0);
-                    if (Number.isInteger(result)) {
-                        // Special encoding for trailing zeros since javascript does not suport trailing zeros in double (0.0000)
-                        //@ts-ignore
-                        result = {
-                            //@ts-ignore
-                            "_hydra_double": result
-                        }
-                    }
-
                     break;
                 }
                 case CODES.BYTES8,

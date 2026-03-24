@@ -165,10 +165,58 @@ export function generateItemPool(
 // ─── Shop generation ──────────────────────────────────────────────────────────
 
 /**
+ * Roll a rarity number using the given weighted rarity entries.
+ */
+function rollRarity(rarities: { num: number; weight: number }[]): number {
+  const total = rarities.reduce((a, r) => a + r.weight, 0);
+  let r = Math.random() * total;
+  for (const rar of rarities) {
+    r -= rar.weight;
+    if (r <= 0) return rar.num;
+  }
+  return rarities[rarities.length - 1].num;
+}
+
+/**
+ * Build the weighted rarity selection entries for a given round.
+ */
+export function getRarityWeightsForRound(
+  shopLevelWeights: { RarityWeight: Record<string, number> }[],
+  round: number,
+): { num: number; weight: number }[] {
+  const weightIdx = Math.min(round - 1, shopLevelWeights.length - 1);
+  const rarityWeights = shopLevelWeights[weightIdx].RarityWeight;
+  const rarities: { num: number; weight: number }[] = [];
+  for (const [name, weight] of Object.entries(rarityWeights)) {
+    if (weight > 0) {
+      rarities.push({ num: RARITY_NAME_TO_NUM[name] ?? 0, weight });
+    }
+  }
+  return rarities;
+}
+
+/**
+ * Pick a single item from the pool using rarity weights. Removes it from pool.
+ * Returns the ArenaItemDef or null if nothing available.
+ */
+export function pickItemFromPool(
+  pool: Record<string, number>,
+  rarities: { num: number; weight: number }[],
+): ArenaItemDef | null {
+  const rarity = rollRarity(rarities);
+  const items = ITEMS_BY_RARITY[rarity] ?? [];
+  const available = items.filter((it) => (pool[it.slug] ?? 0) > 0);
+  if (available.length === 0) return null;
+  const item = available[Math.floor(Math.random() * available.length)];
+  pool[item.slug] -= 1;
+  return item;
+}
+
+/**
  * Generate `count` shop options, each containing `itemsPerOption` items.
  * Uses the shared item pool and ShopLevelWeights to determine rarity
- * distribution per round. Items shown in shop are NOT removed from pool —
- * only actual purchases remove items.
+ * distribution per round. Items are removed from pool when assigned to shops
+ * so they cannot appear in another player's shop.
  */
 export function generateShopOptions(
   pool: Record<string, number>,
@@ -177,39 +225,14 @@ export function generateShopOptions(
   count = 6,
   itemsPerOption = 4,
 ): ShopOption[] {
-  const weightIdx = Math.min(round - 1, shopLevelWeights.length - 1);
-  const rarityWeights = shopLevelWeights[weightIdx].RarityWeight;
-
-  // Build weighted rarity entries (only rarities with weight > 0)
-  const rarities: { num: number; weight: number }[] = [];
-  for (const [name, weight] of Object.entries(rarityWeights)) {
-    if (weight > 0) {
-      rarities.push({ num: RARITY_NAME_TO_NUM[name] ?? 0, weight });
-    }
-  }
-
-  function rollRarity(): number {
-    const total = rarities.reduce((a, r) => a + r.weight, 0);
-    let r = Math.random() * total;
-    for (const rar of rarities) {
-      r -= rar.weight;
-      if (r <= 0) return rar.num;
-    }
-    return rarities[rarities.length - 1].num;
-  }
+  const rarities = getRarityWeightsForRound(shopLevelWeights, round);
 
   const options: ShopOption[] = [];
   for (let i = 0; i < count; i++) {
     const shopItems: ShopItem[] = [];
     for (let j = 0; j < itemsPerOption; j++) {
-      const rarity = rollRarity();
-      // Prefer items that still have copies in the pool
-      const items = ITEMS_BY_RARITY[rarity] ?? [];
-      const available = items.filter((it) => (pool[it.slug] ?? 0) > 0);
-      const candidates = available.length > 0 ? available : items;
-      if (candidates.length === 0) continue;
-
-      const item = candidates[Math.floor(Math.random() * candidates.length)];
+      const item = pickItemFromPool(pool, rarities);
+      if (!item) continue;
       shopItems.push({
         Item: {
           Slug: item.slug,

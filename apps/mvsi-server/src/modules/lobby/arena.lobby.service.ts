@@ -25,7 +25,13 @@ import type {
   ArenaTeamInfo,
   MatchStats,
 } from "./arena.lobby.types";
-import { generateShopOptions, generateItemPool, getGemName, ALL_ARENA_ITEMS } from "../../data/arenaItemDefs";
+import {
+  generateShopOptions,
+  generateItemPool,
+  pickItemFromPool,
+  getRarityWeightsForRound,
+  getGemName,
+} from "../../data/arenaItemDefs";
 import { INVENTORY_DEFINITIONS } from "../../data/inventoryDefs";
 import { RealtimeNotificationUsersMessage } from "../notifications/notifications.types";
 
@@ -181,14 +187,30 @@ async function onAllCharactersSelected(arenaId: string): Promise<void> {
   const arenaData = (await redisClient.json.get(stateKey)) as ArenaData | null;
   if (!arenaData) return;
 
-  // ── Assign bots random char/skin ──────────────────────────────────────────
+  // ── Assign bots random char/skin (no duplicate characters on same team) ──
+  // Track used characters per team so teammates don't share a character
+  const usedCharsPerTeam: Record<string, Set<string>> = {};
+  // First pass: record real players' characters
   for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
-    if (!info.bIsBot) {
-      arenaData.PlayerInfo[pid].SelectableCharacters = [];
-      continue;
+    if (info.bIsBot) continue;
+    arenaData.PlayerInfo[pid].SelectableCharacters = [];
+    if (info.Loadout.Character) {
+      if (!usedCharsPerTeam[info.TeamId]) usedCharsPerTeam[info.TeamId] = new Set();
+      usedCharsPerTeam[info.TeamId].add(info.Loadout.Character);
     }
-    const chars = await getRandomCharacters(1);
-    const character = chars[0] ?? "";
+  }
+  // Second pass: assign bots avoiding team duplicates
+  for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
+    if (!info.bIsBot) continue;
+    if (!usedCharsPerTeam[info.TeamId]) usedCharsPerTeam[info.TeamId] = new Set();
+    const teamUsed = usedCharsPerTeam[info.TeamId];
+
+    // Get a pool of characters, pick one not already on the team
+    const chars = await getRandomCharacters(SELECTABLE_CHARACTER_COUNT);
+    const available = chars.filter((c) => !teamUsed.has(c));
+    const character = available.length > 0 ? available[0] : chars[0] ?? "";
+    teamUsed.add(character);
+
     const skin = character ? getRandomSkinForCharacter(character) : "";
     const charClass = getCharacterClass(character);
     arenaData.PlayerInfo[pid].Loadout = { Character: character, Skin: skin };
@@ -271,19 +293,24 @@ async function notifyMatchReadyToStart(arenaId: string): Promise<void> {
   const arenaData = (await redisClient.json.get(stateKey)) as ArenaData | null;
   if (!arenaData) return;
 
-  // ── Assign bots random items ───────────────────────────────────────────────
+  // ── Assign bots items from shared pool using rarity weights ────────────────
+  const constants = getArenaConstants();
+  const rarities = getRarityWeightsForRound(constants.ShopLevelWeights, arenaData.CurrentRound);
   for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
     if (!info.bIsBot) continue;
-    const charClass = info.CharacterClass;
-    const buildType = getBotBuildType(charClass);
-    const randomItems = [...ALL_ARENA_ITEMS].sort(() => Math.random() - 0.5).slice(0, 4);
-    arenaData.PlayerInfo[pid].PlayerData.Inventory = randomItems.map((item) => ({
-      Slug: item.slug,
-      Level: 1,
-      Xp: 0,
-      NextLevelXp: 1,
-      SellValue: item.cost - 1,
-    }));
+    const buildType = getBotBuildType(info.CharacterClass);
+    const inventory = info.PlayerData.Inventory.map((slot) => {
+      const item = pickItemFromPool(arenaData.ItemPool, rarities);
+      if (!item) return slot; // keep empty slot if pool exhausted
+      return {
+        Slug: item.slug,
+        Level: 1,
+        Xp: 0,
+        NextLevelXp: 1,
+        SellValue: item.cost - 1,
+      };
+    });
+    arenaData.PlayerInfo[pid].PlayerData.Inventory = inventory;
     arenaData.PlayerInfo[pid].BotSettings = { BuildType: buildType };
   }
 
@@ -587,9 +614,7 @@ export async function assembleArenaMatch(lobby: ArenaLobby): Promise<string | nu
           Name: isBot ? (config.Username as string) : "",
         },
         bIsBot: isBot,
-        ...(isBot
-          ? {}
-          : { Stats: createArenaPlayerStats(), CurrentShop: [] }),
+        ...(isBot ? {} : { Stats: createArenaPlayerStats(), CurrentShop: [] }),
       };
     }
   }
@@ -845,11 +870,8 @@ export async function arenaPlayerShopClosed(
       currencySpent += cost;
       itemsPurchased++;
 
-      // Remove from shared item pool
+      // Track this item as purchased (it's already out of pool from shop generation)
       const slug = shopItem.Item.Slug;
-      if (arenaData.ItemPool[slug] !== undefined && arenaData.ItemPool[slug] > 0) {
-        arenaData.ItemPool[slug] -= 1;
-      }
 
       // Find empty slot or existing slot with same slug (stack)
       const existingSlot = playerData.Inventory.find(
@@ -906,6 +928,24 @@ export async function arenaPlayerShopClosed(
     const interestPerBoost = constants.InterestPerBoost;
     playerData.InterestPer =
       interestPerBoost[interestBoostSlot.Level - 1] ?? playerData.InterestPer;
+  }
+
+  // Return unpurchased shop items back to the shared pool
+  const purchasedKeys = new Set(
+    shopDetails.ItemTransactions
+      .filter((tx) => tx.bPurchase)
+      .map((tx) => `${tx.LocalShopIndex}:${tx.ItemIndex}`),
+  );
+  for (let si = 0; si < shopLocal.length; si++) {
+    const option = shopLocal[si];
+    if (!option?.CurrentShop) continue;
+    for (let ii = 0; ii < option.CurrentShop.length; ii++) {
+      if (purchasedKeys.has(`${si}:${ii}`)) continue;
+      const slug = option.CurrentShop[ii].Item.Slug;
+      if (slug) {
+        arenaData.ItemPool[slug] = (arenaData.ItemPool[slug] ?? 0) + 1;
+      }
+    }
   }
 
   // Update stats
@@ -999,7 +1039,11 @@ export async function submitArenaMatchStats(
   const teamIdArr = [...teamIds];
   if (teamIdArr.length !== 2) {
     // Unexpected — persist what we have and bail
-    await redisClient.json.set(stateKey, "$", arenaData as Parameters<typeof redisClient.json.set>[2]);
+    await redisClient.json.set(
+      stateKey,
+      "$",
+      arenaData as Parameters<typeof redisClient.json.set>[2],
+    );
     return;
   }
 
@@ -1057,7 +1101,11 @@ export async function submitArenaMatchStats(
     team.Stats.MatchStats = teamMatchStats;
   }
 
-  await redisClient.json.set(stateKey, "$", arenaData as Parameters<typeof redisClient.json.set>[2]);
+  await redisClient.json.set(
+    stateKey,
+    "$",
+    arenaData as Parameters<typeof redisClient.json.set>[2],
+  );
 }
 
 // ─── Reusable match-pairing helpers ──────────────────────────────────────────
@@ -1073,9 +1121,7 @@ function pairTeamsForRound(arenaData: ArenaData): [string, string][] {
     .map((t) => t.TeamId);
 
   // Sort by TeamIndex for consistency
-  aliveTeamIds.sort(
-    (a, b) => arenaData.TeamInfo[a].TeamIndex - arenaData.TeamInfo[b].TeamIndex,
-  );
+  aliveTeamIds.sort((a, b) => arenaData.TeamInfo[a].TeamIndex - arenaData.TeamInfo[b].TeamIndex);
 
   const paired = new Set<string>();
   const pairs: [string, string][] = [];
@@ -1085,10 +1131,7 @@ function pairTeamsForRound(arenaData: ArenaData): [string, string][] {
     if (paired.has(teamId)) continue;
     const team = arenaData.TeamInfo[teamId];
     const opponent = aliveTeamIds.find(
-      (otherId) =>
-        otherId !== teamId &&
-        !paired.has(otherId) &&
-        !team.HasPlayedTeam[otherId],
+      (otherId) => otherId !== teamId && !paired.has(otherId) && !team.HasPlayedTeam[otherId],
     );
     if (opponent) {
       pairs.push([teamId, opponent]);
@@ -1100,9 +1143,7 @@ function pairTeamsForRound(arenaData: ArenaData): [string, string][] {
   // Second pass: pair remaining with anyone available
   for (const teamId of aliveTeamIds) {
     if (paired.has(teamId)) continue;
-    const opponent = aliveTeamIds.find(
-      (otherId) => otherId !== teamId && !paired.has(otherId),
-    );
+    const opponent = aliveTeamIds.find((otherId) => otherId !== teamId && !paired.has(otherId));
     if (opponent) {
       pairs.push([teamId, opponent]);
       paired.add(teamId);
@@ -1146,11 +1187,12 @@ async function buildMatchGameplayConfig(
       Character: info?.Loadout.Character ?? "",
       Skin: info?.Loadout.Skin ?? "",
       Buffs: [],
+      Perks: [],
       Handicap: 0,
       PartyId: null,
       PartyMember: null,
       IsHost: false,
-    };
+    } as PlayerConfig;
   }
 
   for (let j = 0; j < teamBPlayers.length; j++) {
@@ -1168,11 +1210,12 @@ async function buildMatchGameplayConfig(
       Character: info?.Loadout.Character ?? "",
       Skin: info?.Loadout.Skin ?? "",
       Buffs: [],
+      Perks: [],
       Handicap: 0,
       PartyId: null,
       PartyMember: null,
       IsHost: false,
-    };
+    } as PlayerConfig;
   }
 
   return {
@@ -1269,7 +1312,10 @@ export async function arenaCheckin(
     payout += constants.CurrencyForWinStreak[streakIdx];
   }
   if (teamInfo.Stats.LoseStreak > 0) {
-    const streakIdx = Math.min(teamInfo.Stats.LoseStreak, constants.CurrencyForLoseStreak.length - 1);
+    const streakIdx = Math.min(
+      teamInfo.Stats.LoseStreak,
+      constants.CurrencyForLoseStreak.length - 1,
+    );
     payout += constants.CurrencyForLoseStreak[streakIdx];
   }
 
@@ -1286,11 +1332,7 @@ export async function arenaCheckin(
   playerInfo.PlayerData.CurrencyAmount += payout;
 
   // ── Generate new shop for this player ───────────────────────────────────
-  const shopOptions = generateShopOptions(
-    arenaData.ItemPool,
-    constants.ShopLevelWeights,
-    round,
-  );
+  const shopOptions = generateShopOptions(arenaData.ItemPool, constants.ShopLevelWeights, round);
   playerInfo.CurrentShopLocal = shopOptions;
 
   // Persist
@@ -1323,6 +1365,52 @@ async function onAllPlayersCheckedIn(arenaId: string): Promise<void> {
   if (!arenaData) return;
 
   const arenaConstants = getArenaConstants();
+  const round = arenaData.CurrentRound;
+  const roundIdx = Math.min(round - 1, arenaConstants.CurrencyPerRound.length - 1);
+  const baseCurrency = arenaConstants.CurrencyPerRound[roundIdx];
+
+  // ── Update bot currency and items ───────────────────────────────────────
+  const rarities = getRarityWeightsForRound(arenaConstants.ShopLevelWeights, round);
+  for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
+    if (!info.bIsBot) continue;
+
+    const teamInfo = arenaData.TeamInfo[info.TeamId];
+    if (!teamInfo) continue;
+
+    // Calculate same currency payout as real players
+    let payout = baseCurrency;
+    const teamRingouts = teamInfo.Stats.MatchStats.Ringouts;
+    const ringoutIdx = Math.min(teamRingouts, arenaConstants.CurrencyPerRingout.length - 1);
+    payout += arenaConstants.CurrencyPerRingout[ringoutIdx];
+    if (teamInfo.Stats.WinStreak > 0) {
+      payout += arenaConstants.CurrencyForWin;
+      const streakIdx = Math.min(teamInfo.Stats.WinStreak, arenaConstants.CurrencyForWinStreak.length - 1);
+      payout += arenaConstants.CurrencyForWinStreak[streakIdx];
+    }
+    if (teamInfo.Stats.LoseStreak > 0) {
+      const streakIdx = Math.min(teamInfo.Stats.LoseStreak, arenaConstants.CurrencyForLoseStreak.length - 1);
+      payout += arenaConstants.CurrencyForLoseStreak[streakIdx];
+    }
+    const interest = Math.min(
+      Math.floor(info.PlayerData.CurrencyAmount / info.PlayerData.InterestPer),
+      arenaConstants.MaxInterest,
+    );
+    payout += interest;
+    info.PlayerData.CurrencyAmount += payout;
+
+    // Return old bot items to pool, then assign new ones
+    for (const slot of info.PlayerData.Inventory) {
+      if (slot.Slug) {
+        arenaData.ItemPool[slot.Slug] = (arenaData.ItemPool[slot.Slug] ?? 0) + 1;
+      }
+    }
+    info.PlayerData.Inventory = info.PlayerData.Inventory.map(() => {
+      const item = pickItemFromPool(arenaData.ItemPool, rarities);
+      if (!item) return { Slug: "", Level: 0, Xp: 0, NextLevelXp: 0, SellValue: 0 };
+      return { Slug: item.slug, Level: 1, Xp: 0, NextLevelXp: 1, SellValue: item.cost - 1 };
+    });
+    info.BotSettings = { BuildType: getBotBuildType(info.CharacterClass) };
+  }
 
   // Advance round
   arenaData.CurrentRound += 1;

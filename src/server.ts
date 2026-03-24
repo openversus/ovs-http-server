@@ -43,6 +43,7 @@ import * as AuthUtils from "./utils/auth";
 import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { NameGenerator } from "./utils/namegeneration";
+import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
 import { initAccelByteLobbyWs, accelByteLobbyWs } from "./accelByteLobbyWs";
 
 // HTML Rendering
@@ -951,6 +952,14 @@ app.get("/api/custom/events/:lobbyCode", async (req, res) => {
     sub.unsubscribe(channelName);
     sub.quit();
   });
+});
+
+app.post("/api/testing/deploy-rollback-server", async (req, res) => {
+  await handleDeployRollbackServer(req, res);
+});
+
+app.post("/api/testing/destroy-rollback-server", async (req, res) => {
+  await handleDestroyRollbackServer(req, res);
 });
 
 // ============================================================================

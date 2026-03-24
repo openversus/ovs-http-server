@@ -982,11 +982,13 @@ export async function handleSsc_invoke_join_party_lobby(req: Request<{}, {}, {},
     return;
   }
 
+  let body = req.body as any;
+
   // Check pending_join_lobby FIRST — set by accept-invite or party_joined notification.
   // player_lobby still points to the OLD lobby (which leave_player_lobby just cleaned up).
   // The game's body often contains an internal lobby ID that doesn't match ours.
   const pendingLobbyId = await redisGetPendingJoinLobby(joiningPlayerId);
-  const bodyLobbyId = req.body?.LobbyId || req.body?.lobbyId || req.body?.MatchID || req.body?.matchId;
+  const bodyLobbyId = body?.LobbyId || body?.lobbyId || body?.MatchID || body?.matchId;
   const redisLobbyId = await redisGetPlayerLobby(joiningPlayerId);
 
   logger.info(`${logPrefix} join_party_lobby: Player ${joiningPlayerId} — pending=${pendingLobbyId}, body=${bodyLobbyId}, redis=${redisLobbyId}`);

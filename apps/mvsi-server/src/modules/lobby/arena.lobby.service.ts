@@ -89,7 +89,7 @@ export function getArenaConstants(): ArenaConstants {
       Common: 50,
     },
     CurrencyForLoseStreak: [0, 0, 2, 4, 6],
-    RoundLength: 90,
+    RoundLength: 15,
     HealthRoundValues: [22, 24, 26, 28, 30, 31, 32, 33, 34, 35],
     ShopCharacterRerollCost: 4,
     InterestPer: 6,
@@ -208,7 +208,7 @@ async function onAllCharactersSelected(arenaId: string): Promise<void> {
     // Get a pool of characters, pick one not already on the team
     const chars = await getRandomCharacters(SELECTABLE_CHARACTER_COUNT);
     const available = chars.filter((c) => !teamUsed.has(c));
-    const character = available.length > 0 ? available[0] : chars[0] ?? "";
+    const character = available.length > 0 ? available[0] : (chars[0] ?? "");
     teamUsed.add(character);
 
     const skin = character ? getRandomSkinForCharacter(character) : "";
@@ -692,10 +692,11 @@ export async function assembleArenaMatch(lobby: ArenaLobby): Promise<string | nu
       arenaId,
       matchId,
       arenaData,
-      arenaConstants,
       teamAId,
       teamBId,
       roundMap,
+      arenaConstants,
+      true,
     );
 
     await notifyActiveMatchCreated(gameplayConfig);
@@ -870,7 +871,7 @@ export async function arenaPlayerShopClosed(
       currencySpent += cost;
       itemsPurchased++;
 
-      // Track this item as purchased (it's already out of pool from shop generation)
+      // Item was already removed from pool during shop generation
       const slug = shopItem.Item.Slug;
 
       // Find empty slot or existing slot with same slug (stack)
@@ -931,6 +932,7 @@ export async function arenaPlayerShopClosed(
   }
 
   // Return unpurchased shop items back to the shared pool
+  // (they were reserved from pool during shop generation)
   const purchasedKeys = new Set(
     shopDetails.ItemTransactions
       .filter((tx) => tx.bPurchase)
@@ -941,9 +943,9 @@ export async function arenaPlayerShopClosed(
     if (!option?.CurrentShop) continue;
     for (let ii = 0; ii < option.CurrentShop.length; ii++) {
       if (purchasedKeys.has(`${si}:${ii}`)) continue;
-      const slug = option.CurrentShop[ii].Item.Slug;
-      if (slug) {
-        arenaData.ItemPool[slug] = (arenaData.ItemPool[slug] ?? 0) + 1;
+      const itemSlug = option.CurrentShop[ii].Item.Slug;
+      if (itemSlug) {
+        arenaData.ItemPool[itemSlug] = (arenaData.ItemPool[itemSlug] ?? 0) + 1;
       }
     }
   }
@@ -1162,10 +1164,11 @@ async function buildMatchGameplayConfig(
   arenaId: string,
   matchId: string,
   arenaData: ArenaData,
-  arenaConstants: ArenaConstants,
   teamAId: string,
   teamBId: string,
   map: string,
+  arenaConstants: ArenaConstants,
+  includeConstants: boolean,
 ): Promise<GameplayConfig> {
   const teamAPlayers = arenaData.TeamInfo[teamAId].Players;
   const teamBPlayers = arenaData.TeamInfo[teamBId].Players;
@@ -1218,10 +1221,10 @@ async function buildMatchGameplayConfig(
     } as PlayerConfig;
   }
 
-  return {
+  const gameplayConfig: GameplayConfig = {
     ArenaId: arenaId,
     ArenaData: arenaData,
-    ArenaConstants: arenaConstants,
+
     GameplayConfig: {
       ArenaModeInfo: {
         FaceoffWaitTime: arenaConstants.FaceoffWaitTime,
@@ -1262,6 +1265,10 @@ async function buildMatchGameplayConfig(
       bIsRift: false,
     },
   };
+  if (includeConstants) {
+    gameplayConfig.ArenaConstants = arenaConstants;
+  }
+  return gameplayConfig;
 }
 
 // ─── Arena check-in ──────────────────────────────────────────────────────────
@@ -1341,6 +1348,7 @@ export async function arenaCheckin(
     "$",
     arenaData as Parameters<typeof redisClient.json.set>[2],
   );
+  console.log("arena details",JSON.stringify(arenaData,null,2))
 
   // ── Check if all real players have now checked in ───────────────────────
   const refreshed = (await redisClient.json.get(stateKey)) as ArenaData | null;
@@ -1384,11 +1392,17 @@ async function onAllPlayersCheckedIn(arenaId: string): Promise<void> {
     payout += arenaConstants.CurrencyPerRingout[ringoutIdx];
     if (teamInfo.Stats.WinStreak > 0) {
       payout += arenaConstants.CurrencyForWin;
-      const streakIdx = Math.min(teamInfo.Stats.WinStreak, arenaConstants.CurrencyForWinStreak.length - 1);
+      const streakIdx = Math.min(
+        teamInfo.Stats.WinStreak,
+        arenaConstants.CurrencyForWinStreak.length - 1,
+      );
       payout += arenaConstants.CurrencyForWinStreak[streakIdx];
     }
     if (teamInfo.Stats.LoseStreak > 0) {
-      const streakIdx = Math.min(teamInfo.Stats.LoseStreak, arenaConstants.CurrencyForLoseStreak.length - 1);
+      const streakIdx = Math.min(
+        teamInfo.Stats.LoseStreak,
+        arenaConstants.CurrencyForLoseStreak.length - 1,
+      );
       payout += arenaConstants.CurrencyForLoseStreak[streakIdx];
     }
     const interest = Math.min(
@@ -1468,12 +1482,13 @@ async function onAllPlayersCheckedIn(arenaId: string): Promise<void> {
       arenaId,
       matchId,
       arenaData,
-      arenaConstants,
       teamAId,
       teamBId,
       roundMap,
+      getArenaConstants(),
+      false,
     );
-
+    console.log(`Publishing next round match ${matchId}`, JSON.stringify(gameplayConfig));
     await notifyActiveMatchCreated(gameplayConfig, "OnArenaNextMatch");
   }
 }

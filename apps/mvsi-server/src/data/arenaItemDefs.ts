@@ -197,26 +197,46 @@ export function getRarityWeightsForRound(
 
 /**
  * Pick a single item from the pool using rarity weights. Removes it from pool.
- * Returns the ArenaItemDef or null if nothing available.
+ * If the rolled rarity is exhausted, falls back upward through rarities
+ * (e.g. Common→Uncommon→Rare→...) until one has pool copies.
+ * Returns null only if the entire pool is empty.
  */
 export function pickItemFromPool(
   pool: Record<string, number>,
   rarities: { num: number; weight: number }[],
 ): ArenaItemDef | null {
   const rarity = rollRarity(rarities);
-  const items = ITEMS_BY_RARITY[rarity] ?? [];
-  const available = items.filter((it) => (pool[it.slug] ?? 0) > 0);
-  if (available.length === 0) return null;
-  const item = available[Math.floor(Math.random() * available.length)];
-  pool[item.slug] -= 1;
-  return item;
+
+  // Try rolled rarity first, then fall back upward: Common(0)→Uncommon(1)→...→Mythic(5)
+  for (let r = rarity; r <= 5; r++) {
+    const items = ITEMS_BY_RARITY[r] ?? [];
+    const available = items.filter((it) => (pool[it.slug] ?? 0) > 0);
+    if (available.length > 0) {
+      const item = available[Math.floor(Math.random() * available.length)];
+      pool[item.slug] -= 1;
+      return item;
+    }
+  }
+  // If nothing found going up, try going down from rolled rarity
+  for (let r = rarity - 1; r >= 0; r--) {
+    const items = ITEMS_BY_RARITY[r] ?? [];
+    const available = items.filter((it) => (pool[it.slug] ?? 0) > 0);
+    if (available.length > 0) {
+      const item = available[Math.floor(Math.random() * available.length)];
+      pool[item.slug] -= 1;
+      return item;
+    }
+  }
+
+  return null;
 }
 
 /**
  * Generate `count` shop options, each containing `itemsPerOption` items.
  * Uses the shared item pool and ShopLevelWeights to determine rarity
- * distribution per round. Items are removed from pool when assigned to shops
- * so they cannot appear in another player's shop.
+ * distribution per round. Items are removed from pool when assigned to a
+ * shop so they cannot appear in another player's shop. Unpurchased items
+ * are returned to the pool when the shop closes (arenaPlayerShopClosed).
  */
 export function generateShopOptions(
   pool: Record<string, number>,

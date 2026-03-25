@@ -139,23 +139,22 @@ for (const item of ALL_ARENA_ITEMS) {
 
 /**
  * Generate the shared item pool for an arena.
- * For each rarity, randomly picks N items (with replacement) from the
- * available items of that rarity. Returns slug → count.
+ * For each rarity, every item of that rarity gets `copiesPerItem` copies.
+ * E.g. Common=50 means each common item gets 50 copies in the pool.
  */
 export function generateItemPool(
   itemAmounts: Record<string, number>,
 ): Record<string, number> {
   const pool: Record<string, number> = {};
 
-  for (const [rarityName, totalCount] of Object.entries(itemAmounts)) {
+  for (const [rarityName, copiesPerItem] of Object.entries(itemAmounts)) {
     const rarityNum = RARITY_NAME_TO_NUM[rarityName];
     if (rarityNum === undefined) continue;
     const items = ITEMS_BY_RARITY[rarityNum];
     if (!items || items.length === 0) continue;
 
-    for (let i = 0; i < totalCount; i++) {
-      const item = items[Math.floor(Math.random() * items.length)];
-      pool[item.slug] = (pool[item.slug] ?? 0) + 1;
+    for (const item of items) {
+      pool[item.slug] = copiesPerItem;
     }
   }
 

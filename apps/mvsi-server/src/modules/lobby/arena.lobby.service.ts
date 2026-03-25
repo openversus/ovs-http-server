@@ -293,26 +293,12 @@ async function notifyMatchReadyToStart(arenaId: string): Promise<void> {
   const arenaData = (await redisClient.json.get(stateKey)) as ArenaData | null;
   if (!arenaData) return;
 
-  // ── Assign bots items from shared pool using rarity weights ────────────────
-  const constants = getArenaConstants();
-  const rarities = getRarityWeightsForRound(constants.ShopLevelWeights, arenaData.CurrentRound);
+  // ── Simulate bot shopping (buy items from shared pool) and set build type ─
   for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
     if (!info.bIsBot) continue;
-    const buildType = getBotBuildType(info.CharacterClass);
-    const inventory = info.PlayerData.Inventory.map((slot) => {
-      const item = pickItemFromPool(arenaData.ItemPool, rarities);
-      if (!item) return slot; // keep empty slot if pool exhausted
-      return {
-        Slug: item.slug,
-        Level: 1,
-        Xp: 0,
-        NextLevelXp: 1,
-        SellValue: item.cost - 1,
-      };
-    });
-    arenaData.PlayerInfo[pid].PlayerData.Inventory = inventory;
-    arenaData.PlayerInfo[pid].BotSettings = { BuildType: buildType };
+    info.BotSettings = { BuildType: getBotBuildType(info.CharacterClass) };
   }
+  simulateBotShopping(arenaData);
 
   // Persist
   await redisClient.json.set(
@@ -684,22 +670,24 @@ export async function assembleArenaMatch(lobby: ArenaLobby): Promise<string | nu
     pairs.push({ matchId, isRealMatch, teamAId, teamBId });
   }
 
-  // Pass B: build and publish GameplayConfig for each real match pair.
+  // Pass B: publish real matches, simulate bot-only matches.
   for (const { matchId, isRealMatch, teamAId, teamBId } of pairs) {
-    if (!isRealMatch) continue;
-
-    const gameplayConfig = await buildMatchGameplayConfig(
-      arenaId,
-      matchId,
-      arenaData,
-      teamAId,
-      teamBId,
-      roundMap,
-      arenaConstants,
-      true,
-    );
-
-    await notifyActiveMatchCreated(gameplayConfig);
+    if (isRealMatch) {
+      const gameplayConfig = await buildMatchGameplayConfig(
+        arenaId,
+        matchId,
+        arenaData,
+        teamAId,
+        teamBId,
+        roundMap,
+        arenaConstants,
+        true,
+      );
+      await notifyActiveMatchCreated(gameplayConfig);
+    } else {
+      // Simulate bot-only match outcome
+      simulateBotMatch(arenaData, teamAId, teamBId);
+    }
   }
 
   // ── 9. Persist ArenaData ──────────────────────────────────────────────────
@@ -1110,6 +1098,149 @@ export async function submitArenaMatchStats(
   );
 }
 
+// ─── Bot match & shopping simulation ─────────────────────────────────────────
+
+/**
+ * Simulate the outcome of a bot-only match. Randomly picks a winner,
+ * updates win/loss/streak stats and LifeRemaining on arenaData in-place.
+ */
+function simulateBotMatch(
+  arenaData: ArenaData,
+  teamAId: string,
+  teamBId: string,
+): void {
+  const constants = getArenaConstants();
+  const round = arenaData.CurrentRound;
+
+  // Random winner: 0 = teamA wins, 1 = teamB wins
+  const winnerIdx = Math.random() < 0.5 ? 0 : 1;
+  const winTeamId = winnerIdx === 0 ? teamAId : teamBId;
+  const loseTeamId = winnerIdx === 0 ? teamBId : teamAId;
+
+  const winTeam = arenaData.TeamInfo[winTeamId];
+  const loseTeam = arenaData.TeamInfo[loseTeamId];
+
+  if (winTeam) {
+    winTeam.Stats.Wins += 1;
+    winTeam.Stats.WinStreak += 1;
+    winTeam.Stats.LoseStreak = 0;
+  }
+  if (loseTeam) {
+    loseTeam.Stats.Losses += 1;
+    loseTeam.Stats.LoseStreak += 1;
+    loseTeam.Stats.WinStreak = 0;
+
+    const healthIdx = Math.min(round - 1, constants.HealthRoundValues.length - 1);
+    const damage = constants.HealthRoundValues[healthIdx];
+    loseTeam.LifeRemaining = Math.max(0, loseTeam.LifeRemaining - damage);
+  }
+
+  // Generate some random match stats for the bots
+  const allPlayers = [
+    ...arenaData.TeamInfo[teamAId].Players,
+    ...arenaData.TeamInfo[teamBId].Players,
+  ];
+  for (const pid of allPlayers) {
+    const info = arenaData.PlayerInfo[pid];
+    if (!info?.Stats) continue;
+    info.Stats.MatchStats.Ringouts += Math.floor(Math.random() * 3);
+    info.Stats.MatchStats.Damage += Math.floor(Math.random() * 500);
+    info.Stats.MatchStats.DamagedAdded += Math.floor(Math.random() * 200);
+  }
+
+  // Aggregate team match stats
+  for (const tid of [teamAId, teamBId]) {
+    const team = arenaData.TeamInfo[tid];
+    if (!team) continue;
+    const teamMatchStats = createMatchStats();
+    for (const pid of team.Players) {
+      const info = arenaData.PlayerInfo[pid];
+      if (!info?.Stats) continue;
+      for (const key of Object.keys(teamMatchStats) as (keyof MatchStats)[]) {
+        teamMatchStats[key] += info.Stats.MatchStats[key];
+      }
+    }
+    team.Stats.MatchStats = teamMatchStats;
+  }
+}
+
+/**
+ * Simulate bot shopping: randomly buy items from the pool (spending currency)
+ * and occasionally sell an existing item. Mutates arenaData in-place.
+ */
+function simulateBotShopping(arenaData: ArenaData): void {
+  const constants = getArenaConstants();
+  const round = arenaData.CurrentRound;
+  const rarities = getRarityWeightsForRound(constants.ShopLevelWeights, round);
+  const itemXpPerLevel = constants.ItemXpPerLevel;
+
+  for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
+    if (!info.bIsBot) continue;
+    const pd = info.PlayerData;
+
+    // Randomly sell one item (30% chance) to free a slot and get gold back
+    const filledSlots = pd.Inventory
+      .map((slot, idx) => ({ slot, idx }))
+      .filter(({ slot }) => slot.Slug !== "");
+    if (filledSlots.length > 0 && Math.random() < 0.3) {
+      const { slot, idx } = filledSlots[Math.floor(Math.random() * filledSlots.length)];
+      pd.CurrencyAmount += slot.SellValue;
+      // Return to pool
+      arenaData.ItemPool[slot.Slug] = (arenaData.ItemPool[slot.Slug] ?? 0) + 1;
+      pd.Inventory[idx] = { Slug: "", Level: 0, Xp: 0, NextLevelXp: 0, SellValue: 0 };
+    }
+
+    // Try to buy items until out of money or no empty/stackable slots
+    const maxBuys = 3;
+    for (let b = 0; b < maxBuys; b++) {
+      const item = pickItemFromPool(arenaData.ItemPool, rarities);
+      if (!item) break;
+
+      const cost = item.cost;
+      if (pd.CurrencyAmount < cost) {
+        // Can't afford — return item to pool
+        arenaData.ItemPool[item.slug] = (arenaData.ItemPool[item.slug] ?? 0) + 1;
+        break;
+      }
+
+      // Try to stack on existing slot
+      const existingSlot = pd.Inventory.find(
+        (slot) => slot.Slug === item.slug && slot.Level < itemXpPerLevel.length,
+      );
+      if (existingSlot) {
+        pd.CurrencyAmount -= cost;
+        existingSlot.Xp += 1;
+        existingSlot.SellValue += cost - 1;
+        while (
+          existingSlot.Level < itemXpPerLevel.length - 1 &&
+          existingSlot.Xp >= existingSlot.NextLevelXp
+        ) {
+          existingSlot.Xp -= existingSlot.NextLevelXp;
+          existingSlot.Level += 1;
+          existingSlot.NextLevelXp = itemXpPerLevel[existingSlot.Level] ?? 0;
+        }
+        continue;
+      }
+
+      // Try to place in empty slot
+      const emptySlot = pd.Inventory.find((slot) => slot.Slug === "");
+      if (emptySlot) {
+        pd.CurrencyAmount -= cost;
+        emptySlot.Slug = item.slug;
+        emptySlot.Level = 1;
+        emptySlot.Xp = 0;
+        emptySlot.NextLevelXp = itemXpPerLevel[1] ?? 1;
+        emptySlot.SellValue = cost - 1;
+        continue;
+      }
+
+      // No space — return item to pool and stop buying
+      arenaData.ItemPool[item.slug] = (arenaData.ItemPool[item.slug] ?? 0) + 1;
+      break;
+    }
+  }
+}
+
 // ─── Reusable match-pairing helpers ──────────────────────────────────────────
 
 /**
@@ -1377,8 +1508,7 @@ async function onAllPlayersCheckedIn(arenaId: string): Promise<void> {
   const roundIdx = Math.min(round - 1, arenaConstants.CurrencyPerRound.length - 1);
   const baseCurrency = arenaConstants.CurrencyPerRound[roundIdx];
 
-  // ── Update bot currency and items ───────────────────────────────────────
-  const rarities = getRarityWeightsForRound(arenaConstants.ShopLevelWeights, round);
+  // ── Update bot currency and simulate shopping ───────────────────────────
   for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
     if (!info.bIsBot) continue;
 
@@ -1411,20 +1541,11 @@ async function onAllPlayersCheckedIn(arenaId: string): Promise<void> {
     );
     payout += interest;
     info.PlayerData.CurrencyAmount += payout;
-
-    // Return old bot items to pool, then assign new ones
-    for (const slot of info.PlayerData.Inventory) {
-      if (slot.Slug) {
-        arenaData.ItemPool[slot.Slug] = (arenaData.ItemPool[slot.Slug] ?? 0) + 1;
-      }
-    }
-    info.PlayerData.Inventory = info.PlayerData.Inventory.map(() => {
-      const item = pickItemFromPool(arenaData.ItemPool, rarities);
-      if (!item) return { Slug: "", Level: 0, Xp: 0, NextLevelXp: 0, SellValue: 0 };
-      return { Slug: item.slug, Level: 1, Xp: 0, NextLevelXp: 1, SellValue: item.cost - 1 };
-    });
     info.BotSettings = { BuildType: getBotBuildType(info.CharacterClass) };
   }
+
+  // Simulate bot buying/selling from the shared pool
+  simulateBotShopping(arenaData);
 
   // Advance round
   arenaData.CurrentRound += 1;
@@ -1474,23 +1595,31 @@ async function onAllPlayersCheckedIn(arenaId: string): Promise<void> {
     arenaData as Parameters<typeof redisClient.json.set>[2],
   );
 
-  // ── Build and publish GameplayConfig for each real match ────────────────
+  // ── Build and publish real matches, simulate bot-only matches ────────────
   for (const { matchId, isRealMatch, teamAId, teamBId } of pairMatches) {
-    if (!isRealMatch) continue;
-
-    const gameplayConfig = await buildMatchGameplayConfig(
-      arenaId,
-      matchId,
-      arenaData,
-      teamAId,
-      teamBId,
-      roundMap,
-      getArenaConstants(),
-      false,
-    );
-    console.log(`Publishing next round match ${matchId}`, JSON.stringify(gameplayConfig));
-    await notifyActiveMatchCreated(gameplayConfig, "OnArenaNextMatch");
+    if (isRealMatch) {
+      const gameplayConfig = await buildMatchGameplayConfig(
+        arenaId,
+        matchId,
+        arenaData,
+        teamAId,
+        teamBId,
+        roundMap,
+        arenaConstants,
+        false,
+      );
+      await notifyActiveMatchCreated(gameplayConfig, "OnArenaNextMatch");
+    } else {
+      simulateBotMatch(arenaData, teamAId, teamBId);
+    }
   }
+
+  // Persist again after bot match simulations updated stats/LifeRemaining
+  await redisClient.json.set(
+    stateKey,
+    "$",
+    arenaData as Parameters<typeof redisClient.json.set>[2],
+  );
 }
 
 export async function arenaRerollCharacters(arenaLobbyId: string, accountId: string) {

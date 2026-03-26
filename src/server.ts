@@ -9,7 +9,7 @@ import * as path from "path";
 import { hydraTokenMiddleware } from "./middleware/auth";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
-import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby, redisGameServerInstanceReady, redisSetPendingJoinLobby } from "./config/redis";
+import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby, redisGameServerInstanceReady, redisSetPendingJoinLobby, redisSaveIdentity } from "./config/redis";
 import { getLeaderboard, getPlayerRank, processMatchLeave } from "./services/eloService";
 import { performGenuineLeave } from "./ssc/ssc";
 import {
@@ -638,6 +638,28 @@ app.put("/ovs/accept-invite/:lobbyId", async (req, res) => {
 });
 
 // ============================================================
+// Identity pre-registration — DLL POSTs steamId/epicId/hardwareId before the game auth request
+// ============================================================
+
+app.post("/api/identify", async (req, res) => {
+  try {
+    let ip = req.ip?.replace(/^::ffff:/, "") ?? "";
+    const clean = (v: any) => (typeof v === "string" && v !== "Unknown" ? v : "");
+    const { steamId: _s = "", epicId: _e = "", hardwareId: _h = "" } = req.body ?? {};
+    const steamId = clean(_s), epicId = clean(_e), hardwareId = clean(_h);
+    if (!ip) {
+      res.status(400).json({ error: "Could not determine IP" });
+      return;
+    }
+    await redisSaveIdentity(ip, steamId, epicId, hardwareId);
+    logger.info(`${logPrefix} Identity registered for IP ${ip} — steam:${steamId} epic:${epicId} hw:${hardwareId.slice(0, 8)}...`);
+    res.json({ ok: true });
+  } catch (e) {
+    logger.error(`${logPrefix} Error in POST /api/identify: ${e}`);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
 // Leaderboard — Top 100 rankings for 1v1 and 2v2
 // ============================================================
 

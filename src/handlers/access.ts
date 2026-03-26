@@ -88,11 +88,12 @@ async function generateStaticAccess(req: express.Request) {
       KitchenSink.TryInspect(error);
     }
   } else {
-    // Backfill identity fields onto existing record if any are missing
+    // Backfill identity fields onto existing record if any are stale (empty / "Unknown" / ip_ fallback)
+    const isStale = (val: string) => !val || val === "Unknown" || val.startsWith("ip_");
     let dirty = false;
-    if (steamId && !player.steamId) { player.steamId = steamId; dirty = true; }
-    if (epicId && !player.epicId) { player.epicId = epicId; dirty = true; }
-    if (hardwareId && !player.hardwareId) { player.hardwareId = hardwareId; dirty = true; }
+    if (steamId && isStale(player.steamId)) { player.steamId = steamId; dirty = true; }
+    if (epicId && isStale(player.epicId)) { player.epicId = epicId; dirty = true; }
+    if (hardwareId && isStale(player.hardwareId)) { player.hardwareId = hardwareId; dirty = true; }
     if (player.ip !== ip) { player.ip = ip; dirty = true; }
     if (dirty) {
       try {

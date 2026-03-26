@@ -369,6 +369,17 @@ export async function redisGetPlayerConnectionByIp(ip: string) {
   return connection;
 }
 
+export async function redisSaveIdentity(ip: string, steamId: string, epicId: string, hardwareId: string) {
+  await redisClient.hSet(`identity:${ip}`, { steamId, epicId, hardwareId });
+  await redisClient.expire(`identity:${ip}`, 300); // 5 min TTL, enough for access handshake
+}
+
+export async function redisGetIdentity(ip: string): Promise<{ steamId: string; epicId: string; hardwareId: string } | null> {
+  const data = await redisClient.hGetAll(`identity:${ip}`);
+  if (!data || !data.steamId) return null;
+  return { steamId: data.steamId, epicId: data.epicId ?? "", hardwareId: data.hardwareId ?? "" };
+}
+
 export async function redisUpdatePlayerStatus(playerId: string, status: string) {
   await redisClient.hSet(`player:${playerId}`, { status: status });
 }

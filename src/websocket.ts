@@ -1126,7 +1126,7 @@ export class WebSocketService {
           bIsTutorial: false,
           MatchId: notification.matchId,
           bIsOnlineMatch: true,
-          ModeString: notification.isCustomGame ? "" : notification.mode,
+          ModeString: notification.mode,
           Map: notification.map,
           bIsRift: false,
         },
@@ -1987,6 +1987,7 @@ export class WebSocketService {
         // Refresh TTLs so the lobby survives through long sessions
         await redisSaveLobbyState(lobbyId, lobbyState);
         await redisSavePlayerLobby(playerId, lobbyId);
+        await redisClient.del(`party_ready:${lobbyId}`);
 
         // This player is in a party — preserve their lobby data through disconnect
         // so the REJOIN path in create_party_lobby works when they reconnect

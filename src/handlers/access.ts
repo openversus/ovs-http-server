@@ -64,10 +64,21 @@ async function generateStaticAccess(req: express.Request) {
 
   let hydraUsername = "";
   let randomName = hydraUsername = NameGenerator.NewName();
-  let player = await PlayerTesterModel.findOne({ ip });
+
+  // Look up pre-registered identity from DLL (steamId / epicId / hardwareId)
+  const identity = await Redis.redisGetIdentity(ip);
+  const { steamId = "", epicId = "", hardwareId = "" } = identity ?? {};
+
+  // Try to find existing player by identity fields first (prefer steamId > epicId > hardwareId), then fall back to IP
+  let player = null;
+  if (steamId) player = await PlayerTesterModel.findOne({ steamId });
+  if (!player && epicId) player = await PlayerTesterModel.findOne({ epicId });
+  if (!player && hardwareId) player = await PlayerTesterModel.findOne({ hardwareId });
+  if (!player) player = await PlayerTesterModel.findOne({ ip });
+
   if (!player) {
     // generate a random name like OpenVersus_1247112554154
-    player = new PlayerTesterModel({ ip, name: randomName, hydraUsername: hydraUsername, GameplayPreferences: 964 });
+    player = new PlayerTesterModel({ ip, name: randomName, hydraUsername: hydraUsername, GameplayPreferences: 964, steamId, epicId, hardwareId });
     try {
       await player.save();
       logger.info(`${logPrefix} No player found for IP ${ip}. Created new player with id ${player.id} and name ${randomName}.`);
@@ -75,6 +86,21 @@ async function generateStaticAccess(req: express.Request) {
     catch (error) {
       logger.error(`${logPrefix} Error creating new player, error: ${error}`);
       KitchenSink.TryInspect(error);
+    }
+  } else {
+    // Backfill identity fields onto existing record if any are missing
+    let dirty = false;
+    if (steamId && !player.steamId) { player.steamId = steamId; dirty = true; }
+    if (epicId && !player.epicId) { player.epicId = epicId; dirty = true; }
+    if (hardwareId && !player.hardwareId) { player.hardwareId = hardwareId; dirty = true; }
+    if (player.ip !== ip) { player.ip = ip; dirty = true; }
+    if (dirty) {
+      try {
+        await player.save();
+        logger.info(`${logPrefix} Updated identity fields for player ${player.id}.`);
+      } catch (error) {
+        logger.error(`${logPrefix} Error updating identity for player ${player.id}: ${error}`);
+      }
     }
   }
 
@@ -115,6 +141,9 @@ async function generateStaticAccess(req: express.Request) {
     lobby_id: "",
     GameplayPreferences: player.GameplayPreferences ?? 964,
     // GameplayPreferences: Number(player.GameplayPreferences) ?? 964,
+    steamId: player.steamId ?? "",
+    epicId: player.epicId ?? "",
+    hardwareId: player.hardwareId ?? "",
   };
   player.token = account;
   player.account = account;

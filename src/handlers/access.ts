@@ -81,7 +81,12 @@ async function generateStaticAccess(req: express.Request) {
     if (steamId == null || steamId === undefined) steamId = "";
     if (epicId == null || epicId === undefined) epicId = "";
     if (hardwareId == null || hardwareId === undefined) hardwareId = "";
-    player = new PlayerTesterModel({ ip, name: randomName, hydraUsername: hydraUsername, GameplayPreferences: 964, steamId, epicId, hardwareId });
+    player = new PlayerTesterModel({
+      ip, name: randomName, hydraUsername: hydraUsername, GameplayPreferences: 964,
+      ...(steamId    && { steamId }),
+      ...(epicId     && { epicId }),
+      ...(hardwareId && { hardwareId }),
+    });
     try {
       await player.save();
       logger.info(`${logPrefix} No player found for IP ${ip}. Created new player with id ${player.id} and name ${randomName}.`);

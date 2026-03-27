@@ -67,7 +67,7 @@ async function generateStaticAccess(req: express.Request) {
 
   // Look up pre-registered identity from DLL (steamId / epicId / hardwareId)
   const identity = await Redis.redisGetIdentity(ip);
-  const { steamId = "", epicId = "", hardwareId = "" } = identity ?? {};
+  let { steamId = "", epicId = "", hardwareId = "" } = identity ?? {};
 
   // Try to find existing player by identity fields first (prefer steamId > epicId > hardwareId), then fall back to IP
   let player = null;
@@ -78,6 +78,9 @@ async function generateStaticAccess(req: express.Request) {
 
   if (!player) {
     // generate a random name like OpenVersus_1247112554154
+    if (steamId == null || steamId === undefined) steamId = "";
+    if (epicId == null || epicId === undefined) epicId = "";
+    if (hardwareId == null || hardwareId === undefined) hardwareId = "";
     player = new PlayerTesterModel({ ip, name: randomName, hydraUsername: hydraUsername, GameplayPreferences: 964, steamId, epicId, hardwareId });
     try {
       await player.save();

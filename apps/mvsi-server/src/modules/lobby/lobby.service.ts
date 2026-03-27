@@ -32,6 +32,7 @@ import {
   type LobbyTeam,
   type PartyLobby,
 } from "./lobby.types";
+import { FLEET_SERVERS } from "../../data/fleets";
 
 const LOBBY_EX = 2 * 24 * 60 * 60; // 2 days
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -621,11 +622,9 @@ export async function setPlayerConnectionInfo(
   playerId: string,
   regionData: { latency: number; region_id: string }[],
 ) {
-  await redisClient.json.set(
-    lobbyKey(lobbyId),
-    `$.players_connection_info["${playerId}"]`,
-    { game_server_region_data: regionData } as Parameters<typeof redisClient.json.set>[2],
-  );
+  await redisClient.json.set(lobbyKey(lobbyId), `$.players_connection_info["${playerId}"]`, {
+    game_server_region_data: regionData,
+  } as Parameters<typeof redisClient.json.set>[2]);
 }
 
 export async function setLobbyJoinable(lobbyId: string, leaderId: string, joinable: boolean) {
@@ -1593,6 +1592,23 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
     }
   }
 
+  const region =
+    FLEET_SERVERS.find(
+      (s) =>
+        s.regionid ===
+        lobby.players_connection_info[lobby.LeaderID]?.game_server_region_data?.reduce(
+          (lowest, current) => (current.latency < lowest.latency ? current : lowest),
+        )?.region_id,
+    )?.region ?? "CENTRAL_US";
+
+  console.log(
+    `Selected region for match ${matchId} is ${region} based on leader's connection info`,
+  );
+
+  console.log(
+    `Leader's connection info: ${JSON.stringify(lobby.players_connection_info[lobby.LeaderID])}`,
+  );
+
   const gameplayConfig: GameplayConfig = {
     GameplayConfig: {
       Spectators,
@@ -1604,7 +1620,7 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
       bIsCustomGame: true,
       bIsRanked: false,
       bIsCasualSpecial: false,
-      Cluster: "",
+      Cluster: region,
       bAllowMapHazards: lobby.match_config.AllowHazards,
       WorldBuffs: lobby.WorldBuffs,
       RiftNodeAttunement: "Attunements:None",
@@ -1634,8 +1650,8 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
       Players,
     },
   };
-
-  console.log(`Match Created: ${JSON.stringify(gameplayConfig, null, 2)}`);
+  
+  //console.log(`Match Created: ${JSON.stringify(gameplayConfig, null, 2)}`);
 
   await notifyActiveMatchCreated(gameplayConfig);
 }

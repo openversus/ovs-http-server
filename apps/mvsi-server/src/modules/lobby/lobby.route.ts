@@ -712,23 +712,6 @@ router.put(
 );
 
 router.put(
-  "/ssc/invoke/start_arena_match",
-  async ({ claims, body }) => {
-    const lobby = (await getLobby(body.LobbyId)) as ArenaLobby | null;
-    if (!lobby || lobby.LeaderID !== claims.id) {
-      return { body: {}, metadata: null, return_code: 1 };
-    }
-    await assembleArenaMatch(lobby);
-    return { body: {}, metadata: null, return_code: 0 };
-  },
-  {
-    body: t.Object({
-      LobbyId: t.String(),
-    }),
-  },
-);
-
-router.put(
   "/ssc/invoke/arena_select_character",
   async ({ claims, body }) => {
     await arenaSelectCharacter(body.ArenaLobbyId, claims.id, body.CharacterSlug, body.SkinSlug);

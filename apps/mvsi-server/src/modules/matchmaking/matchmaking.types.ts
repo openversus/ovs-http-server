@@ -1,6 +1,7 @@
 import { ArenaConstants, ArenaData } from "../lobby/arena.lobby.types";
 import { NotificationTemplate } from "../notifications/notifications.types";
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
+import { Region } from "./matchmaking.matching";
 
 export const MATCHMAKING_MATCH_FOUND_CHANNEL = "matchmaking:matchfound";
 export const MATCHMAKING_MATCH_TICK_CHANNEL = "matchmaking:tick";
@@ -135,7 +136,7 @@ type MatchConfig = {
   bAllowMapHazards: boolean;
   RiftNodeAttunement: string;
   CountdownDisplay: string;
-  Cluster: string;
+  Cluster: Region;
   WorldBuffs: any[];
   bIsTutorial: boolean;
   MatchId: string;

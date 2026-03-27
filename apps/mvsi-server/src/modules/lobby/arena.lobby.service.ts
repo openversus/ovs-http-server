@@ -34,6 +34,7 @@ import {
 } from "../../data/arenaItemDefs";
 import { INVENTORY_DEFINITIONS } from "../../data/inventoryDefs";
 import { RealtimeNotificationUsersMessage } from "../notifications/notifications.types";
+import { Region } from "../matchmaking/matchmaking.matching";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -522,7 +523,10 @@ export async function joinArenaLobby(
  *
  * Returns the arenaId string on success, or null on failure.
  */
-export async function assembleArenaMatch(lobby: ArenaLobby): Promise<string | null> {
+export async function assembleArenaMatch(
+  lobby: ArenaLobby,
+  chosenRegion: Region,
+): Promise<string | null> {
   const arenaId = new ObjectId().toHexString();
   const arenaConstants = getArenaConstants();
 
@@ -682,6 +686,7 @@ export async function assembleArenaMatch(lobby: ArenaLobby): Promise<string | nu
         roundMap,
         arenaConstants,
         true,
+        chosenRegion,
       );
       await notifyActiveMatchCreated(gameplayConfig);
     } else {
@@ -922,9 +927,9 @@ export async function arenaPlayerShopClosed(
   // Return unpurchased shop items back to the shared pool
   // (they were reserved from pool during shop generation)
   const purchasedKeys = new Set(
-    shopDetails.ItemTransactions
-      .filter((tx) => tx.bPurchase)
-      .map((tx) => `${tx.LocalShopIndex}:${tx.ItemIndex}`),
+    shopDetails.ItemTransactions.filter((tx) => tx.bPurchase).map(
+      (tx) => `${tx.LocalShopIndex}:${tx.ItemIndex}`,
+    ),
   );
   for (let si = 0; si < shopLocal.length; si++) {
     const option = shopLocal[si];
@@ -1104,11 +1109,7 @@ export async function submitArenaMatchStats(
  * Simulate the outcome of a bot-only match. Randomly picks a winner,
  * updates win/loss/streak stats and LifeRemaining on arenaData in-place.
  */
-function simulateBotMatch(
-  arenaData: ArenaData,
-  teamAId: string,
-  teamBId: string,
-): void {
+function simulateBotMatch(arenaData: ArenaData, teamAId: string, teamBId: string): void {
   const constants = getArenaConstants();
   const round = arenaData.CurrentRound;
 
@@ -1179,9 +1180,9 @@ function simulateBotShopping(arenaData: ArenaData): void {
     const pd = info.PlayerData;
 
     // Randomly sell one item (30% chance) to free a slot and get gold back
-    const filledSlots = pd.Inventory
-      .map((slot, idx) => ({ slot, idx }))
-      .filter(({ slot }) => slot.Slug !== "");
+    const filledSlots = pd.Inventory.map((slot, idx) => ({ slot, idx })).filter(
+      ({ slot }) => slot.Slug !== "",
+    );
     if (filledSlots.length > 0 && Math.random() < 0.3) {
       const { slot, idx } = filledSlots[Math.floor(Math.random() * filledSlots.length)];
       pd.CurrencyAmount += slot.SellValue;
@@ -1300,6 +1301,7 @@ async function buildMatchGameplayConfig(
   map: string,
   arenaConstants: ArenaConstants,
   includeConstants: boolean,
+  chosenRegion?: Region,
 ): Promise<GameplayConfig> {
   const teamAPlayers = arenaData.TeamInfo[teamAId].Players;
   const teamBPlayers = arenaData.TeamInfo[teamBId].Players;
@@ -1386,7 +1388,7 @@ async function buildMatchGameplayConfig(
       bAllowMapHazards: true,
       RiftNodeAttunement: "Attunements:Any",
       CountdownDisplay: "CountdownTypes:ArenaRound",
-      Cluster: "CENTRAL_US",
+      Cluster: chosenRegion ?? "CENTRAL_US",
       WorldBuffs: [],
       bIsTutorial: false,
       MatchId: matchId,
@@ -1479,7 +1481,7 @@ export async function arenaCheckin(
     "$",
     arenaData as Parameters<typeof redisClient.json.set>[2],
   );
-  console.log("arena details",JSON.stringify(arenaData,null,2))
+  console.log("arena details", JSON.stringify(arenaData, null, 2));
 
   // ── Check if all real players have now checked in ───────────────────────
   const refreshed = (await redisClient.json.get(stateKey)) as ArenaData | null;

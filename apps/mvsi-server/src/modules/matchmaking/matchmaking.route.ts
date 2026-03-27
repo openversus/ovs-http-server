@@ -107,16 +107,6 @@ router.post("/matches/matchmaking/request/:matchId/cancel", async ({ claims, par
   return await cancelMatchmaking(claims.id, params.matchId);
 });
 
-router.put("/ssc/invoke/rematch_decline", async () => {
-  // TODO : Implement
-  return { body: [], metadata: null, return_code: 0 };
-});
-
-router.put("/ssc/invoke/toast_player", async () => {
-  // TODO : Implement
-  return { body: [], metadata: null, return_code: 0 };
-});
-
 router.put(
   "/ssc/invoke/perks_lock",
   async ({ body, claims }) => {

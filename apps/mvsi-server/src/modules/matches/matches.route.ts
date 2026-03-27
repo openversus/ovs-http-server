@@ -7,8 +7,27 @@ import { HydraQueryPaginated } from "../../types";
 import { getLobby, getLobbyIdFromCode, setPlayerConnectionInfo } from "../lobby/lobby.service";
 import { submitArenaMatchStats } from "../lobby/arena.lobby.service";
 import { getActiveMatch, notifyActiveMatchEnded } from "../matchmaking/matchmaking.service";
+import { rematchDeclined } from "./matches.service";
 
 const router = new Elysia().use(MVSI_HYDRA_WITH_JWT);
+
+router.put(
+  "/ssc/invoke/rematch_decline",
+  async ({ claims, body }) => {
+    await rematchDeclined(claims.id, body.ContainerMatchId);
+    return { body: [], metadata: null, return_code: 0 };
+  },
+  {
+    body: t.Object({
+      ContainerMatchId: t.String(),
+    }),
+  },
+);
+
+router.put("/ssc/invoke/toast_player", async () => {
+  // TODO : Implement
+  return { body: [], metadata: null, return_code: 0 };
+});
 
 router.get(
   "/matches/all/:id",
@@ -45,7 +64,11 @@ router.put(
         >
       )[claims.id];
       if (playerData?.game_server_region_data) {
-        await setPlayerConnectionInfo(params.lobbyId, claims.id, playerData.game_server_region_data);
+        await setPlayerConnectionInfo(
+          params.lobbyId,
+          claims.id,
+          playerData.game_server_region_data,
+        );
       }
     }
     return {
@@ -165,21 +188,24 @@ router.put(
     };
   },
   {
-    body: t.Object({
-      player_data: t.Optional(
-        t.Record(
-          t.String(),
-          t.Object({
-            game_server_region_data: t.Array(
-              t.Object({
-                latency: t.Number(),
-                region_id: t.String(),
-              }),
-            ),
-          }),
+    body: t.Object(
+      {
+        player_data: t.Optional(
+          t.Record(
+            t.String(),
+            t.Object({
+              game_server_region_data: t.Array(
+                t.Object({
+                  latency: t.Number(),
+                  region_id: t.String(),
+                }),
+              ),
+            }),
+          ),
         ),
-      ),
-    }, { additionalProperties: true }),
+      },
+      { additionalProperties: true },
+    ),
   },
 );
 

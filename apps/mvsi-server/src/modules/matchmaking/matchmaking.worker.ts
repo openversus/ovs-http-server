@@ -16,7 +16,7 @@ import {
   notifyActiveMatchCreated,
   removeTicketsFromQueue,
 } from "./matchmaking.service";
-import { findMatchedGroups } from "./matchmaking.matching";
+import { findMatchedGroups, getMatchServerRegion, type Region } from "./matchmaking.matching";
 import {
   MATCH_TYPES,
   MATCHMAKING_MATCH_TICK_CHANNEL,
@@ -176,9 +176,7 @@ async function processArenaQueue(): Promise<boolean> {
     const now = Date.now();
 
     // Age of the longest-waiting ticket drives the phase threshold.
-    const oldestAgeMs = Math.max(
-      ...tickets.map((t) => now - new Date(t.created_at).getTime()),
-    );
+    const oldestAgeMs = Math.max(...tickets.map((t) => now - new Date(t.created_at).getTime()));
 
     // Categorise every team across all tickets.
     // fullTeamEntries: 2-player real teams that must stay together.
@@ -198,8 +196,7 @@ async function processArenaQueue(): Promise<boolean> {
     }
 
     // Potential full teams = complete pairs + paired-up solos
-    const totalPossibleFullTeams =
-      fullTeamEntries.length + Math.floor(soloEntries.length / 2);
+    const totalPossibleFullTeams = fullTeamEntries.length + Math.floor(soloEntries.length / 2);
 
     // Phase 1 (< 30 s): require 8 full real-player teams
     if (oldestAgeMs < ARENA_CONFIG.IDEAL_WAIT_MS) {
@@ -250,9 +247,7 @@ async function processArenaQueue(): Promise<boolean> {
       usedTicketIds.add(lastSolo.ticket.matchmakingRequestId);
     }
 
-    const usedTickets = tickets.filter((t) =>
-      usedTicketIds.has(t.matchmakingRequestId),
-    );
+    const usedTickets = tickets.filter((t) => usedTicketIds.has(t.matchmakingRequestId));
 
     // ── Build a synthetic ArenaLobby from the selected teams ─────────────────
     const makeLobbyPlayer = (pid: string): LobbyPlayer => ({
@@ -282,6 +277,7 @@ async function processArenaQueue(): Promise<boolean> {
         Players: Object.fromEntries(players.map((pid) => [pid, makeLobbyPlayer(pid)])),
         Length: players.length,
       })),
+      players_connection_info: {},
     };
 
     // ── Remove consumed tickets, assemble, then notify completion ─────────────
@@ -400,7 +396,10 @@ async function configurePlayersForMatch(
   return players;
 }
 
-async function createRetailMatch(tickets: MatchmakingTicket[], matchType: MATCH_TYPES): Promise<void> {
+async function createRetailMatch(
+  tickets: MatchmakingTicket[],
+  matchType: MATCH_TYPES,
+): Promise<void> {
   try {
     const totalPlayers = tickets.reduce((sum, ticket) => sum + ticket.playerIds.length, 0);
 
@@ -408,6 +407,12 @@ async function createRetailMatch(tickets: MatchmakingTicket[], matchType: MATCH_
     if (!gameMode) {
       throw new Error("Failed to get gamed mode");
     }
+
+    // Pick the best server region from all matched tickets
+    const anchorRegion = (tickets[0].region ?? "WEST_US") as Region;
+    const otherRegions = tickets.slice(1).map((t) => (t.region ?? "WEST_US") as Region);
+    const chosenRegion = getMatchServerRegion(anchorRegion, ...otherRegions);
+
     const gameplayConfig: GameplayConfig = {
       GameplayConfig: {
         Spectators: {},
@@ -419,7 +424,7 @@ async function createRetailMatch(tickets: MatchmakingTicket[], matchType: MATCH_
         bIsCustomGame: false,
         bIsRanked: false,
         bIsCasualSpecial: false,
-        Cluster: "",
+        Cluster: chosenRegion,
         bAllowMapHazards: true,
         WorldBuffs: [],
         RiftNodeAttunement: "Attunements:None",

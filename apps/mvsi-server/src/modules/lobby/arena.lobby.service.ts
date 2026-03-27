@@ -1386,7 +1386,7 @@ async function buildMatchGameplayConfig(
       bAllowMapHazards: true,
       RiftNodeAttunement: "Attunements:Any",
       CountdownDisplay: "CountdownTypes:ArenaRound",
-      Cluster: "ec2-us-east-1-dokken",
+      Cluster: "CENTRAL_US",
       WorldBuffs: [],
       bIsTutorial: false,
       MatchId: matchId,

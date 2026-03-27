@@ -42,6 +42,15 @@ export type MultiplayParams = {
   MultiplayRegionId: string;
 };
 
+export type RegionLatencyData = {
+  latency: number;
+  region_id: string;
+};
+
+export type PlayerConnectionInfo = {
+  game_server_region_data: RegionLatencyData[];
+};
+
 export type LockedLoadout = {
   Character: string;
   Skin: string;
@@ -63,6 +72,7 @@ export type BaseLobby = {
   IsLobbyJoinable: boolean;
   MatchID: string;
   Template: keyof typeof lobbyTypesMap;
+  players_connection_info: Record<string, PlayerConnectionInfo>;
 };
 
 // Regular Lobby requires ModeString

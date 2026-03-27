@@ -31,9 +31,17 @@ export type MatchmakingPlayer = {
   region: string;
 };
 
+export type TicketRegionLatency = {
+  region: string;
+  latency: number;
+};
+
 export type MatchmakingTicket = {
   partySize: number;
+  /** Primary (lowest-latency) region for this party */
   region: string;
+  /** All regions sorted by latency (lowest first) */
+  regions: TicketRegionLatency[];
   skill: number;
   playerIds: string[];
   /** For arena: each inner array is one preserved team; for regular modes: [[...playerIds]] */
@@ -161,6 +169,7 @@ export type GameNotification = {
 export type MatchFoundChannelMessage = {
   matchId: string;
   matchKey: string;
+  regionId: string;
   playerIds: string[];
   gameNotification: NotificationTemplate;
 };

@@ -1,6 +1,6 @@
-import type { PlayerPresence } from "./playerPresence.types";
-import { redisClient } from "@mvsi/redis";
 import { logger } from "@mvsi/logger";
+import { redisClient } from "@mvsi/redis";
+import type { PlayerPresence } from "./playerPresence.types";
 
 const PLAYER_PRESENCE_ONLINE_TTL = 60;
 

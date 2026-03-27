@@ -3,6 +3,7 @@ import { env } from "@mvsi/env";
 import { logger } from "@mvsi/logger";
 import { redisClient } from "@mvsi/redis";
 import { ObjectId } from "mongodb";
+import { FLEET_SERVERS } from "../../data/fleets";
 import { getLobby, lockLobby } from "../lobby/lobby.service";
 import { LOBBY_QUEUED_CHANNEL } from "../lobby/lobby.types";
 import {
@@ -20,6 +21,7 @@ import {
   type MatchmakingCancelMessage,
   type MatchmakingCompleteMessage,
   type MatchmakingTicket,
+  type TicketRegionLatency,
 } from "./matchmaking.types";
 
 const MATCHMAKING_TICKET_KEY = (matchmakingRequestId: string) =>
@@ -33,9 +35,6 @@ export async function requestMatchmakingByLobby(
   MultiplayParams: any,
   slug: string,
 ) {
-  // TODO: Get region_id and latency from player presence
-  const region_id = "19c465a7-f21f-11ea-a5e3-0954f48c5682";
-  const latency = 0.04791003838181496;
   const lobby = await getLobby(lobbyId);
   if (!lobby) {
     return;
@@ -82,7 +81,7 @@ export async function requestMatchmakingByLobby(
     players_connection_info: Object.fromEntries(
       playerIds.map((pid) => [
         pid,
-        { game_server_region_data: [{ region_id: region_id, latency: latency }] },
+        lobby.players_connection_info[pid] ?? { game_server_region_data: [] },
       ]),
     ),
     player_connections: Object.fromEntries(playerIds.map((pid) => [pid, [randomUUID()]])),
@@ -131,8 +130,54 @@ export async function requestMatchmakingByLobby(
     server_submitted: false,
   };
 
-  await queueMatchmaking(accountId, playerIds, teams, data.from_match, data.id, matchType);
+  // Compute best regions by averaging latency across all players
+  const regions = computePartyRegions(lobby.players_connection_info, playerIds);
+  console.log("Computed regions with latency for matchmaking request:", regions);
+
+  await queueMatchmaking(accountId, playerIds, teams, data.from_match, data.id, matchType, regions);
   return data;
+}
+
+/**
+ * For each region, average the latency across all players in the party.
+ * Returns regions sorted by lowest average latency.
+ * If no latency data is available, falls back to all fleet regions with 0 latency.
+ */
+function computePartyRegions(
+  connectionInfo: Record<string, { game_server_region_data: { latency: number; region_id: string }[] }>,
+  playerIds: string[],
+): TicketRegionLatency[] {
+  // Collect latencies per region_id across all players
+  console.log("connectionInfo:", JSON.stringify(connectionInfo, null, 2));
+  const regionTotals = new Map<string, { total: number; count: number }>();
+
+  for (const pid of playerIds) {
+    const info = connectionInfo[pid];
+    if (!info?.game_server_region_data) continue;
+    for (const entry of info.game_server_region_data) {
+      const existing = regionTotals.get(entry.region_id) ?? { total: 0, count: 0 };
+      existing.total += entry.latency;
+      existing.count += 1;
+      regionTotals.set(entry.region_id, existing);
+    }
+  }
+
+  if (regionTotals.size === 0) {
+    // No latency data — return all fleet regions with a default
+    return FLEET_SERVERS.map((f) => ({ region: f.region, latency: 0 }));
+  }
+
+  // Map region UUIDs back to Region names, average the latency
+  const results: TicketRegionLatency[] = [];
+  for (const [regionId, { total, count }] of regionTotals) {
+    const fleet = FLEET_SERVERS.find((f) => f.regionid === regionId);
+    if (!fleet) continue;
+    results.push({ region: fleet.region, latency: total / count });
+  }
+
+  // Sort by average latency ascending (best region first)
+  results.sort((a, b) => a.latency - b.latency);
+  return results;
 }
 
 export async function getActiveMatch(matchId: string) {
@@ -160,6 +205,7 @@ export async function notifyActiveMatchCreated(
   const msg: MatchFoundChannelMessage = {
     matchId: gameplayConfig.GameplayConfig.MatchId,
     matchKey: activeMatch.matchKey,
+    regionId: gameplayConfig.GameplayConfig.Cluster,
     playerIds: Object.keys(gameplayConfig.GameplayConfig.Players).filter(
       (pid) => !gameplayConfig.GameplayConfig.Players[pid].bIsBot,
     ),
@@ -191,10 +237,12 @@ export async function queueMatchmaking(
   partyId: string,
   matchmakingRequestId: string,
   matchType: MATCH_TYPES,
+  regions: TicketRegionLatency[],
 ): Promise<void> {
   try {
     const ticket: MatchmakingTicket = {
-      region: "MVSI",
+      region: regions[0]?.region ?? "WEST_US",
+      regions,
       skill: 0,
       created_at: new Date(),
       matchType,
@@ -205,6 +253,7 @@ export async function queueMatchmaking(
       playerIds,
       teams,
     };
+    console.log("Queueing matchmaking ticket:", JSON.stringify(ticket, null, 2));
     await lockLobby(matchmakingRequestId, partyLeaderId);
     await notifyLobbyPartyQueuedStarted(ticket);
     await addTicketToQueue(ticket.matchType, ticket);

@@ -616,6 +616,18 @@ export async function getLobby(lobbyId: string) {
   return (lobby ?? null) as BaseLobby | null;
 }
 
+export async function setPlayerConnectionInfo(
+  lobbyId: string,
+  playerId: string,
+  regionData: { latency: number; region_id: string }[],
+) {
+  await redisClient.json.set(
+    lobbyKey(lobbyId),
+    `$.players_connection_info["${playerId}"]`,
+    { game_server_region_data: regionData } as Parameters<typeof redisClient.json.set>[2],
+  );
+}
+
 export async function setLobbyJoinable(lobbyId: string, leaderId: string, joinable: boolean) {
   await evalLua(
     LUA_SET_LOBBY_JOINABLE,
@@ -695,28 +707,12 @@ export async function createBaseLobby(accountId: string, template: keyof typeof 
     GameVersion: env.GAME_VERSION,
     HissCrc: getCurrentCRC(),
     Platforms: { [accountId]: "PC" },
-    AllMultiplayParams: {
-      "1": {
-        MultiplayClusterSlug: "ec2-us-east-1-dokken",
-        MultiplayProfileId: "1252499",
-        MultiplayRegionId: "",
-      },
-      "2": {
-        MultiplayClusterSlug: "ec2-us-east-1-dokken",
-        MultiplayProfileId: "1252922",
-        MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682",
-      },
-      "3": { MultiplayClusterSlug: "", MultiplayProfileId: "1252925", MultiplayRegionId: "" },
-      "4": {
-        MultiplayClusterSlug: "ec2-us-east-1-dokken",
-        MultiplayProfileId: "1252928",
-        MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682",
-      },
-    },
+    AllMultiplayParams: {},
     LockedLoadouts: { [accountId]: { Character: playerConfig.Character, Skin: playerConfig.Skin } },
     IsLobbyJoinable: true,
     MatchID: new ObjectId().toHexString(),
     Template: template,
+    players_connection_info: {},
   };
   return baseLobby;
 }
@@ -1351,7 +1347,7 @@ export async function joinCustomLobby(lobbyId: string, accountId: string, isSpec
   const updatedLobby = await getLobby(lobbyId);
 
   const playerTeam = lobby.Teams.find((t) => t.Players[accountId]);
-  const cluster = lobby.AllMultiplayParams["1"]?.MultiplayClusterSlug ?? "";
+  const cluster = "";
 
   await redisClient.publish(
     LOBBY_JOINED_CHANNEL,

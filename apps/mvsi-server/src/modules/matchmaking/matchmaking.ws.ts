@@ -1,6 +1,9 @@
-import { env } from "@mvsi/env";
+import { createConnection } from "node:net";
 import { logger } from "@mvsi/logger";
+import { RollbackServerModel } from "@mvsi/database/models/RollbackServer";
 import { encodeHydraWS, MAIN_WEBSOCKET, type MVSI_Websocket } from "../../websocket.elysia";
+import { FLEET_SERVERS } from "../../data/fleets";
+import { REGION_PROXIMITY, type Region } from "./matchmaking.matching";
 import { getActiveMatch } from "./matchmaking.service";
 import {
   ACTIVEMATCH_END_CHANNEL,
@@ -50,8 +53,8 @@ subscriber.subscribe(MATCHMAKING_MATCH_TICK_CHANNEL, (message) => {
   handleMatchTick(notification);
 });
 
-function handleMatchFound(notification: MatchFoundChannelMessage) {
-  const { matchId, matchKey, playerIds, gameNotification } = notification;
+async function handleMatchFound(notification: MatchFoundChannelMessage) {
+  const { matchId, matchKey, regionId, playerIds, gameNotification } = notification;
 
   for (const playerId of playerIds) {
     const client = clients.get(playerId);
@@ -60,13 +63,21 @@ function handleMatchFound(notification: MatchFoundChannelMessage) {
     }
   }
 
+  // Find a reachable rollback server for this region (with fallback)
+  const server = await findReachableServer(regionId);
+
+  if (!server) {
+    logger.error(`No reachable rollback server found for match ${matchId} (region ${regionId})`);
+    return;
+  }
+
   const serverReadyMessage = {
     data: {
       MatchKey: matchKey,
       MatchID: matchId,
-      Port: env.UDP_PORT,
+      Port: server.port,
       template_id: "GameServerReadyNotification",
-      IPAddress: env.UDP_SERVER_IP,
+      IPAddress: server.ip,
     },
     payload: { match: { id: matchId }, custom_notification: "realtime" },
     header: "",
@@ -75,16 +86,18 @@ function handleMatchFound(notification: MatchFoundChannelMessage) {
   MAIN_WEBSOCKET.server?.publish(matchId, encodeHydraWS(serverReadyMessage));
 
   MAIN_WEBSOCKET.server?.publish(matchId, encodeHydraWS(gameNotification));
-  logger.info(`Sent match notifications to all players for match ${matchId}`);
+  logger.info(
+    `Sent match notifications to all players for match ${matchId} (server ${server.ip}:${server.port})`,
+  );
 
   const gameServerReadyMessage = {
     data: {},
     payload: {
       game_server_instance: {
         game_server_type_slug: "multiplay",
-        port: env.UDP_PORT,
+        port: server.port,
         owner_id: matchId,
-        host: env.UDP_SERVER_IP,
+        host: server.ip,
         id: new ObjectId().toHexString(),
       },
       proxied_data: null,
@@ -93,6 +106,69 @@ function handleMatchFound(notification: MatchFoundChannelMessage) {
     cmd: "game-server-instance-ready",
   };
   MAIN_WEBSOCKET.server?.publish(matchId, encodeHydraWS(gameServerReadyMessage));
+}
+
+// ── Server discovery & health check ──────────────────────────────────────────
+
+const PING_TIMEOUT_MS = 3000;
+
+/** TCP connect probe — resolves true if the port is reachable within the timeout. */
+function pingServer(ip: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host: ip, port, timeout: PING_TIMEOUT_MS }, () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.on("error", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.on("timeout", () => {
+      socket.destroy();
+      resolve(false);
+    });
+  });
+}
+
+/**
+ * Finds a reachable rollback server for the given region.
+ * 1. Query RollbackServers for the target region, ping each.
+ * 2. If none respond, expand to neighbor regions (from REGION_PROXIMITY).
+ * 3. Returns the first reachable server, or null if none found.
+ */
+async function findReachableServer(regionId: string): Promise<{ ip: string; port: number } | null> {
+  // Resolve regionId to a Region name (regionId could be a Region name or a fleet UUID)
+  const fleet = FLEET_SERVERS.find((f) => f.regionid === regionId || f.region === regionId);
+  const regionName = fleet?.region ?? regionId;
+
+  // Try primary region first
+  const primaryServer = await findServerInRegion(regionName);
+  if (primaryServer) return primaryServer;
+
+  // Expand to neighbor regions
+  const neighbors = REGION_PROXIMITY[regionName as Region];
+  if (neighbors) {
+    for (const neighbor of neighbors) {
+      const server = await findServerInRegion(neighbor.region);
+      if (server) {
+        logger.info(`Fallback: using server in ${neighbor.region} instead of ${regionName}`);
+        return server;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function findServerInRegion(region: string): Promise<{ ip: string; port: number } | null> {
+  const servers = await RollbackServerModel.find({ regionId: region });
+  for (const server of servers) {
+    //const alive = await pingServer(server.ip, server.port);
+
+    return { ip: server.ip, port: server.port };
+    //logger.warn(`Rollback server ${server.ip}:${server.port} in ${region} is unreachable`);
+  }
+  return null;
 }
 
 async function handleOnMatchEnd(notification: MatchEndMessage) {

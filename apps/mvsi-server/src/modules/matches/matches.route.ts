@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { getCurrentCRC } from "../../data/config";
 import { MAIN_APP, MVSI_HYDRA_WITH_JWT } from "../../middleware/middlewares";
 import { HydraQueryPaginated } from "../../types";
-import { getLobby, getLobbyIdFromCode } from "../lobby/lobby.service";
+import { getLobby, getLobbyIdFromCode, setPlayerConnectionInfo } from "../lobby/lobby.service";
 import { submitArenaMatchStats } from "../lobby/arena.lobby.service";
 import { getActiveMatch, notifyActiveMatchEnded } from "../matchmaking/matchmaking.service";
 
@@ -28,127 +28,160 @@ router.get(
   },
 );
 
-router.put("/matches/:lobbyId", async ({ claims, params }) => {
-  const lobby = await getLobby(params.lobbyId);
-  if (!lobby) {
-    return {};
-  }
-  return {
-    updated_at: new Date(),
-    created_at: new Date(),
-    account_id: null,
-    completion_time: null,
-    name: "white-green-wind-breeze-OS5dF",
-    state: "open",
-    access_level: "public",
-    origin: "client",
-    rand: 0.6975513760957894,
-    winning_team: [],
-    win: [],
-    loss: [],
-    draw: null,
-    arbitration: null,
-    data: {},
-    server_data: {
-      Teams: lobby.Teams,
-      LeaderID: lobby.LeaderID,
-      LobbyType: 0,
-      ReadyPlayers: lobby.ReadyPlayers,
-      PlayerGameplayPreferences: lobby.PlayerGameplayPreferences,
-      PlayerAutoPartyPreferences: lobby.PlayerAutoPartyPreferences,
-      GameVersion: env.GAME_VERSION,
-      HissCrc: getCurrentCRC(),
-      Platforms: lobby.Platforms,
-      AllMultiplayParams: {
-        "1": {
-          MultiplayClusterSlug: "ec2-us-east-1-dokken",
-          MultiplayProfileId: "1252499",
-          MultiplayRegionId: "",
-        },
-        "2": {
-          MultiplayClusterSlug: "ec2-us-east-1-dokken",
-          MultiplayProfileId: "1252922",
-          MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682",
-        },
-        "3": { MultiplayClusterSlug: "", MultiplayProfileId: "1252925", MultiplayRegionId: "" },
-        "4": {
-          MultiplayClusterSlug: "ec2-us-east-1-dokken",
-          MultiplayProfileId: "1252928",
-          MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682",
-        },
-      },
-      LockedLoadouts: lobby.LockedLoadouts,
-      ModeString: "TODO",
-      IsLobbyJoinable: lobby.IsLobbyJoinable,
-    },
-    players: {
-      all: [
-        {
-          account_id: claims.id,
-          source: {},
-          state: "join",
-          data: {},
-          identity: {
-            username: claims.hydraUsername,
-            avatar:
-              "https://s3.amazonaws.com/wb-agora-hydra-ugc-dokken/identicons/identicon.584.png",
-            default_username: true,
-            personal_data: {},
-            alternate: {
-              wb_network: [
-                {
-                  id: claims.id,
-                  username: claims.username,
-                  avatar: null,
-                  email: null,
-                },
-              ],
-              steam: [
-                {
-                  id: claims.steamId,
-                  username: claims.username,
-                  avatar:
-                    "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg",
-                  email: null,
-                },
-              ],
-            },
-            usernames: [
-              { auth: "hydra", username: claims.hydraUsername },
-              { auth: "steam", username: claims.username },
-              { auth: "wb_network", username: claims.username },
-            ],
-            platforms: ["steam"],
-            current_platform: "steam",
-            is_cross_platform: false,
+router.put(
+  "/matches/:lobbyId",
+  async ({ claims, params, body }) => {
+    const lobby = await getLobby(params.lobbyId);
+    if (!lobby) {
+      return {};
+    }
+
+    // Store the player's region latencies on the lobby
+    if (body.player_data) {
+      const playerData = (
+        body.player_data as Record<
+          string,
+          { game_server_region_data: { latency: number; region_id: string }[] }
+        >
+      )[claims.id];
+      if (playerData?.game_server_region_data) {
+        await setPlayerConnectionInfo(params.lobbyId, claims.id, playerData.game_server_region_data);
+      }
+    }
+    return {
+      updated_at: new Date(),
+      created_at: new Date(),
+      account_id: null,
+      completion_time: null,
+      name: "white-green-wind-breeze-OS5dF",
+      state: "open",
+      access_level: "public",
+      origin: "client",
+      rand: 0.6975513760957894,
+      winning_team: [],
+      win: [],
+      loss: [],
+      draw: null,
+      arbitration: null,
+      data: {},
+      server_data: {
+        Teams: lobby.Teams,
+        LeaderID: lobby.LeaderID,
+        LobbyType: 0,
+        ReadyPlayers: lobby.ReadyPlayers,
+        PlayerGameplayPreferences: lobby.PlayerGameplayPreferences,
+        PlayerAutoPartyPreferences: lobby.PlayerAutoPartyPreferences,
+        GameVersion: env.GAME_VERSION,
+        HissCrc: getCurrentCRC(),
+        Platforms: lobby.Platforms,
+        AllMultiplayParams: {
+          "1": {
+            MultiplayClusterSlug: "ec2-us-east-1-dokken",
+            MultiplayProfileId: "1252499",
+            MultiplayRegionId: "",
+          },
+          "2": {
+            MultiplayClusterSlug: "ec2-us-east-1-dokken",
+            MultiplayProfileId: "1252922",
+            MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682",
+          },
+          "3": { MultiplayClusterSlug: "", MultiplayProfileId: "1252925", MultiplayRegionId: "" },
+          "4": {
+            MultiplayClusterSlug: "ec2-us-east-1-dokken",
+            MultiplayProfileId: "1252928",
+            MultiplayRegionId: "19c465a7-f21f-11ea-a5e3-0954f48c5682",
           },
         },
-      ],
-      current: [claims.id],
-      count: 1,
-    },
-    matchmaking: null,
-    cluster: "ec2-us-east-1-dokken",
-    last_warning_time: null,
-    template: {
-      type: "async",
-      name: lobby.Template,
-      slug: lobby.Template,
-      min_players: 2,
-      max_players: 2,
-      game_server_integration_enabled: false,
-      game_server_config: null,
-      created_at: new Date(),
-      updated_at: new Date(),
-      data: {},
-      id: "",
-    },
-    criteria: { slug: null },
-    shortcode: null,
-    id: params.lobbyId,
-    access: "public",
-  };
-});
+        LockedLoadouts: lobby.LockedLoadouts,
+        ModeString: "TODO",
+        IsLobbyJoinable: lobby.IsLobbyJoinable,
+      },
+      players: {
+        all: [
+          {
+            account_id: claims.id,
+            source: {},
+            state: "join",
+            data: {},
+            identity: {
+              username: claims.hydraUsername,
+              avatar:
+                "https://s3.amazonaws.com/wb-agora-hydra-ugc-dokken/identicons/identicon.584.png",
+              default_username: true,
+              personal_data: {},
+              alternate: {
+                wb_network: [
+                  {
+                    id: claims.id,
+                    username: claims.username,
+                    avatar: null,
+                    email: null,
+                  },
+                ],
+                steam: [
+                  {
+                    id: claims.steamId,
+                    username: claims.username,
+                    avatar:
+                      "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg",
+                    email: null,
+                  },
+                ],
+              },
+              usernames: [
+                { auth: "hydra", username: claims.hydraUsername },
+                { auth: "steam", username: claims.username },
+                { auth: "wb_network", username: claims.username },
+              ],
+              platforms: ["steam"],
+              current_platform: "steam",
+              is_cross_platform: false,
+            },
+          },
+        ],
+        current: [claims.id],
+        count: 1,
+      },
+      matchmaking: null,
+      cluster: "ec2-us-east-1-dokken",
+      last_warning_time: null,
+      template: {
+        type: "async",
+        name: lobby.Template,
+        slug: lobby.Template,
+        min_players: 2,
+        max_players: 2,
+        game_server_integration_enabled: false,
+        game_server_config: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+        data: {},
+        id: "",
+      },
+      criteria: { slug: null },
+      shortcode: null,
+      id: params.lobbyId,
+      access: "public",
+    };
+  },
+  {
+    body: t.Object({
+      player_data: t.Optional(
+        t.Record(
+          t.String(),
+          t.Object({
+            game_server_region_data: t.Array(
+              t.Object({
+                latency: t.Number(),
+                region_id: t.String(),
+              }),
+            ),
+          }),
+        ),
+      ),
+    }, { additionalProperties: true }),
+  },
+);
 
 router.get(
   "/matches/:lobbyId",

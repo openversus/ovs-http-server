@@ -12,9 +12,9 @@ export const REGIONS = [
   //"FRANKFURT",
   //"TEL_AVIV",
   //"JOHANNESBURG",
-  "SINGAPORE",
+  //"SINGAPORE",
   "TOKYO",
-  "MELBOURNE",
+  "SYDNEY",
 ] as const;
 
 export type Region = (typeof REGIONS)[number];
@@ -35,40 +35,10 @@ export const REGION_COORDS: Record<Region, RegionInfo> = {
   MANCHESTER: { lat: 53.4808, lon: -2.2426 },
   //TEL_AVIV: { lat: 32.0853, lon: 34.7818 },
   //JOHANNESBURG: { lat: -26.2041, lon: 28.0473 },
-  SINGAPORE: { lat: 1.3521, lon: 103.8198 },
+  //SINGAPORE: { lat: 1.3521, lon: 103.8198 },
   TOKYO: { lat: 35.6762, lon: 139.6503 },
-  MELBOURNE: { lat: -37.8136, lon: 144.9631 },
+  SYDNEY: { lat: -33.8651, lon: 151.2093 },
 };
-
-// ── Closest region lookup ────────────────────────────────────────────
-
-/** Haversine distance in km between two lat/lon points. */
-function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-/** Returns the closest region to the given latitude / longitude. */
-export function getClosestRegion(lat: number, lon: number): Region {
-  let closest: Region = REGIONS[0];
-  let minDist = Infinity;
-
-  for (const region of REGIONS) {
-    const coords = REGION_COORDS[region];
-    const dist = haversineKm(lat, lon, coords.lat, coords.lon);
-    if (dist < minDist) {
-      minDist = dist;
-      closest = region;
-    }
-  }
-
-  return closest;
-}
 
 // ── Region proximity ─────────────────────────────────────────────────
 
@@ -121,17 +91,18 @@ export const REGION_PROXIMITY: Record<Region, RegionProximityEntry[]> = {
   ],
   //TEL_AVIV: [{ region: "FRANKFURT", waitMs: 10_000 }],
   //JOHANNESBURG: [],
-  SINGAPORE: [
+  /* SINGAPORE: [
     { region: "TOKYO", waitMs: 10_000 },
-    { region: "MELBOURNE", waitMs: 20_000 },
-  ],
+    { region: "SYDNEY", waitMs: 20_000 },
+  ], */
   TOKYO: [
-    { region: "SINGAPORE", waitMs: 15_000 },
+    //{ region: "SINGAPORE", waitMs: 15_000 },
     { region: "WEST_US", waitMs: 20_000 },
   ],
-  MELBOURNE: [
-    { region: "SINGAPORE", waitMs: 15_000 },
+  SYDNEY: [
+    //{ region: "SINGAPORE", waitMs: 15_000 },
     { region: "TOKYO", waitMs: 25_000 },
+    { region: "WEST_US", waitMs: 25_000 },
   ],
 };
 
@@ -173,9 +144,9 @@ const MATCH_SERVER_OVERRIDES: Record<string, Region> = {
   //"FRANKFURT:JOHANNESBURG": "FRANKFURT",
 
   // ── Asia-Pacific ──
-  "SINGAPORE:TOKYO": "SINGAPORE",
-  "MELBOURNE:SINGAPORE": "SINGAPORE",
-  "MELBOURNE:TOKYO": "SINGAPORE",
+  //"SINGAPORE:TOKYO": "SINGAPORE",
+  //"SYDNEY:SINGAPORE": "SINGAPORE",
+  "SYDNEY:TOKYO": "TOKYO",
 
   // ── Asia ↔ NA ──
   "TOKYO:WEST_US": "WEST_US",
@@ -256,6 +227,7 @@ export function getAllowedRegions(homeRegion: Region, elapsedMs: number): Set<Re
 
   for (const entry of neighbors) {
     if (elapsedMs >= entry.waitMs) {
+      console.log(`Unlocking region ${entry.region} for home region ${homeRegion} after ${elapsedMs}ms in queue`);
       allowed.add(entry.region);
     }
   }
@@ -265,8 +237,21 @@ export function getAllowedRegions(homeRegion: Region, elapsedMs: number): Set<Re
 // ── Ticket compatibility ─────────────────────────────────────────────
 
 /**
+ * Returns the set of allowed regions for a ticket.
+ * Starts with only the home (lowest-latency) region, then expands
+ * to neighbor regions based on REGION_PROXIMITY waitMs thresholds.
+ */
+export function getTicketAllowedRegions(ticket: MatchmakingTicket, elapsedMs: number): Set<Region> {
+  const homeRegion = (ticket.region ?? ticket.regions[0]?.region) as Region;
+  if (!homeRegion) return new Set<Region>();
+
+  return getAllowedRegions(homeRegion, elapsedMs);
+}
+
+/**
  * Checks if ticket `a` meets the criteria to match with ticket `b`.
- * Only ticket `a`'s expanded skill range and allowed regions are evaluated.
+ * Both tickets' expanded regions (based on their own elapsed time) are
+ * considered — they are compatible if the two expanded sets overlap.
  */
 export function areTicketsCompatible(
   a: MatchmakingTicket,
@@ -274,15 +259,26 @@ export function areTicketsCompatible(
   now: number,
 ): boolean {
   const elapsedA = now - new Date(a.created_at).getTime();
+  const elapsedB = now - new Date(b.created_at).getTime();
 
   // ── Skill check ── ticket A's range must cover the difference
   const rangeA = getSkillRange(elapsedA);
   const skillDiff = Math.abs(a.skill - b.skill);
   if (skillDiff > rangeA) return false;
 
-  // ── Region check ── ticket A's allowed regions must include B's region
-  const regionsA = getAllowedRegions(a.region as Region, elapsedA);
-  if (!regionsA.has(b.region as Region)) return false;
+  // ── Region check ── both tickets expand based on their own wait time
+  const regionsA = getTicketAllowedRegions(a, elapsedA);
+  const regionsB = getTicketAllowedRegions(b, elapsedB);
+
+  // Compatible if there is any overlap between the two expanded sets
+  let hasOverlap = false;
+  for (const r of regionsB) {
+    if (regionsA.has(r)) {
+      hasOverlap = true;
+      break;
+    }
+  }
+  if (!hasOverlap) return false;
 
   return true;
 }

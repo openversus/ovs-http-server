@@ -79,6 +79,44 @@ async function getPlayerUsername(playerId: string): Promise<string> {
 }
 
 /**
+ * Look up a player's character from Redis (set by lock_lobby_loadout SSC).
+ * Fallback chain: player:{id} → connections:{id} → MongoDB PlayerTester.
+ */
+async function getPlayerCharacter(playerId: string): Promise<string> {
+  try {
+    // Try player:{id} first (set by lock_lobby_loadout)
+    const playerData = await redisClient.hGetAll(`player:${playerId}`);
+    if (playerData?.character) return playerData.character;
+
+    // Fallback to connections:{id}
+    const connData = await redisClient.hGetAll(`connections:${playerId}`);
+    if (connData?.character) return connData.character;
+
+    // Fallback to MongoDB
+    const dbPlayer = await PlayerTesterModel.findById(playerId).lean();
+    if (dbPlayer && (dbPlayer as any).character) return (dbPlayer as any).character;
+  } catch {
+    // ignore
+  }
+  return "";
+}
+
+/**
+ * Compute the most-played character from a character_counts map.
+ */
+function getTopCharacter(counts: Record<string, number>): string {
+  let top = "";
+  let topCount = 0;
+  for (const [char, count] of Object.entries(counts)) {
+    if (count > topCount) {
+      topCount = count;
+      top = char;
+    }
+  }
+  return top;
+}
+
+/**
  * Process a match result and update ELO ratings.
  * Called from /ovs_end_match when the rollback server reports a winner.
  *
@@ -128,24 +166,28 @@ export async function processMatchResult(matchId: string, winningTeamIndex: numb
     const eloField = is1v1 ? "elo_1v1" : "elo_2v2";
     const winsField = is1v1 ? "wins_1v1" : "wins_2v2";
     const lossesField = is1v1 ? "losses_1v1" : "losses_2v2";
+    const charCountsField = is1v1 ? "character_counts_1v1" : "character_counts_2v2";
+    const topCharField = is1v1 ? "top_character_1v1" : "top_character_2v2";
 
-    // Get all player ratings (and update usernames from Redis)
+    // Get all player ratings, usernames, and characters from Redis
     const winnerRatings = await Promise.all(
       winners.map(async (p) => {
         const username = await getPlayerUsername(p.playerId);
-        return getOrCreateRating(p.playerId, username);
+        const character = await getPlayerCharacter(p.playerId);
+        return { rating: await getOrCreateRating(p.playerId, username), character };
       }),
     );
     const loserRatings = await Promise.all(
       losers.map(async (p) => {
         const username = await getPlayerUsername(p.playerId);
-        return getOrCreateRating(p.playerId, username);
+        const character = await getPlayerCharacter(p.playerId);
+        return { rating: await getOrCreateRating(p.playerId, username), character };
       }),
     );
 
     // Calculate opposing team averages
-    const avgWinnerElo = winnerRatings.reduce((sum, r) => sum + r[eloField], 0) / winnerRatings.length;
-    const avgLoserElo = loserRatings.reduce((sum, r) => sum + r[eloField], 0) / loserRatings.length;
+    const avgWinnerElo = winnerRatings.reduce((sum, { rating: r }) => sum + r[eloField], 0) / winnerRatings.length;
+    const avgLoserElo = loserRatings.reduce((sum, { rating: r }) => sum + r[eloField], 0) / loserRatings.length;
 
     // --- Per-player ELO updates ---
     // Each player's expected score is computed against the opposing TEAM average.
@@ -154,7 +196,7 @@ export async function processMatchResult(matchId: string, winningTeamIndex: numb
     // This prevents boosting and provides fair individual calibration.
 
     // Update each winner individually
-    for (const rating of winnerRatings) {
+    for (const { rating, character } of winnerRatings) {
       const playerElo = rating[eloField];
       const totalGames = rating[winsField] + rating[lossesField];
       const K = getKFactor(totalGames, is1v1);
@@ -162,21 +204,33 @@ export async function processMatchResult(matchId: string, winningTeamIndex: numb
       const delta = Math.round(K * (1 - expected));
       const newElo = Math.max(0, playerElo + delta);
 
+      // Update character counts
+      const charCounts = { ...(rating[charCountsField] || {}) };
+      if (character) {
+        charCounts[character] = (charCounts[character] || 0) + 1;
+      }
+      const topChar = getTopCharacter(charCounts);
+
       await EloRatingModel.updateOne(
         { account_id: rating.account_id },
         {
-          $set: { [eloField]: newElo, updated_at: Date.now() },
+          $set: {
+            [eloField]: newElo,
+            [charCountsField]: charCounts,
+            [topCharField]: topChar,
+            updated_at: Date.now(),
+          },
           $inc: { [winsField]: 1 },
         },
       );
       logger.info(
         `${logPrefix} ${rating.account_id} (${rating.username}) WON: ${playerElo} → ${newElo} (+${delta}) ` +
-        `[K=${K}, expected=${expected.toFixed(3)}, ${is1v1 ? "1v1" : "2v2"}]`,
+        `[K=${K}, expected=${expected.toFixed(3)}, ${is1v1 ? "1v1" : "2v2"}, char=${character || "unknown"}]`,
       );
     }
 
     // Update each loser individually
-    for (const rating of loserRatings) {
+    for (const { rating, character } of loserRatings) {
       const playerElo = rating[eloField];
       const totalGames = rating[winsField] + rating[lossesField];
       const K = getKFactor(totalGames, is1v1);
@@ -184,16 +238,28 @@ export async function processMatchResult(matchId: string, winningTeamIndex: numb
       const delta = Math.round(K * (0 - expected));
       const newElo = Math.max(0, playerElo + delta);
 
+      // Update character counts
+      const charCounts = { ...(rating[charCountsField] || {}) };
+      if (character) {
+        charCounts[character] = (charCounts[character] || 0) + 1;
+      }
+      const topChar = getTopCharacter(charCounts);
+
       await EloRatingModel.updateOne(
         { account_id: rating.account_id },
         {
-          $set: { [eloField]: newElo, updated_at: Date.now() },
+          $set: {
+            [eloField]: newElo,
+            [charCountsField]: charCounts,
+            [topCharField]: topChar,
+            updated_at: Date.now(),
+          },
           $inc: { [lossesField]: 1 },
         },
       );
       logger.info(
         `${logPrefix} ${rating.account_id} (${rating.username}) LOST: ${playerElo} → ${newElo} (${delta}) ` +
-        `[K=${K}, expected=${expected.toFixed(3)}, ${is1v1 ? "1v1" : "2v2"}]`,
+        `[K=${K}, expected=${expected.toFixed(3)}, ${is1v1 ? "1v1" : "2v2"}, char=${character || "unknown"}]`,
       );
     }
 
@@ -270,6 +336,7 @@ export async function getPlayerRank(accountId: string, mode: "1v1" | "2v2") {
     $expr: { $gt: [{ $add: [`$${winsField}`, `$${lossesField}`] }, 0] },
   });
 
+  const topCharField = mode === "1v1" ? "top_character_1v1" : "top_character_2v2";
   return {
     rank: playersAbove + 1,
     account_id: accountId,
@@ -277,6 +344,7 @@ export async function getPlayerRank(accountId: string, mode: "1v1" | "2v2") {
     elo: player[eloField],
     wins: player[winsField] || 0,
     losses: player[lossesField] || 0,
+    top_character: player[topCharField] || "",
   };
 }
 
@@ -322,6 +390,7 @@ export async function getLeaderboard(mode: "1v1" | "2v2", limit: number = 100) {
           );
         }
       }
+      const topCharField2 = mode === "1v1" ? "top_character_1v1" : "top_character_2v2";
       return {
         rank: index + 1,
         account_id: p.account_id,
@@ -329,6 +398,7 @@ export async function getLeaderboard(mode: "1v1" | "2v2", limit: number = 100) {
         elo: p[eloField],
         wins: p[winsField],
         losses: p[lossesField],
+        top_character: p[topCharField2] || "",
       };
     }),
   );

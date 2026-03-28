@@ -1686,7 +1686,7 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
           isSpectator: true,
         });
       }
-    } else if (team.TeamIndex === 0 || team.TeamIndex === 1) {
+    } else if (team.TeamIndex >= 0 && team.TeamIndex <= 3) {
       let idxInTeam = 0;
       for (const [playerId, lobbyPlayer] of Object.entries(team.Players)) {
         const config = Players[playerId];
@@ -1696,7 +1696,7 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
           playerId,
           partyId: matchId,
           playerIndex,
-          teamIndex: team.TeamIndex as 0 | 1,
+          teamIndex: team.TeamIndex as 0 | 1 | 2 | 3,
           isHost: globalIdx === 0, // first player is host
           ip: config.Ip || "",
         });
@@ -1741,7 +1741,7 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
     tickets: [ticket],
     status: "pending",
     createdAt: Date.now(),
-    matchType: lobby.match_config.TeamStyle === "Solos" ? "1v1" : "2v2",
+    matchType: lobby.match_config.TeamStyle === "Solos" ? "1v1" : lobby.match_config.TeamStyle === "FFA" ? "FFA" : "2v2",
     totalPlayers: teamEntries.length,
     rollbackPort,
     isPasswordMatch: true, // Custom lobby = no ELO
@@ -1781,7 +1781,7 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
     matchId,
     matchKey: randomBytes(32).toString("base64"),
     map,
-    mode: lobby.match_config.TeamStyle === "Solos" ? "1v1" : "2v2",
+    mode: lobby.match_config.TeamStyle === "Solos" ? "1v1" : lobby.match_config.TeamStyle === "FFA" ? "FFA" : "2v2",
     rollbackPort,
     isCustomGame: true,
     customNumRingouts: lobby.match_config.NumRingoutsForWin,

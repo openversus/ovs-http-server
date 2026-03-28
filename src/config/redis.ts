@@ -108,7 +108,7 @@ export interface RedisTeamEntry {
   playerId: string;
   partyId: string;
   playerIndex: number;
-  teamIndex: 0 | 1;
+  teamIndex: 0 | 1 | 2 | 3;
   isHost: boolean;
   ip: string;
   isSpectator?: boolean;

@@ -688,7 +688,7 @@ export async function assembleArenaMatch(
         true,
         chosenRegion,
       );
-      await notifyActiveMatchCreated(gameplayConfig);
+      await notifyActiveMatchCreated("", gameplayConfig);
     } else {
       // Simulate bot-only match outcome
       simulateBotMatch(arenaData, teamAId, teamBId);
@@ -1610,7 +1610,7 @@ async function onAllPlayersCheckedIn(arenaId: string): Promise<void> {
         arenaConstants,
         false,
       );
-      await notifyActiveMatchCreated(gameplayConfig, "OnArenaNextMatch");
+      await notifyActiveMatchCreated("", gameplayConfig, "OnArenaNextMatch");
     } else {
       simulateBotMatch(arenaData, teamAId, teamBId);
     }

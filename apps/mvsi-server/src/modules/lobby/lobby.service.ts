@@ -712,6 +712,7 @@ export async function createBaseLobby(accountId: string, template: keyof typeof 
     MatchID: new ObjectId().toHexString(),
     Template: template,
     players_connection_info: {},
+    RematchCount: 0,
   };
   return baseLobby;
 }
@@ -1650,8 +1651,8 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
       Players,
     },
   };
-  
+
   //console.log(`Match Created: ${JSON.stringify(gameplayConfig, null, 2)}`);
 
-  await notifyActiveMatchCreated(gameplayConfig);
+  await notifyActiveMatchCreated(lobbyId, gameplayConfig);
 }

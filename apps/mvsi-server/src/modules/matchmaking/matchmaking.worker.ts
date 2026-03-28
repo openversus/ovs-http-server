@@ -16,7 +16,12 @@ import {
   notifyActiveMatchCreated,
   removeTicketsFromQueue,
 } from "./matchmaking.service";
-import { areTicketsCompatible, findMatchedGroups, getMatchServerRegion, type Region } from "./matchmaking.matching";
+import {
+  areTicketsCompatible,
+  findMatchedGroups,
+  getMatchServerRegion,
+  type Region,
+} from "./matchmaking.matching";
 import {
   MATCH_TYPES,
   MATCHMAKING_MATCH_TICK_CHANNEL,
@@ -225,10 +230,7 @@ function groupTicketsByRegion(tickets: MatchmakingTicket[], now: number): Matchm
  * Attempts to assemble an arena match from a set of region-compatible tickets.
  * Returns true if a match was created.
  */
-async function tryAssembleArena(
-  tickets: MatchmakingTicket[],
-  now: number,
-): Promise<boolean> {
+async function tryAssembleArena(tickets: MatchmakingTicket[], now: number): Promise<boolean> {
   // Age of the longest-waiting ticket drives the phase threshold.
   const oldestAgeMs = Math.max(...tickets.map((t) => now - new Date(t.created_at).getTime()));
 
@@ -336,6 +338,7 @@ async function tryAssembleArena(
       Length: players.length,
     })),
     players_connection_info: {},
+    RematchCount: 0,
   };
 
   // ── Remove consumed tickets, assemble, then notify completion ─────────────
@@ -509,7 +512,7 @@ async function createRetailMatch(
       },
     };
 
-    const matchId = await notifyActiveMatchCreated(gameplayConfig);
+    const matchId = await notifyActiveMatchCreated("", gameplayConfig);
 
     for (const ticket of tickets) {
       await completeMatchmaking(

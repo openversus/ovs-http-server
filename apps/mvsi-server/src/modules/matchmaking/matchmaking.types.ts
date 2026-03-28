@@ -94,8 +94,10 @@ export type GameplayConfig = {
 
 export type ActiveMatch = {
   matchKey: string;
+  fromLobbyId: string;
   GameplayConfig: GameplayConfig;
   state: string;
+  createdAt: number;
 };
 
 type CustomGameSettings = {

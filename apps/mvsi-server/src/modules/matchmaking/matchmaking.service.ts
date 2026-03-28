@@ -144,7 +144,10 @@ export async function requestMatchmakingByLobby(
  * If no latency data is available, falls back to all fleet regions with 0 latency.
  */
 function computePartyRegions(
-  connectionInfo: Record<string, { game_server_region_data: { latency: number; region_id: string }[] }>,
+  connectionInfo: Record<
+    string,
+    { game_server_region_data: { latency: number; region_id: string }[] }
+  >,
   playerIds: string[],
 ): TicketRegionLatency[] {
   // Collect latencies per region_id across all players
@@ -186,6 +189,7 @@ export async function getActiveMatch(matchId: string) {
 }
 
 export async function notifyActiveMatchCreated(
+  fromLobbyId: string,
   gameplayConfig: GameplayConfig,
   templateId = "OnGameplayConfigNotified",
 ) {
@@ -194,6 +198,8 @@ export async function notifyActiveMatchCreated(
     matchKey: randomBytes(32).toString("base64"),
     state: "active",
     GameplayConfig: gameplayConfig,
+    fromLobbyId,
+    createdAt: Date.now(),
   };
   await redisClient.json.set(
     MATCH_KEY(gameplayConfig.GameplayConfig.MatchId),

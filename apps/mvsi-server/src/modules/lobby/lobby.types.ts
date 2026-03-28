@@ -74,6 +74,7 @@ export type BaseLobby = {
   MatchID: string;
   Template: keyof typeof lobbyTypesMap;
   players_connection_info: Record<string, PlayerConnectionInfo>;
+  RematchCount: number;
 };
 
 // Regular Lobby requires ModeString

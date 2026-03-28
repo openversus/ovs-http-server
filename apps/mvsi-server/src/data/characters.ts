@@ -1,14 +1,10 @@
-import { ObjectId } from "mongodb"
+import { ObjectId } from "mongodb";
 import { getAllAssets, getAssetsByType } from "../loadAssets";
-
 
 export function unlockAllPerks(accountId: string) {
   return getAssetsByType("MvsPerkHsda").map((perk) => {
     const characterMap = Object.fromEntries(
-      getAssetsByType("CharacterData").map((char) => [
-        char.slug,
-        true,
-      ]),
+      getAssetsByType("CharacterData").map((char) => [char.slug, true]),
     );
 
     return {
@@ -41,11 +37,31 @@ export function unlockAllPerks(accountId: string) {
     };
   });
 }
+
+export const ToastData = {
+  item_slug: "match_toasts",
+  count: 100,
+  data: {},
+  actions: [],
+  server_data: {},
+  currency_data: {
+    source_slug: null,
+    total_spent: null,
+    total_earned: null,
+    total_refunded: 0,
+    should_expire: null,
+    expires_at: null,
+    purchase_id: null,
+    source_platform: null,
+  },
+
+  updated_at: new Date(),
+  created_at: new Date(),
+  result_type: "simple",
+};
+
 export function unlockAll(accountId: string) {
-  const all = [
-    ...unlockAllCharacters(accountId),
-    ...unlockAllPerks(accountId),
-  ];
+  const all = [...unlockAllCharacters(accountId), ...unlockAllPerks(accountId), ToastData];
   return all;
 }
 

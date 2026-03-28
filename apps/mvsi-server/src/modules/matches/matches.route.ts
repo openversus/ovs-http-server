@@ -7,7 +7,7 @@ import { HydraQueryPaginated } from "../../types";
 import { getLobby, getLobbyIdFromCode, setPlayerConnectionInfo } from "../lobby/lobby.service";
 import { submitArenaMatchStats } from "../lobby/arena.lobby.service";
 import { getActiveMatch, notifyActiveMatchEnded } from "../matchmaking/matchmaking.service";
-import { rematchDeclined } from "./matches.service";
+import { rematchAccepted, rematchDeclined, toastPlayer } from "./matches.service";
 
 const router = new Elysia().use(MVSI_HYDRA_WITH_JWT);
 
@@ -24,10 +24,32 @@ router.put(
   },
 );
 
-router.put("/ssc/invoke/toast_player", async () => {
-  // TODO : Implement
-  return { body: [], metadata: null, return_code: 0 };
-});
+router.put(
+  "/ssc/invoke/rematch_accept",
+  async ({ claims, body }) => {
+    await rematchAccepted(claims.id, body.ContainerMatchId);
+    return { body: [], metadata: null, return_code: 0 };
+  },
+  {
+    body: t.Object({
+      ContainerMatchId: t.String(),
+    }),
+  },
+);
+
+router.put(
+  "/ssc/invoke/toast_player",
+  async ({ claims, body }) => {
+    await toastPlayer(claims.id, body.ContainerMatchId, body.ToasteeId);
+    return { body: [], metadata: null, return_code: 0 };
+  },
+  {
+    body: t.Object({
+      ContainerMatchId: t.String(),
+      ToasteeId: t.String(),
+    }),
+  },
+);
 
 router.get(
   "/matches/all/:id",

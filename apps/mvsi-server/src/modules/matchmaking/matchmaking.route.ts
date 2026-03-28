@@ -7,6 +7,7 @@ import {
   requestMatchmakingByLobby,
 } from "./matchmaking.service";
 import { MATCH_TYPES } from "./matchmaking.types";
+import { broadcastNotificationToTopic } from "../notifications/notifications.utils";
 
 const RequestMatchSchema = t.Object({
   data: t.Object({
@@ -125,6 +126,12 @@ router.put(
   "/ssc/invoke/perks_absent",
   async ({ body }) => {
     const activeMatch = await getActiveMatch(body.ContainerMatchId);
+    if (!activeMatch) {
+      return {
+        metadata: null,
+        return_code: 3,
+      };
+    }
     if (activeMatch?.state === "locked") {
       return {
         body: {
@@ -136,6 +143,12 @@ router.put(
       };
     }
 
+    if (Date.now() - activeMatch.createdAt > 40 * 1000) {
+      return {
+        metadata: null,
+        return_code: 3,
+      };
+    }
     return {
       body: {
         message: "Early absent report",

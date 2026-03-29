@@ -7,11 +7,10 @@ import { ObjectId } from "mongodb";
 import { FLEET_SERVERS } from "../../data/fleets";
 import { getLobby, lockLobby } from "../lobby/lobby.service";
 import { LOBBY_QUEUED_CHANNEL } from "../lobby/lobby.types";
+import type { ActiveMatch, GameplayConfig } from "../matches/matches.types";
 import {
   ACTIVEMATCH_END_CHANNEL,
-  type ActiveMatch,
   type ContainerTemplate,
-  type GameplayConfig,
   MATCH_STATE,
   MATCHMAKING_CANCEL_CHANNEL,
   MATCHMAKING_COMPLETE_CHANNEL,

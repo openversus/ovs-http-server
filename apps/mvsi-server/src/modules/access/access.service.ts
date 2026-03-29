@@ -8,6 +8,7 @@ import { type DecodedEncryptedAppTicket, parseEncryptedAppTicket } from "steam-a
 import type { JWT_CLAIMS } from "../../middleware/middlewares";
 import { fetchSteamUser, STEAM_PRIVATE_KEY } from "../../steam";
 import { getCosmeticsConfigurationForPlayer } from "../cosmetics/cosmetics.service";
+import type { SERVER_MODESTRING } from "../matchmaking/matchmaking.types";
 import { setPlayerConfig } from "../playerConfig/playerConfig.service";
 import { setPlayerPresence } from "../playerPresence/playerPresence.service";
 import type { PlayerPresence } from "../playerPresence/playerPresence.types";
@@ -96,7 +97,7 @@ export async function handleAccess(ip: string, auth: { steam: string; steamID?: 
 
   const cosmetics = await getCosmeticsConfigurationForPlayer(claims.id);
   const presence: PlayerPresence = {
-    defaultGamemode: player.defaultMode ?? "1v1",
+    defaultGamemode: (player.defaultMode as SERVER_MODESTRING) ?? "1v1",
     currentLobbyId: "",
     ip: ip,
   };

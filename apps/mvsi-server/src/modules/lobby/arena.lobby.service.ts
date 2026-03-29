@@ -15,7 +15,7 @@ import { getAssetsByType, REDIS_CHARACTER_SLUGS_KEY } from "../../loadAssets";
 import { generateBotId, isBotId } from "../bots/bots.service";
 import type { Region } from "../matchmaking/matchmaking.matching";
 import { getActiveMatch, notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
-import type { GameplayConfig } from "../matchmaking/matchmaking.types";
+import type { GameplayConfig, MatchStats } from "../matches/matches.types";
 import type { RealtimeNotificationUsersMessage } from "../notifications/notifications.types";
 import { broadcastNotificationToUsers } from "../notifications/notifications.utils";
 import { getPlayerConfig } from "../playerConfig/playerConfig.service";
@@ -28,7 +28,7 @@ import type {
   ArenaPlayerStats,
   ArenaTeamInfo,
   BaseArenaPlayerInfo,
-  MatchStats,
+  ArenaMatchStats,
 } from "./arena.lobby.types";
 import { createBaseLobby, notifyLobbyJoined } from "./lobby.service";
 import type { ArenaLobby, LobbyCreatedMessage } from "./lobby.types";
@@ -98,7 +98,7 @@ export function getArenaConstants(): ArenaConstants {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function createMatchStats(): MatchStats {
+function createMatchStats(): ArenaMatchStats {
   return {
     KnockbackMitigated: 0,
     KnockbackAdded: 0,
@@ -430,7 +430,7 @@ export async function getArenaState(lobbyId: string): Promise<ArenaData | null> 
 }
 
 export async function createArenaLobby(accountId: string): Promise<ArenaLobby> {
-  const base = await createBaseLobby(accountId, "arena_lobby");
+  const base = await createBaseLobby(accountId, "arena_lobby", "arena");
 
   const arenaLobby: ArenaLobby = {
     ...base,
@@ -1018,7 +1018,7 @@ export async function submitArenaMatchStats(
   const { PlayerMissionUpdates, WinningTeamIndex } = endOfMatchStats;
 
   // ── Map stat keys to MatchStats fields ──────────────────────────────────
-  const statMap: Record<string, keyof MatchStats> = {
+  const statMap: Partial<Record<keyof MatchStats, keyof ArenaMatchStats>> = {
     "Stat:Game:Character:TotalRingouts": "Ringouts",
     "Stat:Game:Character:TotalDamageDealt": "Damage",
     "Stat:Game:Character:TotalDamageAdded": "DamagedAdded",
@@ -1108,7 +1108,7 @@ export async function submitArenaMatchStats(
       if (playerInfo.bIsBot) {
         continue;
       }
-      for (const key of Object.keys(teamMatchStats) as (keyof MatchStats)[]) {
+      for (const key of Object.keys(teamMatchStats) as (keyof ArenaMatchStats)[]) {
         teamMatchStats[key] += playerInfo.Stats.MatchStats[key];
       }
     }
@@ -1180,7 +1180,7 @@ function simulateBotMatch(arenaData: ArenaData, teamAId: string, teamBId: string
       if (playerInfo.bIsBot) {
         continue;
       }
-      for (const key of Object.keys(teamMatchStats) as (keyof MatchStats)[]) {
+      for (const key of Object.keys(teamMatchStats) as (keyof ArenaMatchStats)[]) {
         teamMatchStats[key] += playerInfo.Stats.MatchStats[key];
       }
     }

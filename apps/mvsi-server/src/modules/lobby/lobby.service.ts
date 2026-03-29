@@ -12,9 +12,9 @@ import { TeamStyle } from "../gameModes/gameModes.config";
 import { notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
 import type {
   ContainerTemplate,
-  GameplayConfig,
   SERVER_MODESTRING,
 } from "../matchmaking/matchmaking.types";
+import type { GameplayConfig } from "../matches/matches.types";
 import type {
   RealtimeNotificationTopicMessage,
   RealtimeNotificationUsersMessage,

@@ -10,6 +10,7 @@ import {
 } from "../gameModes/gameModes.config";
 import { assembleArenaMatch } from "../lobby/arena.lobby.service";
 import type { ArenaLobby, LobbyPlayer } from "../lobby/lobby.types";
+import type { GameplayConfig } from "../matches/matches.types";
 import { getPlayersConfig } from "../playerConfig/playerConfig.service";
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
 import {
@@ -27,7 +28,6 @@ import {
 } from "./matchmaking.service";
 import {
   type ContainerTemplate,
-  type GameplayConfig,
   MATCHMAKING_MATCH_TICK_CHANNEL,
   type MatchmakingTicket,
   type SERVER_MODESTRING,
@@ -340,6 +340,7 @@ async function tryAssembleArena(tickets: MatchmakingTicket[], now: number): Prom
     })),
     players_connection_info: {},
     RematchCount: 0,
+    ModeString: "arena",
   };
 
   // ── Remove consumed tickets, assemble, then notify completion ─────────────

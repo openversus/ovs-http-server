@@ -5,7 +5,7 @@ import { getRandomMapByType } from "../../data/maps";
 import { getLobby } from "../lobby/lobby.service";
 import type { CustomLobby } from "../lobby/lobby.types";
 import { getActiveMatch, notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
-import type { ActiveMatch, GameplayConfig } from "../matchmaking/matchmaking.types";
+import type { ActiveMatch, GameplayConfig } from "./matches.types";
 import { broadcastNotificationToTopic } from "../notifications/notifications.utils";
 
 const MATCH_KEY = (matchId: string) => `match:${matchId}`;

@@ -56,7 +56,7 @@ router.get(
   async () => {
     return {
       matches: [],
-      total_matches: 0,
+      total_matches: 1,
       current_page: 1,
       total_pages: 1,
     };

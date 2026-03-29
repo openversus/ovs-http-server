@@ -16,7 +16,7 @@ export type ArenaPlayerData = {
   CurrencyAmount: number;
 };
 
-export type MatchStats = {
+export type ArenaMatchStats = {
   KnockbackMitigated: number;
   KnockbackAdded: number;
   HealingReceived: number;
@@ -33,7 +33,7 @@ export type ArenaPlayerStats = {
   ItemsPurchased: number;
   ItemsSold: number;
   InterestGained: number;
-  MatchStats: MatchStats;
+  MatchStats: ArenaMatchStats;
   CurrencySpent: number;
   ItemsLeveled: number;
 };
@@ -88,7 +88,7 @@ export type ArenaTeamInfo = {
     Losses: number;
     LoseStreak: number;
     Draws: number;
-    MatchStats: MatchStats;
+    MatchStats: ArenaMatchStats;
   };
   LifeRemaining: number;
   FinalRank: number;

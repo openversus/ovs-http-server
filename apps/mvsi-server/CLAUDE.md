@@ -11,7 +11,6 @@ See AGENTS.md for full architecture docs. This file covers working preferences a
 - Routes follow SSC pattern: `PUT /ssc/invoke/{action}` returning `{ body, metadata: null, return_code: 0 }`
 - WebSocket notifications go through Redis Pub/Sub — HTTP and WS are separate processes.
 - Return plain objects from route handlers — Hydra encoding is handled by middleware.
-- Use `@mvsi/*` workspace imports, never relative paths to `../../packages/`.
 
 ## Shared Packages
 - `@mvsi/database` — MongoDB models

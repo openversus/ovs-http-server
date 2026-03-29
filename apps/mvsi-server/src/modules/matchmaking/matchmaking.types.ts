@@ -1,8 +1,5 @@
 import type { GAME_MODES_CONFIG } from "../../data/gameModes";
-import type { ArenaConstants, ArenaData } from "../lobby/arena.lobby.types";
 import type { NotificationTemplate } from "../notifications/notifications.types";
-import type { PlayerConfig } from "../playerConfig/playerConfig.types";
-import type { Region } from "./matchmaking.matching";
 
 export const MATCHMAKING_MATCH_FOUND_CHANNEL = "matchmaking:matchfound";
 export const MATCHMAKING_MATCH_TICK_CHANNEL = "matchmaking:tick";
@@ -60,13 +57,10 @@ export type TicketRegionLatency = {
 
 export type MatchmakingTicket = {
   partySize: number;
-  /** Primary (lowest-latency) region for this party */
   region: string;
-  /** All regions sorted by latency (lowest first) */
   regions: TicketRegionLatency[];
   skill: number;
   playerIds: string[];
-  /** For arena: each inner array is one preserved team; for regular modes: [[...playerIds]] */
   teams: string[][];
   created_at: Date;
   partyId: string;
@@ -104,91 +98,6 @@ export interface MatchmakingPlayerConfig {
 export type MatchmakingPerksLockMessage = {
   containerMatchIdKey: string;
   playerIds: string[];
-};
-
-export type GameplayConfig = {
-  ArenaId?: string;
-  ArenaConstants?: ArenaConstants;
-  ArenaData?: ArenaData;
-  GameplayConfig: MatchConfig;
-};
-
-export type ActiveMatch = {
-  matchKey: string;
-  fromLobbyId: string;
-  GameplayConfig: GameplayConfig;
-  state: string;
-  createdAt: number;
-  template: ContainerTemplate;
-};
-
-type CustomGameSettings = {
-  bHazardsEnabled: boolean;
-  bShieldsEnabled: boolean;
-  MatchTime: number;
-  NumRingouts: number;
-};
-
-type HudSettings = {
-  bDisplayPortraits: boolean;
-  bDisplayStocks: boolean;
-  bDisplayTimer: boolean;
-};
-
-type MatchConfig = {
-  ArenaModeInfo: {
-    FaceoffWaitTime: number;
-    bReadyToStart: boolean;
-    ShopTime: number;
-  } | null;
-  RiftNodeId: string;
-  ScoreEvaluationRule: string;
-  bIsPvP: boolean;
-  ScoreAttributionRule: string;
-  MatchDurationSeconds: number;
-  Created: Date;
-  EventQueueSlug: string;
-  bModeGrantsProgress: boolean;
-  TeamData: unknown[];
-  Spectators: unknown;
-  bIsRanked: boolean;
-  bIsCustomGame: boolean;
-  Players: { [key: string]: PlayerConfig };
-  CustomGameSettings: CustomGameSettings;
-  HudSettings: HudSettings;
-  bIsCasualSpecial: boolean;
-  bAllowMapHazards: boolean;
-  RiftNodeAttunement: string;
-  CountdownDisplay: string;
-  Cluster: Region;
-  WorldBuffs: string[];
-  bIsTutorial: boolean;
-  MatchId: string;
-  bIsOnlineMatch: boolean;
-  ModeString: SERVER_MODESTRING;
-  Map: string;
-  bIsRift: boolean;
-};
-
-type Payload = {
-  match: {
-    id: string;
-  };
-  custom_notification: string;
-};
-
-type MatchData = {
-  MatchId: string;
-  GameplayConfig: MatchConfig;
-  template_id: string;
-  [key: string]: unknown;
-};
-
-export type GameNotification = {
-  data: MatchData;
-  payload: Payload;
-  header: string;
-  cmd: string;
 };
 
 export type MatchFoundChannelMessage = {

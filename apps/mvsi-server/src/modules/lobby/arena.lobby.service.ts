@@ -1,21 +1,25 @@
+import { randomUUID } from "node:crypto";
 import { logger } from "@mvsi/logger";
 import { redisClient } from "@mvsi/redis";
 import { ObjectId } from "mongodb";
-import { randomUUID } from "node:crypto";
-import { getRandomMap2v2 } from "../../data/maps";
-import { REDIS_CHARACTER_SLUGS_KEY, getAssetsByType } from "../../loadAssets";
-import type { GameplayConfig } from "../matchmaking/matchmaking.types";
-import { getActiveMatch, notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
 import {
-  broadcastNotificationToTopic,
-  broadcastNotificationToUsers,
-} from "../notifications/notifications.utils";
+  generateItemPool,
+  generateShopOptions,
+  getGemName,
+  getRarityWeightsForRound,
+  pickItemFromPool,
+} from "../../data/arenaItemDefs";
+import { INVENTORY_DEFINITIONS } from "../../data/inventoryDefs";
+import { getRandomMap2v2 } from "../../data/maps";
+import { getAssetsByType, REDIS_CHARACTER_SLUGS_KEY } from "../../loadAssets";
 import { generateBotId, isBotId } from "../bots/bots.service";
+import type { Region } from "../matchmaking/matchmaking.matching";
+import { getActiveMatch, notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
+import type { GameplayConfig } from "../matchmaking/matchmaking.types";
+import type { RealtimeNotificationUsersMessage } from "../notifications/notifications.types";
+import { broadcastNotificationToUsers } from "../notifications/notifications.utils";
 import { getPlayerConfig } from "../playerConfig/playerConfig.service";
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
-import type { ArenaLobby, LobbyCreatedMessage } from "./lobby.types";
-import { LOBBY_JOINED_CHANNEL } from "./lobby.types";
-import { createBaseLobby, notifyLobbyJoined } from "./lobby.service";
 import type {
   ArenaConstants,
   ArenaData,
@@ -25,16 +29,9 @@ import type {
   ArenaTeamInfo,
   MatchStats,
 } from "./arena.lobby.types";
-import {
-  generateShopOptions,
-  generateItemPool,
-  pickItemFromPool,
-  getRarityWeightsForRound,
-  getGemName,
-} from "../../data/arenaItemDefs";
-import { INVENTORY_DEFINITIONS } from "../../data/inventoryDefs";
-import { RealtimeNotificationUsersMessage } from "../notifications/notifications.types";
-import { Region } from "../matchmaking/matchmaking.matching";
+import { createBaseLobby, notifyLobbyJoined } from "./lobby.service";
+import type { ArenaLobby, LobbyCreatedMessage } from "./lobby.types";
+import { LOBBY_JOINED_CHANNEL } from "./lobby.types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -688,7 +685,7 @@ export async function assembleArenaMatch(
         true,
         chosenRegion,
       );
-      await notifyActiveMatchCreated("", gameplayConfig);
+      await notifyActiveMatchCreated("arena_container_parent", "", gameplayConfig);
     } else {
       // Simulate bot-only match outcome
       simulateBotMatch(arenaData, teamAId, teamBId);
@@ -1610,7 +1607,12 @@ async function onAllPlayersCheckedIn(arenaId: string): Promise<void> {
         arenaConstants,
         false,
       );
-      await notifyActiveMatchCreated("", gameplayConfig, "OnArenaNextMatch");
+      await notifyActiveMatchCreated(
+        "arena_container_parent",
+        "",
+        gameplayConfig,
+        "OnArenaNextMatch",
+      );
     } else {
       simulateBotMatch(arenaData, teamAId, teamBId);
     }

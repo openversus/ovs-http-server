@@ -1,7 +1,7 @@
-import { ArenaConstants, ArenaData } from "../lobby/arena.lobby.types";
-import { NotificationTemplate } from "../notifications/notifications.types";
+import type { ArenaConstants, ArenaData } from "../lobby/arena.lobby.types";
+import type { NotificationTemplate } from "../notifications/notifications.types";
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
-import { Region } from "./matchmaking.matching";
+import type { Region } from "./matchmaking.matching";
 
 export const MATCHMAKING_MATCH_FOUND_CHANNEL = "matchmaking:matchfound";
 export const MATCHMAKING_MATCH_TICK_CHANNEL = "matchmaking:tick";
@@ -10,16 +10,33 @@ export const MATCHMAKING_CANCEL_CHANNEL = "matchmaking:cancel";
 export const MATCHMAKING_PERKS_LOCKED_CHANNEL = "matchmaking:perkslocked";
 export const ACTIVEMATCH_END_CHANNEL = "activematch:end";
 
-export enum MATCH_TYPES {
-  ONE_V_ONE = "1v1",
-  TWO_V_TWO = "2v2",
-  FFA = "FFA",
-  CASUAL = "casual",
-  ONE_V_ONE_RANKED = "ranked-1v1",
-  TWO_V_TWO_RANKED = "ranked-2v2",
-  RIFTS = "rifts",
-  ARENA = "arena",
-}
+export const SERVER_MODESTRINGS = [
+  "1v1",
+  "2v2",
+  "FFA",
+  "casual",
+  "ranked-1v1",
+  "ranked-2v2",
+  "rifts",
+  "arena",
+] as const;
+
+export type SERVER_MODESTRING = (typeof SERVER_MODESTRINGS)[number];
+
+export type ContainerTemplate =
+  | "2v2_container"
+  | "1v1_container"
+  | "ffa_container"
+  | "custom_container_one_player"
+  | "custom_container_two_player"
+  | "custom_container_three_player"
+  | "custom_container_four_player"
+  | "1v1_container_bot"
+  | "1v3_container_bot"
+  | "2v2_container_bot"
+  | "arena_container_parent"
+  | "rift_container_one_player"
+  | "rift_container_two_player";
 
 export const MATCH_STATE = {
   QUEUED: 2,
@@ -50,7 +67,7 @@ export type MatchmakingTicket = {
   created_at: Date;
   partyId: string;
   matchmakingRequestId: string;
-  matchType: MATCH_TYPES;
+  matchType: SERVER_MODESTRING;
   partyLeaderId: string;
 };
 
@@ -98,6 +115,7 @@ export type ActiveMatch = {
   GameplayConfig: GameplayConfig;
   state: string;
   createdAt: number;
+  template: ContainerTemplate;
 };
 
 type CustomGameSettings = {

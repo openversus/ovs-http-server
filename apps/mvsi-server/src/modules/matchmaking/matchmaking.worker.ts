@@ -23,10 +23,11 @@ import {
   type Region,
 } from "./matchmaking.matching";
 import {
-  MATCH_TYPES,
+  SERVER_MODESTRING,
   MATCHMAKING_MATCH_TICK_CHANNEL,
   type GameplayConfig,
   type MatchmakingTicket,
+  ContainerTemplate,
 } from "./matchmaking.types";
 import { redisClient } from "@mvsi/redis";
 import { assembleArenaMatch } from "../lobby/arena.lobby.service";
@@ -81,7 +82,7 @@ export function startMatchMakingWorker(): void {
 
 async function process1v1Queue(): Promise<boolean> {
   try {
-    const queueIds = await getMatchmakingQueue(MATCH_TYPES.ONE_V_ONE);
+    const queueIds = await getMatchmakingQueue("1v1");
 
     if (queueIds.length > 0) {
       await redisClient.publish(MATCHMAKING_MATCH_TICK_CHANNEL, JSON.stringify(queueIds));
@@ -106,10 +107,10 @@ async function process1v1Queue(): Promise<boolean> {
     }
 
     let createdAny = false;
-    for (const group of matchedGroups) {
+    for (const ticketGroup of matchedGroups) {
       try {
-        await removeTicketsFromQueue(MATCH_TYPES.ONE_V_ONE, group);
-        await createRetailMatch(group, MATCH_TYPES.ONE_V_ONE);
+        await removeTicketsFromQueue("1v1", ticketGroup);
+        await createRetailMatch("1v1_container", "1v1", ticketGroup);
         createdAny = true;
       } catch (error) {
         logger.error(`Error creating 1v1 match from matched group: ${error}`);
@@ -127,7 +128,7 @@ async function process1v1Queue(): Promise<boolean> {
 
 async function process2v2Queue(): Promise<boolean> {
   try {
-    const queueIds = await getMatchmakingQueue(MATCH_TYPES.TWO_V_TWO);
+    const queueIds = await getMatchmakingQueue("2v2");
 
     if (queueIds.length > 0) {
       await redisClient.publish(MATCHMAKING_MATCH_TICK_CHANNEL, JSON.stringify(queueIds));
@@ -151,10 +152,10 @@ async function process2v2Queue(): Promise<boolean> {
     }
 
     let createdAny = false;
-    for (const group of matchedGroups) {
+    for (const ticketGroup of matchedGroups) {
       try {
-        await removeTicketsFromQueue(MATCH_TYPES.TWO_V_TWO, group);
-        await createRetailMatch(group, MATCH_TYPES.TWO_V_TWO);
+        await removeTicketsFromQueue("2v2", ticketGroup);
+        await createRetailMatch("2v2_container", "2v2", ticketGroup);
         createdAny = true;
       } catch (error) {
         logger.error(`Error creating 2v2 match from matched group: ${error}`);
@@ -172,7 +173,7 @@ async function process2v2Queue(): Promise<boolean> {
 
 async function processArenaQueue(): Promise<boolean> {
   try {
-    const queueIds = await getMatchmakingQueue(MATCH_TYPES.ARENA);
+    const queueIds = await getMatchmakingQueue("arena");
     if (queueIds.length === 0) return false;
 
     await redisClient.publish(MATCHMAKING_MATCH_TICK_CHANNEL, JSON.stringify(queueIds));
@@ -342,7 +343,7 @@ async function tryAssembleArena(tickets: MatchmakingTicket[], now: number): Prom
   };
 
   // ── Remove consumed tickets, assemble, then notify completion ─────────────
-  await removeTicketsFromQueue(MATCH_TYPES.ARENA, usedTickets);
+  await removeTicketsFromQueue("arena", usedTickets);
 
   const arenaId = await assembleArenaMatch(syntheticLobby, chosenRegion);
 
@@ -454,13 +455,14 @@ async function configurePlayersForMatch(
 }
 
 async function createRetailMatch(
+  containerTemplate: ContainerTemplate,
+  modeString: SERVER_MODESTRING,
   tickets: MatchmakingTicket[],
-  matchType: MATCH_TYPES,
 ): Promise<void> {
   try {
     const totalPlayers = tickets.reduce((sum, ticket) => sum + ticket.playerIds.length, 0);
 
-    const gameMode = GAME_MODES.get(matchType);
+    const gameMode = GAME_MODES.get(modeString);
     if (!gameMode) {
       throw new Error("Failed to get gamed mode");
     }
@@ -506,13 +508,13 @@ async function createRetailMatch(
         EventQueueSlug: "",
         MatchId: new ObjectId().toHexString(),
         Created: new Date(),
-        Map: getRandomMapByType(matchType),
-        ModeString: matchType,
+        Map: getRandomMapByType(modeString),
+        ModeString: modeString,
         Players: await configurePlayersForMatch(tickets, gameMode),
       },
     };
 
-    const matchId = await notifyActiveMatchCreated("", gameplayConfig);
+    const matchId = await notifyActiveMatchCreated(containerTemplate, "", gameplayConfig);
 
     for (const ticket of tickets) {
       await completeMatchmaking(
@@ -523,7 +525,7 @@ async function createRetailMatch(
     }
 
     logger.info(
-      `Created ${matchType} match ${matchId} with ${totalPlayers} players across ${tickets.length} tickets`,
+      `Created ${modeString} match ${matchId} with ${totalPlayers} players across ${tickets.length} tickets`,
     );
   } catch (error) {
     logger.error(`Error creating match: ${error}`);

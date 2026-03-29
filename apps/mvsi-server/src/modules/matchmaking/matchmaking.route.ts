@@ -6,8 +6,6 @@ import {
   lockPerks,
   requestMatchmakingByLobby,
 } from "./matchmaking.service";
-import { MATCH_TYPES } from "./matchmaking.types";
-import { broadcastNotificationToTopic } from "../notifications/notifications.utils";
 
 const RequestMatchSchema = t.Object({
   data: t.Object({
@@ -30,7 +28,7 @@ router.post(
     return await requestMatchmakingByLobby(
       body.match,
       claims.id,
-      MATCH_TYPES.ONE_V_ONE,
+      "1v1",
       body.data.MultiplayParams,
       "1v1-retail",
     );
@@ -46,7 +44,7 @@ router.post(
     return await requestMatchmakingByLobby(
       body.match,
       claims.id,
-      MATCH_TYPES.TWO_V_TWO,
+      "2v2",
       body.data.MultiplayParams,
       "2v2-retail",
     );
@@ -62,7 +60,7 @@ router.post(
     return await requestMatchmakingByLobby(
       body.match,
       claims.id,
-      MATCH_TYPES.FFA,
+      "FFA",
       body.data.MultiplayParams,
       "ffa-retail",
     );
@@ -78,7 +76,7 @@ router.post(
     return await requestMatchmakingByLobby(
       body.match,
       claims.id,
-      MATCH_TYPES.CASUAL,
+      "casual",
       body.data.MultiplayParams,
       "casual-retail",
     );
@@ -94,7 +92,7 @@ router.post(
     return await requestMatchmakingByLobby(
       body.match,
       claims.id,
-      MATCH_TYPES.ARENA,
+      "arena",
       body.data.MultiplayParams,
       "arena-retail",
     );

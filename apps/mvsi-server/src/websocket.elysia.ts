@@ -8,7 +8,10 @@ import type { ServerWebSocket } from "elysia/ws/bun";
 import * as jwt from "jsonwebtoken";
 import type { JWT_CLAIMS } from "./middleware/middlewares";
 import { removeTicketsFromQueue } from "./modules/matchmaking/matchmaking.service";
-import { MATCH_TYPES, type MatchmakingTicket } from "./modules/matchmaking/matchmaking.types";
+import {
+  SERVER_MODESTRINGS,
+  type MatchmakingTicket,
+} from "./modules/matchmaking/matchmaking.types";
 import {
   clearPlayerKeys,
   refreshPlayersPresence,
@@ -113,7 +116,7 @@ function handleHeartBeats() {
 function attemptRemoveMatchTicket(ws: MVSI_Websocket) {
   if (ws.data.ticket) {
     const ticket = ws.data.ticket;
-    Object.values(MATCH_TYPES).forEach((value) => {
+    SERVER_MODESTRINGS.forEach((value) => {
       removeTicketsFromQueue(value, [ticket]);
     });
   }

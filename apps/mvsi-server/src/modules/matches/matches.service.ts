@@ -1,13 +1,12 @@
 import { logger } from "@mvsi/logger";
 import { redisClient } from "@mvsi/redis";
+import { ObjectId } from "mongodb";
+import { getRandomMapByType } from "../../data/maps";
+import { getLobby } from "../lobby/lobby.service";
+import type { CustomLobby } from "../lobby/lobby.types";
 import { getActiveMatch, notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
 import type { ActiveMatch, GameplayConfig } from "../matchmaking/matchmaking.types";
 import { broadcastNotificationToTopic } from "../notifications/notifications.utils";
-import { getRandomMapByType } from "../../data/maps";
-import { ObjectId } from "mongodb";
-import { getPlayersConfig } from "../playerConfig/playerConfig.service";
-import { CustomLobby } from "../lobby/lobby.types";
-import { getLobby } from "../lobby/lobby.service";
 
 const MATCH_KEY = (matchId: string) => `match:${matchId}`;
 
@@ -221,5 +220,5 @@ async function startRematch(activeMatch: ActiveMatch) {
     },
   };
 
-  await notifyActiveMatchCreated(activeMatch.fromLobbyId, gameplayConfig);
+  await notifyActiveMatchCreated(activeMatch.template, activeMatch.fromLobbyId, gameplayConfig);
 }

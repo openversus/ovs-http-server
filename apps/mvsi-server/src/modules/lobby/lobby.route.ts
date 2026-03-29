@@ -1,23 +1,20 @@
 import Elysia, { t } from "elysia";
 import { MAIN_APP, MVSI_HYDRA_WITH_JWT } from "../../middleware/middlewares";
-import { MATCH_TYPES } from "../matchmaking/matchmaking.types";
+import type { SERVER_MODESTRING } from "../matchmaking/matchmaking.types";
 import {
   arenaCheckin,
   arenaPlayerShopClosed,
   arenaRerollCharacters,
   arenaSelectCharacter,
   arenaSelectCharacterAbsent,
-  assembleArenaMatch,
   createArenaLobby,
   joinArenaLobby,
 } from "./arena.lobby.service";
-import type { ArenaLobby } from "./lobby.types";
 import {
   addCustomGameBot,
   updateCustomGameBotFighter,
   createCustomLobby,
   createPartyLobby,
-  getLobby,
   invitePlayerToLobby,
   joinCustomLobby,
   kickFromLobby,
@@ -39,8 +36,8 @@ import {
 } from "./lobby.service";
 import { updatePlayerLoadout } from "../playerConfig/playerConfig.service";
 import { TeamStyle } from "../gameModes/gameModes.config";
-import { CustomLobbyMatchConfig, lobbyTypesMap } from "./lobby.types";
-import { GAME_MODES_CONFIG } from "../../data/gameModes";
+import type { CustomLobbyMatchConfig, lobbyTypesMap } from "./lobby.types";
+import type { GAME_MODES_CONFIG } from "../../data/gameModes";
 
 const router = new Elysia().use(MVSI_HYDRA_WITH_JWT);
 
@@ -255,13 +252,13 @@ router.put(
 router.put(
   "/ssc/invoke/set_mode_for_lobby",
   async ({ claims, body }) => {
-    await setLobbyMode(claims.id, body.LobbyId, body.ModeString);
+    await setLobbyMode(claims.id, body.LobbyId, body.ModeString as SERVER_MODESTRING);
     return { body: {}, metadata: null, return_code: 0 };
   },
   {
     body: t.Object({
       LobbyId: t.String(),
-      ModeString: t.Enum(MATCH_TYPES),
+      ModeString: t.String(),
     }),
   },
 );

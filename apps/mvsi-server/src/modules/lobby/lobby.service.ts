@@ -9,7 +9,11 @@ import { MAP_ROTATIONS } from "../../data/maps";
 import { sleep } from "../../utils/sleep";
 import { TeamStyle } from "../gameModes/gameModes.config";
 import { notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
-import { MATCH_TYPES, type GameplayConfig } from "../matchmaking/matchmaking.types";
+import {
+  ContainerTemplate,
+  SERVER_MODESTRING,
+  type GameplayConfig,
+} from "../matchmaking/matchmaking.types";
 import type {
   RealtimeNotificationTopicMessage,
   RealtimeNotificationUsersMessage,
@@ -717,10 +721,7 @@ export async function createBaseLobby(accountId: string, template: keyof typeof 
   return baseLobby;
 }
 
-export async function createPartyLobby(
-  accountId: string,
-  lobbyMode: MATCH_TYPES = MATCH_TYPES.ONE_V_ONE,
-) {
+export async function createPartyLobby(accountId: string, lobbyMode: SERVER_MODESTRING = "1v1") {
   const baseLobby = await createBaseLobby(accountId, "party_lobby");
   const partyLobby: PartyLobby = {
     ...baseLobby,
@@ -748,7 +749,7 @@ export async function notifyLobbyJoined(lobby: BaseLobby) {
   await redisClient.publish(LOBBY_JOINED_CHANNEL, JSON.stringify(lobbyCreatedMessage));
 }
 
-export async function setLobbyMode(leaderId: string, lobbyId: string, newMode: MATCH_TYPES) {
+export async function setLobbyMode(leaderId: string, lobbyId: string, newMode: SERVER_MODESTRING) {
   await evalLua(LUA_SET_LOBBY_MODE, [lobbyKey(lobbyId)], [leaderId, newMode]);
   const message: RealtimeNotificationTopicMessage = {
     topic: lobbyId,
@@ -1654,5 +1655,24 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
 
   //console.log(`Match Created: ${JSON.stringify(gameplayConfig, null, 2)}`);
 
-  await notifyActiveMatchCreated(lobbyId, gameplayConfig);
+  const numPLayers = Object.keys(lobby.PlayerGameplayPreferences).length;
+  let containerTemplate: ContainerTemplate;
+  switch (numPLayers) {
+    case 1:
+      containerTemplate = "custom_container_one_player";
+      break;
+    case 2:
+      containerTemplate = "custom_container_two_player";
+      break;
+    case 3:
+      containerTemplate = "custom_container_three_player";
+      break;
+    case 4:
+      containerTemplate = "custom_container_four_player";
+      break;
+    default:
+      containerTemplate = "custom_container_one_player";
+  }
+
+  await notifyActiveMatchCreated(containerTemplate, lobbyId, gameplayConfig);
 }

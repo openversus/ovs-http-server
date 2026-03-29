@@ -1,7 +1,7 @@
 import Elysia, { t } from "elysia";
 import { MAIN_APP, MVSI_HYDRA_WITH_JWT } from "../../middleware/middlewares";
 import { createPartyLobby } from "../lobby/lobby.service";
-import { MATCH_TYPES } from "../matchmaking/matchmaking.types";
+import { SERVER_MODESTRING } from "../matchmaking/matchmaking.types";
 import { rifts_static_data1 } from "./rifts.data";
 import { createRiftLobby } from "./rifts.service";
 

@@ -3,24 +3,26 @@ import { env } from "@mvsi/env";
 import { logger } from "@mvsi/logger";
 import { redisClient } from "@mvsi/redis";
 import { ObjectId } from "mongodb";
+
 import { FLEET_SERVERS } from "../../data/fleets";
 import { getLobby, lockLobby } from "../lobby/lobby.service";
 import { LOBBY_QUEUED_CHANNEL } from "../lobby/lobby.types";
 import {
   ACTIVEMATCH_END_CHANNEL,
+  type ActiveMatch,
+  type ContainerTemplate,
+  type GameplayConfig,
   MATCH_STATE,
-  MATCH_TYPES,
   MATCHMAKING_CANCEL_CHANNEL,
   MATCHMAKING_COMPLETE_CHANNEL,
   MATCHMAKING_MATCH_FOUND_CHANNEL,
   MATCHMAKING_PERKS_LOCKED_CHANNEL,
-  type ActiveMatch,
-  type GameplayConfig,
   type MatchEndMessage,
   type MatchFoundChannelMessage,
   type MatchmakingCancelMessage,
   type MatchmakingCompleteMessage,
   type MatchmakingTicket,
+  type SERVER_MODESTRING,
   type TicketRegionLatency,
 } from "./matchmaking.types";
 
@@ -31,7 +33,7 @@ const MATCH_KEY = (matchId: string) => `match:${matchId}`;
 export async function requestMatchmakingByLobby(
   lobbyId: string,
   accountId: string,
-  matchType: MATCH_TYPES,
+  modeString: SERVER_MODESTRING,
   MultiplayParams: any,
   slug: string,
 ) {
@@ -44,7 +46,7 @@ export async function requestMatchmakingByLobby(
   // preserve teammate pairs when assembling the match.
   let teams: string[][];
   let playerIds: string[];
-  if (matchType === MATCH_TYPES.ARENA) {
+  if (modeString === "arena") {
     teams = lobby.Teams.map((team) =>
       Object.entries(team.Players)
         .filter(([, p]) => p.BotSettingSlug === "")
@@ -134,7 +136,15 @@ export async function requestMatchmakingByLobby(
   const regions = computePartyRegions(lobby.players_connection_info, playerIds);
   console.log("Computed regions with latency for matchmaking request:", regions);
 
-  await queueMatchmaking(accountId, playerIds, teams, data.from_match, data.id, matchType, regions);
+  await queueMatchmaking(
+    accountId,
+    playerIds,
+    teams,
+    data.from_match,
+    data.id,
+    modeString,
+    regions,
+  );
   return data;
 }
 
@@ -189,12 +199,14 @@ export async function getActiveMatch(matchId: string) {
 }
 
 export async function notifyActiveMatchCreated(
+  containerTemplate: ContainerTemplate,
   fromLobbyId: string,
   gameplayConfig: GameplayConfig,
-  templateId = "OnGameplayConfigNotified",
+  realtimeMessageTemplate = "OnGameplayConfigNotified",
 ) {
   const EX = 60 * 20;
   const activeMatch: ActiveMatch = {
+    template: containerTemplate,
     matchKey: randomBytes(32).toString("base64"),
     state: "active",
     GameplayConfig: gameplayConfig,
@@ -218,7 +230,7 @@ export async function notifyActiveMatchCreated(
     gameNotification: {
       data: {
         MatchId: gameplayConfig.GameplayConfig.MatchId,
-        template_id: templateId,
+        template_id: realtimeMessageTemplate,
         ...gameplayConfig,
       },
       payload: {
@@ -242,7 +254,7 @@ export async function queueMatchmaking(
   teams: string[][],
   partyId: string,
   matchmakingRequestId: string,
-  matchType: MATCH_TYPES,
+  modeString: SERVER_MODESTRING,
   regions: TicketRegionLatency[],
 ): Promise<void> {
   try {
@@ -251,7 +263,7 @@ export async function queueMatchmaking(
       regions,
       skill: 0,
       created_at: new Date(),
-      matchType,
+      matchType: modeString,
       partyLeaderId,
       matchmakingRequestId,
       partyId,
@@ -265,7 +277,7 @@ export async function queueMatchmaking(
     await addTicketToQueue(ticket.matchType, ticket);
 
     logger.info(
-      `Party (${partyId}) matchmakingRequestId(${matchmakingRequestId}) has been added to ${matchType} matchmaking queue. Players (${playerIds.join(
+      `Party (${partyId}) matchmakingRequestId(${matchmakingRequestId}) has been added to ${modeString} matchmaking queue. Players (${playerIds.join(
         ",",
       )})`,
     );
@@ -354,7 +366,10 @@ export async function getQueueTickets(ids: string[]) {
   return tickets.map((ticket) => JSON.parse(ticket as string) as MatchmakingTicket);
 }
 
-export async function removeTicketsFromQueue(queueType: MATCH_TYPES, tickets: MatchmakingTicket[]) {
+export async function removeTicketsFromQueue(
+  queueType: SERVER_MODESTRING,
+  tickets: MatchmakingTicket[],
+) {
   for (const ticket of tickets) {
     await redisClient.del(MATCHMAKING_TICKET_KEY(ticket.matchmakingRequestId));
     const success = await redisClient.zRem(queueType, ticket.matchmakingRequestId);

@@ -96,6 +96,7 @@ export async function handleAccess(ip: string, auth: { steam: string; steamID?: 
 
   const cosmetics = await getCosmeticsConfigurationForPlayer(claims.id);
   const presence: PlayerPresence = {
+    defaultGamemode: player.defaultMode ?? "1v1",
     currentLobbyId: "",
     ip: ip,
   };

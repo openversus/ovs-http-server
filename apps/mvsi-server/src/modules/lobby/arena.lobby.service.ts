@@ -1002,7 +1002,7 @@ export async function submitArenaMatchStats(
     Score: number[];
     WinningTeamIndex: number;
   },
-  matchLength: number,
+  _matchLength: number,
 ) {
   // Find which arenaId owns this match
   const activeMatch = await getActiveMatch(containerMatchId);
@@ -1015,7 +1015,7 @@ export async function submitArenaMatchStats(
   if (!arenaData) return;
 
   const matchPlayers = activeMatch.GameplayConfig.GameplayConfig.Players;
-  const { PlayerMissionUpdates, Score, WinningTeamIndex } = endOfMatchStats;
+  const { PlayerMissionUpdates, WinningTeamIndex } = endOfMatchStats;
 
   // ── Map stat keys to MatchStats fields ──────────────────────────────────
   const statMap: Record<string, keyof MatchStats> = {

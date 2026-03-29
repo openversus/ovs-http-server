@@ -32,7 +32,7 @@ export function initRedisSubscriber() {
   if (!redisSub) {
     redisSub = redisClient.duplicate();
     redisSub.connect();
-    redisSub.on("connect", (err) => logger.info("Connected to SUB Redis"));
+    redisSub.on("connect", () => logger.info("Connected to SUB Redis"));
     redisSub.on("error", (err) => logger.error(err));
   }
   return redisSub;

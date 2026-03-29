@@ -1,23 +1,15 @@
-import { logger } from "@mvsi/logger";
 import { redisClient } from "@mvsi/redis";
-import { ObjectId } from "mongodb";
 import { RIFTS_CONFIG } from "../../data/rifts";
-import {
-  getLobby,
 
-  notifyLobbyJoined,
-} from "../lobby/lobby.service";
-import type { RiftLobby } from "../lobby/lobby.types";
-import type { ExtraLobbyRiftData, RiftsData } from "./rfits.types";
+import type { RiftsData } from "./rfits.types";
 
 export async function createRiftLobby(
-  accountId: string,
-  RiftConfigSlug: string,
-  ChapterGuid: string,
-  ChapterDifficulty: number,
+  _accountId: string,
+  _RiftConfigSlug: string,
+  _ChapterGuid: string,
+  _ChapterDifficulty: number,
 ) {
-
-  const riftsData: RiftsData = {
+  /* const riftsData: RiftsData = {
     leaderID: accountId,
     lobbyId: new ObjectId().toHexString(),
     chapter: RiftConfigSlug,
@@ -47,15 +39,16 @@ export async function createRiftLobby(
     RiftState: {},
   };
 
-
   const riftLobby: RiftLobby & ExtraLobbyRiftData = {
     //...lobbyWithoutModeString,
     ...extraLobbyRiftData,
-  };
+  }; */
 
-  await setRiftLobbyForPlayer(accountId, riftsData);
+  const riftLobby = {};
+
+  /*   await setRiftLobbyForPlayer(accountId, riftsData);
   await notifyLobbyJoined(riftLobby);
-  logger.info(`RIFT lobby created for ${accountId} - matchLobbyId:${riftLobby.MatchID}`);
+  logger.info(`RIFT lobby created for ${accountId} - matchLobbyId:${riftLobby.MatchID}`); */
   return riftLobby;
 }
 
@@ -80,14 +73,14 @@ export async function gatherChapterCodeNames(rift_name: string) {
 export function getRiftChapter(value: string) {
   const riftConfig = RIFTS_CONFIG[value as keyof typeof RIFTS_CONFIG];
   const chapters = riftConfig.data.RiftMatchNodeData;
-  for (const node of Object.keys(chapters)) {
+  /* for (const node of Object.keys(chapters)) {
     const nodeData = chapters[node];
     const nodeCodeName = nodeData.Guid;
     nodeCodeNames.push(nodeCodeName);
-  }
+  } */
   return chapters;
 }
 
-export function getRiftRuntimeNodeData(rift_name: string) {
-  const riftConfig = getRiftChapter(rift_name);
+export function getRiftRuntimeNodeData(_rift_name: string) {
+  //const riftConfig = getRiftChapter(rift_name);
 }

@@ -25,6 +25,7 @@ import {
 } from "../notifications/notifications.utils";
 import { getPlayerConfig, getPlayersConfig } from "../playerConfig/playerConfig.service";
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
+import { getPlayersPresence } from "../playerPresence/playerPresence.service";
 import {
   type BaseLobby,
   type CustomLobby,
@@ -674,7 +675,11 @@ export async function invitePlayerToLobby(
   await broadcastNotificationToTopic(message);
 }
 
-export async function createBaseLobby(accountId: string, template: keyof typeof lobbyTypesMap) {
+export async function createBaseLobby(
+  accountId: string,
+  template: keyof typeof lobbyTypesMap,
+  modeString: SERVER_MODESTRING,
+) {
   const playerConfig = await getPlayerConfig(accountId);
 
   if (!playerConfig) {
@@ -716,15 +721,20 @@ export async function createBaseLobby(accountId: string, template: keyof typeof 
     Template: template,
     players_connection_info: {},
     RematchCount: 0,
+    ModeString: modeString,
   };
   return baseLobby;
 }
 
-export async function createPartyLobby(accountId: string, lobbyMode: SERVER_MODESTRING = "1v1") {
-  const baseLobby = await createBaseLobby(accountId, "party_lobby");
+export async function createPartyLobby(accountId: string) {
+  const playerPrecense = await getPlayersPresence([accountId]);
+  const baseLobby = await createBaseLobby(
+    accountId,
+    "party_lobby",
+    playerPrecense[0]?.defaultGamemode ?? "1v1",
+  );
   const partyLobby: PartyLobby = {
     ...baseLobby,
-    ModeString: lobbyMode,
   };
 
   await notifyLobbyJoined(partyLobby);
@@ -884,7 +894,7 @@ export function getCustomLobbyDefaultSettings(
 }
 
 export async function createCustomLobby(accountId: string) {
-  const baseLobby = await createBaseLobby(accountId, "custom_game_lobby");
+  const baseLobby = await createBaseLobby(accountId, "custom_game_lobby", "2v2");
   const customLobby: CustomLobby = {
     ...baseLobby,
     ReadyPlayers: {

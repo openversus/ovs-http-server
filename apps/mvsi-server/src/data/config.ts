@@ -1,5 +1,4 @@
 import { ConfigDataModel } from "@mvsi/database/models/Config";
-import { ObjectId } from "@mvsi/database/papr";
 import { logger } from "@mvsi/logger";
 
 let CRC = 1;

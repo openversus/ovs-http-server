@@ -1,5 +1,4 @@
-import fs from "node:fs";
-import zlib from "zlib";
+import zlib from "node:zlib";
 import {
   CODES,
   type HydraCustomType,
@@ -14,7 +13,7 @@ export class HydraDecoder {
     this.reader = new HydraBufferReader(encodedStreamOrBuffer);
   }
 
-  readArray(count, reader: HydraBufferReader) {
+  readArray(count: number, reader: HydraBufferReader) {
     const ret = new Array(count);
 
     for (let i = 0; i < count; i++) {
@@ -28,8 +27,8 @@ export class HydraDecoder {
     return ret;
   }
 
-  readMap(count, reader: HydraBufferReader) {
-    const ret: Record<any, any> = {};
+  readMap(count: number, reader: HydraBufferReader) {
+    const ret: Record<string, unknown> = {};
 
     for (let i = 0; i < count; i++) {
       const key = this.readValue(reader) as string;
@@ -44,8 +43,10 @@ export class HydraDecoder {
   }
 
   readLocalization(reader: HydraBufferReader) {
-    const emptyCode = this.readValue(reader);
-    const defaultParam = this.readValue(reader);
+    // emptyCode
+    this.readValue(reader);
+    // defaultParam
+    this.readValue(reader);
     const key = this.readValue(reader) as string;
     const value = this.readValue(reader) as string;
 
@@ -83,10 +84,12 @@ export class HydraDecoder {
   }
 
   readFileRef(reader: HydraBufferReader) {
-    const model_cls = this.readValue(reader) as string;
-    const ref = this.readValue(reader) as string;
+    // model_cls
+    this.readValue(reader) as string;
+    // ref
+    this.readValue(reader) as string;
 
-    const values = this.readValue(reader) as Record<string, any>;
+    const values = this.readValue(reader);
 
     const hydraFileref: HydraFileRef = {
       _customType: "hydra_reference",
@@ -97,9 +100,11 @@ export class HydraDecoder {
   }
 
   readStoreEnabled(reader: HydraBufferReader) {
-    const defaultValue = this.readValue(reader) as boolean;
-    const renderedValue = this.readValue(reader) as boolean;
-    const values = this.readValue(reader) as any;
+    // defaultValue
+    this.readValue(reader) as boolean;
+    // renderedValue
+    this.readValue(reader) as boolean;
+    const values = this.readValue(reader);
     const hydraDefAndRen: HydraCustomType = {
       _hydra_StoreEnabed: values,
     };
@@ -107,11 +112,14 @@ export class HydraDecoder {
     return hydraDefAndRen;
   }
 
+  // @ts-ignore
   readWebSocket() {
-    const size = this.reader.read(2, CODES.UINT16);
+    // size
+    this.reader.read(2, CODES.UINT16);
     return this.readValue();
   }
 
+  // @ts-ignore
   readCompressedObject(reader: HydraBufferReader) {
     const index = reader.read(1, CODES.INT8) as number;
     if (index > 1) {
@@ -138,7 +146,9 @@ export class HydraDecoder {
       reader.position += dataLength;
       const decompressedData = zlib.unzipSync(compressedData);
       const bufferReader = new HydraBufferReader(decompressedData);
+      // @ts-ignore
       const value = this.readValue(bufferReader);
+      // @ts-ignore
       const _hydra_compressed = {
         _hydra_compressed: value,
       };
@@ -147,6 +157,7 @@ export class HydraDecoder {
     return 0;
   }
 
+  // @ts-ignore
   readValue(reader?: HydraBufferReader) {
     if (!reader) {
       reader = this.reader;
@@ -185,11 +196,11 @@ export class HydraDecoder {
       case CODES.DOUBLE:
         return reader.read(8, CODES.DOUBLE);
       case CODES.CHAR8:
-        return reader.readString(reader.read(1, CODES.UINT8));
+        return reader.readString(reader.read(1, CODES.UINT8) as number);
       case CODES.CHAR16:
-        return reader.readString(reader.read(2, CODES.UINT16));
+        return reader.readString(reader.read(2, CODES.UINT16) as number);
       case CODES.CHAR32:
-        return reader.readString(reader.read(4, CODES.UINT32));
+        return reader.readString(reader.read(4, CODES.UINT32) as number);
       case CODES.BYTES8:
         return reader.read(reader.read(1, CODES.UINT8) as number, CODES.BYTES8);
       case CODES.BYTES16:
@@ -201,21 +212,21 @@ export class HydraDecoder {
       case CODES.DATE:
         return this.readDate(reader);
       case CODES.ARRAY8:
-        return this.readArray(reader.read(1, CODES.UINT8), reader);
+        return this.readArray(reader.read(1, CODES.UINT8) as number, reader);
       case CODES.ARRAY16:
-        return this.readArray(reader.read(2, CODES.UINT16), reader);
+        return this.readArray(reader.read(2, CODES.UINT16) as number, reader);
       case CODES.ARRAY32:
-        return this.readArray(reader.read(4, CODES.UINT32), reader);
+        return this.readArray(reader.read(4, CODES.UINT32) as number, reader);
       case CODES.ARRAY64:
-        return this.readArray(reader.read(8, CODES.UINT64), reader);
+        return this.readArray(reader.read(8, CODES.UINT64) as number, reader);
       case CODES.MAP8:
-        return this.readMap(reader.read(1, CODES.UINT8), reader);
+        return this.readMap(reader.read(1, CODES.UINT8) as number, reader);
       case CODES.MAP16:
-        return this.readMap(reader.read(2, CODES.UINT16), reader);
+        return this.readMap(reader.read(2, CODES.UINT16) as number, reader);
       case CODES.MAP32:
-        return this.readMap(reader.read(4, CODES.UINT32), reader);
+        return this.readMap(reader.read(4, CODES.UINT32) as number, reader);
       case CODES.MAP64:
-        return this.readMap(reader.read(8, CODES.UINT64), reader);
+        return this.readMap(reader.read(8, CODES.UINT64) as number, reader);
       case CODES.COMPRESSED:
         return this.readCompressedObject(reader);
       case 0x68:

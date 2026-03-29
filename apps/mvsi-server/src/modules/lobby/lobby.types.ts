@@ -74,15 +74,11 @@ export type BaseLobby = {
   Template: keyof typeof lobbyTypesMap;
   players_connection_info: Record<string, PlayerConnectionInfo>;
   RematchCount: number;
+    ModeString: SERVER_MODESTRING;
 };
 
-// Regular Lobby requires ModeString
-export type PartyLobby = BaseLobby & {
-  ModeString: SERVER_MODESTRING;
-};
-
+export type PartyLobby = BaseLobby;
 export type RiftLobby = BaseLobby;
-
 export type CustomLobby = BaseLobby & CustomLobbySettings;
 
 export type CustomLobbySettings = {

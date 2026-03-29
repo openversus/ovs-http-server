@@ -78,13 +78,13 @@ export class HydraBufferReader {
         return result;
     }
 
-    readToByte(length) {
+    readToByte(length : number) {
         const bytes = this._buffer.slice(this.position, this.position + length);
         this.position += length;
         return bytes;
     }
 
-    readString(length) {
+    readString(length: number) {
         const bytes = this.readToByte(length)
         const text = this.textEncoder.decode(bytes); // Assumes ASCII encoding;
         return text;

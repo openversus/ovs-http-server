@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-import { ObjectId } from "mongodb";
 import { schema, types } from "papr";
 import papr, { dbEmitter } from "../papr";
 import { ROLES } from "../roles";
@@ -18,7 +16,7 @@ const playerSchema = schema(
     variant: types.string({ required: true }),
     last_login: types.date({ required: true }),
     gameplay_preferences: types.number({ required: false }),
-
+    defaultMode: types.string({ required: false }),
     birthday: types.date(),
     country: types.string(),
     language: types.string(),
@@ -40,6 +38,8 @@ const playerSchema = schema(
       variant: "skin_shaggy_default",
       country: "US",
       language: "en",
+      defaultMode: "1v1",
+
     }),
   },
 );

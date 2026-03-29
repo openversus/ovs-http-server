@@ -138,7 +138,7 @@ router.put(
           },
         },
         LockedLoadouts: lobby.LockedLoadouts,
-        ModeString: lobby.Template,
+        ModeString: lobby.ModeString,
         IsLobbyJoinable: lobby.IsLobbyJoinable,
       },
       players: {

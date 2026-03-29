@@ -1,11 +1,10 @@
-import fs from "node:fs";
 import { ObjectId } from "mongodb";
 import zlib, { constants } from "zlib";
 import { BYTESIZE, CODES } from "./hydra";
 
 export class HydraCommand {
-  code: number;
-  bufferSizeBytes: number;
+  code: number = 0;
+  bufferSizeBytes: number = 0;
   offset = 0;
 }
 export class HydraEncoder {
@@ -134,7 +133,7 @@ export class HydraEncoder {
     this.pushBuffer(compressedBuffer);
   }
 
-  encodeArray(data: Object[]) {
+  encodeArray(data: object[]) {
     const size = data.length;
     const hydraCmd = new HydraCommand();
 
@@ -164,7 +163,7 @@ export class HydraEncoder {
     }
   }
 
-  encodeObject(data: Object) {
+  encodeObject(data: object) {
     const size = Object.keys(data).length;
     const hydraCmd = new HydraCommand();
 
@@ -247,7 +246,7 @@ export class HydraEncoder {
     this.encodeObject(data);
   }
 
-  encodeStoreEnabled(data) {
+  encodeStoreEnabled(data: object[]) {
     const buffer = Buffer.from([0x71, 0x3, 0x3]);
     this.pushBuffer(buffer);
     this.encodeArray(data);

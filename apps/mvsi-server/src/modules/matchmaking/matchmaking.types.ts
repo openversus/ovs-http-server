@@ -1,3 +1,4 @@
+import type { GAME_MODES_CONFIG } from "../../data/gameModes";
 import type { ArenaConstants, ArenaData } from "../lobby/arena.lobby.types";
 import type { NotificationTemplate } from "../notifications/notifications.types";
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
@@ -22,7 +23,9 @@ export const SERVER_MODESTRINGS = [
   "",
 ] as const;
 
-export type SERVER_MODESTRING = (typeof SERVER_MODESTRINGS)[number];
+export type SERVER_MODESTRING =
+  | (typeof SERVER_MODESTRINGS)[number]
+  | keyof typeof GAME_MODES_CONFIG;
 
 export type ContainerTemplate =
   | "2v2_container"

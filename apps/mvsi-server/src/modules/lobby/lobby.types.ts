@@ -81,18 +81,9 @@ export type PartyLobby = BaseLobby & {
   ModeString: SERVER_MODESTRING;
 };
 
-// RiftLobby includes ExtraLobbyRiftData and explicitly excludes ModeString
-// ExtraLobbyRiftData should be imported from rifts module when creating RiftLobby
-export type RiftLobby = BaseLobby & {
-  ModeString?: never;
-  // Additional rift-specific fields should be added via intersection
-  // Example: RiftLobby & ExtraLobbyRiftData
-};
+export type RiftLobby = BaseLobby;
 
-export type CustomLobby = BaseLobby &
-  CustomLobbySettings & {
-    ModeString?: never;
-  };
+export type CustomLobby = BaseLobby & CustomLobbySettings;
 
 export type CustomLobbySettings = {
   GameModeSlug: keyof typeof GAME_MODES_CONFIG;

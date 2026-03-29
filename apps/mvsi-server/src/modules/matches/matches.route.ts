@@ -98,7 +98,7 @@ router.put(
       created_at: new Date(),
       account_id: null,
       completion_time: null,
-      name: "white-green-wind-breeze-OS5dF",
+      name: "",
       state: "open",
       access_level: "public",
       origin: "client",
@@ -138,7 +138,7 @@ router.put(
           },
         },
         LockedLoadouts: lobby.LockedLoadouts,
-        ModeString: "TODO",
+        ModeString: lobby.Template,
         IsLobbyJoinable: lobby.IsLobbyJoinable,
       },
       players: {

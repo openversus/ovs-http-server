@@ -1601,14 +1601,6 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
         )?.region_id,
     )?.region ?? "CENTRAL_US";
 
-  console.log(
-    `Selected region for match ${matchId} is ${region} based on leader's connection info`,
-  );
-
-  console.log(
-    `Leader's connection info: ${JSON.stringify(lobby.players_connection_info[lobby.LeaderID])}`,
-  );
-
   const gameplayConfig: GameplayConfig = {
     GameplayConfig: {
       Spectators,
@@ -1646,7 +1638,7 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
       MatchId: matchId,
       Created: new Date(),
       Map: randomMap.Map,
-      ModeString: lobby.ModeString ?? "",
+      ModeString: lobby.GameModeSlug,
       Players,
     },
   };

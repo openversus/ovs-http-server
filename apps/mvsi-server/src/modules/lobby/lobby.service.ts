@@ -2,17 +2,18 @@ import { env } from "@mvsi/env";
 import { logger } from "@mvsi/logger";
 import { redisClient } from "@mvsi/redis";
 import { ObjectId } from "mongodb";
-import { randomBytes } from "node:crypto";
 import { getCurrentCRC } from "../../data/config";
+import { FLEET_SERVERS } from "../../data/fleets";
 import { GAME_MODES_CONFIG } from "../../data/gameModes";
 import { MAP_ROTATIONS } from "../../data/maps";
 import { sleep } from "../../utils/sleep";
+import { generateBotPlayerConfig } from "../bots/bots.service";
 import { TeamStyle } from "../gameModes/gameModes.config";
 import { notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
-import {
+import type {
   ContainerTemplate,
+  GameplayConfig,
   SERVER_MODESTRING,
-  type GameplayConfig,
 } from "../matchmaking/matchmaking.types";
 import type {
   RealtimeNotificationTopicMessage,
@@ -22,21 +23,19 @@ import {
   broadcastNotificationToTopic,
   broadcastNotificationToUsers,
 } from "../notifications/notifications.utils";
-import { generateBotPlayerConfig } from "../bots/bots.service";
 import { getPlayerConfig, getPlayersConfig } from "../playerConfig/playerConfig.service";
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
 import {
-  LOBBY_JOINED_CHANNEL,
-  lobbyTypesMap,
   type BaseLobby,
   type CustomLobby,
   type CustomLobbyMatchConfig,
   type CustomLobbySettings,
+  LOBBY_JOINED_CHANNEL,
   type LobbyCreatedMessage,
   type LobbyTeam,
+  lobbyTypesMap,
   type PartyLobby,
 } from "./lobby.types";
-import { FLEET_SERVERS } from "../../data/fleets";
 
 const LOBBY_EX = 2 * 24 * 60 * 60; // 2 days
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -1134,7 +1133,6 @@ export async function switchTeamForCustomLobby(
   playerId: string,
   teamIndex: number,
 ) {
-  const lobby = await getLobby(lobbyId);
   const result = await evalLua(
     LUA_SWITCH_TEAM,
     [lobbyKey(lobbyId)],

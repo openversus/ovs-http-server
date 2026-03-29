@@ -1,7 +1,7 @@
-import { INVENTORY_DEFINITIONS } from "./data/inventoryDefs";
-import { ENABLED_SKINS } from "./data/skins";
 import { connect } from "@mvsi/database";
 import { DataAssetModel } from "@mvsi/database/models/DataAssets";
+import { INVENTORY_DEFINITIONS } from "./data/inventoryDefs";
+import { ENABLED_SKINS } from "./data/skins";
 
 const CHARACTER_SLUGS = [
   "character_supershaggy",
@@ -1195,10 +1195,7 @@ const TAUNTS_DATA: TauntsData = {
     Slugs: ["taunt_c019_default"],
   },
   character_wonder_woman: {
-    Slugs: [
-      "taunt_wonder_woman_hands_on_hips",
-      "taunt_wonder_woman_weight_lifting",
-    ],
+    Slugs: ["taunt_wonder_woman_hands_on_hips", "taunt_wonder_woman_weight_lifting"],
   },
   character_velma: {
     Slugs: [
@@ -1302,12 +1299,7 @@ const TAUNTS_DATA: TauntsData = {
     Slugs: ["taunt_c021_default", "taunt_c021_thumbsdown", "taunt_c021_Taunt2"],
   },
   character_C020: {
-    Slugs: [
-      "taunt_c020_taunt_0",
-      "taunt_c020_taunt_1",
-      "taunt_c020_taunt_2",
-      "taunt_c020_taunt_3",
-    ],
+    Slugs: ["taunt_c020_taunt_0", "taunt_c020_taunt_1", "taunt_c020_taunt_2", "taunt_c020_taunt_3"],
   },
   character_c019: {
     Slugs: [
@@ -1368,12 +1360,7 @@ const TAUNTS_DATA: TauntsData = {
     ],
   },
   character_arya: {
-    Slugs: [
-      "taunt_arya_default",
-      "taunt_arya_laugh",
-      "taunt_arya_yawn",
-      "taunt_c006_curtsy",
-    ],
+    Slugs: ["taunt_arya_default", "taunt_arya_laugh", "taunt_arya_yawn", "taunt_c006_curtsy"],
   },
   character_Jason: {
     Slugs: [
@@ -1396,21 +1383,13 @@ const TAUNTS_DATA: TauntsData = {
     ],
   },
   character_BananaGuard: {
-    Slugs: [
-      "taunt_bananaguard_default",
-      "taunt_bananaguard_mamasaid",
-      "taunt_c034_Taunt1",
-    ],
+    Slugs: ["taunt_bananaguard_default", "taunt_bananaguard_mamasaid", "taunt_c034_Taunt1"],
   },
   character_C027: {
     Slugs: ["taunt_c027_default", "taunt_c027_taunt1"],
   },
   character_C026: {
-    Slugs: [
-      "taunt_C026_default",
-      "taunt_c026_samurai_shuffle",
-      "taunt_c026_taunt1",
-    ],
+    Slugs: ["taunt_C026_default", "taunt_c026_samurai_shuffle", "taunt_c026_taunt1"],
   },
   character_C025: {
     Slugs: ["taunt_c025_default", "taunt_c025_taunt1"],
@@ -1422,11 +1401,7 @@ const TAUNTS_DATA: TauntsData = {
     Slugs: ["taunt_c031_defaulttaunt", "taunt_c031_taunt1", "taunt_c031_music"],
   },
   character_C029: {
-    Slugs: [
-      "taunt_c029_defaulttaunt",
-      "taunt_c029_secrethandshake",
-      "taunt_c029_fishfood",
-    ],
+    Slugs: ["taunt_c029_defaulttaunt", "taunt_c029_secrethandshake", "taunt_c029_fishfood"],
   },
   character_c038: {
     Slugs: ["taunt_c038_defaulttaunt", "taunt_c038_loser"],
@@ -1447,9 +1422,7 @@ export async function start() {
 
   console.log("Loading Emotes");
   for (const emote of emotes) {
-    const def = INVENTORY_DEFINITIONS[
-      emote as keyof typeof INVENTORY_DEFINITIONS
-    ].data as Data;
+    const def = INVENTORY_DEFINITIONS[emote as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     await DataAssetModel.findOneAndUpdate(
       { assetPath: def.AssetPath },
       {
@@ -1467,9 +1440,7 @@ export async function start() {
 
   console.log("Loading Banners");
   for (const banner of banners) {
-    const def = INVENTORY_DEFINITIONS[
-      banner as keyof typeof INVENTORY_DEFINITIONS
-    ].data as Data;
+    const def = INVENTORY_DEFINITIONS[banner as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     await DataAssetModel.findOneAndUpdate(
       { assetPath: def.AssetPath },
       {
@@ -1487,9 +1458,7 @@ export async function start() {
 
   console.log("Loading ringout");
   for (const ringout of ringouts) {
-    const def = INVENTORY_DEFINITIONS[
-      ringout as keyof typeof INVENTORY_DEFINITIONS
-    ].data as Data;
+    const def = INVENTORY_DEFINITIONS[ringout as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     await DataAssetModel.findOneAndUpdate(
       { assetPath: def.AssetPath },
       {
@@ -1507,9 +1476,7 @@ export async function start() {
 
   console.log("Loading profile_icons");
   for (const pf_icon of profiles_icons) {
-    const def = INVENTORY_DEFINITIONS[
-      pf_icon as keyof typeof INVENTORY_DEFINITIONS
-    ].data as Data;
+    const def = INVENTORY_DEFINITIONS[pf_icon as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     await DataAssetModel.findOneAndUpdate(
       { assetPath: def.AssetPath },
       {
@@ -1527,8 +1494,7 @@ export async function start() {
 
   console.log("Loading announcer paks");
   for (const ap of announcer_packs) {
-    const def = INVENTORY_DEFINITIONS[ap as keyof typeof INVENTORY_DEFINITIONS]
-      .data as Data;
+    const def = INVENTORY_DEFINITIONS[ap as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     await DataAssetModel.findOneAndUpdate(
       { assetPath: def.AssetPath },
       {
@@ -1546,9 +1512,8 @@ export async function start() {
 
   console.log("Loading stats");
   for (const statTracker of stats) {
-    const def = INVENTORY_DEFINITIONS[
-      statTracker as keyof typeof INVENTORY_DEFINITIONS
-    ].data as Data;
+    const def = INVENTORY_DEFINITIONS[statTracker as keyof typeof INVENTORY_DEFINITIONS]
+      .data as Data;
     await DataAssetModel.findOneAndUpdate(
       { assetPath: def.AssetPath },
       {
@@ -1566,8 +1531,7 @@ export async function start() {
 
   console.log("Loading gems");
   for (const gem of gems) {
-    const def = INVENTORY_DEFINITIONS[gem as keyof typeof INVENTORY_DEFINITIONS]
-      .data as Data;
+    const def = INVENTORY_DEFINITIONS[gem as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     await DataAssetModel.findOneAndUpdate(
       { assetPath: def.AssetPath },
       {
@@ -1585,9 +1549,7 @@ export async function start() {
 
   console.log("Loading perks");
   for (const perk of perks) {
-    const def = INVENTORY_DEFINITIONS[
-      perk as keyof typeof INVENTORY_DEFINITIONS
-    ].data as Data;
+    const def = INVENTORY_DEFINITIONS[perk as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     await DataAssetModel.findOneAndUpdate(
       { assetPath: def.AppliedBuffs[0] },
       {
@@ -1595,7 +1557,7 @@ export async function start() {
           slug: perk,
           assetType: "MvsPerkHsda",
           character_slug: def.TargetCharacter,
-          enabled: perk === "perk_platform_from_dodge" ? false : true,
+          enabled: perk !== "perk_platform_from_dodge",
           assetPath: def.AppliedBuffs[0],
         },
       },
@@ -1605,9 +1567,7 @@ export async function start() {
 
   console.log("Loading chars");
   for (const char of CHARACTER_SLUGS) {
-    const def = INVENTORY_DEFINITIONS[
-      char as keyof typeof INVENTORY_DEFINITIONS
-    ].data as Data;
+    const def = INVENTORY_DEFINITIONS[char as keyof typeof INVENTORY_DEFINITIONS].data as Data;
     await DataAssetModel.findOneAndUpdate(
       { assetPath: def.AssetPath },
       {
@@ -1627,10 +1587,8 @@ export async function start() {
 
   console.log("Loading Skins");
   for (const char of Object.keys(ENABLED_SKINS)) {
-    for (const skin of ENABLED_SKINS[char as keyof typeof ENABLED_SKINS]
-      .Slugs) {
-      const t =
-        INVENTORY_DEFINITIONS[skin as keyof typeof INVENTORY_DEFINITIONS];
+    for (const skin of ENABLED_SKINS[char as keyof typeof ENABLED_SKINS].Slugs) {
+      const t = INVENTORY_DEFINITIONS[skin as keyof typeof INVENTORY_DEFINITIONS];
 
       const def = t?.data as Data;
       await DataAssetModel.findOneAndUpdate(
@@ -1653,8 +1611,7 @@ export async function start() {
   console.log("Loading Taunts");
   for (const char of Object.keys(TAUNTS_DATA)) {
     for (const taunt of TAUNTS_DATA[char as keyof typeof TAUNTS_DATA].Slugs) {
-      const t =
-        INVENTORY_DEFINITIONS[taunt as keyof typeof INVENTORY_DEFINITIONS];
+      const t = INVENTORY_DEFINITIONS[taunt as keyof typeof INVENTORY_DEFINITIONS];
 
       const def = t?.data as Data;
       await DataAssetModel.findOneAndUpdate(

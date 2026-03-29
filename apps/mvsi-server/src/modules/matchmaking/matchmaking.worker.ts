@@ -1,4 +1,5 @@
 import { logger } from "@mvsi/logger";
+import { redisClient } from "@mvsi/redis";
 import { ObjectId } from "mongodb";
 import { getRandomMapByType } from "../../data/maps";
 import {
@@ -7,8 +8,16 @@ import {
   type PlayersConfigObject,
   TeamStyle,
 } from "../gameModes/gameModes.config";
+import { assembleArenaMatch } from "../lobby/arena.lobby.service";
+import type { ArenaLobby, LobbyPlayer } from "../lobby/lobby.types";
 import { getPlayersConfig } from "../playerConfig/playerConfig.service";
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
+import {
+  areTicketsCompatible,
+  findMatchedGroups,
+  getMatchServerRegion,
+  type Region,
+} from "./matchmaking.matching";
 import {
   completeMatchmaking,
   getMatchmakingQueue,
@@ -17,21 +26,12 @@ import {
   removeTicketsFromQueue,
 } from "./matchmaking.service";
 import {
-  areTicketsCompatible,
-  findMatchedGroups,
-  getMatchServerRegion,
-  type Region,
-} from "./matchmaking.matching";
-import {
-  SERVER_MODESTRING,
-  MATCHMAKING_MATCH_TICK_CHANNEL,
+  type ContainerTemplate,
   type GameplayConfig,
+  MATCHMAKING_MATCH_TICK_CHANNEL,
   type MatchmakingTicket,
-  ContainerTemplate,
+  type SERVER_MODESTRING,
 } from "./matchmaking.types";
-import { redisClient } from "@mvsi/redis";
-import { assembleArenaMatch } from "../lobby/arena.lobby.service";
-import type { ArenaLobby, LobbyPlayer } from "../lobby/lobby.types";
 
 const CHECK_INTERVAL_MS = 2000;
 

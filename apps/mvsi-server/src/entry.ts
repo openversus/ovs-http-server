@@ -1,4 +1,4 @@
-const [command, ...args] = Bun.argv.slice(2);
+const [command, ..._args] = Bun.argv.slice(2);
 
 async function start() {
   switch (command) {

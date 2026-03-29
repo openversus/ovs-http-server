@@ -27,6 +27,7 @@ import type {
   ArenaPlayerInfo,
   ArenaPlayerStats,
   ArenaTeamInfo,
+  BaseArenaPlayerInfo,
   MatchStats,
 } from "./arena.lobby.types";
 import { createBaseLobby, notifyLobbyJoined } from "./lobby.service";
@@ -218,14 +219,16 @@ async function onAllCharactersSelected(arenaId: string): Promise<void> {
 
   // ── Generate shops for each real player ───────────────────────────────────
   const constants = getArenaConstants();
-  for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
-    if (info.bIsBot) continue;
+  for (const info of Object.values(arenaData.PlayerInfo)) {
+    if (info.bIsBot) {
+      continue;
+    }
     const shopOptions = generateShopOptions(
       arenaData.ItemPool,
       constants.ShopLevelWeights,
       arenaData.CurrentRound,
     );
-    arenaData.PlayerInfo[pid].CurrentShopLocal = shopOptions;
+    info.CurrentShopLocal = shopOptions;
   }
 
   // Persist updated arenaData
@@ -292,7 +295,7 @@ async function notifyMatchReadyToStart(arenaId: string): Promise<void> {
   if (!arenaData) return;
 
   // ── Simulate bot shopping (buy items from shared pool) and set build type ─
-  for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
+  for (const [_, info] of Object.entries(arenaData.PlayerInfo)) {
     if (!info.bIsBot) continue;
     info.BotSettings = { BuildType: getBotBuildType(info.CharacterClass) };
   }
@@ -585,9 +588,10 @@ export async function assembleArenaMatch(
     for (const pid of players) {
       const config = playerConfigMap.get(pid)!;
       const isBot = config.bIsBot;
-      playerInfo[pid] = {
+
+      const basePlayerInfo: BaseArenaPlayerInfo = {
         Loadout: { Character: "", Skin: "" },
-        SelectableCharacters: isBot ? [] : await getRandomCharacters(SELECTABLE_CHARACTER_COUNT),
+        SelectableCharacters: !isBot ? await getRandomCharacters(SELECTABLE_CHARACTER_COUNT) : [],
         AccountId: pid,
         GameplayPreferences: config.GameplayPreferences,
         TeamId: teamId,
@@ -600,9 +604,23 @@ export async function assembleArenaMatch(
           ProfileIcon: config.ProfileIcon,
           Name: isBot ? (config.Username as string) : "",
         },
-        bIsBot: isBot,
-        ...(isBot ? {} : { Stats: createArenaPlayerStats(), CurrentShop: [] }),
       };
+
+      if (isBot) {
+        playerInfo[pid] = {
+          bIsBot: true,
+          ...basePlayerInfo,
+          BotSettings: { BuildType: "balanced" },
+        };
+      } else {
+        playerInfo[pid] = {
+          bIsBot: false,
+          ...basePlayerInfo,
+          Stats: createArenaPlayerStats(),
+          CurrentShop: [],
+          CurrentShopLocal: [],
+        };
+      }
     }
   }
 
@@ -947,9 +965,9 @@ export async function arenaPlayerShopClosed(
   stats.CurrencySpent += currencySpent;
 
   // Mark player done: clear CurrentShopLocal
-  arenaData.PlayerInfo[accountId].PlayerData = playerData;
-  arenaData.PlayerInfo[accountId].Stats = stats;
-  arenaData.PlayerInfo[accountId].CurrentShopLocal = [];
+  playerInfo.PlayerData = playerData;
+  playerInfo.Stats = stats;
+  playerInfo.CurrentShopLocal = [];
 
   // Persist
   await redisClient.json.set(
@@ -1013,11 +1031,13 @@ export async function submitArenaMatchStats(
 
   // ── Update per-player Stats.MatchStats ──────────────────────────────────
   for (const [pid, rawStats] of Object.entries(PlayerMissionUpdates)) {
-    const info = arenaData.PlayerInfo[pid];
-    if (!info?.Stats) continue;
+    const playerInfo = arenaData.PlayerInfo[pid];
+    if (playerInfo.bIsBot) {
+      continue;
+    }
     for (const [key, field] of Object.entries(statMap)) {
       if (rawStats[key] !== undefined) {
-        info.Stats.MatchStats[field] += rawStats[key];
+        playerInfo.Stats.MatchStats[field] += rawStats[key];
       }
     }
   }
@@ -1084,10 +1104,12 @@ export async function submitArenaMatchStats(
     // Reset team match stats for this round (accumulate from players)
     const teamMatchStats = createMatchStats();
     for (const pid of team.Players) {
-      const info = arenaData.PlayerInfo[pid];
-      if (!info?.Stats) continue;
+      const playerInfo = arenaData.PlayerInfo[pid];
+      if (playerInfo.bIsBot) {
+        continue;
+      }
       for (const key of Object.keys(teamMatchStats) as (keyof MatchStats)[]) {
-        teamMatchStats[key] += info.Stats.MatchStats[key];
+        teamMatchStats[key] += playerInfo.Stats.MatchStats[key];
       }
     }
     team.Stats.MatchStats = teamMatchStats;
@@ -1139,11 +1161,13 @@ function simulateBotMatch(arenaData: ArenaData, teamAId: string, teamBId: string
     ...arenaData.TeamInfo[teamBId].Players,
   ];
   for (const pid of allPlayers) {
-    const info = arenaData.PlayerInfo[pid];
-    if (!info?.Stats) continue;
-    info.Stats.MatchStats.Ringouts += Math.floor(Math.random() * 3);
-    info.Stats.MatchStats.Damage += Math.floor(Math.random() * 500);
-    info.Stats.MatchStats.DamagedAdded += Math.floor(Math.random() * 200);
+    const playerInfo = arenaData.PlayerInfo[pid];
+    if (playerInfo.bIsBot) {
+      continue;
+    }
+    playerInfo.Stats.MatchStats.Ringouts += Math.floor(Math.random() * 3);
+    playerInfo.Stats.MatchStats.Damage += Math.floor(Math.random() * 500);
+    playerInfo.Stats.MatchStats.DamagedAdded += Math.floor(Math.random() * 200);
   }
 
   // Aggregate team match stats
@@ -1152,10 +1176,12 @@ function simulateBotMatch(arenaData: ArenaData, teamAId: string, teamBId: string
     if (!team) continue;
     const teamMatchStats = createMatchStats();
     for (const pid of team.Players) {
-      const info = arenaData.PlayerInfo[pid];
-      if (!info?.Stats) continue;
+      const playerInfo = arenaData.PlayerInfo[pid];
+      if (playerInfo.bIsBot) {
+        continue;
+      }
       for (const key of Object.keys(teamMatchStats) as (keyof MatchStats)[]) {
-        teamMatchStats[key] += info.Stats.MatchStats[key];
+        teamMatchStats[key] += playerInfo.Stats.MatchStats[key];
       }
     }
     team.Stats.MatchStats = teamMatchStats;
@@ -1172,10 +1198,11 @@ function simulateBotShopping(arenaData: ArenaData): void {
   const rarities = getRarityWeightsForRound(constants.ShopLevelWeights, round);
   const itemXpPerLevel = constants.ItemXpPerLevel;
 
-  for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
-    if (!info.bIsBot) continue;
-    const pd = info.PlayerData;
-
+  for (const playerInfo of Object.values(arenaData.PlayerInfo)) {
+    if (!playerInfo.bIsBot) {
+      continue;
+    }
+    const pd = playerInfo.PlayerData;
     // Randomly sell one item (30% chance) to free a slot and get gold back
     const filledSlots = pd.Inventory.map((slot, idx) => ({ slot, idx })).filter(
       ({ slot }) => slot.Slug !== "",
@@ -1303,7 +1330,7 @@ async function buildMatchGameplayConfig(
   const teamAPlayers = arenaData.TeamInfo[teamAId].Players;
   const teamBPlayers = arenaData.TeamInfo[teamBId].Players;
 
-  const matchPlayers: Record<string, any> = {};
+  const matchPlayers: Record<string, PlayerConfig> = {};
 
   for (let j = 0; j < teamAPlayers.length; j++) {
     const pid = teamAPlayers[j];
@@ -1401,17 +1428,10 @@ async function buildMatchGameplayConfig(
   return gameplayConfig;
 }
 
-// ─── Arena check-in ──────────────────────────────────────────────────────────
-
-/**
- * Per-player checkin: calculate currency, generate shop, mark as checked in.
- * Uses CurrentShopLocal non-empty as "checked in" marker.
- * When all real players have checked in, triggers next round match creation.
- */
 export async function arenaCheckin(
   arenaParentId: string,
-  arenaRound: number,
-  containerMatchId: string,
+  _arenaRound: number,
+  _containerMatchId: string,
   accountId: string,
 ) {
   const stateKey = arenaStateKey(arenaParentId);
@@ -1434,7 +1454,6 @@ export async function arenaCheckin(
   const teamInfo = arenaData.TeamInfo[playerInfo.TeamId];
   if (!teamInfo) return {};
 
-  // ── Calculate currency payout for this player ───────────────────────────
   let payout = baseCurrency;
 
   // Ringout bonus
@@ -1468,19 +1487,15 @@ export async function arenaCheckin(
 
   playerInfo.PlayerData.CurrencyAmount += payout;
 
-  // ── Generate new shop for this player ───────────────────────────────────
   const shopOptions = generateShopOptions(arenaData.ItemPool, constants.ShopLevelWeights, round);
   playerInfo.CurrentShopLocal = shopOptions;
 
-  // Persist
   await redisClient.json.set(
     stateKey,
     "$",
     arenaData as Parameters<typeof redisClient.json.set>[2],
   );
-  console.log("arena details", JSON.stringify(arenaData, null, 2));
 
-  // ── Check if all real players have now checked in ───────────────────────
   const refreshed = (await redisClient.json.get(stateKey)) as ArenaData | null;
   if (!refreshed) return {};
 
@@ -1508,10 +1523,10 @@ async function onAllPlayersCheckedIn(arenaId: string): Promise<void> {
   const baseCurrency = arenaConstants.CurrencyPerRound[roundIdx];
 
   // ── Update bot currency and simulate shopping ───────────────────────────
-  for (const [pid, info] of Object.entries(arenaData.PlayerInfo)) {
-    if (!info.bIsBot) continue;
+  for (const playerInfo of Object.values(arenaData.PlayerInfo)) {
+    if (!playerInfo.bIsBot) continue;
 
-    const teamInfo = arenaData.TeamInfo[info.TeamId];
+    const teamInfo = arenaData.TeamInfo[playerInfo.TeamId];
     if (!teamInfo) continue;
 
     // Calculate same currency payout as real players
@@ -1535,12 +1550,12 @@ async function onAllPlayersCheckedIn(arenaId: string): Promise<void> {
       payout += arenaConstants.CurrencyForLoseStreak[streakIdx];
     }
     const interest = Math.min(
-      Math.floor(info.PlayerData.CurrencyAmount / info.PlayerData.InterestPer),
+      Math.floor(playerInfo.PlayerData.CurrencyAmount / playerInfo.PlayerData.InterestPer),
       arenaConstants.MaxInterest,
     );
     payout += interest;
-    info.PlayerData.CurrencyAmount += payout;
-    info.BotSettings = { BuildType: getBotBuildType(info.CharacterClass) };
+    playerInfo.PlayerData.CurrencyAmount += payout;
+    playerInfo.BotSettings = { BuildType: getBotBuildType(playerInfo.CharacterClass) };
   }
 
   // Simulate bot buying/selling from the shared pool

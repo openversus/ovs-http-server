@@ -1,12 +1,12 @@
 import { logger } from "@mvsi/logger";
 import { encodeHydraWS, MAIN_WEBSOCKET } from "../../websocket.elysia";
 import type { MatchmakingTicket } from "../matchmaking/matchmaking.types";
+import { leaveLobby } from "./lobby.service";
 import {
   LOBBY_JOINED_CHANNEL,
   LOBBY_QUEUED_CHANNEL,
   type LobbyCreatedMessage,
 } from "./lobby.types";
-import { leaveLobby } from "./lobby.service";
 
 const subscriber = MAIN_WEBSOCKET.decorator.redisSub;
 const clients = MAIN_WEBSOCKET.decorator.players;

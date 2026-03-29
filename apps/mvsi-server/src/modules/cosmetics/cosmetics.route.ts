@@ -72,9 +72,9 @@ router.put(
       updateCosmeticsStatTrackerSlot(claims.id, body.StatTrackerSlotIndex, body.StatTrackerSlug),
     ]);
     if (playerConfig) {
-      (playerConfig.StatTrackers =
-        cosmetics.StatTrackers.StatTrackerSlots?.map((stat) => [stat, 1]) ?? []),
-        await setPlayerConfig(claims.id, playerConfig);
+      playerConfig.StatTrackers =
+        cosmetics.StatTrackers.StatTrackerSlots?.map((stat) => [stat, 1]) ?? [];
+      await setPlayerConfig(claims.id, playerConfig);
     }
     return {
       body: body,

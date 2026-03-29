@@ -1,6 +1,5 @@
 import type { GAME_MODES_CONFIG } from "../../data/gameModes";
 import type { TeamStyle } from "../gameModes/gameModes.config";
-import { Region } from "../matchmaking/matchmaking.matching";
 import type { SERVER_MODESTRING } from "../matchmaking/matchmaking.types";
 
 export const LOBBY_JOINED_CHANNEL = "lobby:joined";

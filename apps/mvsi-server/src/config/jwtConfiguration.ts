@@ -1,7 +1,7 @@
-import * as jwt from "jsonwebtoken";
+import type { Algorithm } from "jsonwebtoken";
 
 const jwtConfiguration: {
-  algorithm: jwt.Algorithm;
+  algorithm: Algorithm;
   expiresSeconds: number;
 } = {
   algorithm: "RS256",

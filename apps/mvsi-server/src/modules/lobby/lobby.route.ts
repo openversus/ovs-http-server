@@ -1,6 +1,9 @@
 import Elysia, { t } from "elysia";
+import type { GAME_MODES_CONFIG } from "../../data/gameModes";
 import { MAIN_APP, MVSI_HYDRA_WITH_JWT } from "../../middleware/middlewares";
+import { TeamStyle } from "../gameModes/gameModes.config";
 import type { SERVER_MODESTRING } from "../matchmaking/matchmaking.types";
+import { updatePlayerLoadout } from "../playerConfig/playerConfig.service";
 import {
   arenaCheckin,
   arenaPlayerShopClosed,
@@ -12,9 +15,9 @@ import {
 } from "./arena.lobby.service";
 import {
   addCustomGameBot,
-  updateCustomGameBotFighter,
   createCustomLobby,
   createPartyLobby,
+  generateLobbyCode,
   invitePlayerToLobby,
   joinCustomLobby,
   kickFromLobby,
@@ -25,19 +28,16 @@ import {
   setLobbyMode,
   setPlayerReady,
   setWorldBuffsForCustomLobby,
+  startCustomMatch,
   switchTeamForCustomLobby,
+  updateCustomGameBotFighter,
   updateEnabledMapsForCustomLobby,
   updateGameModeForCustomLobby,
   updateHandicapsForCustomLobby,
   updateIntSettingForCustomLobby,
   updateTeamStyleForCustomLobby,
-  generateLobbyCode,
-  startCustomMatch,
 } from "./lobby.service";
-import { updatePlayerLoadout } from "../playerConfig/playerConfig.service";
-import { TeamStyle } from "../gameModes/gameModes.config";
 import type { CustomLobbyMatchConfig, lobbyTypesMap } from "./lobby.types";
-import type { GAME_MODES_CONFIG } from "../../data/gameModes";
 
 const router = new Elysia().use(MVSI_HYDRA_WITH_JWT);
 

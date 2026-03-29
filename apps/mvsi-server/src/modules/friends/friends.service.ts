@@ -161,8 +161,7 @@ export async function getUserFriendsList(userId: string) {
           username: player.name,
           avatar: {
             name: "MultiVersus",
-            image_url:
-              "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-finn.jpg",
+            image_url: "",
           },
         },
       });
@@ -181,8 +180,7 @@ export async function getUserFriendDetails(publicIds: readonly string[]) {
     return {
       id: playerFriend._id,
       public_id: playerFriend._id,
-      "identity.avatar":
-        "https://s3.amazonaws.com/wb-agora-hydra-ugc-dokken/identicons/identicon.584.png",
+      "identity.avatar": "",
       "identity.default_username": true,
       "identity.alternate.wb_network": [
         {

@@ -4,9 +4,9 @@ import { redisClient } from "@mvsi/redis";
 import { ObjectId } from "mongodb";
 import { generateBotPlayerConfig, isBotId } from "../bots/bots.service";
 import { getCosmeticsConfigurationForPlayer } from "../cosmetics/cosmetics.service";
-import type { PlayerConfig } from "./playerConfig.types";
 import { getLobby } from "../lobby/lobby.service";
 import { broadcastNotificationToUsers } from "../notifications/notifications.utils";
+import type { PlayerConfig } from "./playerConfig.types";
 
 export async function setPlayerConfig(
   playerId: string,
@@ -72,13 +72,12 @@ export async function updatePlayerLoadout(
       playerConfig.Skin = skin;
       await Promise.all([
         setPlayerConfig(playerId, playerConfig),
-        redisClient.json.set(
-          `lobby:${lobbyId}`,
-          `$.LockedLoadouts.${playerId}`,
-          { Character: character, Skin: skin } as Parameters<typeof redisClient.json.set>[2],
-        ),
+        redisClient.json.set(`lobby:${lobbyId}`, `$.LockedLoadouts.${playerId}`, {
+          Character: character,
+          Skin: skin,
+        } as Parameters<typeof redisClient.json.set>[2]),
       ]);
-      
+
       await broadcastNotificationToUsers({
         exclude: [playerId],
         users: Object.keys(lobby.PlayerGameplayPreferences),

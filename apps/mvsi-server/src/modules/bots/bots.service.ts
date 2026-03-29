@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { adjectives, type Config, nouns, uniqueUsernameGenerator } from "unique-username-generator";
 import type { PlayerConfig } from "../playerConfig/playerConfig.types";
-
-import { uniqueUsernameGenerator, Config, adjectives, nouns } from "unique-username-generator";
 
 const config: Config = {
   dictionaries: [adjectives, nouns],

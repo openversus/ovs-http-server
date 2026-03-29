@@ -38,7 +38,7 @@ export type ArenaPlayerStats = {
   ItemsLeveled: number;
 };
 
-export type ArenaPlayerInfo = {
+export type BaseArenaPlayerInfo = {
   Loadout: { Character: string; Skin: string };
   SelectableCharacters: string[];
   AccountId: string;
@@ -53,12 +53,21 @@ export type ArenaPlayerInfo = {
     ProfileIcon: string;
     Name: string;
   };
-  bIsBot: boolean;
-  Stats?: ArenaPlayerStats;
-  CurrentShop?: any[];
-  CurrentShopLocal?: ArenaCurrentShopLocal[];
-  BotSettings?: { BuildType: string };
 };
+
+export type ArenaPlayerInfo = BaseArenaPlayerInfo &
+  (
+    | {
+        bIsBot: true;
+        BotSettings: { BuildType: string };
+      }
+    | {
+        bIsBot: false;
+        Stats: ArenaPlayerStats;
+        CurrentShop: ArenaCurrentShop[];
+        CurrentShopLocal: ArenaCurrentShopLocal[];
+      }
+  );
 
 export type ArenaCurrentShopLocal = {
   CurrentShop: ArenaCurrentShop[];

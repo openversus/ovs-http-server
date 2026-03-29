@@ -17,7 +17,7 @@ export class HydraEncoder {
     this.isWebsocket = _isWebsocket;
   }
 
-  encodeValue(data: any[] | Object) {
+  encodeValue(data: any[] | object) {
     if (data === null) {
       return this.encodeNull();
     }

@@ -7,16 +7,16 @@ import type { ElysiaWS } from "elysia/ws";
 import type { ServerWebSocket } from "elysia/ws/bun";
 import * as jwt from "jsonwebtoken";
 import type { JWT_CLAIMS } from "./middleware/middlewares";
+import { leaveLobby } from "./modules/lobby/lobby.service";
 import { removeTicketsFromQueue } from "./modules/matchmaking/matchmaking.service";
 import {
-  SERVER_MODESTRINGS,
   type MatchmakingTicket,
+  SERVER_MODESTRINGS,
 } from "./modules/matchmaking/matchmaking.types";
 import {
   clearPlayerKeys,
   refreshPlayersPresence,
 } from "./modules/playerPresence/playerPresence.service";
-import { leaveLobby } from "./modules/lobby/lobby.service";
 
 const PING_BUFFER = Buffer.from([0x0c]);
 
@@ -31,20 +31,20 @@ type WebSocketData = {
 type DecoreatedWebsocket = {
   players: Map<string, MVSI_Websocket>;
   redisSub: RedisClient;
-  sendHydra: (ws: ServerWebSocket<WebSocketData>, data: Object) => void;
+  sendHydra: (ws: ServerWebSocket<WebSocketData>, data: object) => void;
 };
 
 export type MVSI_Websocket = ElysiaWS<WebSocketData & DecoreatedWebsocket>;
 
 const sendHydra = new Elysia({ name: "sendHydra" }).derive({ as: "global" }, () => {
   return {
-    sendHydra: (ws: ServerWebSocket<WebSocketData>, data: Object) => {
+    sendHydra: (ws: ServerWebSocket<WebSocketData>, data: object) => {
       ws.send(encodeHydraWS(data));
     },
   };
 });
 
-export function encodeHydraWS(data: Object) {
+export function encodeHydraWS(data: object) {
   const encoder = new HydraEncoder(true);
   encoder.encodeValue(data);
   return encoder.returnValue();

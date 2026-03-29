@@ -77,7 +77,7 @@ const LUA_REMATCH_ACCEPT = `
   return {#acceptedArr + 1, realCount}
 `;
 
-export async function toastPlayer(accountId: string, matchId: string, toasteeId: string) {
+export async function toastPlayer(accountId: string, _matchId: string, toasteeId: string) {
   await broadcastNotificationToTopic({
     topic: toasteeId,
     data: {
@@ -206,7 +206,7 @@ async function startRematch(activeMatch: ActiveMatch) {
       customLobby.Maps[Math.floor(Math.random() * customLobby.Maps.length)] ?? customLobby.Maps[0];
     map = randomMap.Map;
   } else {
-    map = getRandomMapByType(prevMatch.ModeString as any);
+    map = getRandomMapByType(prevMatch.ModeString);
   }
 
   const newMatchId = new ObjectId().toHexString();

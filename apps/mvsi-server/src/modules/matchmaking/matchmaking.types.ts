@@ -19,6 +19,7 @@ export const SERVER_MODESTRINGS = [
   "ranked-2v2",
   "rifts",
   "arena",
+  "",
 ] as const;
 
 export type SERVER_MODESTRING = (typeof SERVER_MODESTRINGS)[number];
@@ -145,8 +146,8 @@ type MatchConfig = {
   Created: Date;
   EventQueueSlug: string;
   bModeGrantsProgress: boolean;
-  TeamData: any[];
-  Spectators: any;
+  TeamData: unknown[];
+  Spectators: unknown;
   bIsRanked: boolean;
   bIsCustomGame: boolean;
   Players: { [key: string]: PlayerConfig };
@@ -157,11 +158,11 @@ type MatchConfig = {
   RiftNodeAttunement: string;
   CountdownDisplay: string;
   Cluster: Region;
-  WorldBuffs: any[];
+  WorldBuffs: string[];
   bIsTutorial: boolean;
   MatchId: string;
   bIsOnlineMatch: boolean;
-  ModeString: string;
+  ModeString: SERVER_MODESTRING;
   Map: string;
   bIsRift: boolean;
 };

@@ -34,7 +34,6 @@ export async function requestMatchmakingByLobby(
   lobbyId: string,
   accountId: string,
   modeString: SERVER_MODESTRING,
-  MultiplayParams: any,
   slug: string,
 ) {
   const lobby = await getLobby(lobbyId);
@@ -67,7 +66,6 @@ export async function requestMatchmakingByLobby(
     concurrent_identifier: randomUUID(),
     created_at: new Date(),
     data: {
-      MultiplayParams: MultiplayParams,
       crossplay_buckets: ["All", "PC"],
       version: env.GAME_VERSION,
       matchmaking_rating: 724.7928014055103,
@@ -79,7 +77,7 @@ export async function requestMatchmakingByLobby(
     },
     server_data: null,
     criteria_slug: slug,
-    cluster: MultiplayParams.MultiplayClusterSlug,
+    cluster: "",
     players_connection_info: Object.fromEntries(
       playerIds.map((pid) => [
         pid,

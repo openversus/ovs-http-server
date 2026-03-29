@@ -1,8 +1,8 @@
-import { createConnection } from "node:net";
-import { logger } from "@mvsi/logger";
 import { RollbackServerModel } from "@mvsi/database/models/RollbackServer";
-import { encodeHydraWS, MAIN_WEBSOCKET, type MVSI_Websocket } from "../../websocket.elysia";
+import { logger } from "@mvsi/logger";
+import { ObjectId } from "mongodb";
 import { FLEET_SERVERS } from "../../data/fleets";
+import { encodeHydraWS, MAIN_WEBSOCKET, type MVSI_Websocket } from "../../websocket.elysia";
 import { REGION_PROXIMITY, type Region } from "./matchmaking.matching";
 import { getActiveMatch } from "./matchmaking.service";
 import {
@@ -10,15 +10,14 @@ import {
   MATCHMAKING_CANCEL_CHANNEL,
   MATCHMAKING_COMPLETE_CHANNEL,
   MATCHMAKING_MATCH_FOUND_CHANNEL,
+  MATCHMAKING_MATCH_TICK_CHANNEL,
   MATCHMAKING_PERKS_LOCKED_CHANNEL,
   type MatchEndMessage,
   type MatchFoundChannelMessage,
   type MatchmakingCancelMessage,
   type MatchmakingCompleteMessage,
   type MatchmakingPerksLockMessage,
-  MATCHMAKING_MATCH_TICK_CHANNEL,
 } from "./matchmaking.types";
-import { ObjectId } from "mongodb";
 
 const subscriber = MAIN_WEBSOCKET.decorator.redisSub;
 const clients = MAIN_WEBSOCKET.decorator.players;
@@ -108,36 +107,7 @@ async function handleMatchFound(notification: MatchFoundChannelMessage) {
   MAIN_WEBSOCKET.server?.publish(matchId, encodeHydraWS(gameServerReadyMessage));
 }
 
-// ── Server discovery & health check ──────────────────────────────────────────
-
-const PING_TIMEOUT_MS = 3000;
-
-/** TCP connect probe — resolves true if the port is reachable within the timeout. */
-function pingServer(ip: string, port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = createConnection({ host: ip, port, timeout: PING_TIMEOUT_MS }, () => {
-      socket.destroy();
-      resolve(true);
-    });
-    socket.on("error", () => {
-      socket.destroy();
-      resolve(false);
-    });
-    socket.on("timeout", () => {
-      socket.destroy();
-      resolve(false);
-    });
-  });
-}
-
-/**
- * Finds a reachable rollback server for the given region.
- * 1. Query RollbackServers for the target region, ping each.
- * 2. If none respond, expand to neighbor regions (from REGION_PROXIMITY).
- * 3. Returns the first reachable server, or null if none found.
- */
 async function findReachableServer(regionId: string): Promise<{ ip: string; port: number } | null> {
-  // Resolve regionId to a Region name (regionId could be a Region name or a fleet UUID)
   const fleet = FLEET_SERVERS.find((f) => f.regionid === regionId || f.region === regionId);
   const regionName = fleet?.region ?? regionId;
 
@@ -210,28 +180,6 @@ async function handleOnMatchEnd(notification: MatchEndMessage) {
       }
     }, 1000);
   }
-}
-
-function sendRematchDecline(client: MVSI_Websocket, matchId: string) {
-  const data = {
-    data: {
-      AccountId: client.data.account?.id,
-      MatchId: matchId,
-      template_id: "RematchDeclinedNotification",
-    },
-    payload: {
-      frm: {
-        id: "internal-server",
-        type: "server-api-key",
-      },
-      template: "realtime",
-      account_id: client.data.account?.id,
-      profile_id: client.data.account?.id,
-    },
-    header: "",
-    cmd: "profile-notification",
-  };
-  client.data.sendHydra(client, data);
 }
 
 async function handleMatchMakingComplete(notification: MatchmakingCompleteMessage) {

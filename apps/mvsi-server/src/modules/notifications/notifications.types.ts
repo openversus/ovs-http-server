@@ -16,11 +16,11 @@ export type NotificationTemplate = {
   data: NotificationData;
   payload: {
     template?: string;
-  } & Record<string, any>;
+  } & Record<string, unknown>;
   header: "";
   cmd: string;
 };
 
 export type NotificationData = {
   template_id: string;
-} & Record<string, any>;
+} & Record<string, unknown>;

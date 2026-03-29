@@ -48,7 +48,6 @@ export const MVSI_HYDRA = new Elysia({ name: "MVSI_HYDRA" })
     }
   })
   .onParse({ as: "global" }, async ({ request }) => {
-    //console.log("request.url", request.url);
     if (request.headers.get("content-type") === HYDRA_CONTENT_TYPE) {
       try {
         const buffer = await request.arrayBuffer();
@@ -64,7 +63,7 @@ export const MVSI_HYDRA = new Elysia({ name: "MVSI_HYDRA" })
     if (request.headers.get("content-type") === HYDRA_CONTENT_TYPE) {
       const start = performance.now();
       const encoder = new HydraEncoder();
-      encoder.encodeValue(responseValue as any);
+      encoder.encodeValue(responseValue as object);
       set.headers["Content-Type"] = HYDRA_CONTENT_TYPE;
       set.headers["X-Hydra-Server-Time"] = (Date.now() / 1000).toString();
       set.headers["X-Hydra-Info"] = getCurrentVersion();

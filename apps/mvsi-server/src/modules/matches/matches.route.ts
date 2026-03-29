@@ -1,11 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { env } from "@mvsi/env";
 import Elysia, { t } from "elysia";
-import { randomUUID } from "node:crypto";
 import { getCurrentCRC } from "../../data/config";
 import { MAIN_APP, MVSI_HYDRA_WITH_JWT } from "../../middleware/middlewares";
 import { HydraQueryPaginated } from "../../types";
-import { getLobby, getLobbyIdFromCode, setPlayerConnectionInfo } from "../lobby/lobby.service";
 import { submitArenaMatchStats } from "../lobby/arena.lobby.service";
+import { getLobby, getLobbyIdFromCode, setPlayerConnectionInfo } from "../lobby/lobby.service";
 import { getActiveMatch, notifyActiveMatchEnded } from "../matchmaking/matchmaking.service";
 import { rematchAccepted, rematchDeclined, toastPlayer } from "./matches.service";
 

@@ -2,7 +2,7 @@ export type PlayerConfigStatTrackers = [string, number][];
 
 export type PlayerConfig = {
   AccountId: string;
-  Username: string | {};
+  Username: string | object;
   bUseCharacterDisplayName: boolean;
   PlayerIndex: number;
   TeamIndex: number;

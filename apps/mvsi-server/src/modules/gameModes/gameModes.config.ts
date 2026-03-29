@@ -1,13 +1,13 @@
 import { maps1v1, maps2v2 } from "../../data/maps";
-import { SERVER_MODESTRING } from "../matchmaking/matchmaking.types";
-import { type PlayerConfig } from "../playerConfig/playerConfig.types";
+import type { SERVER_MODESTRING } from "../matchmaking/matchmaking.types";
+import type { PlayerConfig } from "../playerConfig/playerConfig.types";
 
 export type PlayersConfigObject = {
   [playerId: string]: PlayerConfig;
 };
 
 type GameModeTeamConfig = {
-  Players: any[];
+  Players: unknown[];
   Required: boolean;
   MinPlayerPerTeam: number;
   MaxPlayerPerTeam: number;
@@ -162,7 +162,7 @@ const CASUAL_GAMEPLAY_CONFIG: GameModeConfig = {
 
 export const GAME_MODES = new Map<SERVER_MODESTRING, GameModeConfig>();
 
-GAME_MODES.set(SERVER_MODESTRING.ONE_V_ONE, ONE_V_ONE_GAMEPLAY_CONFIG);
-GAME_MODES.set(SERVER_MODESTRING.TWO_V_TWO, TWO_V_TWO_GAMEPLAY_CONFIG);
-GAME_MODES.set(SERVER_MODESTRING.FFA, FFA_GAMEPLAY_CONFIG);
-GAME_MODES.set(SERVER_MODESTRING.CASUAL, CASUAL_GAMEPLAY_CONFIG);
+GAME_MODES.set("1v1", ONE_V_ONE_GAMEPLAY_CONFIG);
+GAME_MODES.set("2v2", TWO_V_TWO_GAMEPLAY_CONFIG);
+GAME_MODES.set("FFA", FFA_GAMEPLAY_CONFIG);
+GAME_MODES.set("casual", CASUAL_GAMEPLAY_CONFIG);

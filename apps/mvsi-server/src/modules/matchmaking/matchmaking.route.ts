@@ -25,13 +25,7 @@ const router = new Elysia().use(MVSI_HYDRA_WITH_JWT);
 router.post(
   "/matches/matchmaking/1v1-retail/request",
   async ({ claims, body }) => {
-    return await requestMatchmakingByLobby(
-      body.match,
-      claims.id,
-      "1v1",
-      body.data.MultiplayParams,
-      "1v1-retail",
-    );
+    return await requestMatchmakingByLobby(body.match, claims.id, "1v1", "1v1-retail");
   },
   {
     body: RequestMatchSchema,
@@ -41,13 +35,7 @@ router.post(
 router.post(
   "/matches/matchmaking/2v2-retail/request",
   async ({ claims, body }) => {
-    return await requestMatchmakingByLobby(
-      body.match,
-      claims.id,
-      "2v2",
-      body.data.MultiplayParams,
-      "2v2-retail",
-    );
+    return await requestMatchmakingByLobby(body.match, claims.id, "2v2", "2v2-retail");
   },
   {
     body: RequestMatchSchema,
@@ -57,13 +45,7 @@ router.post(
 router.post(
   "/matches/matchmaking/ffa-retail/request",
   async ({ claims, body }) => {
-    return await requestMatchmakingByLobby(
-      body.match,
-      claims.id,
-      "FFA",
-      body.data.MultiplayParams,
-      "ffa-retail",
-    );
+    return await requestMatchmakingByLobby(body.match, claims.id, "FFA", "ffa-retail");
   },
   {
     body: RequestMatchSchema,
@@ -73,13 +55,7 @@ router.post(
 router.post(
   "/matches/matchmaking/casual-retail/request",
   async ({ claims, body }) => {
-    return await requestMatchmakingByLobby(
-      body.match,
-      claims.id,
-      "casual",
-      body.data.MultiplayParams,
-      "casual-retail",
-    );
+    return await requestMatchmakingByLobby(body.match, claims.id, "casual", "casual-retail");
   },
   {
     body: RequestMatchSchema,
@@ -89,13 +65,7 @@ router.post(
 router.post(
   "/matches/matchmaking/arena-retail/request",
   async ({ claims, body }) => {
-    return await requestMatchmakingByLobby(
-      body.match,
-      claims.id,
-      "arena",
-      body.data.MultiplayParams,
-      "arena-retail",
-    );
+    return await requestMatchmakingByLobby(body.match, claims.id, "arena", "arena-retail");
   },
   {
     body: RequestMatchSchema,

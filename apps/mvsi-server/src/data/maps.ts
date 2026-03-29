@@ -1,4 +1,4 @@
-import { SERVER_MODESTRING } from "../modules/matchmaking/matchmaking.types";
+import type { SERVER_MODESTRING } from "../modules/matchmaking/matchmaking.types";
 
 export const maps1v1 = [
   "M001_V2",
@@ -14,10 +14,10 @@ export const maps1v1 = [
 export const maps2v2 = ["M001", "M003_V3", "M003_V5", "M009_V1", "M011_V1", "M011_V2", "M006_V2"];
 
 export function getRandomMapByType(mode: SERVER_MODESTRING) {
-  if (mode === SERVER_MODESTRING.ONE_V_ONE) {
+  if (mode === "1v1") {
     return getRandomMap1v1();
   }
-  if (mode === SERVER_MODESTRING.TWO_V_TWO) {
+  if (mode === "2v2") {
     return getRandomMap2v2();
   }
   return getRandomMap1v1();

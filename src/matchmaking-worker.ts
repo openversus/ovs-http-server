@@ -120,8 +120,8 @@ async function deduplicateQueue(queueKey: string, tickets: RedisMatchTicket[]): 
 function areTicketsInRange(ticketA: RedisMatchTicket, ticketB: RedisMatchTicket, nowSec: number): boolean {
   const ageA = nowSec - ticketA.created_at; // both in seconds
   const ageB = nowSec - ticketB.created_at;
-  // Use the wider range (from the ticket that's been waiting longer)
-  const range = Math.max(getEloRange(ageA), getEloRange(ageB));
+  // Both players must be within range — use the stricter (shorter waiting) range
+  const range = Math.min(getEloRange(ageA), getEloRange(ageB));
   const skillDiff = Math.abs(getTicketAvgSkill(ticketA) - getTicketAvgSkill(ticketB));
   return skillDiff <= range;
 }
@@ -153,13 +153,13 @@ async function process1v1Queue(queueKey: string = MATCH_TYPES.ONE_V_ONE): Promis
       return false;
     }
 
-    logger.info(`${logPrefix} Found ${tickets.length} tickets in ${queueKey} queue, attempting to create a match`);
+    logger.trace(`${logPrefix} Found ${tickets.length} tickets in ${queueKey} queue, attempting to create a match`);
 
     // Filter to solo players only
     const soloTickets = tickets.filter((t) => t.party_size === 1);
 
     if (soloTickets.length < MATCH_RULES["1v1"].teamsRequired) {
-      logger.info(`${logPrefix} Not enough solo tickets for a 1v1 match in ${queueKey} (need 2, found ${soloTickets.length})`);
+      logger.trace(`${logPrefix} Not enough solo tickets for a 1v1 match in ${queueKey} (need 2, found ${soloTickets.length})`);
       return false;
     }
 
@@ -191,7 +191,7 @@ async function process1v1Queue(queueKey: string = MATCH_TYPES.ONE_V_ONE): Promis
       }
     }
 
-    logger.info(`${logPrefix} No ELO-compatible 1v1 match found in ${queueKey} yet (${soloTickets.length} waiting)`);
+    logger.trace(`${logPrefix} No ELO-compatible 1v1 match found in ${queueKey} yet (${soloTickets.length} waiting)`);
     return false;
   }
   catch (error) {
@@ -216,7 +216,7 @@ async function process2v2Queue(queueKey: string = MATCH_TYPES.TWO_V_TWO): Promis
       return false; // Not enough players to make a match
     }
 
-    logger.info(`${logPrefix} Found ${tickets.length} tickets (${totalPlayersInQueue} players) in ${queueKey} queue, attempting to create a match`);
+    logger.trace(`${logPrefix} Found ${tickets.length} tickets (${totalPlayersInQueue} players) in ${queueKey} queue, attempting to create a match`);
 
     // Split tickets into duos and solos (preserving FIFO order within each group)
     const duos = tickets.filter((t) => t.players.length >= 2);

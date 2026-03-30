@@ -1,3 +1,4 @@
+import { MatchesModel } from "@mvsi/database/models/MatchHistory";
 import { logger } from "@mvsi/logger";
 import { redisClient } from "@mvsi/redis";
 import { ObjectId } from "mongodb";
@@ -5,8 +6,13 @@ import { getRandomMapByType } from "../../data/maps";
 import { getLobby } from "../lobby/lobby.service";
 import type { CustomLobby } from "../lobby/lobby.types";
 import { getActiveMatch, notifyActiveMatchCreated } from "../matchmaking/matchmaking.service";
-import type { ActiveMatch, GameplayConfig } from "./matches.types";
 import { broadcastNotificationToTopic } from "../notifications/notifications.utils";
+import type {
+  ActiveMatch,
+  EndOfMatchStats,
+  GameplayConfig,
+  MatchHistoryPlayer,
+} from "./matches.types";
 
 const MATCH_KEY = (matchId: string) => `match:${matchId}`;
 
@@ -221,4 +227,77 @@ async function startRematch(activeMatch: ActiveMatch) {
   };
 
   await notifyActiveMatchCreated(activeMatch.template, activeMatch.fromLobbyId, gameplayConfig);
+}
+
+export async function saveMatchHistory(containerMatchId: string, endOfMatchStats: EndOfMatchStats) {
+  try {
+    const match = await getActiveMatch(containerMatchId);
+    if (!match) return;
+
+    const config = match.GameplayConfig.GameplayConfig;
+    const winningTeam = endOfMatchStats.WinningTeamIndex;
+
+    const humanPlayers = Object.values(config.Players).filter((p) => !p.bIsBot);
+
+    const winIds: string[] = [];
+    const lossIds: string[] = [];
+
+    for (const player of Object.values(config.Players)) {
+      if (player.TeamIndex === winningTeam) {
+        winIds.push(player.AccountId);
+      } else {
+        lossIds.push(player.AccountId);
+      }
+    }
+
+    const players: MatchHistoryPlayer[] = humanPlayers.map((player) => ({
+      account_id: player.AccountId,
+      reported_results: {
+        win: winIds,
+        loss: lossIds,
+        draw: false,
+      },
+      data: {
+        EndOfMatchStats: endOfMatchStats,
+      },
+      identity: {
+        avatar: "",
+        default_username: typeof player.Username === "string",
+      },
+    }));
+
+    const now = new Date();
+
+    await MatchesModel.collection.updateOne(
+      { _id: new ObjectId(containerMatchId) },
+      {
+        $setOnInsert: {
+          _id: new ObjectId(containerMatchId),
+          created_at: now,
+          updated_at: now,
+          completion_time: now,
+          win: winIds,
+          loss: lossIds,
+          draw: false,
+          server_data: {
+            ...match.GameplayConfig,
+          },
+          players: {
+            all: players,
+          },
+          cluster: config.Cluster,
+          template: {
+            id: match.template,
+            slug: match.template,
+            created_at: now,
+            updated_at: now,
+          },
+          access: "public",
+        },
+      },
+      { upsert: true },
+    );
+  } catch (err) {
+    logger.error("Failed to save match history", err);
+  }
 }

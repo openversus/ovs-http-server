@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { env } from "@mvsi/env";
+import { MatchesModel } from "@mvsi/database/models/MatchHistory";
 import Elysia, { t } from "elysia";
 import { getCurrentCRC } from "../../data/config";
 import { MAIN_APP, MVSI_HYDRA_WITH_JWT } from "../../middleware/middlewares";
@@ -7,7 +8,7 @@ import { HydraQueryPaginated } from "../../types";
 import { submitArenaMatchStats } from "../lobby/arena.lobby.service";
 import { getLobby, getLobbyIdFromCode, setPlayerConnectionInfo } from "../lobby/lobby.service";
 import { getActiveMatch, notifyActiveMatchEnded } from "../matchmaking/matchmaking.service";
-import { rematchAccepted, rematchDeclined, toastPlayer } from "./matches.service";
+import { rematchAccepted, rematchDeclined, saveMatchHistory, toastPlayer } from "./matches.service";
 
 const router = new Elysia().use(MVSI_HYDRA_WITH_JWT);
 
@@ -53,15 +54,31 @@ router.put(
 
 router.get(
   "/matches/all/:id",
-  async () => {
+  async ({ params, query }) => {
+    const page = query.page ?? 1;
+    const count = query.count ?? 20;
+    const skip = (page - 1) * count;
+
+    const filter = { "players.all.account_id": params.id };
+    const [matches, total_matches] = await Promise.all([
+      MatchesModel.collection
+        .find(filter)
+        .sort({ completion_time: -1 })
+        .skip(skip)
+        .limit(count)
+        .toArray(),
+      MatchesModel.collection.countDocuments(filter),
+    ]);
+
     return {
-      matches: [],
-      total_matches: 1,
-      current_page: 1,
-      total_pages: 1,
+      matches,
+      total_matches,
+      current_page: page,
+      total_pages: Math.ceil(total_matches / count) || 1,
     };
   },
   {
+    params: t.Object({ id: t.String() }),
     query: HydraQueryPaginated,
     detail: {
       description: "Get all matches for account",
@@ -305,6 +322,7 @@ router.put(
   "/ssc/invoke/submit_end_of_match_stats",
   async ({ body }) => {
     const match = await getActiveMatch(body.ContainerMatchId);
+    saveMatchHistory(body.ContainerMatchId, body.EndOfMatchStats);
     if (match?.GameplayConfig.ArenaId) {
       await submitArenaMatchStats(body.ContainerMatchId, body.EndOfMatchStats, body.MatchLength);
     }
@@ -314,7 +332,8 @@ router.put(
     body: t.Object({
       ContainerMatchId: t.String(),
       EndOfMatchStats: t.Object({
-        PlayerMissionUpdates: t.Record(t.String(), t.Record(t.String(), t.Number())),
+        PlayerMissionUpdates: t.Record(t.String(), t.Any()),
+        PlayerNetworkStats: t.Record(t.String(), t.Any()),
         Score: t.Array(t.Number()),
         WinningTeamIndex: t.Number(),
       }),

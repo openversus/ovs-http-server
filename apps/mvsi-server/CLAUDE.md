@@ -4,7 +4,7 @@ See AGENTS.md for full architecture docs. This file covers working preferences a
 
 ## Runtime
 - **Bun only.** No npm/npx/node commands. Use `bun run`, `bun test`, etc.
-- Type-check: `bun run tsc --noEmit` (from monorepo root or with correct tsconfig path)
+- Type-check: `bun run typecheck` is script setup to run tsc.
 
 ## Code Patterns
 - Atomic Redis state mutations **must** use Lua scripts (`redisClient.eval()`). Never read-then-write for lobby/match state.

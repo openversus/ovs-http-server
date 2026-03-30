@@ -73,8 +73,8 @@ export type EndOfMatchStats = {
 
 export type MatchHistory = {
   id: string;
-  updated_at: Date;
-  created_at: Date;
+  updatedAt: Date;
+  createdAt: Date;
   completion_time: Date;
   win: string[];
   loss: string[];

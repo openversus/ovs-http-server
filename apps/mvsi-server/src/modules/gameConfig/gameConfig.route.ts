@@ -84,6 +84,8 @@ router.post("/ssc/invoke/attempt_daily_refresh", () => {
 
 noAuthRouter.post("/syncAsset", async ({ body, headers, status }) => {
   logger.info("Trying syncAsset");
+  // @ts-expect-error this needs to be fixed in unreal quick fix for now
+  body.enabled = body.enabled === "true"
   try {
     if (headers.authorization !== `Bearer ${env.DATA_ASSET_TOKEN}`) {
       status(403);
@@ -92,6 +94,7 @@ noAuthRouter.post("/syncAsset", async ({ body, headers, status }) => {
     await GameConfigService.syncAsset(body as any);
     status(200);
   } catch (e) {
+    logger.error("Error syncing asset", e);
     status(404);
     //@ts-expect-error
     return e.codeName;

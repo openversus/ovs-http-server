@@ -375,7 +375,19 @@ for i, team in ipairs(l.Teams) do
     break
   end
 end
-if targetArrIdx == nil then return nil end
+if targetArrIdx == nil then
+  if not isSpectator then
+    for i, team in ipairs(l.Teams) do
+      if team.TeamIndex == 4 and team.Length < 4 then
+        targetArrIdx = i
+        isSpectator = true
+        break
+      end
+    end
+    if targetArrIdx == nil then return nil end
+  end
+end
+
 
 local pdata = {
   Account           = { id = accountId },

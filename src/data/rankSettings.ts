@@ -2687,7 +2687,7 @@ export const RANK_SETTINGS = {
       TierThresholdForShowingBadgesPostMatch: "Unranked",
       TimeBetweenRankedMatchesSeconds: 15,
       bEnableTimedLeaderboardRefresh: true,
-      TimeBetweenLeaderboardRefreshSeconds: 30,
+      TimeBetweenLeaderboardRefreshSeconds: 3600,
       EnabledModesForConcede: [
         "ranked-1v1",
         "ranked-2v2",

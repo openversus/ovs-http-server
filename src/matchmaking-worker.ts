@@ -44,11 +44,11 @@ const MATCH_RULES = {
 
 function getEloRange(ticketAgeSec: number): number {
   if (ticketAgeSec < 5) {
-    // 0-5 seconds: tight range
-    return 100;
-  } else if (ticketAgeSec < 10) {
-    // 5-10 seconds: wider range
+    // 0-5 seconds: ~1 tier range
     return 250;
+  } else if (ticketAgeSec < 10) {
+    // 5-10 seconds: ~2 tier range
+    return 500;
   } else {
     // 10+ seconds: match anyone
     return Infinity;

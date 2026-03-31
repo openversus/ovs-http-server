@@ -2,7 +2,7 @@ export const RANK_SETTINGS = {
   rankedsettings_default: {
     slug: "rankedsettings_default",
     data: {
-      AccountLevelRequiredForRanked: 5,
+      AccountLevelRequiredForRanked: 0,
       AssetBundleData: {
         Bundles: [],
       },
@@ -2687,7 +2687,7 @@ export const RANK_SETTINGS = {
       TierThresholdForShowingBadgesPostMatch: "Unranked",
       TimeBetweenRankedMatchesSeconds: 15,
       bEnableTimedLeaderboardRefresh: true,
-      TimeBetweenLeaderboardRefreshSeconds: 3600,
+      TimeBetweenLeaderboardRefreshSeconds: 30,
       EnabledModesForConcede: [
         "ranked-1v1",
         "ranked-2v2",

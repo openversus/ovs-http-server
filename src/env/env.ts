@@ -7,7 +7,7 @@ const env = cleanEnv(process.env, {
   BANNED_NAMES_FILE: str({ default: "../data/banned_names.txt" }),
   CIDR_BANS_FILE: str({ default: "../data/cidr_bans.txt" }),
   DATA_ASSET_TOKEN: str(),
-  DEFAULT_ELO: num({ default: 1000 }),
+  DEFAULT_ELO: num({ default: 0 }),
   ELO_DIVISOR: num({ default: 800 }),
   EMULATE_P2: num({ default: 0 }),
   FORCE_CHANGE_NAMES_FILE: str({ default: "../data/force_change_names.txt" }),

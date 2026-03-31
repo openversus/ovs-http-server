@@ -13,6 +13,7 @@ import { PlayerTesterModel } from "../database/PlayerTester";
 import { getAssetsByType } from "../loadAssets";
 import * as SharedTypes from "../types/shared-types";
 import * as KitchenSink from "../utils/garbagecan";
+import { EloRatingModel } from "../database/EloRating";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { NameGenerator } from "../utils/namegeneration";
 import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
@@ -67,7 +68,7 @@ async function generateStaticAccess(req: express.Request) {
 
   // Look up pre-registered identity from DLL (steamId / epicId / hardwareId)
   const identity = await Redis.redisGetIdentity(ip);
-  let { steamId = "", epicId = "", hardwareId = "" } = identity ?? {};
+  const { steamId = "", epicId = "", hardwareId = "" } = identity ?? {};
 
   // Try to find existing player by identity fields first (prefer steamId > epicId > hardwareId), then fall back to IP
   let player = null;
@@ -78,15 +79,7 @@ async function generateStaticAccess(req: express.Request) {
 
   if (!player) {
     // generate a random name like OpenVersus_1247112554154
-    if (steamId == null || steamId === undefined) steamId = "";
-    if (epicId == null || epicId === undefined) epicId = "";
-    if (hardwareId == null || hardwareId === undefined) hardwareId = "";
-    player = new PlayerTesterModel({
-      ip, name: randomName, hydraUsername: hydraUsername, GameplayPreferences: 964,
-      ...(steamId    && { steamId }),
-      ...(epicId     && { epicId }),
-      ...(hardwareId && { hardwareId }),
-    });
+    player = new PlayerTesterModel({ ip, name: randomName, hydraUsername: hydraUsername, GameplayPreferences: 964, steamId, epicId, hardwareId });
     try {
       await player.save();
       logger.info(`${logPrefix} No player found for IP ${ip}. Created new player with id ${player.id} and name ${randomName}.`);
@@ -96,8 +89,8 @@ async function generateStaticAccess(req: express.Request) {
       KitchenSink.TryInspect(error);
     }
   } else {
-    // Backfill identity fields onto existing record if any are stale (empty / "Unknown" / ip_ fallback)
-    const isStale = (val: string | undefined) => !val || val === "Unknown" || val.startsWith("ip_");
+    // Backfill identity fields — also overwrite if existing value is an old IP fallback
+    const isStale = (val: string) => !val || val === "Unknown" || val.startsWith("ip_");
     let dirty = false;
     if (steamId && isStale(player.steamId)) { player.steamId = steamId; dirty = true; }
     if (epicId && isStale(player.epicId)) { player.epicId = epicId; dirty = true; }
@@ -455,61 +448,44 @@ async function generateStaticAccess(req: express.Request) {
         Level: 1,
         CurrentXP: 0,
         loss_streak: 0,
-        MatchConfig: { MultiqueueConfigs: [{ QueueType: "Unranked", Context: "Matchmade", TeamStyle: "Duos", GameModeAlias: "Versus" }] },
+        MatchConfig: { MultiqueueConfigs: [{ QueueType: "Unranked", Context: "Matchmade", TeamStyle: "Duos", GameModeAlias: "Versus" }, { QueueType: "Ranked", Context: "Matchmade", TeamStyle: "Duos", GameModeAlias: "Versus" }] },
         BattlepassID: "63cef9c6609607a8deb2c31d",
-        stat_trackers: {
-          HighestDamageDealt: 656,
-          TotalRingoutLeader: 22,
-          TotalRingouts: 13448,
-          TotalWins: 3132,
-          character_highest_damage_dealt: {
-            character_arya: 18,
-            character_superman: 18,
-            character_shaggy: 459,
-            character_Jason: 656,
-            character_C018: 167,
-            character_c16: 310,
-            character_wonder_woman: 524,
-          },
-          character_ringouts: {
-            character_arya: 3,
-            character_superman: 3,
-            character_Jason: 13368,
-            character_C018: 3,
-            character_shaggy: 43,
-            character_c16: 3,
-            character_wonder_woman: 25,
-          },
-          character_total_damage_dealt: {
-            character_arya: 41,
-            character_superman: 60,
-            character_shaggy: 4483.185760498047,
-            character_Jason: 1407299.925918579,
-            character_C018: 295,
-            character_c16: 310,
-            character_wonder_woman: 3285,
-          },
-          character_wins: {
-            character_arya: 2,
-            character_superman: 1,
-            character_finn: 4,
-            character_C018: 3,
-            character_tom_and_jerry: 1,
-            character_shaggy: 60,
-            character_Jason: 3053,
-            character_c16: 1,
-            character_wonder_woman: 7,
-          },
-          TotalAttacksDodged: 46204,
+        stat_trackers: await (async () => {
+          // Build stats from ELO database
+          const rating = await EloRatingModel.findOne({ account_id: account.id }).lean();
+          const totalWins = (rating?.wins_1v1 || 0) + (rating?.wins_2v2 || 0);
+          const totalLosses = (rating?.losses_1v1 || 0) + (rating?.losses_2v2 || 0);
+          const chars1v1 = (rating as any)?.characters_1v1 || {};
+          const chars2v2 = (rating as any)?.characters_2v2 || {};
+
+          // Merge character data across modes
+          const charWins: Record<string, number> = {};
+          const charMatches: Record<string, number> = {};
+          for (const [slug, data] of Object.entries({ ...chars1v1, ...chars2v2 })) {
+            const d = data as any;
+            charWins[slug] = (charWins[slug] || 0) + (d.wins || 0);
+            charMatches[slug] = (charMatches[slug] || 0) + (d.wins || 0) + (d.losses || 0);
+          }
+
+          // Find most played character
+          let mostPlayedChar = "";
+          let mostPlayedGames = 0;
+          for (const [slug, games] of Object.entries(charMatches)) {
+            if (games > mostPlayedGames) { mostPlayedGames = games; mostPlayedChar = slug; }
+          }
+
+          return {
+          HighestDamageDealt: 0,
+          TotalRingoutLeader: 0,
+          TotalRingouts: 0,
+          TotalWins: totalWins,
+          character_highest_damage_dealt: {},
+          character_ringouts: {},
+          character_total_damage_dealt: {},
+          character_wins: charWins,
+          TotalAttacksDodged: 0,
           Valentines2023Currency: 5200,
-          character_matches: {
-            character_shaggy: 68,
-            character_BananaGuard: 1,
-            character_Jason: 5608,
-            character_C018: 2,
-            character_c16: 1,
-            character_wonder_woman: 9,
-          },
+          character_matches: charMatches,
           season1: {
             HighestDamageDealt: 131.25,
             TotalWins: 2,
@@ -568,21 +544,13 @@ async function generateStaticAccess(req: express.Request) {
             TotalRingoutLeader: 1,
           },
           season5: {
-            ranked: { "1v1": { CharactersInGold: 1, Wins: 80 } },
-            HighestDamageDealt: 656,
-            TotalAttacksDodged: 3684,
-            TotalRingouts: 926,
-            character_highest_damage_dealt: { character_Jason: 656, character_shaggy: 459, character_c16: 310, character_wonder_woman: 524 },
-            character_matches: { character_Jason: 382, character_shaggy: 66, character_c16: 1, character_wonder_woman: 9 },
-            character_ringouts: { character_Jason: 855, character_shaggy: 43, character_c16: 3, character_wonder_woman: 25 },
-            character_total_damage_dealt: { character_Jason: 111475, character_shaggy: 4284, character_c16: 310, character_wonder_woman: 3285 },
-            TotalWins: 252,
-            character_wins: { character_Jason: 186, character_shaggy: 58, character_c16: 1, character_wonder_woman: 7 },
-            TotalRingoutLeader: 4,
-            TotalDoubleRingouts: 4,
-            TotalAssists: 14,
+            ranked: { "1v1": { CharactersInGold: 1, Wins: totalWins } },
+            character_matches: charMatches,
+            character_wins: charWins,
+            TotalWins: totalWins,
           },
-        },
+        };
+        })(),
         s2_extension_make_good_boost: 1,
         checked_grants: { s2_extension_make_good_boost: true },
         ftue: { current_ftue_step: "eDONE" },

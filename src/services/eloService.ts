@@ -8,24 +8,51 @@ import env from "../env/env";
 const serviceName = "Services.Elo";
 const logPrefix = `[${serviceName}]:`;
 
-const DEFAULT_ELO = env.DEFAULT_ELO || 1000;
+const DEFAULT_ELO = env.DEFAULT_ELO || 0;
 
-// --- Dynamic K-Factor Configuration ---
-// Provisional: first N games use higher K for faster convergence
-const PROVISIONAL_GAME_THRESHOLD = Number(env.PROVISIONAL_GAME_THRESHOLD) || 20;
-const K_PROVISIONAL = Number(env.K_PROVISIONAL) || 64;
-const K_1V1 = Number(env.K_1V1) || 32;
-const K_2V2 = Number(env.K_2V2) || 24; // Lower K for 2v2 due to higher variance
-const ELO_DIVISOR = Number(env.ELO_DIVISOR) || 800; // Standard ELO divisor for expected score calculation
+// --- ELO Configuration ---
+const PROVISIONAL_SET_THRESHOLD = 20; // First N sets use higher K
+const K_PROVISIONAL = 64;
+const K_ESTABLISHED = 32;
+const ELO_DIVISOR = 800;
+
+// Set score modifiers
+const SET_SCORE_2_0_MODIFIER = 1.0;   // Dominant win
+const SET_SCORE_2_1_MODIFIER = 0.85;  // Close set
+
+// Floor/cap
+const MIN_GAIN = 6;
+const MAX_LOSS = -24;
+const MIN_LOSS = -3;
+
+// Win streak bonuses
+const STREAK_3_BONUS = 0.20;  // +20%
+const STREAK_5_BONUS = 0.35;  // +35%
+const STREAK_7_BONUS = 0.50;  // +50%
 
 /**
- * Get the dynamic K-factor for a player based on mode and game count.
+ * Get K-factor based on total sets played.
  */
-function getKFactor(totalGames: number, is1v1: boolean): number {
-  if (totalGames < PROVISIONAL_GAME_THRESHOLD) {
-    return K_PROVISIONAL;
-  }
-  return is1v1 ? K_1V1 : K_2V2;
+function getKFactor(totalSets: number): number {
+  return totalSets < PROVISIONAL_SET_THRESHOLD ? K_PROVISIONAL : K_ESTABLISHED;
+}
+
+/**
+ * Get win streak bonus multiplier.
+ */
+function getStreakBonus(streak: number): number {
+  if (streak >= 7) return STREAK_7_BONUS;
+  if (streak >= 5) return STREAK_5_BONUS;
+  if (streak >= 3) return STREAK_3_BONUS;
+  return 0;
+}
+
+/**
+ * Get set score modifier (2-0 vs 2-1).
+ */
+function getSetScoreModifier(setScore: [number, number], winnerTeam: number): number {
+  const loserWins = winnerTeam === 0 ? setScore[1] : setScore[0];
+  return loserWins === 0 ? SET_SCORE_2_0_MODIFIER : SET_SCORE_2_1_MODIFIER;
 }
 
 /**
@@ -79,41 +106,221 @@ async function getPlayerUsername(playerId: string): Promise<string> {
 }
 
 /**
- * Look up a player's character from Redis (set by lock_lobby_loadout SSC).
- * Fallback chain: player:{id} → connections:{id} → MongoDB PlayerTester.
+ * Process a SET result (best-of-3) and update ELO ratings.
+ * Called when a ranked set ends (2-0, 2-1, or concede).
+ *
+ * @param winnerIds - Player IDs on the winning team
+ * @param loserIds - Player IDs on the losing team
+ * @param mode - "1v1" or "2v2"
+ * @param setScore - [team0Wins, team1Wins]
+ * @param winnerTeam - Which team won (0 or 1)
+ * @param isConcede - Whether the set ended by concede
  */
-async function getPlayerCharacter(playerId: string): Promise<string> {
-  try {
-    // Try player:{id} first (set by lock_lobby_loadout)
-    const playerData = await redisClient.hGetAll(`player:${playerId}`);
-    if (playerData?.character) return playerData.character;
+export async function processSetResult(
+  winnerIds: string[],
+  loserIds: string[],
+  mode: string,
+  setScore: [number, number],
+  winnerTeam: number,
+  isConcede: boolean = false,
+  playerCharacters: Map<string, string> = new Map(), // playerId → character_slug
+): Promise<{ deltas: Map<string, number>; rankUpdates: Map<string, any> }> {
+  const deltas = new Map<string, number>();
+  const rankUpdates = new Map<string, any>(); // playerId → MvsRankedServerMatchPayload
+  const is1v1 = mode === "1v1" || mode.includes("1v1");
+  const eloField = is1v1 ? "elo_1v1" : "elo_2v2";
+  const winsField = is1v1 ? "wins_1v1" : "wins_2v2";
+  const lossesField = is1v1 ? "losses_1v1" : "losses_2v2";
+  const streakField = is1v1 ? "win_streak_1v1" : "win_streak_2v2";
+  const charsField = is1v1 ? "characters_1v1" : "characters_2v2";
 
-    // Fallback to connections:{id}
-    const connData = await redisClient.hGetAll(`connections:${playerId}`);
-    if (connData?.character) return connData.character;
+  const setModifier = isConcede ? SET_SCORE_2_0_MODIFIER : getSetScoreModifier(setScore, winnerTeam);
 
-    // Fallback to MongoDB
-    const dbPlayer = await PlayerTesterModel.findById(playerId).lean();
-    if (dbPlayer && (dbPlayer as any).character) return (dbPlayer as any).character;
-  } catch {
-    // ignore
-  }
-  return "";
-}
+  // Get all ratings
+  const winnerRatings = await Promise.all(
+    winnerIds.map(async (id) => {
+      const username = await getPlayerUsername(id);
+      return getOrCreateRating(id, username);
+    }),
+  );
+  const loserRatings = await Promise.all(
+    loserIds.map(async (id) => {
+      const username = await getPlayerUsername(id);
+      return getOrCreateRating(id, username);
+    }),
+  );
 
-/**
- * Compute the most-played character from a character_counts map.
- */
-function getTopCharacter(counts: Record<string, number>): string {
-  let top = "";
-  let topCount = 0;
-  for (const [char, count] of Object.entries(counts)) {
-    if (count > topCount) {
-      topCount = count;
-      top = char;
+  // Use per-character ELO for matching calculation
+  const getCharElo = (rating: any, playerId: string): number => {
+    const charSlug = playerCharacters.get(playerId);
+    if (charSlug) {
+      // Use character-specific ELO, defaulting to 0 for new characters
+      return rating[charsField]?.[charSlug]?.elo ?? DEFAULT_ELO;
     }
+    return rating[eloField]; // Fallback to global only if no character info
+  };
+
+  const avgWinnerElo = winnerRatings.reduce((sum, r) => sum + getCharElo(r, r.account_id), 0) / winnerRatings.length;
+  const avgLoserElo = loserRatings.reduce((sum, r) => sum + getCharElo(r, r.account_id), 0) / loserRatings.length;
+
+  // Update winners
+  for (const rating of winnerRatings) {
+    const charSlug = playerCharacters.get(rating.account_id) || "";
+    const charData = rating[charsField]?.[charSlug] || { elo: DEFAULT_ELO, wins: 0, losses: 0, streak: 0 };
+    const playerElo = charSlug ? charData.elo : rating[eloField];
+    const totalSets = rating[winsField] + rating[lossesField];
+    const K = getKFactor(totalSets);
+    const expected = expectedScore(playerElo, avgLoserElo);
+    const currentStreak = (charSlug ? charData.streak : (rating[streakField] || 0)) + 1;
+    const streakBonus = getStreakBonus(currentStreak);
+
+    let delta = Math.round(K * (1 - expected) * setModifier * (1 + streakBonus));
+    delta = Math.max(MIN_GAIN, delta);
+    const newElo = Math.max(0, playerElo + delta);
+    deltas.set(rating.account_id, delta);
+
+    // Build update
+    const update: any = {
+      $set: { [streakField]: currentStreak, updated_at: Date.now() },
+      $inc: { [winsField]: 1 },
+    };
+
+    // Update per-character ELO
+    if (charSlug) {
+      update.$set[`${charsField}.${charSlug}`] = {
+        elo: newElo,
+        wins: charData.wins + 1,
+        losses: charData.losses,
+        streak: currentStreak,
+      };
+      // Update global ELO to best character's ELO
+      const allChars = { ...(rating[charsField] || {}), [charSlug]: { elo: newElo } };
+      const bestElo = Math.max(...Object.values(allChars).map((c: any) => c.elo));
+      update.$set[eloField] = bestElo;
+    } else {
+      update.$set[eloField] = newElo;
+    }
+
+    await EloRatingModel.updateOne({ account_id: rating.account_id }, update);
+
+    // Build MvsRankedServerMatchPayload for FullRankUpdate notification
+    rankUpdates.set(rating.account_id, {
+      Season: "Season:SeasonFive",
+      Mode: is1v1 ? "1v1" : "2v2",
+      Character: charSlug || "",
+      TotalGamesPlayedForMode: (rating[winsField] || 0) + (rating[lossesField] || 0) + 1,
+      TotalSetsPlayedForMode: (rating[winsField] || 0) + (rating[lossesField] || 0) + 1,
+      StarDelta: 0,
+      StarSources: {},
+      PreviousGoldenStar: 0,
+      NewGoldenStar: 0,
+      RpDelta: delta,
+      UpdatedCharacterRecord: {
+        CurrentPoints: newElo,
+        MaxPoints: newElo,
+        GamesPlayed: charSlug ? charData.wins + charData.losses + 1 : (rating[winsField] || 0) + (rating[lossesField] || 0) + 1,
+        SetsPlayed: charSlug ? charData.wins + charData.losses + 1 : (rating[winsField] || 0) + (rating[lossesField] || 0) + 1,
+        Wins: charSlug ? charData.wins + 1 : (rating[winsField] || 0) + 1,
+        Losses: charSlug ? charData.losses : rating[lossesField] || 0,
+        DamageDealt: 0,
+        DamageTaken: 0,
+        Ringouts: 0,
+        Deaths: 0,
+      },
+      UpdatedBestCharacterRecord: {
+        CharacterSlug: charSlug || "",
+        CurrentPoints: newElo,
+        MaxPoints: newElo,
+        GamesPlayed: charSlug ? charData.wins + charData.losses + 1 : (rating[winsField] || 0) + (rating[lossesField] || 0) + 1,
+        SetsPlayed: charSlug ? charData.wins + charData.losses + 1 : (rating[winsField] || 0) + (rating[lossesField] || 0) + 1,
+      },
+    });
+
+    logger.info(
+      `${logPrefix} ${rating.account_id} (${rating.username}) SET WIN [${charSlug || "global"}]: ${playerElo} → ${newElo} (+${delta}) ` +
+      `[K=${K}, expected=${expected.toFixed(3)}, set=${setScore}, streak=${currentStreak}, modifier=${setModifier}]`,
+    );
   }
-  return top;
+
+  // Update losers
+  for (const rating of loserRatings) {
+    const charSlug = playerCharacters.get(rating.account_id) || "";
+    const charData = rating[charsField]?.[charSlug] || { elo: DEFAULT_ELO, wins: 0, losses: 0, streak: 0 };
+    const playerElo = charSlug ? charData.elo : rating[eloField];
+    const totalSets = rating[winsField] + rating[lossesField];
+    const K = getKFactor(totalSets);
+    const expected = expectedScore(playerElo, avgWinnerElo);
+
+    let delta = Math.round(K * (0 - expected) * setModifier);
+    delta = Math.max(MAX_LOSS, Math.min(MIN_LOSS, delta));
+    const newElo = Math.max(0, playerElo + delta);
+    deltas.set(rating.account_id, delta);
+
+    const update: any = {
+      $set: { [streakField]: 0, updated_at: Date.now() },
+      $inc: { [lossesField]: 1 },
+    };
+
+    if (charSlug) {
+      update.$set[`${charsField}.${charSlug}`] = {
+        elo: newElo,
+        wins: charData.wins,
+        losses: charData.losses + 1,
+        streak: 0,
+      };
+      const allChars = { ...(rating[charsField] || {}), [charSlug]: { elo: newElo } };
+      const bestElo = Math.max(...Object.values(allChars).map((c: any) => c.elo));
+      update.$set[eloField] = bestElo;
+    } else {
+      update.$set[eloField] = newElo;
+    }
+
+    await EloRatingModel.updateOne({ account_id: rating.account_id }, update);
+
+    rankUpdates.set(rating.account_id, {
+      Season: "Season:SeasonFive",
+      Mode: is1v1 ? "1v1" : "2v2",
+      Character: charSlug || "",
+      TotalGamesPlayedForMode: (rating[winsField] || 0) + (rating[lossesField] || 0) + 1,
+      TotalSetsPlayedForMode: (rating[winsField] || 0) + (rating[lossesField] || 0) + 1,
+      StarDelta: 0,
+      StarSources: {},
+      PreviousGoldenStar: 0,
+      NewGoldenStar: 0,
+      RpDelta: delta,
+      UpdatedCharacterRecord: {
+        CurrentPoints: newElo,
+        MaxPoints: newElo,
+        GamesPlayed: charSlug ? charData.wins + charData.losses + 1 : (rating[winsField] || 0) + (rating[lossesField] || 0) + 1,
+        SetsPlayed: charSlug ? charData.wins + charData.losses + 1 : (rating[winsField] || 0) + (rating[lossesField] || 0) + 1,
+        Wins: charSlug ? charData.wins : rating[winsField] || 0,
+        Losses: charSlug ? charData.losses + 1 : (rating[lossesField] || 0) + 1,
+        DamageDealt: 0,
+        DamageTaken: 0,
+        Ringouts: 0,
+        Deaths: 0,
+      },
+      UpdatedBestCharacterRecord: {
+        CharacterSlug: charSlug || "",
+        CurrentPoints: newElo,
+        MaxPoints: newElo,
+        GamesPlayed: charSlug ? charData.wins + charData.losses + 1 : (rating[winsField] || 0) + (rating[lossesField] || 0) + 1,
+        SetsPlayed: charSlug ? charData.wins + charData.losses + 1 : (rating[winsField] || 0) + (rating[lossesField] || 0) + 1,
+      },
+    });
+
+    logger.info(
+      `${logPrefix} ${rating.account_id} (${rating.username}) SET LOSS [${charSlug || "global"}]: ${playerElo} → ${newElo} (${delta}) ` +
+      `[K=${K}, expected=${expected.toFixed(3)}, set=${setScore}, modifier=${setModifier}]`,
+    );
+  }
+
+  logger.info(
+    `${logPrefix} Processed set result: winners=[${winnerIds}] losers=[${loserIds}] ` +
+    `score=${setScore} concede=${isConcede} (avg ELO: winners=${Math.round(avgWinnerElo)} vs losers=${Math.round(avgLoserElo)})`,
+  );
+
+  return { deltas, rankUpdates };
 }
 
 /**
@@ -166,28 +373,24 @@ export async function processMatchResult(matchId: string, winningTeamIndex: numb
     const eloField = is1v1 ? "elo_1v1" : "elo_2v2";
     const winsField = is1v1 ? "wins_1v1" : "wins_2v2";
     const lossesField = is1v1 ? "losses_1v1" : "losses_2v2";
-    const charCountsField = is1v1 ? "character_counts_1v1" : "character_counts_2v2";
-    const topCharField = is1v1 ? "top_character_1v1" : "top_character_2v2";
 
-    // Get all player ratings, usernames, and characters from Redis
+    // Get all player ratings (and update usernames from Redis)
     const winnerRatings = await Promise.all(
       winners.map(async (p) => {
         const username = await getPlayerUsername(p.playerId);
-        const character = await getPlayerCharacter(p.playerId);
-        return { rating: await getOrCreateRating(p.playerId, username), character };
+        return getOrCreateRating(p.playerId, username);
       }),
     );
     const loserRatings = await Promise.all(
       losers.map(async (p) => {
         const username = await getPlayerUsername(p.playerId);
-        const character = await getPlayerCharacter(p.playerId);
-        return { rating: await getOrCreateRating(p.playerId, username), character };
+        return getOrCreateRating(p.playerId, username);
       }),
     );
 
     // Calculate opposing team averages
-    const avgWinnerElo = winnerRatings.reduce((sum, { rating: r }) => sum + r[eloField], 0) / winnerRatings.length;
-    const avgLoserElo = loserRatings.reduce((sum, { rating: r }) => sum + r[eloField], 0) / loserRatings.length;
+    const avgWinnerElo = winnerRatings.reduce((sum, r) => sum + r[eloField], 0) / winnerRatings.length;
+    const avgLoserElo = loserRatings.reduce((sum, r) => sum + r[eloField], 0) / loserRatings.length;
 
     // --- Per-player ELO updates ---
     // Each player's expected score is computed against the opposing TEAM average.
@@ -196,7 +399,7 @@ export async function processMatchResult(matchId: string, winningTeamIndex: numb
     // This prevents boosting and provides fair individual calibration.
 
     // Update each winner individually
-    for (const { rating, character } of winnerRatings) {
+    for (const rating of winnerRatings) {
       const playerElo = rating[eloField];
       const totalGames = rating[winsField] + rating[lossesField];
       const K = getKFactor(totalGames, is1v1);
@@ -204,33 +407,21 @@ export async function processMatchResult(matchId: string, winningTeamIndex: numb
       const delta = Math.round(K * (1 - expected));
       const newElo = Math.max(0, playerElo + delta);
 
-      // Update character counts
-      const charCounts = { ...(rating[charCountsField] || {}) };
-      if (character) {
-        charCounts[character] = (charCounts[character] || 0) + 1;
-      }
-      const topChar = getTopCharacter(charCounts);
-
       await EloRatingModel.updateOne(
         { account_id: rating.account_id },
         {
-          $set: {
-            [eloField]: newElo,
-            [charCountsField]: charCounts,
-            [topCharField]: topChar,
-            updated_at: Date.now(),
-          },
+          $set: { [eloField]: newElo, updated_at: Date.now() },
           $inc: { [winsField]: 1 },
         },
       );
       logger.info(
         `${logPrefix} ${rating.account_id} (${rating.username}) WON: ${playerElo} → ${newElo} (+${delta}) ` +
-        `[K=${K}, expected=${expected.toFixed(3)}, ${is1v1 ? "1v1" : "2v2"}, char=${character || "unknown"}]`,
+        `[K=${K}, expected=${expected.toFixed(3)}, ${is1v1 ? "1v1" : "2v2"}]`,
       );
     }
 
     // Update each loser individually
-    for (const { rating, character } of loserRatings) {
+    for (const rating of loserRatings) {
       const playerElo = rating[eloField];
       const totalGames = rating[winsField] + rating[lossesField];
       const K = getKFactor(totalGames, is1v1);
@@ -238,28 +429,16 @@ export async function processMatchResult(matchId: string, winningTeamIndex: numb
       const delta = Math.round(K * (0 - expected));
       const newElo = Math.max(0, playerElo + delta);
 
-      // Update character counts
-      const charCounts = { ...(rating[charCountsField] || {}) };
-      if (character) {
-        charCounts[character] = (charCounts[character] || 0) + 1;
-      }
-      const topChar = getTopCharacter(charCounts);
-
       await EloRatingModel.updateOne(
         { account_id: rating.account_id },
         {
-          $set: {
-            [eloField]: newElo,
-            [charCountsField]: charCounts,
-            [topCharField]: topChar,
-            updated_at: Date.now(),
-          },
+          $set: { [eloField]: newElo, updated_at: Date.now() },
           $inc: { [lossesField]: 1 },
         },
       );
       logger.info(
         `${logPrefix} ${rating.account_id} (${rating.username}) LOST: ${playerElo} → ${newElo} (${delta}) ` +
-        `[K=${K}, expected=${expected.toFixed(3)}, ${is1v1 ? "1v1" : "2v2"}, char=${character || "unknown"}]`,
+        `[K=${K}, expected=${expected.toFixed(3)}, ${is1v1 ? "1v1" : "2v2"}]`,
       );
     }
 
@@ -316,6 +495,32 @@ export async function processMatchLeave(matchId: string, leaverPlayerId: string)
 }
 
 /**
+ * Map ELO/RP to a ranked tier and division.
+ * Tiers: Bronze(0-499), Silver(500-999), Gold(1000-1499), Platinum(1500-1999),
+ *        Diamond(2000-2499), Master(2500-2999), Grandmaster(3000+)
+ * Each tier has 5 divisions (1-5, where 5 is highest within the tier).
+ */
+export function eloToTierDivision(elo: number): { tier: string; division: number } {
+  const tiers = [
+    { name: "Bronze", min: 0, max: 499, divSize: 100 },
+    { name: "Silver", min: 500, max: 999, divSize: 100 },
+    { name: "Gold", min: 1000, max: 1499, divSize: 100 },
+    { name: "Platinum", min: 1500, max: 1999, divSize: 100 },
+    { name: "Diamond", min: 2000, max: 2499, divSize: 100 },
+    { name: "Master", min: 2500, max: 2999, divSize: 100 },
+    { name: "Grandmaster", min: 3000, max: Infinity, divSize: 100 },
+  ];
+
+  for (const tier of tiers) {
+    if (elo >= tier.min && elo <= tier.max) {
+      const division = Math.min(5, Math.floor((elo - tier.min) / tier.divSize) + 1);
+      return { tier: tier.name, division };
+    }
+  }
+  return { tier: "Bronze", division: 1 };
+}
+
+/**
  * Get a specific player's rank and stats for a given mode.
  * Returns null if the player hasn't played any games in this mode.
  */
@@ -336,7 +541,16 @@ export async function getPlayerRank(accountId: string, mode: "1v1" | "2v2") {
     $expr: { $gt: [{ $add: [`$${winsField}`, `$${lossesField}`] }, 0] },
   });
 
-  const topCharField = mode === "1v1" ? "top_character_1v1" : "top_character_2v2";
+  // Find best character
+  const charsField = mode === "1v1" ? "characters_1v1" : "characters_2v2";
+  const charMap = (player as any)[charsField] || {};
+  let bestChar = "";
+  let bestCharElo = -1;
+  for (const [slug, data] of Object.entries(charMap)) {
+    const charElo = (data as any).elo || 0;
+    if (charElo > bestCharElo) { bestCharElo = charElo; bestChar = slug; }
+  }
+
   return {
     rank: playersAbove + 1,
     account_id: accountId,
@@ -344,7 +558,7 @@ export async function getPlayerRank(accountId: string, mode: "1v1" | "2v2") {
     elo: player[eloField],
     wins: player[winsField] || 0,
     losses: player[lossesField] || 0,
-    top_character: player[topCharField] || "",
+    bestCharacter: bestChar,
   };
 }
 
@@ -390,7 +604,19 @@ export async function getLeaderboard(mode: "1v1" | "2v2", limit: number = 100) {
           );
         }
       }
-      const topCharField2 = mode === "1v1" ? "top_character_1v1" : "top_character_2v2";
+      // Find best character (highest ELO) for this mode
+      const charsField = mode === "1v1" ? "characters_1v1" : "characters_2v2";
+      const charMap = (p as any)[charsField] || {};
+      let bestChar = "";
+      let bestCharElo = -1;
+      for (const [slug, data] of Object.entries(charMap)) {
+        const charElo = (data as any).elo || 0;
+        if (charElo > bestCharElo) {
+          bestCharElo = charElo;
+          bestChar = slug;
+        }
+      }
+
       return {
         rank: index + 1,
         account_id: p.account_id,
@@ -398,7 +624,7 @@ export async function getLeaderboard(mode: "1v1" | "2v2", limit: number = 100) {
         elo: p[eloField],
         wins: p[winsField],
         losses: p[lossesField],
-        top_character: p[topCharField2] || "",
+        bestCharacter: bestChar,
       };
     }),
   );

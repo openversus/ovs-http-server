@@ -26,7 +26,7 @@ import * as AuthUtils from "../utils/auth";
 import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import * as KitchenSink from "../utils/garbagecan";
-import { processMatchResult } from "../services/eloService";
+import { processMatchResult, getOrCreateRating, getPlayerRank, eloToTierDivision, getLeaderboard } from "../services/eloService";
 import { handleRematchDecline, handleRematchAccept } from "../services/customLobbyService";
 
 const serviceName = "Handlers.SSC";
@@ -377,212 +377,39 @@ export async function handleSsc_invoke_get_equipped_cosmetics(req: Request<{}, {
 }
 
 export async function handleSsc_invoke_get_gm_leaderboards(req: Request<{}, {}, {}, {}>, res: Response) {
+  try {
+    const lb1v1 = await getLeaderboard("1v1", 100);
+    const lb2v2 = await getLeaderboard("2v2", 100);
+
+    const mapEntries = async (entries: any[]) => {
+      return Promise.all(entries.map(async (entry) => {
+        let character = "character_wonder_woman";
+        try {
+          const conn = await redisClient.hGetAll(`connections:${entry.account_id}`);
+          if (conn?.character) character = conn.character;
+        } catch {}
+        return { Rank: entry.rank, Score: entry.elo, AccountId: entry.account_id, CharacterSlug: character };
+      }));
+    };
+
+    res.send({
+      body: {
+        OneVsOne: await mapEntries(lb1v1),
+        TwoVsTwo: await mapEntries(lb2v2),
+      },
+      metadata: null,
+      return_code: 0,
+    });
+    return;
+  } catch (e) {
+    logger.error(`${logPrefix} Error in get_gm_leaderboards: ${e}`);
+  }
+
+  // Fallback
   res.send({
     body: {
-      OneVsOne: [
-        { Rank: 1, Score: 3015, AccountId: "62e10c1f5aa13c213eafc03a", CharacterSlug: "character_Jason" },
-        { Rank: 2, Score: 2923, AccountId: "62db84926a8ed7d5339618be", CharacterSlug: "character_C030" },
-        { Rank: 3, Score: 2885, AccountId: "62d830b1e6dfdd59253b028d", CharacterSlug: "character_C023A" },
-        { Rank: 4, Score: 2881, AccountId: "62d6f81bfaafd874a12c1934", CharacterSlug: "character_jake" },
-        { Rank: 5, Score: 2856, AccountId: "62e0fd35a67a47645c54b483", CharacterSlug: "character_c036" },
-        { Rank: 6, Score: 2841, AccountId: "66561052a68694c37575149d", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 7, Score: 2823, AccountId: "62e3a3c89205525ce055505d", CharacterSlug: "character_C023A" },
-        { Rank: 8, Score: 2809, AccountId: "62e2c000c3a7f557456d46e0", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 9, Score: 2782, AccountId: "62e05d124272af341664a742", CharacterSlug: "character_C020" },
-        { Rank: 10, Score: 2739, AccountId: "628a593634a6d8654760c4d5", CharacterSlug: "character_shaggy" },
-        { Rank: 11, Score: 2738, AccountId: "62fa5ae299868f6fad1c81cd", CharacterSlug: "character_batman" },
-        { Rank: 12, Score: 2738, AccountId: "62e20bcf1acb9c7920abe776", CharacterSlug: "character_harleyquinn" },
-        { Rank: 13, Score: 2734, AccountId: "62d73a17d3b69c00b7151dd1", CharacterSlug: "character_superman" },
-        { Rank: 14, Score: 2733, AccountId: "62d6ed684f2689217c5a9035", CharacterSlug: "character_C023B" },
-        { Rank: 15, Score: 2727, AccountId: "62e1b5bb3cdfb06a5aca1fbb", CharacterSlug: "character_batman" },
-        { Rank: 16, Score: 2720, AccountId: "62d701e31c309a61391d42e2", CharacterSlug: "character_C029" },
-        { Rank: 17, Score: 2716, AccountId: "62ddb111cec468d1b5bfccd4", CharacterSlug: "character_C020" },
-        { Rank: 18, Score: 2715, AccountId: "62db697107ec0f9999fca482", CharacterSlug: "character_C026" },
-        { Rank: 19, Score: 2704, AccountId: "62e5edbe2aacbc22bff12247", CharacterSlug: "character_C023B" },
-        { Rank: 20, Score: 2700, AccountId: "62df79bf0d73bc24979876b3", CharacterSlug: "character_C021" },
-        { Rank: 21, Score: 2670, AccountId: "62d9b1fd01d7925abd7326fe", CharacterSlug: "character_arya" },
-        { Rank: 22, Score: 2664, AccountId: "665b4d2a4afdfb71cfe26a29", CharacterSlug: "character_shaggy" },
-        { Rank: 23, Score: 2662, AccountId: "62d8435937c774a30d0dff08", CharacterSlug: "character_shaggy" },
-        { Rank: 24, Score: 2658, AccountId: "62e43887192cd6a56e65cf57", CharacterSlug: "character_bugs_bunny" },
-        { Rank: 25, Score: 2657, AccountId: "62db08dd1ada27fd42e4caba", CharacterSlug: "character_harleyquinn" },
-        { Rank: 26, Score: 2656, AccountId: "62dc888f99fe19257d5c37cb", CharacterSlug: "character_steven" },
-        { Rank: 27, Score: 2656, AccountId: "62daf066a2bc0a7e336d44b8", CharacterSlug: "character_steven" },
-        { Rank: 28, Score: 2650, AccountId: "62ed422b48a164aae844d0ed", CharacterSlug: "character_C018" },
-        { Rank: 29, Score: 2638, AccountId: "62e2d8131d0a7b6dad06710d", CharacterSlug: "character_bugs_bunny" },
-        { Rank: 30, Score: 2635, AccountId: "62f1aad29a8ecc48c94b6a52", CharacterSlug: "character_superman" },
-        { Rank: 31, Score: 2634, AccountId: "62e0ba81269878b9efd44c1d", CharacterSlug: "character_c038" },
-        { Rank: 32, Score: 2624, AccountId: "62d9fa53561f4a78c1d267fb", CharacterSlug: "character_creature" },
-        { Rank: 33, Score: 2617, AccountId: "62da087211957789867a7a33", CharacterSlug: "character_shaggy" },
-        { Rank: 34, Score: 2615, AccountId: "66628db0de531b98aad29669", CharacterSlug: "character_BananaGuard" },
-        { Rank: 35, Score: 2614, AccountId: "62db7c37327de1096ac86fb3", CharacterSlug: "character_C023B" },
-        { Rank: 36, Score: 2612, AccountId: "666508f3c6e56267d735315a", CharacterSlug: "character_shaggy" },
-        { Rank: 37, Score: 2611, AccountId: "62db040d2f992ed9a6237ab0", CharacterSlug: "character_creature" },
-        { Rank: 38, Score: 2610, AccountId: "62e1678697d2cd8641f3c8f8", CharacterSlug: "character_jake" },
-        { Rank: 39, Score: 2609, AccountId: "62e47c2fefe653354c70acd1", CharacterSlug: "character_superman" },
-        { Rank: 40, Score: 2609, AccountId: "62d6eb3017e4c72222ee0cd6", CharacterSlug: "character_C029" },
-        { Rank: 41, Score: 2608, AccountId: "62e05fedda83af5848986dad", CharacterSlug: "character_C030" },
-        { Rank: 42, Score: 2604, AccountId: "62d8b8e84f2689217c5c9ee2", CharacterSlug: "character_c16" },
-        { Rank: 43, Score: 2604, AccountId: "62d74376eb17d5abcf85c88e", CharacterSlug: "character_C031" },
-        { Rank: 44, Score: 2603, AccountId: "62e05bda46a0b0f9886f23bb", CharacterSlug: "character_C018" },
-        { Rank: 45, Score: 2600, AccountId: "62dcabd4d96af0b1e55a572c", CharacterSlug: "character_C020" },
-        { Rank: 46, Score: 2591, AccountId: "62ec78455905c43853738aa9", CharacterSlug: "character_steven" },
-        { Rank: 47, Score: 2591, AccountId: "6286f55642074f162189d023", CharacterSlug: "character_c036" },
-        { Rank: 48, Score: 2590, AccountId: "62f1f950f8c064ed90142d10", CharacterSlug: "character_bugs_bunny" },
-        { Rank: 49, Score: 2587, AccountId: "62d7390c4b3cbf382926f4e5", CharacterSlug: "character_c019" },
-        { Rank: 50, Score: 2584, AccountId: "62d7392440ab2a00d892a1bd", CharacterSlug: "character_C020" },
-        { Rank: 51, Score: 2581, AccountId: "62ed6173d4cc9f875b379a4f", CharacterSlug: "character_C021" },
-        { Rank: 52, Score: 2574, AccountId: "62faf56821875da4c8b512c4", CharacterSlug: "character_batman" },
-        { Rank: 53, Score: 2572, AccountId: "62e94da730adf4a2a18cd2fb", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 54, Score: 2567, AccountId: "62e09730ba9003540a4a2c0b", CharacterSlug: "character_Jason" },
-        { Rank: 55, Score: 2561, AccountId: "62d85f58dbf49a1a712ad0a6", CharacterSlug: "character_C017" },
-        { Rank: 56, Score: 2558, AccountId: "62d87f8d8d3cefebb84ecc61", CharacterSlug: "character_batman" },
-        { Rank: 57, Score: 2558, AccountId: "62d6e73f922d6f8f1ad293cb", CharacterSlug: "character_Jason" },
-        { Rank: 58, Score: 2554, AccountId: "62e134fdc0591a95fa35c469", CharacterSlug: "character_superman" },
-        { Rank: 59, Score: 2551, AccountId: "6286af26a56f016f9ef8ecfe", CharacterSlug: "character_harleyquinn" },
-        { Rank: 60, Score: 2549, AccountId: "62e18042e439b323f7754d4f", CharacterSlug: "character_C018" },
-        { Rank: 61, Score: 2548, AccountId: "62e7bfee75726442ca36b0a1", CharacterSlug: "character_superman" },
-        { Rank: 62, Score: 2546, AccountId: "669804ee86ba402bd5d4169c", CharacterSlug: "character_finn" },
-        { Rank: 63, Score: 2545, AccountId: "6669241764b9615374cbf13e", CharacterSlug: "character_harleyquinn" },
-        { Rank: 64, Score: 2545, AccountId: "62fa9796a7897e10bd0f800f", CharacterSlug: "character_C031" },
-        { Rank: 65, Score: 2543, AccountId: "6664a98de42e934f687c4086", CharacterSlug: "character_bugs_bunny" },
-        { Rank: 66, Score: 2542, AccountId: "628d44598c4a271a556241f1", CharacterSlug: "character_C023A" },
-        { Rank: 67, Score: 2540, AccountId: "6287f7c97fce40f26c3ea63e", CharacterSlug: "character_C020" },
-        { Rank: 68, Score: 2537, AccountId: "62e0efe4f2fe72c4ae18a4d7", CharacterSlug: "character_C030" },
-        { Rank: 69, Score: 2535, AccountId: "62dd7fd7e245269c482e773a", CharacterSlug: "character_wonder_woman" },
-        { Rank: 70, Score: 2534, AccountId: "67ba4b8aae0eb6a512388d6b", CharacterSlug: "character_shaggy" },
-        { Rank: 71, Score: 2531, AccountId: "62d6f2f46c7132f2ba74a140", CharacterSlug: "character_C018" },
-        { Rank: 72, Score: 2525, AccountId: "62ecbfbd773a8d97faf2ac25", CharacterSlug: "character_C031" },
-        { Rank: 73, Score: 2525, AccountId: "62d7115b64126f5548a72f59", CharacterSlug: "character_C023A" },
-        { Rank: 74, Score: 2525, AccountId: "62892f0f11ba991d92f007ac", CharacterSlug: "character_finn" },
-        { Rank: 75, Score: 2524, AccountId: "62d8eee10d4cdaf1541419ef", CharacterSlug: "character_bugs_bunny" },
-        { Rank: 76, Score: 2522, AccountId: "62eab25b006e45d28abb4cb7", CharacterSlug: "character_c16" },
-        { Rank: 77, Score: 2521, AccountId: "63fc1de75507831e3760b30c", CharacterSlug: "character_C018" },
-        { Rank: 78, Score: 2521, AccountId: "62e2d0c07f8f43b5b1e700f8", CharacterSlug: "character_c038" },
-        { Rank: 79, Score: 2521, AccountId: "62e005e821fc5e77b4d45032", CharacterSlug: "character_C030" },
-        { Rank: 80, Score: 2521, AccountId: "62d9a68b13171bb5a8d88f94", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 81, Score: 2520, AccountId: "6344dacd135fca60d600da4e", CharacterSlug: "character_velma" },
-        { Rank: 82, Score: 2519, AccountId: "62ec8ad90284e37f8c28374e", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 83, Score: 2514, AccountId: "62e7098e1c9935a3e369adf1", CharacterSlug: "character_C030" },
-        { Rank: 84, Score: 2513, AccountId: "62e4769811d01ce4ffc85154", CharacterSlug: "character_shaggy" },
-        { Rank: 85, Score: 2512, AccountId: "62d88436d99cb9259278951c", CharacterSlug: "character_C018" },
-        { Rank: 86, Score: 2511, AccountId: "62d7469e64126f5548a781e8", CharacterSlug: "character_C017" },
-        { Rank: 87, Score: 2511, AccountId: "628da1423fcd08c60d97b29a", CharacterSlug: "character_taz" },
-        { Rank: 88, Score: 2510, AccountId: "62d70993fce127e0258964ad", CharacterSlug: "character_finn" },
-        { Rank: 89, Score: 2510, AccountId: "6288092211ba991d92ef96ca", CharacterSlug: "character_finn" },
-        { Rank: 90, Score: 2508, AccountId: "62e2c011e7a9bce7a5056e40", CharacterSlug: "character_batman" },
-        { Rank: 91, Score: 2507, AccountId: "62df432fbf69bfbf76cc485c", CharacterSlug: "character_C025" },
-        { Rank: 92, Score: 2505, AccountId: "62f717b640e51eb274cd4e14", CharacterSlug: "character_batman" },
-        { Rank: 93, Score: 2505, AccountId: "628680e16a33e5bdc1a52075", CharacterSlug: "character_bugs_bunny" },
-        { Rank: 94, Score: 2502, AccountId: "632fa3fe8701f79d199967c2", CharacterSlug: "character_C020" },
-        { Rank: 95, Score: 2502, AccountId: "62e055a4936295a99c4eb86b", CharacterSlug: "character_creature" },
-        { Rank: 96, Score: 2501, AccountId: "62eb09c6024ccacb9f53decb", CharacterSlug: "character_C023A" },
-        { Rank: 97, Score: 2500, AccountId: "62d8497f261dd15ac6470fbc", CharacterSlug: "character_garnet" },
-        { Rank: 98, Score: 2498, AccountId: "631fdecb8fafb4c65565bd05", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 99, Score: 2496, AccountId: "6689a35e9bb73dfe4795f280", CharacterSlug: "character_c16" },
-        { Rank: 100, Score: 2495, AccountId: "635e9d53405caf8a51fd3dff", CharacterSlug: "character_tom_and_jerry" },
-      ],
-      TwoVsTwo: [
-        { Rank: 1, Score: 4476, AccountId: "62e81ca70cbbc05057a6b2bc", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 2, Score: 3663, AccountId: "62de0231b9e44ad51e8c72da", CharacterSlug: "character_C020" },
-        { Rank: 3, Score: 3573, AccountId: "62eb6dbb058a1d7f45b4b1a8", CharacterSlug: "character_BananaGuard" },
-        { Rank: 4, Score: 3531, AccountId: "62e5df75979ca0ed7f866910", CharacterSlug: "character_c019" },
-        { Rank: 5, Score: 3407, AccountId: "62d6fa9bbe9c695a0a83f1d2", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 6, Score: 3333, AccountId: "62dc38f58031baa1932ac4f1", CharacterSlug: "character_harleyquinn" },
-        { Rank: 7, Score: 3290, AccountId: "62dc331ad1ca693bd7f740dc", CharacterSlug: "character_C031" },
-        { Rank: 8, Score: 3288, AccountId: "6314e46edff8842677dffae7", CharacterSlug: "character_c038" },
-        { Rank: 9, Score: 3264, AccountId: "66669b8bcf0ac651b9426b01", CharacterSlug: "character_Jason" },
-        { Rank: 10, Score: 3187, AccountId: "62e1678697d2cd8641f3c8f8", CharacterSlug: "character_jake" },
-        { Rank: 11, Score: 3182, AccountId: "62884124726018b86e7017d0", CharacterSlug: "character_c019" },
-        { Rank: 12, Score: 3162, AccountId: "62f147fd6c7e0d13b12fc05c", CharacterSlug: "character_C031" },
-        { Rank: 13, Score: 3142, AccountId: "62ddb111cec468d1b5bfccd4", CharacterSlug: "character_C020" },
-        { Rank: 14, Score: 3073, AccountId: "62e203442d44cbe765ee2187", CharacterSlug: "character_steven" },
-        { Rank: 15, Score: 3067, AccountId: "62e47c2fefe653354c70acd1", CharacterSlug: "character_superman" },
-        { Rank: 16, Score: 3067, AccountId: "62e468a6b5598cee3ef1fde4", CharacterSlug: "character_C021" },
-        { Rank: 17, Score: 3064, AccountId: "62db18d2e39f7f19ee71f1aa", CharacterSlug: "character_C021" },
-        { Rank: 18, Score: 3041, AccountId: "62e94da730adf4a2a18cd2fb", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 19, Score: 3038, AccountId: "667cb71c9ae13f2bef7065af", CharacterSlug: "character_wonder_woman" },
-        { Rank: 20, Score: 3025, AccountId: "62dcf3ab9081368c94b79c08", CharacterSlug: "character_C018" },
-        { Rank: 21, Score: 3024, AccountId: "62e1c63b6aaabf737b72a651", CharacterSlug: "character_C021" },
-        { Rank: 22, Score: 3012, AccountId: "635e9d53405caf8a51fd3dff", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 23, Score: 3011, AccountId: "62dcabd4d96af0b1e55a572c", CharacterSlug: "character_C020" },
-        { Rank: 24, Score: 3005, AccountId: "62d9fa53561f4a78c1d267fb", CharacterSlug: "character_creature" },
-        { Rank: 25, Score: 3000, AccountId: "62e0c838b15bb1f909935b83", CharacterSlug: "character_steven" },
-        { Rank: 26, Score: 3000, AccountId: "62d78f09faafd874a12cebb9", CharacterSlug: "character_c019" },
-        { Rank: 27, Score: 2983, AccountId: "62d6f07510fd0c3f376d5eb4", CharacterSlug: "character_c024" },
-        { Rank: 28, Score: 2970, AccountId: "62eca68d237e6339ea2b11fe", CharacterSlug: "character_harleyquinn" },
-        { Rank: 29, Score: 2958, AccountId: "62fefaa583afc38c09fc0509", CharacterSlug: "character_c036" },
-        { Rank: 30, Score: 2958, AccountId: "6289adca5f0e0cdb14aa17c3", CharacterSlug: "character_bugs_bunny" },
-        { Rank: 31, Score: 2957, AccountId: "628680e16a33e5bdc1a52075", CharacterSlug: "character_bugs_bunny" },
-        { Rank: 32, Score: 2955, AccountId: "62f403cf9343973975f2d60f", CharacterSlug: "character_creature" },
-        { Rank: 33, Score: 2938, AccountId: "62e69811c95285baf9e5eb40", CharacterSlug: "character_creature" },
-        { Rank: 34, Score: 2926, AccountId: "665610ecda1d7d8dc311558f", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 35, Score: 2922, AccountId: "62e2b8c77ef147ec51667507", CharacterSlug: "character_wonder_woman" },
-        { Rank: 36, Score: 2918, AccountId: "6344dacd135fca60d600da4e", CharacterSlug: "character_velma" },
-        { Rank: 37, Score: 2916, AccountId: "62e18042e439b323f7754d4f", CharacterSlug: "character_C018" },
-        { Rank: 38, Score: 2909, AccountId: "6681a3620157251ab4303f18", CharacterSlug: "character_creature" },
-        { Rank: 39, Score: 2906, AccountId: "62869bb6dc66670a77f2d216", CharacterSlug: "character_Jason" },
-        { Rank: 40, Score: 2892, AccountId: "62866dc420b672dc0d364c90", CharacterSlug: "character_steven" },
-        { Rank: 41, Score: 2892, AccountId: "62866d23edeab14a276fe3b5", CharacterSlug: "character_bugs_bunny" },
-        { Rank: 42, Score: 2875, AccountId: "62e4f18fd4345d51d4d1852d", CharacterSlug: "character_C020" },
-        { Rank: 43, Score: 2873, AccountId: "62f5f5427a0998bb5c01b97e", CharacterSlug: "character_garnet" },
-        { Rank: 44, Score: 2870, AccountId: "62e19fb14b5dc9b10682ad23", CharacterSlug: "character_C030" },
-        { Rank: 45, Score: 2869, AccountId: "62e6c5e298aa99a834edf2d0", CharacterSlug: "character_c038" },
-        { Rank: 46, Score: 2869, AccountId: "62e2c000c3a7f557456d46e0", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 47, Score: 2866, AccountId: "62d722e79fff46500c918eab", CharacterSlug: "character_C029" },
-        { Rank: 48, Score: 2865, AccountId: "62d8667598a5f55213a83996", CharacterSlug: "character_jake" },
-        { Rank: 49, Score: 2864, AccountId: "62e3c5dc31b595fb1fc886fc", CharacterSlug: "character_C017" },
-        { Rank: 50, Score: 2861, AccountId: "6657b349888a031a92a77725", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 51, Score: 2860, AccountId: "62e6e694838881de2bc8637a", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 52, Score: 2851, AccountId: "62d6f2f46c7132f2ba74a140", CharacterSlug: "character_C030" },
-        { Rank: 53, Score: 2850, AccountId: "665b69c8031f103076854e0b", CharacterSlug: "character_wonder_woman" },
-        { Rank: 54, Score: 2849, AccountId: "62d88436c3aae00044bd0c43", CharacterSlug: "character_finn" },
-        { Rank: 55, Score: 2847, AccountId: "62db1b20e3b7689bea7d3590", CharacterSlug: "character_C023B" },
-        { Rank: 56, Score: 2845, AccountId: "62f31e7c13c397a0112502cd", CharacterSlug: "character_C021" },
-        { Rank: 57, Score: 2845, AccountId: "62e15059973406626583b4c7", CharacterSlug: "character_velma" },
-        { Rank: 58, Score: 2843, AccountId: "62d6dfb9370e8a158d2a7fa3", CharacterSlug: "character_shaggy" },
-        { Rank: 59, Score: 2827, AccountId: "62daf066a2bc0a7e336d44b8", CharacterSlug: "character_steven" },
-        { Rank: 60, Score: 2826, AccountId: "62e5edbe2aacbc22bff12247", CharacterSlug: "character_finn" },
-        { Rank: 61, Score: 2825, AccountId: "62868fa6dc60d2f75376368e", CharacterSlug: "character_C026" },
-        { Rank: 62, Score: 2821, AccountId: "62e44535bc1355c516cd2891", CharacterSlug: "character_bugs_bunny" },
-        { Rank: 63, Score: 2820, AccountId: "62e553f743e10aa6b10936ff", CharacterSlug: "character_c019" },
-        { Rank: 64, Score: 2818, AccountId: "62d8497f261dd15ac6470fbc", CharacterSlug: "character_garnet" },
-        { Rank: 65, Score: 2813, AccountId: "665679d5ca73519cdd9bc51c", CharacterSlug: "character_bugs_bunny" },
-        { Rank: 66, Score: 2811, AccountId: "62e20e28bb9273ffc9734372", CharacterSlug: "character_c036" },
-        { Rank: 67, Score: 2811, AccountId: "62e1a41d969a50d762ab2a2e", CharacterSlug: "character_superman" },
-        { Rank: 68, Score: 2810, AccountId: "62db7bd3e4f2a3040aede0b0", CharacterSlug: "character_C031" },
-        { Rank: 69, Score: 2809, AccountId: "63fc1de75507831e3760b30c", CharacterSlug: "character_C018" },
-        { Rank: 70, Score: 2809, AccountId: "62e7fe6789cdb2f983dce8ea", CharacterSlug: "character_C017" },
-        { Rank: 71, Score: 2808, AccountId: "62ea9b07ddced8e30188c634", CharacterSlug: "character_c16" },
-        { Rank: 72, Score: 2808, AccountId: "62d9932908273440a38f07ff", CharacterSlug: "character_C017" },
-        { Rank: 73, Score: 2808, AccountId: "62d70ca159c4d61e3274f8e6", CharacterSlug: "character_tom_and_jerry" },
-        { Rank: 74, Score: 2807, AccountId: "66563107c83541d490eb8100", CharacterSlug: "character_shaggy" },
-        { Rank: 75, Score: 2807, AccountId: "62e83cac7553aefe2bd29b46", CharacterSlug: "character_creature" },
-        { Rank: 76, Score: 2805, AccountId: "62d73f53f122b36f0abd612b", CharacterSlug: "character_harleyquinn" },
-        { Rank: 77, Score: 2804, AccountId: "62e025f84cc55876ef082582", CharacterSlug: "character_c16" },
-        { Rank: 78, Score: 2800, AccountId: "63221cf29c6fd218df0f7c23", CharacterSlug: "character_jake" },
-        { Rank: 79, Score: 2799, AccountId: "62e0aca124b2db3613cbe93a", CharacterSlug: "character_bugs_bunny" },
-        { Rank: 80, Score: 2792, AccountId: "62e20bcf1acb9c7920abe776", CharacterSlug: "character_harleyquinn" },
-        { Rank: 81, Score: 2788, AccountId: "62e055a4936295a99c4eb86b", CharacterSlug: "character_creature" },
-        { Rank: 82, Score: 2779, AccountId: "62e20a0b1bf3059d4abe1624", CharacterSlug: "character_harleyquinn" },
-        { Rank: 83, Score: 2779, AccountId: "62e07b2d2bc5fa794bc1c028", CharacterSlug: "character_shaggy" },
-        { Rank: 84, Score: 2778, AccountId: "62e40e6b1cdd5b6b843b620e", CharacterSlug: "character_shaggy" },
-        { Rank: 85, Score: 2777, AccountId: "6346fa730f4733ec865ddabe", CharacterSlug: "character_c16" },
-        { Rank: 86, Score: 2777, AccountId: "628d88813bc26e858aa46eba", CharacterSlug: "character_C029" },
-        { Rank: 87, Score: 2775, AccountId: "631fd3f2ac6acf518a46d978", CharacterSlug: "character_C023B" },
-        { Rank: 88, Score: 2770, AccountId: "62d6ed744c283a42ffa7916d", CharacterSlug: "character_bugs_bunny" },
-        { Rank: 89, Score: 2767, AccountId: "62e330e2ef1c99e1beeaecf4", CharacterSlug: "character_C021" },
-        { Rank: 90, Score: 2758, AccountId: "6288092211ba991d92ef96ca", CharacterSlug: "character_finn" },
-        { Rank: 91, Score: 2755, AccountId: "62da2a1c53551017ac47b0fc", CharacterSlug: "character_creature" },
-        { Rank: 92, Score: 2753, AccountId: "621a49fff2824e97d972e719", CharacterSlug: "character_C023B" },
-        { Rank: 93, Score: 2750, AccountId: "665619a257a959b7ad3ac1ba", CharacterSlug: "character_c019" },
-        { Rank: 94, Score: 2750, AccountId: "62f6fb163ec2a174ddfd4421", CharacterSlug: "character_bugs_bunny" },
-        { Rank: 95, Score: 2750, AccountId: "62d7115b64126f5548a72f59", CharacterSlug: "character_C023A" },
-        { Rank: 96, Score: 2748, AccountId: "62dffeaa23df38704127d2aa", CharacterSlug: "character_Jason" },
-        { Rank: 97, Score: 2747, AccountId: "62dd85a13b944ac5ad9f419e", CharacterSlug: "character_Jason" },
-        { Rank: 98, Score: 2746, AccountId: "62e9982a313da95c3a9f812d", CharacterSlug: "character_Jason" },
-        { Rank: 99, Score: 2743, AccountId: "62e0f539738901c09393799c", CharacterSlug: "character_steven" },
-        { Rank: 100, Score: 2743, AccountId: "62e063c58a1f62226ad1d11a", CharacterSlug: "character_c16" },
-      ],
+      OneVsOne: [],
+      TwoVsTwo: [],
     },
     metadata: null,
     return_code: 0,
@@ -1374,7 +1201,7 @@ export async function handleSsc_invoke_get_hiss_calendar_events(req: Request<{},
             UiData: {},
             TimeSpan: {
               StartTime: { Year: 2025, Month: 2, Day: 4, Hour: 10, Minute: 55 },
-              EndTime: { Year: 2025, Month: 4, Day: 1, Hour: 10, Minute: 55 },
+              EndTime: { Year: 2027, Month: 1, Day: 1, Hour: 10, Minute: 55 },
               bHasFiniteEndTime: true,
             },
             GracePeriodInHours: 0,
@@ -1399,7 +1226,7 @@ export async function handleSsc_invoke_get_hiss_calendar_events(req: Request<{},
           entry_options: {
             start_at: { _hydra_unix_date: 1738666500 },
             task_start_at: { _hydra_unix_date: 1738689036 },
-            end_at: { _hydra_unix_date: 1743504900 },
+            end_at: { _hydra_unix_date: 1798761600 },
           },
           controlled_features: [],
           id: "67897d226f4c8aafa0e38388",
@@ -4799,12 +4626,7 @@ export async function handleSsc_invoke_get_or_create_mission_object(req: Request
 }
 
 export async function handleSsc_invoke_hiss_amalgamation(req: Request<{}, {}, { Crc: number }, {}>, res: Response) {
-  if (req.body.Crc !== getCurrentCRC()) {
-    logger.info(`${logPrefix} Crc: out of date , sending new`);
-    res.send(generate_hiss());
-  } else {
-    res.send({ body: { Crc: getCurrentCRC(), MatchmakingCrc: MATCHMAKING_CRC }, metadata: null, return_code: 304 });
-  }
+  res.send(generate_hiss());
 }
 
 export async function handleSsc_invoke_load_rifts(req: Request<{}, {}, {}, {}>, res: Response) {
@@ -57827,257 +57649,134 @@ export async function handleSsc_invoke_perks_lock(req: Request<{}, {}, Ssc_invok
 }
 
 export async function handleSsc_invoke_ranked_data(req: Request<{}, {}, {}, {}>, res: Response) {
-  res.send({
-    body: {
-      SeasonalData: {
-        "Season:SeasonTwo": {
-          Ranked: {
-            DataByMode: {
-              "1v1": {
-                BestCharacter: {
-                  CurrentPoints: 2709,
-                  MaxPoints: 2745,
-                  GamesPlayed: 2270,
-                  SetsPlayed: 1317,
-                  CharacterSlug: "character_Jason",
-                  LastUpdateTimestamp: { _hydra_unix_date: 1721968544 },
-                },
-                DataByCharacter: {
-                  character_Jason: {
-                    CurrentPoints: 2709,
-                    MaxPoints: 2745,
-                    GamesPlayed: 2270,
-                    SetsPlayed: 1317,
-                    Wins: 753,
-                    Losses: 752,
-                    DamageDealt: 518935,
-                    DamageTaken: 670230,
-                    Ringouts: 5496,
-                    Deaths: 4941,
-                    LastUpdateTimestamp: { _hydra_unix_date: 1726551460 },
-                    LastDecayMs: 0,
-                  },
-                },
-                GamesPlayed: 2272,
-                LastUpdateTimestamp: { _hydra_unix_date: 1726551460 },
-                SetsPlayed: 1318,
-                FinalLeaderboardRank: 745,
-              },
-              "2v2": {
-                BestCharacter: {
-                  CurrentPoints: 1035,
-                  MaxPoints: 1047,
-                  GamesPlayed: 107,
-                  SetsPlayed: 48,
-                  CharacterSlug: "character_Jason",
-                  LastUpdateTimestamp: { _hydra_unix_date: 1724119352 },
-                },
-                DataByCharacter: {
-                  character_Jason: {
-                    CurrentPoints: 1035,
-                    MaxPoints: 1047,
-                    GamesPlayed: 107,
-                    SetsPlayed: 48,
-                    Wins: 25,
-                    Losses: 26,
-                    DamageDealt: 18082,
-                    DamageTaken: 26826,
-                    Ringouts: 193,
-                    Deaths: 177,
-                    LastUpdateTimestamp: { _hydra_unix_date: 1724517900 },
-                    LastDecayMs: 0,
-                  },
-                },
-                GamesPlayed: 107,
-                LastUpdateTimestamp: { _hydra_unix_date: 1724517900 },
-                SetsPlayed: 48,
-                FinalLeaderboardRank: 37414,
-              },
-            },
-            ClaimedRewards: [
-              "EC1B6F59453B11272D24DD94189FC209",
-              "BB3E4B7048C823BE345B8F86CCBCCA84",
-              "89709B1442BF36DD11BD98BCFB0D4AF1",
-              "40B4F0174999C47FEAD0CE91419BBC7B",
-              "B67EDC654607F8583E06978841798205",
-              "8519085948FD7C75D380A9B4646A2306",
-              "F2A63E5C406E3D13D9C5BCB0CCBDE371",
-              "AD47AB5D491ACF00EF52289735A8B493",
-              "684E91904181C8F3636BE38CF4B0E3C6",
-              "C8C6CD8140A6E7A30F589CB10E677113",
-            ],
-            bEndOfSeasonRewardsGranted: true,
-          },
+  try {
+    const account = AuthUtils.DecodeClientToken(req);
+    const playerId = account?.id;
+
+    // Get player's ELO data
+    const rating = playerId ? await getOrCreateRating(playerId, account?.username || "") : null;
+    const connData = playerId ? await redisClient.hGetAll(`connections:${playerId}`) : {};
+    let character = (connData as any)?.character || "";
+    if (!character && playerId) {
+      try {
+        const playerDoc = await PlayerTesterModel.findById(playerId).lean();
+        character = (playerDoc as any)?.character || "";
+      } catch {}
+    }
+    if (!character) character = "character_wonder_woman";
+
+    const elo1v1 = rating?.elo_1v1 || 0;
+    const elo2v2 = rating?.elo_2v2 || 0;
+    const wins1v1 = rating?.wins_1v1 || 0;
+    const losses1v1 = rating?.losses_1v1 || 0;
+    const wins2v2 = rating?.wins_2v2 || 0;
+    const losses2v2 = rating?.losses_2v2 || 0;
+    const games1v1 = wins1v1 + losses1v1;
+    const games2v2 = wins2v2 + losses2v2;
+    const chars1v1 = (rating as any)?.characters_1v1 || {};
+    const chars2v2 = (rating as any)?.characters_2v2 || {};
+
+    // Get leaderboard rank
+    const rank1v1 = playerId ? await getPlayerRank(playerId, "1v1") : null;
+    const rank2v2 = playerId ? await getPlayerRank(playerId, "2v2") : null;
+
+    const buildModeData = (elo: number, wins: number, losses: number, games: number, rank: any, charMap: Record<string, any>) => {
+      // If no games played in this mode, return empty data so game shows "Unranked"
+      if (games === 0 && Object.keys(charMap).length === 0) {
+        return {
+          BestCharacter: { CurrentPoints: 0, MaxPoints: 0, GamesPlayed: 0, SetsPlayed: 0, CharacterSlug: "", LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) } },
+          DataByCharacter: {},
+          GamesPlayed: 0,
+          LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
+          SetsPlayed: 0,
+          FinalLeaderboardRank: 0,
+        };
+      }
+
+      // Build per-character data
+      const DataByCharacter: Record<string, any> = {};
+      let bestChar = character;
+      let bestElo = -1; // Start at -1 so any character with ELO data wins
+
+      for (const [slug, data] of Object.entries(charMap)) {
+        const charElo = (data as any).elo || 0;
+        const charWins = (data as any).wins || 0;
+        const charLosses = (data as any).losses || 0;
+        DataByCharacter[slug] = {
+          CurrentPoints: charElo,
+          MaxPoints: charElo,
+          GamesPlayed: charWins + charLosses,
+          SetsPlayed: charWins + charLosses,
+          Wins: charWins,
+          Losses: charLosses,
+          DamageDealt: 0,
+          DamageTaken: 0,
+          Ringouts: 0,
+          Deaths: 0,
+          LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
+          LastDecayMs: 0,
+        };
+        if (charElo > bestElo) {
+          bestElo = charElo;
+          bestChar = slug;
+        }
+      }
+
+      // If no per-character data yet, use the current character as fallback
+      if (Object.keys(DataByCharacter).length === 0) {
+        DataByCharacter[character] = {
+          CurrentPoints: elo, MaxPoints: elo,
+          GamesPlayed: games, SetsPlayed: wins + losses,
+          Wins: wins, Losses: losses,
+          DamageDealt: 0, DamageTaken: 0, Ringouts: 0, Deaths: 0,
+          LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
+          LastDecayMs: 0,
+        };
+      }
+
+      return {
+        BestCharacter: {
+          CurrentPoints: bestElo,
+          MaxPoints: bestElo,
+          GamesPlayed: games,
+          SetsPlayed: wins + losses,
+          CharacterSlug: bestChar,
+          LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
         },
-        "Season:SeasonThree": {
-          Ranked: {
-            DataByMode: {
-              "1v1": {
-                DataByCharacter: {
-                  character_Jason: {
-                    CurrentPoints: 2858,
-                    MaxPoints: 2929,
-                    GamesPlayed: 1591,
-                    SetsPlayed: 672,
-                    Wins: 404,
-                    Losses: 403,
-                    DamageDealt: 376835,
-                    DamageTaken: 481079,
-                    Ringouts: 3929,
-                    Deaths: 3411,
-                    LastUpdateTimestamp: { _hydra_unix_date: 1731366640 },
-                    LastDecayMs: 0,
-                  },
-                },
-                GamesPlayed: 1591,
-                SetsPlayed: 672,
-                BestCharacter: {
-                  CurrentPoints: 2858,
-                  MaxPoints: 2929,
-                  GamesPlayed: 1591,
-                  SetsPlayed: 672,
-                  CharacterSlug: "character_Jason",
-                  LastUpdateTimestamp: { _hydra_unix_date: 1726623581 },
-                },
-                LastUpdateTimestamp: { _hydra_unix_date: 1731366640 },
-                FinalLeaderboardRank: 857,
+        DataByCharacter,
+        GamesPlayed: games,
+        LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
+        SetsPlayed: wins + losses,
+        FinalLeaderboardRank: rank?.rank || 0,
+      };
+    };
+
+    res.send({
+      body: {
+        SeasonalData: {
+          "Season:SeasonFive": {
+            Ranked: {
+              DataByMode: {
+                "1v1": buildModeData(elo1v1, wins1v1, losses1v1, games1v1, rank1v1, chars1v1),
+                "2v2": buildModeData(elo2v2, wins2v2, losses2v2, games2v2, rank2v2, chars2v2),
               },
-              "2v2": {
-                DataByCharacter: {
-                  character_Jason: {
-                    CurrentPoints: 35,
-                    MaxPoints: 35,
-                    GamesPlayed: 0,
-                    SetsPlayed: 0,
-                    Wins: 0,
-                    Losses: 0,
-                    DamageDealt: 0,
-                    DamageTaken: 0,
-                    Ringouts: 0,
-                    Deaths: 0,
-                    LastUpdateTimestamp: { _hydra_unix_date: 1726623581 },
-                    LastDecayMs: 0,
-                  },
-                },
-                GamesPlayed: 0,
-                SetsPlayed: 0,
-                BestCharacter: {
-                  CurrentPoints: 35,
-                  MaxPoints: 35,
-                  GamesPlayed: 0,
-                  SetsPlayed: 1,
-                  CharacterSlug: "character_Jason",
-                  LastUpdateTimestamp: { _hydra_unix_date: 1726623581 },
-                },
-                FinalLeaderboardRank: 129774,
-              },
+              ClaimedRewards: [],
+              bEndOfSeasonRewardsGranted: false,
             },
-            ClaimedRewards: [
-              "B67EDC654607F8583E06978841798205",
-              "F2A63E5C406E3D13D9C5BCB0CCBDE371",
-              "AD47AB5D491ACF00EF52289735A8B493",
-              "684E91904181C8F3636BE38CF4B0E3C6",
-              "C8C6CD8140A6E7A30F589CB10E677113",
-            ],
-            bEndOfSeasonRewardsGranted: true,
-          },
-        },
-        "Season:SeasonFour": {
-          LastLoginDay: { _hydra_unix_date: 1738281600 },
-          NumDaysLoggedIn: 27,
-          NumLogins: 45,
-          Ranked: {
-            DataByMode: {
-              "1v1": {
-                DataByCharacter: {
-                  character_Jason: {
-                    CurrentPoints: 2457,
-                    MaxPoints: 2605,
-                    GamesPlayed: 1189,
-                    SetsPlayed: 493,
-                    Wins: 238,
-                    Losses: 239,
-                    DamageDealt: 361469,
-                    DamageTaken: 379378,
-                    Ringouts: 2713,
-                    Deaths: 2780,
-                    LastUpdateTimestamp: { _hydra_unix_date: 1738356298 },
-                    LastDecayMs: 0,
-                  },
-                },
-                GamesPlayed: 1189,
-                SetsPlayed: 493,
-                BestCharacter: {
-                  CurrentPoints: 2457,
-                  MaxPoints: 2605,
-                  GamesPlayed: 1189,
-                  SetsPlayed: 493,
-                  CharacterSlug: "character_Jason",
-                  LastUpdateTimestamp: { _hydra_unix_date: 1731512851 },
-                },
-                LastUpdateTimestamp: { _hydra_unix_date: 1738356298 },
-                FinalLeaderboardRank: 694,
-              },
-            },
-            ClaimedRewards: [
-              "B67EDC654607F8583E06978841798205",
-              "F2A63E5C406E3D13D9C5BCB0CCBDE371",
-              "AD47AB5D491ACF00EF52289735A8B493",
-              "684E91904181C8F3636BE38CF4B0E3C6",
-              "C8C6CD8140A6E7A30F589CB10E677113",
-            ],
-            bEndOfSeasonRewardsGranted: true,
-          },
-        },
-        "Season:SeasonFive": {
-          LastLoginDay: { _hydra_unix_date: 1742256000 },
-          NumDaysLoggedIn: 21,
-          NumLogins: 206,
-          Ranked: {
-            DataByMode: {
-              "1v1": {
-                DataByCharacter: {
-                  character_Jason: {
-                    CurrentPoints: 2137,
-                    MaxPoints: 2179,
-                    GamesPlayed: 371,
-                    SetsPlayed: 160,
-                    Wins: 80,
-                    Losses: 79,
-                    DamageDealt: 109764,
-                    DamageTaken: 120253,
-                    Ringouts: 837,
-                    Deaths: 856,
-                    LastUpdateTimestamp: { _hydra_unix_date: 1740903312 },
-                    LastDecayMs: 0,
-                  },
-                },
-                GamesPlayed: 371,
-                SetsPlayed: 160,
-                BestCharacter: {
-                  CurrentPoints: 2137,
-                  MaxPoints: 2179,
-                  GamesPlayed: 371,
-                  SetsPlayed: 160,
-                  CharacterSlug: "character_Jason",
-                  LastUpdateTimestamp: { _hydra_unix_date: 1738983225 },
-                },
-                LastUpdateTimestamp: { _hydra_unix_date: 1740903312 },
-              },
-            },
-            ClaimedRewards: [
-              "D17B128B40B9A1A73A8602A9D25A1A3A",
-              "C8C6CD8140A6E7A30F589CB10E677113",
-              "BB3E4B7048C823BE345B8F86CCBCCA84",
-              "F2A63E5C406E3D13D9C5BCB0CCBDE371",
-              "EC1B6F59453B11272D24DD94189FC209",
-              "0D5B77894611BDDA93E815BCFEE03AE8",
-              "B67EDC654607F8583E06978841798205",
-            ],
           },
         },
       },
-    },
+      metadata: null,
+      return_code: 0,
+    });
+    return;
+  } catch (e) {
+    logger.error(`${logPrefix} Error in ranked_data: ${e}`);
+  }
+
+  // Fallback — return minimal data
+  res.send({
+    body: { SeasonalData: {} },
     metadata: null,
     return_code: 0,
   });
@@ -58150,22 +57849,117 @@ export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}
   const winningTeamIndex = req.body?.EndOfMatchStats?.WinningTeamIndex;
 
   logger.info(`${logPrefix} Received end of match stats for match ${matchId}, WinningTeamIndex: ${winningTeamIndex}`);
-  logwrapper.verbose(`${logPrefix} End of match stats payload: ${JSON.stringify(req.body)}`);
 
-  // Process ELO from client-submitted stats (dedup: only first submission per match)
+  // Capture pre-match ELO for delta calculation
+  let preMatchElo: number | null = null;
+  const account = AuthUtils.DecodeClientToken(req);
+  const pid = account?.id;
+  if (pid) {
+    try {
+      const preRating = await getOrCreateRating(pid);
+      const matchConfig = await redisClient.get(matchId);
+      const mode = matchConfig ? JSON.parse(matchConfig).mode : "1v1";
+      preMatchElo = (mode === "2v2" || mode.includes("2v2")) ? preRating.elo_2v2 : preRating.elo_1v1;
+    } catch {}
+  }
+
+  // ELO is now processed per SET (not per game) — see processSetResult in eloService.
+  // Per-game: only track set scores and pending winners.
   if (matchId && typeof winningTeamIndex === "number" && (winningTeamIndex === 0 || winningTeamIndex === 1)) {
-    const dedupeKey = `elo_processed:${matchId}`;
-    const alreadyProcessed = await redisClient.set(dedupeKey, "1", { NX: true, EX: 300 });
-    if (alreadyProcessed === "OK") {
-      logger.info(`${logPrefix} Processing ELO from client stats for match ${matchId}: team ${winningTeamIndex} won`);
-      try {
-        await processMatchResult(matchId, winningTeamIndex);
-      } catch (e) {
-        logger.error(`${logPrefix} Error processing ELO from client stats: ${e}`);
+
+    // Track win in ranked set (best-of-3)
+    if (pid) {
+      const setId = await redisClient.get(`player_ranked_set:${pid}`);
+      if (setId) {
+        const setRaw = await redisClient.get(`ranked_set:${setId}`);
+        if (setRaw) {
+          const setState = JSON.parse(setRaw);
+          // Use dedup key to only count once per match
+          const setScoreKey = `ranked_set_score:${setId}:${matchId}`;
+          const alreadyCounted = await redisClient.set(setScoreKey, "1", { NX: true, EX: 600 });
+          if (alreadyCounted === "OK") {
+            if (!setState.scores) setState.scores = [0, 0];
+            setState.scores[winningTeamIndex]++;
+            await redisClient.set(`ranked_set:${setId}`, JSON.stringify(setState), { EX: 600 });
+            logger.info(`${logPrefix} Ranked set ${setId} scores updated: ${setState.scores[0]}-${setState.scores[1]}`);
+          }
+        }
+      } else {
+        // No set exists yet (game 1) — store pending winner for handleOnMatchEnd to pick up
+        await redisClient.set(`ranked_set_pending_winner:${matchId}`, winningTeamIndex.toString(), { EX: 120 });
+        logger.info(`${logPrefix} Stored pending winner (team ${winningTeamIndex}) for match ${matchId} (set not created yet)`);
       }
-    } else {
-      logger.info(`${logPrefix} ELO already processed for match ${matchId}, skipping duplicate`);
     }
+  }
+
+  // Return ranked match payload with RP delta and updated record
+  try {
+    if (pid && matchId) {
+      const myId = pid;
+      const updatedRating = await getOrCreateRating(myId);
+      const connData = await redisClient.hGetAll(`connections:${myId}`);
+      const matchConfig = await redisClient.get(matchId);
+      const mode = matchConfig ? JSON.parse(matchConfig).mode : "1v1";
+      const is1v1 = mode === "1v1" || mode.includes("1v1");
+      const elo = is1v1 ? updatedRating.elo_1v1 : updatedRating.elo_2v2;
+      const wins = is1v1 ? updatedRating.wins_1v1 : updatedRating.wins_2v2;
+      const losses = is1v1 ? updatedRating.losses_1v1 : updatedRating.losses_2v2;
+      const games = wins + losses;
+      const character = (connData as any)?.character || "character_wonder_woman";
+      const { tier } = eloToTierDivision(elo);
+
+      // Calculate RP delta from previous ELO (before this match)
+      const prevElo = is1v1
+        ? (winningTeamIndex !== undefined ? elo : elo) // We already updated, estimate delta
+        : elo;
+
+      const rank = await getPlayerRank(myId, is1v1 ? "1v1" : "2v2");
+
+      res.send({
+        body: {
+          // MvsRankedServerMatchPayload fields (exact UE property names)
+          Season: "Season:SeasonFive",
+          Mode: is1v1 ? "1v1" : "2v2",
+          Character: character,
+          TotalGamesPlayedForMode: games,
+          TotalSetsPlayedForMode: wins + losses,
+          StarDelta: 0,
+          StarSources: {},
+          PreviousGoldenStar: 0,
+          NewGoldenStar: 0,
+          RpDelta: preMatchElo !== null ? elo - preMatchElo : 0,
+          UpdatedCharacterRecord: {
+            CurrentPoints: elo,
+            MaxPoints: elo,
+            GamesPlayed: games,
+            SetsPlayed: wins + losses,
+            Stars: 0,
+            MaxStars: 0,
+            GoldenStar: 0,
+            Wins: wins,
+            Losses: losses,
+            DamageDealt: 0,
+            DamageTaken: 0,
+            RINGOUTS: 0,
+            Deaths: 0,
+          },
+          UpdatedBestCharacterRecord: {
+            CharacterSlug: character,
+            Stars: 0,
+            MaxStars: 0,
+            CurrentPoints: elo,
+            MaxPoints: elo,
+            GamesPlayed: games,
+            SetsPlayed: wins + losses,
+          },
+        },
+        metadata: null,
+        return_code: 0,
+      });
+      return;
+    }
+  } catch (e) {
+    logger.error(`${logPrefix} Error building ranked match payload: ${e}`);
   }
 
   res.send({ body: {}, metadata: null, return_code: 0 });

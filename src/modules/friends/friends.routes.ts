@@ -113,10 +113,6 @@ friendsRouter.put("/accounts/wb_network/bulk", async (req: Request, res: Respons
 
     const details = await getUserFriendDetails(ids);
     logger.info(`${logPrefix} bulk returned ${details.length} results`);
-    // Log full response for debugging
-    for (const d of details) {
-      logger.info(`${logPrefix} bulk entry: ${JSON.stringify(d)}`);
-    }
     res.send(details);
   } catch (e) {
     logger.error(`${logPrefix} bulk error: ${e}`);

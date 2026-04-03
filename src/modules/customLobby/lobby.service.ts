@@ -388,7 +388,6 @@ if targetArrIdx == nil then
   end
 end
 
-
 local pdata = {
   Account           = { id = accountId },
   JoinedAt          = ts,
@@ -1708,7 +1707,7 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
           playerId,
           partyId: matchId,
           playerIndex,
-          teamIndex: team.TeamIndex as 0 | 1 | 2 | 3,
+          teamIndex: team.TeamIndex as any,
           isHost: globalIdx === 0, // first player is host
           ip: config.Ip || "",
         });

@@ -424,9 +424,26 @@ export class WebSocketService {
             `[${serviceName}]: Player ${playerId} (${playerWS.account.username}) disconnected during active match ${matchId} — processing as forfeit`,
           );
           await processMatchLeave(matchId, playerId);
+          // Set a flag so when the match ends and ranked set is created,
+          // the server auto-concedes instead of waiting for checkins
+          await redisClient.set(`ranked_disconnect:${playerId}`, matchId, { EX: 120 });
+          logger.info(`[${serviceName}]: Set ranked_disconnect flag for ${playerId} (match ${matchId})`);
         }
       } catch (e) {
         logger.error(`[${serviceName}]: Error processing match leave on disconnect for ${playerId}: ${e}`);
+      }
+
+      // If the player is in an active ranked set, mark them as disconnected
+      // The set stays alive — when the remaining player checks in or times out,
+      // handleRankedSetCheckin will detect the disconnect and auto-concede
+      try {
+        const setId = await redisClient.get(`player_ranked_set:${playerId}`);
+        if (setId) {
+          logger.info(`[${serviceName}]: Player ${playerId} disconnected during ranked set ${setId} — flagging for auto-concede`);
+          await redisClient.set(`ranked_disconnect:${playerId}`, setId, { EX: 120 });
+        }
+      } catch (e) {
+        logger.error(`[${serviceName}]: Error flagging ranked disconnect for ${playerId}: ${e}`);
       }
 
       // Remove from custom lobby (web-based) if they're in one
@@ -1998,7 +2015,7 @@ export class WebSocketService {
 
           // Process set-based ELO
           try {
-            const { processSetResult } = await import("./services/eloService.js");
+            const { processSetResult } = await import("./services/eloService");
             const team0Ids = existingSet.players.filter((p: any) => p.teamIndex === 0).map((p: any) => p.playerId);
             const team1Ids = existingSet.players.filter((p: any) => p.teamIndex === 1).map((p: any) => p.playerId);
             const winnerTeam = scores[0] > scores[1] ? 0 : 1;
@@ -2014,7 +2031,7 @@ export class WebSocketService {
             await processSetResult(winnerIds, loserIds, existingSet.mode, scores as [number, number], winnerTeam, false, playerChars);
 
             // Send FullRankUpdate notification to each player with fresh ranked data
-            const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
+            const { getOrCreateRating, getPlayerRank } = await import("./services/eloService");
             for (const pid of [...winnerIds, ...loserIds]) {
               const client = this.clients.get(pid);
               if (!client) continue;
@@ -2169,6 +2186,9 @@ export class WebSocketService {
             await redisClient.set(`player_ranked_set:${playerId}`, setId, { EX: 600 });
           }
           logger.info(`[${serviceName}]: Ranked set ${setId} — game ${gamesPlayed}/3 complete (${scores[0]}-${scores[1]}), waiting for check-ins`);
+
+          // Disconnect detection moved to handleRankedSetCheckin in routes.ts
+          // When remaining player checks in or times out, it detects ranked_disconnect flag
         }
       } else {
         // Non-ranked or no config — send RematchDeclinedNotification after 1 second to kick to menus
@@ -2508,7 +2528,7 @@ export class WebSocketService {
       try {
         const { playerIds } = JSON.parse(message);
         logger.info(`[${serviceName}]: FullRankUpdate (concede) for ${playerIds.length} players`);
-        const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
+        const { getOrCreateRating, getPlayerRank } = await import("./services/eloService");
         for (const pid of playerIds) {
           const client = this.clients.get(pid);
           if (!client) continue;

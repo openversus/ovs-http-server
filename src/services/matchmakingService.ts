@@ -59,11 +59,21 @@ export async function queueMatch(
       players: await Promise.all(
         playerIds.map(async (p) => {
           const playerConfig = await redisGetPlayer(p);
-          // Look up player's actual ELO from MongoDB
+          // Look up player's character-specific ELO from MongoDB
           let skill = 0;
           try {
             const rating = await getOrCreateRating(p);
-            skill = rating[eloField];
+            const charsField = matchType === "1v1" ? "characters_1v1" : "characters_2v2";
+            const charMap = (rating as any)[charsField] || {};
+            const selectedChar = playerConfig?.character || "";
+            if (selectedChar && charMap[selectedChar]) {
+              skill = charMap[selectedChar].elo || 0;
+              logger.info(`Player ${p} using character ELO: ${selectedChar} = ${skill}`);
+            } else {
+              // Character not played yet — start at 0 (Bronze)
+              skill = 0;
+              logger.info(`Player ${p} using new character ELO: 0 (char: ${selectedChar || 'unknown'}, no ranked data)`);
+            }
           } catch (err) {
             logger.warn(`Could not fetch ELO for player ${p}, defaulting to 0: ${err}`);
           }

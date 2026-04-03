@@ -8,6 +8,9 @@ export interface IAccountToken {
   current_ip: string;
   lobby_id: string;
   GameplayPreferences: number;
+  steamId: string;
+  epicId: string;
+  hardwareId: string;
   // token: AccountToken;
   // account: AccountToken;
 }
@@ -22,6 +25,9 @@ export class AccountToken implements IAccountToken {
   current_ip: string;
   lobby_id: string;
   GameplayPreferences: number;
+  steamId: string;
+  epicId: string;
+  hardwareId: string;
   // token: AccountToken;
   // account: AccountToken;
 
@@ -35,6 +41,9 @@ export class AccountToken implements IAccountToken {
     this.current_ip = "";
     this.lobby_id = "";
     this.GameplayPreferences = 964;
+    this.steamId = "";
+    this.epicId = "";
+    this.hardwareId = "";
     // this.token = this;
     // this.account = this;
   }

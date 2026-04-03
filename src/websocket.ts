@@ -92,7 +92,8 @@ import env from "./env/env";
 import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./database/Cosmetics";
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 import { cancelMatchmakingForAll } from "./services/matchmakingService";
-import { processMatchLeave } from "./services/eloService";
+import { processMatchLeave, getOrCreateRating, eloToTierDivision } from "./services/eloService";
+import { PlayerTesterModel } from "./database/PlayerTester";
 
 const serviceName: string = "WebSocket";
 const logPrefix = `[${serviceName}]:`;
@@ -880,6 +881,25 @@ export class WebSocketService {
           "stat_tracking_bundle_default",
         ];
 
+        // Look up player's ranked tier/division from ELO
+        let rankedTier: string | null = null;
+        let rankedDivision: number | null = null;
+        if (!notification.isCustomGame) {
+          try {
+            const eloRating = await getOrCreateRating(player.playerId);
+            const is2v2 = notification.mode === "2v2";
+            const charsField = is2v2 ? "characters_2v2" : "characters_1v1";
+            const charSlug = character || "";
+            const charData = (eloRating as any)[charsField]?.[charSlug];
+            const elo = charData ? charData.elo : (is2v2 ? eloRating.elo_2v2 : eloRating.elo_1v1);
+            const tierInfo = eloToTierDivision(elo);
+            rankedTier = tierInfo.tier;
+            rankedDivision = tierInfo.division;
+          } catch (e) {
+            logger.warn(`[${serviceName}]: Could not look up rank for ${player.playerId}: ${e}`);
+          }
+        }
+
         const configTarget = player.isSpectator ? Spectators : Players;
         configTarget[player.playerId] = {
           Taunts: characterTaunts,
@@ -892,13 +912,13 @@ export class WebSocketService {
           GameplayPreferences: GameplayPreferences,
           BotDifficultyMax: 0,
           bIsBot: false,
-          RankedDivision: null,
+          RankedDivision: rankedDivision,
           bUseCharacterDisplayName: false,
           StartingDamage: 0,
           TeamIndex: player.teamIndex,
           ProfileIcon: profileIcon,
           WinStreak: null,
-          RankedTier: null,
+          RankedTier: rankedTier,
           Handicap: 0,
           RingoutVfx: playerConfig.RingoutVfx ?? "ring_out_vfx_default",
           Character: character,
@@ -1103,7 +1123,7 @@ export class WebSocketService {
           bModeGrantsProgress: true,
           TeamData: [],
           Spectators,
-          bIsRanked: false,
+          bIsRanked: !(notification.isCustomGame ?? false),
           bIsCustomGame: notification.isCustomGame ?? false,
           Players,
           CustomGameSettings: {
@@ -1126,7 +1146,7 @@ export class WebSocketService {
           bIsTutorial: false,
           MatchId: notification.matchId,
           bIsOnlineMatch: true,
-          ModeString: notification.isCustomGame ? "" : notification.mode,
+          ModeString: (notification.isCustomGame ?? false) ? notification.mode : `ranked-${notification.mode}`,
           Map: notification.map,
           bIsRift: false,
         },
@@ -1914,7 +1934,6 @@ export class WebSocketService {
           header: "",
           cmd: "profile-notification",
         };
-        //logger.info(`${logPrefix} END OF MATCH WS: ${JSON.stringify(data)}`);
         logger.info(`${logPrefix} Received End of Match for MatchID: ${client.matchConfig?.data.GameplayConfig.MatchId}`);
         logwrapper.verbose(`[${serviceName}]: End of Match data for match: ${JSON.stringify(data)}`);
         client.send(data);
@@ -1941,38 +1960,254 @@ export class WebSocketService {
       logger.info(`[${serviceName}]: Match ${notification.matchId} is a custom lobby match (${customLobbyCode}), skipping RematchDeclinedNotification`);
       await handleCustomLobbyMatchEnd(notification.matchId);
     } else {
-      // Normal match — send RematchDeclinedNotification after 1 second to kick to menus
-      for (const playerId of notification.playersIds) {
-        const client = this.clients.get(playerId);
-        if (client) {
-          setTimeout(() => {
-            const data = {
-              data: {
-                AccountId: playerId,
-                MatchId: notification.matchId,
-                template_id: "RematchDeclinedNotification",
-              },
-              payload: {
-                frm: {
-                  id: "internal-server",
-                  type: "server-api-key",
-                },
-                template: "realtime",
-                account_id: playerId,
-                profile_id: playerId,
-              },
-              header: "",
-              cmd: "profile-notification",
-            };
-            client.send(data);
-          }, 1000);
+      // Check if this is a ranked set (best-of-3) — store set state and wait for check-ins
+      const matchConfig = await redisGetMatchConfig(notification.matchId);
+      const existingSetId = notification.playersIds.length > 0
+        ? await redisClient.get(`player_ranked_set:${notification.playersIds[0]}`)
+        : null;
+
+      if (matchConfig && !matchConfig.isCustomGame) {
+        // Ranked match — check if the set is over or should continue
+        const setId = existingSetId || notification.matchId;
+        const existingSet = existingSetId
+          ? JSON.parse(await redisClient.get(`ranked_set:${existingSetId}`) || "null")
+          : null;
+
+        const gamesPlayed = existingSet ? existingSet.gamesPlayed + 1 : 1;
+        let scores = existingSet?.scores || [0, 0];
+
+        // For game 1, the set didn't exist when submit_end_of_match_stats fired,
+        // so check for a pending score stored directly on the match
+        if (!existingSet) {
+          const pendingWinner = await redisClient.get(`ranked_set_pending_winner:${notification.matchId}`);
+          if (pendingWinner !== null) {
+            const winIdx = parseInt(pendingWinner);
+            if (winIdx === 0 || winIdx === 1) {
+              scores = [0, 0];
+              scores[winIdx]++;
+            }
+            await redisClient.del(`ranked_set_pending_winner:${notification.matchId}`);
+          }
         }
+
+        const setOver = scores[0] >= 2 || scores[1] >= 2 || gamesPlayed >= 3;
+
+        if (setOver) {
+          // Set is over — process ELO and return to lobby
+          logger.info(`[${serviceName}]: Ranked set ${setId} — set complete (${scores[0]}-${scores[1]}) after ${gamesPlayed} games, processing ELO`);
+
+          // Process set-based ELO
+          try {
+            const { processSetResult } = await import("./services/eloService.js");
+            const team0Ids = existingSet.players.filter((p: any) => p.teamIndex === 0).map((p: any) => p.playerId);
+            const team1Ids = existingSet.players.filter((p: any) => p.teamIndex === 1).map((p: any) => p.playerId);
+            const winnerTeam = scores[0] > scores[1] ? 0 : 1;
+            const winnerIds = winnerTeam === 0 ? team0Ids : team1Ids;
+            const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
+            const playerChars = new Map<string, string>();
+            for (const pid of [...winnerIds, ...loserIds]) {
+              try {
+                const conn = await redisClient.hGetAll(`connections:${pid}`);
+                if (conn?.character) playerChars.set(pid, conn.character);
+              } catch {}
+            }
+            await processSetResult(winnerIds, loserIds, existingSet.mode, scores as [number, number], winnerTeam, false, playerChars);
+
+            // Send FullRankUpdate notification to each player with fresh ranked data
+            const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
+            for (const pid of [...winnerIds, ...loserIds]) {
+              const client = this.clients.get(pid);
+              if (!client) continue;
+              try {
+                const rating = await getOrCreateRating(pid, "");
+                const rank1v1 = await getPlayerRank(pid, "1v1");
+                const rank2v2 = await getPlayerRank(pid, "2v2");
+                const elo1v1 = rating?.elo_1v1 || 0;
+                const elo2v2 = rating?.elo_2v2 || 0;
+                const wins1v1 = rating?.wins_1v1 || 0;
+                const losses1v1 = rating?.losses_1v1 || 0;
+                const wins2v2 = rating?.wins_2v2 || 0;
+                const losses2v2 = rating?.losses_2v2 || 0;
+                const chars1v1 = (rating as any)?.characters_1v1 || {};
+                const chars2v2 = (rating as any)?.characters_2v2 || {};
+
+                // Get player's current character
+                let character = "";
+                try {
+                  const conn = await redisClient.hGetAll(`connections:${pid}`);
+                  character = conn?.character || "";
+                  if (!character) {
+                    const pd = await PlayerTesterModel.findById(pid).lean();
+                    character = (pd as any)?.character || "character_wonder_woman";
+                  }
+                } catch {}
+
+                const buildMode = (elo: number, wins: number, losses: number, rank: any, charMap: Record<string, any>) => {
+                  if ((wins + losses) === 0 && Object.keys(charMap).length === 0) {
+                    return { BestCharacter: { CurrentPoints: 0, MaxPoints: 0, GamesPlayed: 0, SetsPlayed: 0, CharacterSlug: "", LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) } }, DataByCharacter: {}, GamesPlayed: 0, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) }, SetsPlayed: 0, FinalLeaderboardRank: 0 };
+                  }
+                  const DataByCharacter: Record<string, any> = {};
+                  let bestChar = character;
+                  let bestElo = -1;
+                  for (const [slug, data] of Object.entries(charMap)) {
+                    const ce = (data as any).elo || 0;
+                    const cw = (data as any).wins || 0;
+                    const cl = (data as any).losses || 0;
+                    DataByCharacter[slug] = {
+                      CurrentPoints: ce, MaxPoints: ce,
+                      GamesPlayed: cw + cl, SetsPlayed: cw + cl,
+                      Wins: cw, Losses: cl,
+                      DamageDealt: 0, DamageTaken: 0, Ringouts: 0, Deaths: 0,
+                      LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
+                      LastDecayMs: 0,
+                    };
+                    if (ce > bestElo) { bestElo = ce; bestChar = slug; }
+                  }
+                  if (Object.keys(DataByCharacter).length === 0) {
+                    DataByCharacter[character] = {
+                      CurrentPoints: elo, MaxPoints: elo,
+                      GamesPlayed: wins + losses, SetsPlayed: wins + losses,
+                      Wins: wins, Losses: losses,
+                      DamageDealt: 0, DamageTaken: 0, Ringouts: 0, Deaths: 0,
+                      LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
+                      LastDecayMs: 0,
+                    };
+                  }
+                  return {
+                    BestCharacter: {
+                      CurrentPoints: bestElo, MaxPoints: bestElo,
+                      GamesPlayed: wins + losses, SetsPlayed: wins + losses,
+                      CharacterSlug: bestChar,
+                      LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
+                    },
+                    DataByCharacter,
+                    GamesPlayed: wins + losses,
+                    LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
+                    SetsPlayed: wins + losses,
+                    FinalLeaderboardRank: rank?.rank || 0,
+                  };
+                };
+
+                const rankedPayload = {
+                  SeasonalData: {
+                    "Season:SeasonFive": {
+                      Ranked: {
+                        DataByMode: {
+                          "1v1": buildMode(elo1v1, wins1v1, losses1v1, rank1v1, chars1v1),
+                          "2v2": buildMode(elo2v2, wins2v2, losses2v2, rank2v2, chars2v2),
+                        },
+                        ClaimedRewards: [],
+                        bEndOfSeasonRewardsGranted: false,
+                      },
+                    },
+                  },
+                };
+
+                // Try FullRankUpdate notification
+                client.send({
+                  data: {
+                    template_id: "FullRankUpdate",
+                    ...rankedPayload,
+                  },
+                  payload: {
+                    frm: { id: "internal-server", type: "server-api-key" },
+                    template: "realtime",
+                    account_id: pid,
+                    profile_id: pid,
+                  },
+                  header: "",
+                  cmd: "profile-notification",
+                });
+                logger.info(`[${serviceName}]: Sent FullRankUpdate to ${pid} (elo=${elo1v1})`);
+              } catch (e) {
+                logger.error(`[${serviceName}]: Error sending FullRankUpdate to ${pid}: ${e}`);
+              }
+            }
+          } catch (e) {
+            logger.error(`[${serviceName}]: Error processing set ELO: ${e}`);
+          }
+
+          // Clean up set state
+          for (const playerId of notification.playersIds) {
+            await redisClient.del(`player_ranked_set:${playerId}`);
+          }
+          await redisClient.del(`ranked_set:${setId}`);
+          // Send MatchSetLeaverNotification to end the set
+          for (const playerId of notification.playersIds) {
+            const client = this.clients.get(playerId);
+            if (client) {
+              setTimeout(() => {
+                client.send({
+                  data: {
+                    AccountId: playerId,
+                    MatchId: notification.matchId,
+                    template_id: "MatchSetLeaverNotification",
+                  },
+                  payload: {
+                    frm: { id: "internal-server", type: "server-api-key" },
+                    template: "realtime",
+                    account_id: playerId,
+                    profile_id: playerId,
+                  },
+                  header: "",
+                  cmd: "profile-notification",
+                });
+              }, 1000);
+            }
+          }
+        } else {
+          // Set continues — store state and wait for check-ins
+          const setState = {
+            players: matchConfig.players,
+            mode: matchConfig.mode,
+            gamesPlayed,
+            scores,
+            checkins: [] as string[],
+          };
+          await redisClient.set(`ranked_set:${setId}`, JSON.stringify(setState), { EX: 600 });
+          for (const playerId of notification.playersIds) {
+            await redisClient.set(`player_ranked_set:${playerId}`, setId, { EX: 600 });
+          }
+          logger.info(`[${serviceName}]: Ranked set ${setId} — game ${gamesPlayed}/3 complete (${scores[0]}-${scores[1]}), waiting for check-ins`);
+        }
+      } else {
+        // Non-ranked or no config — send RematchDeclinedNotification after 1 second to kick to menus
+        this.sendRematchDeclinedToPlayers(notification.playersIds, notification.matchId);
       }
     }
 
     // Preserve party lobby state for players who were in a multi-player lobby
     // so they rejoin the same party after the match ends
     this.handlePostMatchPartyPreservation(notification.playersIds);
+  }
+
+  sendRematchDeclinedToPlayers(playerIds: string[], matchId: string) {
+    for (const playerId of playerIds) {
+      const client = this.clients.get(playerId);
+      if (client) {
+        setTimeout(() => {
+          const data = {
+            data: {
+              AccountId: playerId,
+              MatchId: matchId,
+              template_id: "RematchDeclinedNotification",
+            },
+            payload: {
+              frm: {
+                id: "internal-server",
+                type: "server-api-key",
+              },
+              template: "realtime",
+              account_id: playerId,
+              profile_id: playerId,
+            },
+            header: "",
+            cmd: "profile-notification",
+          };
+          client.send(data);
+        }, 1000);
+      }
+    }
   }
 
   async handlePostMatchPartyPreservation(playerIds: string[]) {
@@ -1987,6 +2222,7 @@ export class WebSocketService {
         // Refresh TTLs so the lobby survives through long sessions
         await redisSaveLobbyState(lobbyId, lobbyState);
         await redisSavePlayerLobby(playerId, lobbyId);
+        await redisClient.del(`party_ready:${lobbyId}`);
 
         // This player is in a party — preserve their lobby data through disconnect
         // so the REJOIN path in create_party_lobby works when they reconnect
@@ -2213,6 +2449,151 @@ export class WebSocketService {
           };
           client.send(data);
         }
+      }
+    });
+
+    // Ranked set: concede — send MatchSetLeaverNotification to all players
+    this.redisSub.subscribe("ranked_set:leaver", (message) => {
+      const { playerIds, leaverPlayerId, matchId } = JSON.parse(message);
+      logger.info(`[${serviceName}]: Sending MatchSetLeaverNotification to ${playerIds.length} players (leaver: ${leaverPlayerId})`);
+      for (const playerId of playerIds) {
+        const client = this.clients.get(playerId);
+        if (client) {
+          const data = {
+            data: {
+              AccountId: leaverPlayerId,
+              MatchId: matchId,
+              template_id: "MatchSetLeaverNotification",
+            },
+            payload: {
+              frm: {
+                id: "internal-server",
+                type: "server-api-key",
+              },
+              template: "realtime",
+              account_id: playerId,
+              profile_id: playerId,
+            },
+            header: "",
+            cmd: "profile-notification",
+          };
+          client.send(data);
+          logger.info(`[${serviceName}]: Sent MatchSetLeaverNotification to ${playerId}`);
+
+          // Follow up with empty OnGameplayConfigNotified to trigger HandleGameplayConfigParsedOrReturnToLobby
+          setTimeout(() => {
+            client.send({
+              data: {
+                MatchId: "",
+                GameplayConfig: null,
+                template_id: "OnGameplayConfigNotified",
+              },
+              payload: {
+                match: { id: "" },
+                custom_notification: "realtime",
+              },
+              header: "",
+              cmd: "update",
+            });
+            logger.info(`[${serviceName}]: Sent empty OnGameplayConfigNotified to ${playerId} (return to lobby)`);
+          }, 500);
+
+          // FullRankUpdate is sent after ELO processing (both match-end and concede paths)
+        }
+      }
+    });
+
+    // FullRankUpdate from concede path (match-end path sends inline above)
+    this.redisSub.subscribe("ranked_set:fullrankupdate", async (message) => {
+      try {
+        const { playerIds } = JSON.parse(message);
+        logger.info(`[${serviceName}]: FullRankUpdate (concede) for ${playerIds.length} players`);
+        const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
+        for (const pid of playerIds) {
+          const client = this.clients.get(pid);
+          if (!client) continue;
+          try {
+            const rating = await getOrCreateRating(pid, "");
+            const rank1v1 = await getPlayerRank(pid, "1v1");
+            const rank2v2 = await getPlayerRank(pid, "2v2");
+            const elo1v1 = rating?.elo_1v1 || 0;
+            const elo2v2 = rating?.elo_2v2 || 0;
+            const chars1v1 = (rating as any)?.characters_1v1 || {};
+            const chars2v2 = (rating as any)?.characters_2v2 || {};
+            let character = "";
+            try {
+              const conn = await redisClient.hGetAll(`connections:${pid}`);
+              character = conn?.character || "";
+              if (!character) { const pd = await PlayerTesterModel.findById(pid).lean(); character = (pd as any)?.character || "character_wonder_woman"; }
+            } catch {}
+
+            const buildMode = (elo: number, wins: number, losses: number, rank: any, charMap: Record<string, any>) => {
+              if ((wins + losses) === 0 && Object.keys(charMap).length === 0) {
+                return { BestCharacter: { CurrentPoints: 0, MaxPoints: 0, GamesPlayed: 0, SetsPlayed: 0, CharacterSlug: "", LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) } }, DataByCharacter: {}, GamesPlayed: 0, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) }, SetsPlayed: 0, FinalLeaderboardRank: 0 };
+              }
+              const DataByCharacter: Record<string, any> = {};
+              let bestChar = character; let bestElo = -1;
+              for (const [slug, data] of Object.entries(charMap)) {
+                const ce = (data as any).elo || 0; const cw = (data as any).wins || 0; const cl = (data as any).losses || 0;
+                DataByCharacter[slug] = { CurrentPoints: ce, MaxPoints: ce, GamesPlayed: cw + cl, SetsPlayed: cw + cl, Wins: cw, Losses: cl, DamageDealt: 0, DamageTaken: 0, Ringouts: 0, Deaths: 0, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) }, LastDecayMs: 0 };
+                if (ce > bestElo) { bestElo = ce; bestChar = slug; }
+              }
+              if (Object.keys(DataByCharacter).length === 0) {
+                DataByCharacter[character] = { CurrentPoints: elo, MaxPoints: elo, GamesPlayed: wins + losses, SetsPlayed: wins + losses, Wins: wins, Losses: losses, DamageDealt: 0, DamageTaken: 0, Ringouts: 0, Deaths: 0, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) }, LastDecayMs: 0 };
+              }
+              return { BestCharacter: { CurrentPoints: bestElo > 0 ? bestElo : elo, MaxPoints: bestElo > 0 ? bestElo : elo, GamesPlayed: wins + losses, SetsPlayed: wins + losses, CharacterSlug: bestChar, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) } }, DataByCharacter, GamesPlayed: wins + losses, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) }, SetsPlayed: wins + losses, FinalLeaderboardRank: rank?.rank || 0 };
+            };
+
+            client.send({
+              data: {
+                template_id: "FullRankUpdate",
+                SeasonalData: { "Season:SeasonFive": { Ranked: { DataByMode: { "1v1": buildMode(elo1v1, rating?.wins_1v1 || 0, rating?.losses_1v1 || 0, rank1v1, chars1v1), "2v2": buildMode(elo2v2, rating?.wins_2v2 || 0, rating?.losses_2v2 || 0, rank2v2, chars2v2) }, ClaimedRewards: [], bEndOfSeasonRewardsGranted: false } } },
+              },
+              payload: { frm: { id: "internal-server", type: "server-api-key" }, template: "realtime", account_id: pid, profile_id: pid },
+              header: "", cmd: "profile-notification",
+            });
+            logger.info(`[${serviceName}]: Sent FullRankUpdate to ${pid} (elo=${elo1v1}) [concede]`);
+          } catch (e) {
+            logger.error(`[${serviceName}]: Error sending FullRankUpdate to ${pid}: ${e}`);
+          }
+        }
+      } catch (e) {
+        logger.error(`[${serviceName}]: Error in ranked_set:fullrankupdate: ${e}`);
+      }
+    });
+
+    // Ranked set: check-in — notify players that someone checked in
+    this.redisSub.subscribe("ranked_set:checkin", (message) => {
+      try {
+        const { playerIds, checkedInPlayer, checkins } = JSON.parse(message);
+        logger.info(`[${serviceName}]: Ranked set check-in notification: ${checkedInPlayer} (${checkins.length}/${playerIds.length})`);
+        for (const playerId of playerIds) {
+          const client = this.clients.get(playerId);
+          if (client) {
+            const data = {
+              data: {
+                CheckedInAccountId: checkedInPlayer,
+                CheckedInCount: checkins.length,
+                TotalPlayers: playerIds.length,
+                template_id: "MatchSetCheckinNotification",
+              },
+              payload: {
+                frm: {
+                  id: "internal-server",
+                  type: "server-api-key",
+                },
+                template: "realtime",
+                account_id: playerId,
+                profile_id: playerId,
+              },
+              header: "",
+              cmd: "profile-notification",
+            };
+            client.send(data);
+          }
+        }
+      } catch (e) {
+        logger.error(`[${serviceName}]: Error handling ranked set checkin notification: ${e}`);
       }
     });
 

@@ -58,6 +58,15 @@ export class PlayerTester {
 
   @prop({ default: "" })
   public party_key!: string;
+
+  @prop({ index: true, sparse: true, unique: true })
+  public steamId?: string;
+
+  @prop({ index: true, sparse: true, unique: true })
+  public epicId?: string;
+
+  @prop({ index: true, sparse: true, unique: true })
+  public hardwareId?: string;
 }
 
 export const PlayerTesterModel = getModelForClass(PlayerTester);

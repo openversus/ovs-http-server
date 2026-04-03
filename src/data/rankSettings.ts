@@ -2,7 +2,7 @@ export const RANK_SETTINGS = {
   rankedsettings_default: {
     slug: "rankedsettings_default",
     data: {
-      AccountLevelRequiredForRanked: 5,
+      AccountLevelRequiredForRanked: 0,
       AssetBundleData: {
         Bundles: [],
       },

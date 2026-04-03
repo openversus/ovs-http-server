@@ -25,6 +25,29 @@ import env from "./env/env";
 const serviceName = "MatchmakingWorker";
 const logPrefix = `[${serviceName}]:`;
 const CHECK_INTERVAL_MS = 2000;
+const LOCK_TTL_SECONDS = 10; // Auto-expire lock if worker crashes
+const workerId = `worker_${process.pid}_${Date.now()}`;
+
+/**
+ * Acquire a distributed lock via Redis SET NX EX.
+ * Returns true if lock acquired, false if another worker holds it.
+ */
+async function acquireLock(queueKey: string): Promise<boolean> {
+  const lockKey = `matchmaking:lock:${queueKey}`;
+  const result = await redisClient.set(lockKey, workerId, { NX: true, EX: LOCK_TTL_SECONDS });
+  return result === "OK";
+}
+
+/**
+ * Release a distributed lock. Only releases if we own it (prevents releasing another worker's lock).
+ */
+async function releaseLock(queueKey: string): Promise<void> {
+  const lockKey = `matchmaking:lock:${queueKey}`;
+  const owner = await redisClient.get(lockKey);
+  if (owner === workerId) {
+    await redisClient.del(lockKey);
+  }
+}
 
 const MATCH_RULES = {
   "1v1": {
@@ -44,11 +67,11 @@ const MATCH_RULES = {
 
 function getEloRange(ticketAgeSec: number): number {
   if (ticketAgeSec < 5) {
-    // 0-5 seconds: tight range
-    return 100;
-  } else if (ticketAgeSec < 10) {
-    // 5-10 seconds: wider range
+    // 0-5 seconds: ~1 tier range
     return 250;
+  } else if (ticketAgeSec < 10) {
+    // 5-10 seconds: ~2 tier range
+    return 500;
   } else {
     // 10+ seconds: match anyone
     return Infinity;
@@ -120,8 +143,8 @@ async function deduplicateQueue(queueKey: string, tickets: RedisMatchTicket[]): 
 function areTicketsInRange(ticketA: RedisMatchTicket, ticketB: RedisMatchTicket, nowSec: number): boolean {
   const ageA = nowSec - ticketA.created_at; // both in seconds
   const ageB = nowSec - ticketB.created_at;
-  // Use the wider range (from the ticket that's been waiting longer)
-  const range = Math.max(getEloRange(ageA), getEloRange(ageB));
+  // Both players must be within range — use the stricter (shorter waiting) range
+  const range = Math.min(getEloRange(ageA), getEloRange(ageB));
   const skillDiff = Math.abs(getTicketAvgSkill(ticketA) - getTicketAvgSkill(ticketB));
   return skillDiff <= range;
 }
@@ -138,6 +161,7 @@ export function startMatchMakingWorker(): void {
 
 // Process 1v1 matchmaking queue with ELO-based matching
 async function process1v1Queue(queueKey: string = MATCH_TYPES.ONE_V_ONE): Promise<boolean> {
+  if (!await acquireLock(queueKey)) return false;
   try {
     // Get all tickets in the queue
     let tickets = await redisGetMatchTickets(queueKey);
@@ -153,13 +177,13 @@ async function process1v1Queue(queueKey: string = MATCH_TYPES.ONE_V_ONE): Promis
       return false;
     }
 
-    logger.info(`${logPrefix} Found ${tickets.length} tickets in ${queueKey} queue, attempting to create a match`);
+    logger.trace(`${logPrefix} Found ${tickets.length} tickets in ${queueKey} queue, attempting to create a match`);
 
     // Filter to solo players only
     const soloTickets = tickets.filter((t) => t.party_size === 1);
 
     if (soloTickets.length < MATCH_RULES["1v1"].teamsRequired) {
-      logger.info(`${logPrefix} Not enough solo tickets for a 1v1 match in ${queueKey} (need 2, found ${soloTickets.length})`);
+      logger.trace(`${logPrefix} Not enough solo tickets for a 1v1 match in ${queueKey} (need 2, found ${soloTickets.length})`);
       return false;
     }
 
@@ -191,17 +215,20 @@ async function process1v1Queue(queueKey: string = MATCH_TYPES.ONE_V_ONE): Promis
       }
     }
 
-    logger.info(`${logPrefix} No ELO-compatible 1v1 match found in ${queueKey} yet (${soloTickets.length} waiting)`);
+    logger.trace(`${logPrefix} No ELO-compatible 1v1 match found in ${queueKey} yet (${soloTickets.length} waiting)`);
     return false;
   }
   catch (error) {
     logger.error(`${logPrefix} Error processing 1v1 queue ${queueKey}: ${error}`);
     return false;
+  } finally {
+    await releaseLock(queueKey);
   }
 }
 
 // Process 2v2 matchmaking queue with ELO-based matching
 async function process2v2Queue(queueKey: string = MATCH_TYPES.TWO_V_TWO): Promise<boolean> {
+  if (!await acquireLock(queueKey)) return false;
   try {
     // Get all tickets in the queue
     let tickets = await redisGetMatchTickets(queueKey);
@@ -216,7 +243,7 @@ async function process2v2Queue(queueKey: string = MATCH_TYPES.TWO_V_TWO): Promis
       return false; // Not enough players to make a match
     }
 
-    logger.info(`${logPrefix} Found ${tickets.length} tickets (${totalPlayersInQueue} players) in ${queueKey} queue, attempting to create a match`);
+    logger.trace(`${logPrefix} Found ${tickets.length} tickets (${totalPlayersInQueue} players) in ${queueKey} queue, attempting to create a match`);
 
     // Split tickets into duos and solos (preserving FIFO order within each group)
     const duos = tickets.filter((t) => t.players.length >= 2);
@@ -302,6 +329,8 @@ async function process2v2Queue(queueKey: string = MATCH_TYPES.TWO_V_TWO): Promis
   catch (error) {
     logger.error(`${logPrefix} Error processing 2v2 queue ${queueKey}: ${error}`);
     return false;
+  } finally {
+    await releaseLock(queueKey);
   }
 }
 

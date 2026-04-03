@@ -536,6 +536,11 @@ router.post("/matches/matchmaking/1v1-retail/request", (req: Request<{}, {}, {},
   h.handleMatches_matchmaking_1v1_retail_request(req, res);
 });
 
+router.post("/matches/matchmaking/ranked-1v1-retail/request", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  // @ts-ignore TODO : implementation. Remove comment once implemented
+  h.handleMatches_matchmaking_1v1_retail_request(req, res);
+});
+
 router.post("/matches/matchmaking/2v2-retail/request", (req: Request<{}, {}, {}, {}>, res: Response) => {
   // @ts-ignore TODO : implementation. Remove comment once implemented`
   h.handleMatches_matchmaking_2v2_retail_request(req, res);
@@ -565,9 +570,10 @@ router.put("/profiles/bulk", (req: Request<{}, {}, {}, MVSQueries.Profiles_bulk_
 // Without these routes, requests hit the catch-all and return SSC garbage.
 router.get("/accounts/:id", async (req: Request<{ id: string }>, res: Response) => {
   try {
-    const accountId = req.params.id;
-    // Skip "me" — handled elsewhere
-    if (accountId === "me") {
+    // Resolve "me" to actual account ID from auth token
+    const accountId = req.params.id === "me" ? req.token?.id : req.params.id;
+    if (!accountId) {
+      logger.warn(`[Accounts]: Cannot resolve "me" — no token`);
       res.send({});
       return;
     }
@@ -599,7 +605,13 @@ router.get("/accounts/:id", async (req: Request<{ id: string }>, res: Response) 
 
 router.get("/profiles/:id", async (req: Request<{ id: string }>, res: Response) => {
   try {
-    const accountId = req.params.id;
+    // Resolve "me" to actual account ID from auth token
+    const accountId = req.params.id === "me" ? req.token?.id : req.params.id;
+    if (!accountId) {
+      logger.warn(`[Profiles]: Cannot resolve "me" — no token`);
+      res.send({});
+      return;
+    }
     logger.info(`[Profiles]: GET /profiles/${accountId}`);
 
     const profile = await getProfileForMatch(accountId);

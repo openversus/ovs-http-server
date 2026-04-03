@@ -143,7 +143,7 @@ export function generate_hiss() {
         "feature-toggles": {
           _hydra_compressed: {
             IsSpectatorEnabled: true,
-            IsRankedEnabled: false,
+            IsRankedEnabled: true,
             LoadoutValidation: true,
             RetailMatchmakingCriteria: true,
             Perks: true,
@@ -156,7 +156,7 @@ export function generate_hiss() {
             TimedRiftDifficultyReleases: true,
             QueuedGameplaySessionInvites: true,
             RiftReleaseDates: true,
-            IsRankedUIEnabled: false,
+            IsRankedUIEnabled: true,
             IsRankedQueueEnabled: false,
             AlwaysEnterBots: false,
             FFA: true,
@@ -166,7 +166,7 @@ export function generate_hiss() {
             EnableFeaturedBundlesInVariantSelect: true,
             AllowSelectingUnownedCharactersLocalPlay: true,
             IsFeaturedBundlesInCarouselEnabled: true,
-            EnableBoostedSkinSurfacing: true,
+            EnableBoostedSkinSurfacing: false,
             EndFtueOnCurrentSeason: true,
             EnableMonitorSwitchingFix: true,
             HissInvalidationKick: false,

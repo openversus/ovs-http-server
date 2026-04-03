@@ -1,5 +1,6 @@
 import { logger } from "./config/logger";
 import { startRedis } from "./config/redis";
+import { connect as connectMongo } from "./database/client";
 import { WebSocketService } from "./websocket";
 import * as http from "http";
 import * as fs from "fs";
@@ -32,7 +33,8 @@ const server = http.createServer((req, res) => {
   res.end("HTTP server is running\n");
 });
 const websocket = new WebSocketService(server);
-startRedis().then(() => {
+startRedis().then(async () => {
+  await connectMongo();
   // Start the HTTP server on port 3000
   const PORT = env.WEBSOCKET_PORT || 3000;
   server.listen(PORT, () => {

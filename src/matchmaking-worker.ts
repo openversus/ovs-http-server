@@ -25,6 +25,29 @@ import env from "./env/env";
 const serviceName = "MatchmakingWorker";
 const logPrefix = `[${serviceName}]:`;
 const CHECK_INTERVAL_MS = 2000;
+const LOCK_TTL_SECONDS = 10; // Auto-expire lock if worker crashes
+const workerId = `worker_${process.pid}_${Date.now()}`;
+
+/**
+ * Acquire a distributed lock via Redis SET NX EX.
+ * Returns true if lock acquired, false if another worker holds it.
+ */
+async function acquireLock(queueKey: string): Promise<boolean> {
+  const lockKey = `matchmaking:lock:${queueKey}`;
+  const result = await redisClient.set(lockKey, workerId, { NX: true, EX: LOCK_TTL_SECONDS });
+  return result === "OK";
+}
+
+/**
+ * Release a distributed lock. Only releases if we own it (prevents releasing another worker's lock).
+ */
+async function releaseLock(queueKey: string): Promise<void> {
+  const lockKey = `matchmaking:lock:${queueKey}`;
+  const owner = await redisClient.get(lockKey);
+  if (owner === workerId) {
+    await redisClient.del(lockKey);
+  }
+}
 
 const MATCH_RULES = {
   "1v1": {
@@ -138,6 +161,7 @@ export function startMatchMakingWorker(): void {
 
 // Process 1v1 matchmaking queue with ELO-based matching
 async function process1v1Queue(queueKey: string = MATCH_TYPES.ONE_V_ONE): Promise<boolean> {
+  if (!await acquireLock(queueKey)) return false;
   try {
     // Get all tickets in the queue
     let tickets = await redisGetMatchTickets(queueKey);
@@ -197,11 +221,14 @@ async function process1v1Queue(queueKey: string = MATCH_TYPES.ONE_V_ONE): Promis
   catch (error) {
     logger.error(`${logPrefix} Error processing 1v1 queue ${queueKey}: ${error}`);
     return false;
+  } finally {
+    await releaseLock(queueKey);
   }
 }
 
 // Process 2v2 matchmaking queue with ELO-based matching
 async function process2v2Queue(queueKey: string = MATCH_TYPES.TWO_V_TWO): Promise<boolean> {
+  if (!await acquireLock(queueKey)) return false;
   try {
     // Get all tickets in the queue
     let tickets = await redisGetMatchTickets(queueKey);
@@ -302,6 +329,8 @@ async function process2v2Queue(queueKey: string = MATCH_TYPES.TWO_V_TWO): Promis
   catch (error) {
     logger.error(`${logPrefix} Error processing 2v2 queue ${queueKey}: ${error}`);
     return false;
+  } finally {
+    await releaseLock(queueKey);
   }
 }
 

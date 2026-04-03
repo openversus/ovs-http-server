@@ -537,6 +537,7 @@ router.post("/matches/matchmaking/1v1-retail/request", (req: Request<{}, {}, {},
 });
 
 router.post("/matches/matchmaking/ranked-1v1-retail/request", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  // @ts-ignore TODO : implementation. Remove comment once implemented
   h.handleMatches_matchmaking_1v1_retail_request(req, res);
 });
 

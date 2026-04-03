@@ -90,7 +90,7 @@ async function generateStaticAccess(req: express.Request) {
     }
   } else {
     // Backfill identity fields — also overwrite if existing value is an old IP fallback
-    const isStale = (val: string) => !val || val === "Unknown" || val.startsWith("ip_");
+    const isStale = (val: string | undefined) => !val || val === "Unknown" || val.startsWith("ip_");
     let dirty = false;
     if (steamId && isStale(player.steamId)) { player.steamId = steamId; dirty = true; }
     if (epicId && isStale(player.epicId)) { player.epicId = epicId; dirty = true; }

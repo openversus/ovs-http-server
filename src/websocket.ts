@@ -93,6 +93,7 @@ import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./dat
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 import { cancelMatchmakingForAll } from "./services/matchmakingService";
 import { processMatchLeave, getOrCreateRating, eloToTierDivision } from "./services/eloService";
+import { PlayerTesterModel } from "./database/PlayerTester";
 
 const serviceName: string = "WebSocket";
 const logPrefix = `[${serviceName}]:`;
@@ -888,7 +889,7 @@ export class WebSocketService {
             const eloRating = await getOrCreateRating(player.playerId);
             const is2v2 = notification.mode === "2v2";
             const charsField = is2v2 ? "characters_2v2" : "characters_1v1";
-            const charSlug = playerConfig?.character || "";
+            const charSlug = character || "";
             const charData = (eloRating as any)[charsField]?.[charSlug];
             const elo = charData ? charData.elo : (is2v2 ? eloRating.elo_2v2 : eloRating.elo_1v1);
             const tierInfo = eloToTierDivision(elo);
@@ -973,13 +974,13 @@ export class WebSocketService {
           GameplayPreferences: GameplayPreferences,
           BotDifficultyMax: 0,
           bIsBot: false,
-          RankedDivision: rankedDivision,
+          RankedDivision: null,
           bUseCharacterDisplayName: false,
           StartingDamage: 0,
           TeamIndex: player.teamIndex,
           ProfileIcon: "profile_icon_default_gold",
           WinStreak: null,
-          RankedTier: rankedTier,
+          RankedTier: null,
           Handicap: 0,
           RingoutVfx: "ring_out_vfx_default",
           Character: character,
@@ -1997,7 +1998,7 @@ export class WebSocketService {
 
           // Process set-based ELO
           try {
-            const { processSetResult } = await import("./services/eloService");
+            const { processSetResult } = await import("./services/eloService.js");
             const team0Ids = existingSet.players.filter((p: any) => p.teamIndex === 0).map((p: any) => p.playerId);
             const team1Ids = existingSet.players.filter((p: any) => p.teamIndex === 1).map((p: any) => p.playerId);
             const winnerTeam = scores[0] > scores[1] ? 0 : 1;
@@ -2013,7 +2014,7 @@ export class WebSocketService {
             await processSetResult(winnerIds, loserIds, existingSet.mode, scores as [number, number], winnerTeam, false, playerChars);
 
             // Send FullRankUpdate notification to each player with fresh ranked data
-            const { getOrCreateRating, getPlayerRank } = await import("./services/eloService");
+            const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
             for (const pid of [...winnerIds, ...loserIds]) {
               const client = this.clients.get(pid);
               if (!client) continue;
@@ -2507,7 +2508,7 @@ export class WebSocketService {
       try {
         const { playerIds } = JSON.parse(message);
         logger.info(`[${serviceName}]: FullRankUpdate (concede) for ${playerIds.length} players`);
-        const { getOrCreateRating, getPlayerRank } = await import("./services/eloService");
+        const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
         for (const pid of playerIds) {
           const client = this.clients.get(pid);
           if (!client) continue;

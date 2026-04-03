@@ -402,7 +402,7 @@ export async function processMatchResult(matchId: string, winningTeamIndex: numb
     for (const rating of winnerRatings) {
       const playerElo = rating[eloField];
       const totalGames = rating[winsField] + rating[lossesField];
-      const K = getKFactor(totalGames, is1v1);
+      const K = getKFactor(totalGames);
       const expected = expectedScore(playerElo, avgLoserElo);
       const delta = Math.round(K * (1 - expected));
       const newElo = Math.max(0, playerElo + delta);
@@ -424,7 +424,7 @@ export async function processMatchResult(matchId: string, winningTeamIndex: numb
     for (const rating of loserRatings) {
       const playerElo = rating[eloField];
       const totalGames = rating[winsField] + rating[lossesField];
-      const K = getKFactor(totalGames, is1v1);
+      const K = getKFactor(totalGames);
       const expected = expectedScore(playerElo, avgWinnerElo);
       const delta = Math.round(K * (0 - expected));
       const newElo = Math.max(0, playerElo + delta);

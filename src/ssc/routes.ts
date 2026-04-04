@@ -50,12 +50,33 @@ sscRouter.put("/ssc/invoke/perks_absent", (req: Request, res: Response) => {
 });
 
 // Faceoff timeout — opponent never loaded into the match (dodged)
-// Return the player to lobby
+// Clean up ranked set if one exists
 sscRouter.put("/ssc/invoke/faceoff_timeout", async (req: Request, res: Response) => {
   try {
     const account = AuthUtils.DecodeClientToken(req);
     const playerId = account?.id;
     logger.info(`[SSC.Routes]: faceoff_timeout from player ${playerId}`);
+
+    // Clean up any ranked set this player is in
+    if (playerId) {
+      const setId = await redisClient.get(`player_ranked_set:${playerId}`);
+      if (setId) {
+        const setRaw = await redisClient.get(`ranked_set:${setId}`);
+        if (setRaw) {
+          const setState = JSON.parse(setRaw);
+          const allPlayerIds = [...new Set(setState.players.map((p: any) => p.playerId))] as string[];
+          logger.info(`[SSC.Routes]: faceoff_timeout cleaning up ranked set ${setId}`);
+
+          // Clean up set state
+          for (const pid of allPlayerIds) {
+            await redisClient.del(`player_ranked_set:${pid}`);
+            await redisClient.del(`ranked_disconnect:${pid}`);
+          }
+          await redisClient.del(`ranked_set:${setId}`);
+          await redisClient.del(`ranked_set_checkins:${setId}`);
+        }
+      }
+    }
   } catch (e) {
     logger.error(`[SSC.Routes]: faceoff_timeout error: ${e}`);
   }
@@ -272,12 +293,21 @@ async function handleRankedSetCheckin(playerId: string) {
   // Get unique player IDs from team entries
   const allPlayerIds = [...new Set(setState.players.map((p: any) => p.playerId))] as string[];
 
-  // Check if any opponent disconnected — auto-concede the set
+  // Check if any player disconnected — auto-concede the set
+  // Verify the player is actually offline (not a stale flag from a previous match)
   for (const pid of allPlayerIds) {
     if (pid === playerId) continue; // skip the player who just checked in
     const disconnectFlag = await redisClient.get(`ranked_disconnect:${pid}`);
     if (disconnectFlag) {
-      logger.info(`[SSC.Routes]: Opponent ${pid} disconnected — auto-conceding set ${setId} on behalf of disconnected player`);
+      // Verify player is actually offline before conceding
+      const isOnline = await redisClient.sIsMember("online_players", pid);
+      if (isOnline) {
+        // Player reconnected — stale flag from previous match, clean it up
+        logger.info(`[SSC.Routes]: Stale ranked_disconnect flag for ${pid} (online now), cleaning up`);
+        await redisClient.del(`ranked_disconnect:${pid}`);
+        continue;
+      }
+      logger.info(`[SSC.Routes]: Player ${pid} disconnected and offline — auto-conceding set ${setId}`);
       await redisClient.del(`ranked_disconnect:${pid}`);
 
       // Process as concede — disconnected player loses

@@ -49,6 +49,19 @@ sscRouter.put("/ssc/invoke/perks_absent", (req: Request, res: Response) => {
   set_perks_absent(req, res);
 });
 
+// Faceoff timeout — opponent never loaded into the match (dodged)
+// Return the player to lobby
+sscRouter.put("/ssc/invoke/faceoff_timeout", async (req: Request, res: Response) => {
+  try {
+    const account = AuthUtils.DecodeClientToken(req);
+    const playerId = account?.id;
+    logger.info(`[SSC.Routes]: faceoff_timeout from player ${playerId}`);
+  } catch (e) {
+    logger.error(`[SSC.Routes]: faceoff_timeout error: ${e}`);
+  }
+  res.send({ body: {}, metadata: null, return_code: 0 });
+});
+
 sscRouter.put("/ssc/invoke/perks_set_character_page", (req: Request, res: Response) => {
   perks_set_page(req, res);
 });
@@ -163,6 +176,7 @@ sscRouter.put("/ssc/invoke/match_set_concede", async (req: Request, res: Respons
             await redisClient.del(`player_ranked_set:${pid}`);
           }
           await redisClient.del(`ranked_set:${setId}`);
+      await redisClient.del(`ranked_set_checkins:${setId}`);
 
           // Send MatchSetLeaverNotification + empty OnGameplayConfigNotified to all players
           await redisClient.publish("ranked_set:leaver", JSON.stringify({
@@ -230,6 +244,13 @@ async function handleRankedSetCheckin(playerId: string) {
     return;
   }
 
+  // Atomic checkin using Redis SET — avoids read-modify-write race condition
+  // when multiple players check in simultaneously
+  const checkinKey = `ranked_set_checkins:${setId}`;
+  const added = await redisClient.sAdd(checkinKey, playerId);
+  await redisClient.expire(checkinKey, 600);
+  const checkinCount = await redisClient.sCard(checkinKey);
+
   const setRaw = await redisClient.get(`ranked_set:${setId}`);
   if (!setRaw) {
     logger.warn(`[SSC.Routes]: Ranked set ${setId} not found in Redis`);
@@ -238,13 +259,14 @@ async function handleRankedSetCheckin(playerId: string) {
 
   const setState = JSON.parse(setRaw);
 
-  // Avoid duplicate check-ins — but still check for disconnected opponents
-  if (setState.checkins.includes(playerId)) {
+  if (added === 0) {
     logger.info(`[SSC.Routes]: Player ${playerId} already checked in for set ${setId}, checking for disconnected opponents`);
   } else {
-    setState.checkins.push(playerId);
+    // Update the checkins array in setState for compatibility with downstream code
+    setState.checkins = await redisClient.sMembers(checkinKey);
     await redisClient.set(`ranked_set:${setId}`, JSON.stringify(setState), { EX: 600 });
-    logger.info(`[SSC.Routes]: Set ${setId} check-in: ${setState.checkins.length}/${[...new Set(setState.players.map((p: any) => p.playerId))].length}`);
+    const allPlayerIds = [...new Set(setState.players.map((p: any) => p.playerId))] as string[];
+    logger.info(`[SSC.Routes]: Set ${setId} check-in: ${checkinCount}/${allPlayerIds.length}`);
   }
 
   // Get unique player IDs from team entries
@@ -281,6 +303,7 @@ async function handleRankedSetCheckin(playerId: string) {
         await redisClient.del(`player_ranked_set:${cid}`);
       }
       await redisClient.del(`ranked_set:${setId}`);
+      await redisClient.del(`ranked_set_checkins:${setId}`);
 
       // Send leaver notification — this triggers MatchSetLeaverNotification + OnGameplayConfigNotified
       await redisClient.publish("ranked_set:leaver", JSON.stringify({
@@ -301,7 +324,7 @@ async function handleRankedSetCheckin(playerId: string) {
     setId,
   }));
 
-  if (setState.checkins.length >= allPlayerIds.length) {
+  if (checkinCount >= allPlayerIds.length) {
     // Dedup: prevent double match creation from checkin + absent race
     const dedup = await redisClient.set(`set_match_dedup:${setId}:${setState.gamesPlayed}`, "1", { NX: true, EX: 30 });
     if (dedup !== "OK") {
@@ -341,6 +364,7 @@ async function handleRankedSetCheckin(playerId: string) {
         await redisClient.del(`player_ranked_set:${pid}`);
       }
       await redisClient.del(`ranked_set:${setId}`);
+      await redisClient.del(`ranked_set_checkins:${setId}`);
       // Send MatchSetLeaverNotification after SSC response
       const leaverPlayer = setState.concedingPlayer || allPlayerIds[0];
       setTimeout(async () => {
@@ -423,6 +447,7 @@ async function createNextSetMatch(setId: string, setState: any) {
 
   // Update set state: reset checkins, update matchId mappings
   setState.checkins = [];
+  await redisClient.del(`ranked_set_checkins:${setId}`);
   await redisClient.set(`ranked_set:${setId}`, JSON.stringify(setState), { EX: 600 });
 
   // Update player→set mappings (keep pointing to original setId)

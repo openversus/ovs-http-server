@@ -415,17 +415,78 @@ export class WebSocketService {
         logger.error(`[${serviceName}]: Error disbanding party for disconnected player ${playerId}: ${err}`);
       }
 
-      // If the player was in an active match, treat the disconnect as a forfeit
-      // (dedup prevents double ELO processing if end-of-match also fires)
+      // If the player was in an active match, process dodge as concede loss
+      // Uses processSetResult (per-character ELO) instead of processMatchResult (global-only)
       try {
         const matchId = playerWS.matchConfig?.data?.GameplayConfig?.MatchId;
         if (matchId) {
           logger.info(
-            `[${serviceName}]: Player ${playerId} (${playerWS.account.username}) disconnected during active match ${matchId} — processing as forfeit`,
+            `[${serviceName}]: Player ${playerId} (${playerWS.account.username}) disconnected during active match ${matchId} — processing as dodge`,
           );
-          await processMatchLeave(matchId, playerId);
-          // Set a flag so when the match ends and ranked set is created,
-          // the server auto-concedes instead of waiting for checkins
+
+          // Process ELO immediately via per-character set system
+          const matchConfig = await redisGetMatchConfig(matchId);
+          if (matchConfig && !matchConfig.isCustomGame) {
+            const leaver = matchConfig.players.find((p) => p.playerId === playerId);
+            if (leaver) {
+              const winnerTeam = leaver.teamIndex === 0 ? 1 : 0;
+              const team0Ids = matchConfig.players.filter((p) => p.teamIndex === 0).map((p) => p.playerId);
+              const team1Ids = matchConfig.players.filter((p) => p.teamIndex === 1).map((p) => p.playerId);
+              const winnerIds = winnerTeam === 0 ? team0Ids : team1Ids;
+              const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
+
+              // Dedup — prevent double processing if match-end also fires
+              const dedupeKey = `elo_processed:${matchId}`;
+              const canProcess = await redisClient.set(dedupeKey, "dodge", { NX: true, EX: 300 });
+              if (canProcess === "OK") {
+                try {
+                  const { processSetResult } = await import("./services/eloService");
+                  const chars = new Map<string, string>();
+                  for (const pid of [...winnerIds, ...loserIds]) {
+                    try {
+                      const conn = await redisClient.hGetAll(`connections:${pid}`);
+                      if (conn?.character) chars.set(pid, conn.character);
+                    } catch {}
+                  }
+                  await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars);
+                  logger.info(`[${serviceName}]: Dodge ELO processed for match ${matchId} — ${playerId} penalized`);
+
+                  // Send FullRankUpdate to all players
+                  const allPlayerIds = matchConfig.players.map((p) => p.playerId);
+                  await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
+
+                  // Kick remaining players back to lobby immediately instead of waiting for faceoff_timeout
+                  const remainingIds = allPlayerIds.filter((id: string) => id !== playerId);
+                  for (const remainId of remainingIds) {
+                    const remainClient = this.clients.get(remainId);
+                    if (remainClient) {
+                      // Clear their match config so they don't stay in the match
+                      remainClient.matchConfig = undefined;
+                      setTimeout(() => {
+                        remainClient.send({
+                          data: { AccountId: playerId, MatchId: matchId, template_id: "MatchSetLeaverNotification" },
+                          payload: { frm: { id: "internal-server", type: "server-api-key" }, template: "realtime", account_id: remainId, profile_id: remainId },
+                          header: "", cmd: "profile-notification",
+                        });
+                      }, 500);
+                      setTimeout(() => {
+                        remainClient.send({
+                          data: { MatchId: "", GameplayConfig: null, template_id: "OnGameplayConfigNotified" },
+                          payload: { match: { id: "" }, custom_notification: "realtime" },
+                          header: "", cmd: "update",
+                        });
+                        logger.info(`[${serviceName}]: Sent dodge kick to ${remainId} — returning to lobby`);
+                      }, 1000);
+                    }
+                  }
+                } catch (eloErr) {
+                  logger.error(`[${serviceName}]: Error processing dodge ELO: ${eloErr}`);
+                }
+              }
+            }
+          }
+
+          // Also set disconnect flag in case there's a ranked set in progress
           await redisClient.set(`ranked_disconnect:${playerId}`, matchId, { EX: 120 });
           logger.info(`[${serviceName}]: Set ranked_disconnect flag for ${playerId} (match ${matchId})`);
         }
@@ -2149,6 +2210,7 @@ export class WebSocketService {
             await redisClient.del(`player_ranked_set:${playerId}`);
           }
           await redisClient.del(`ranked_set:${setId}`);
+          await redisClient.del(`ranked_set_checkins:${setId}`);
           // Send MatchSetLeaverNotification to end the set
           for (const playerId of notification.playersIds) {
             const client = this.clients.get(playerId);

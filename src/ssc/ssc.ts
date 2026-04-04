@@ -337,8 +337,12 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
   const account = req.token;
 
   let ip = (req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
-  let player = ip ? await PlayerTesterModel.findOne({ ip }) : null;
-  const aID = account?.id ?? player?.id; //player ? player.id : account.id;
+  const aID = account?.id;
+  if (!aID) {
+    logger.error(`${logPrefix} create_party_lobby: no account ID from token, IP=${ip}`);
+    res.send({ body: {}, metadata: null, return_code: 0 });
+    return;
+  }
 
   let character = "";
   let variant = "";
@@ -379,13 +383,15 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
     loadout.Skin = "skin_shaggy_default";
   }
 
-  let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
-  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.warn(`${logPrefix} No Redis player connection found for IP ${ip}, cannot set loadout.`);
-  }
-  let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`)) as unknown as RedisPlayerConnection;
+  // Look up connection data by player ID first, fall back to IP
+  let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${aID}`)) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
-    logger.warn(`${logPrefix} No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
+    const rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
+    if (rPlayerConnectionByIP?.id) {
+      rPlayerConnectionByID = rPlayerConnectionByIP;
+    } else {
+      logger.warn(`${logPrefix} No Redis connection found for player ${aID} or IP ${ip}`);
+    }
   }
 
   let rPlayerCosmetics = (await getEquippedCosmetics(rPlayerConnectionByID.id)) as Cosmetics;
@@ -982,11 +988,13 @@ export async function handleSsc_invoke_join_party_lobby(req: Request<{}, {}, {},
     return;
   }
 
+  let body = req.body as any;
+
   // Check pending_join_lobby FIRST — set by accept-invite or party_joined notification.
   // player_lobby still points to the OLD lobby (which leave_player_lobby just cleaned up).
   // The game's body often contains an internal lobby ID that doesn't match ours.
   const pendingLobbyId = await redisGetPendingJoinLobby(joiningPlayerId);
-  const bodyLobbyId = req.body?.LobbyId || req.body?.lobbyId || req.body?.MatchID || req.body?.matchId;
+  const bodyLobbyId = body?.LobbyId || body?.lobbyId || body?.MatchID || body?.matchId;
   const redisLobbyId = await redisGetPlayerLobby(joiningPlayerId);
 
   logger.info(`${logPrefix} join_party_lobby: Player ${joiningPlayerId} — pending=${pendingLobbyId}, body=${bodyLobbyId}, redis=${redisLobbyId}`);

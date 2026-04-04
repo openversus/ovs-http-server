@@ -354,7 +354,9 @@ app.post("/ovs_register", async (req, res, next) => {
     res.send("");
     return;
   }
-  // Send all players (including spectators) to the rollback server so spectators can connect
+  // Send all players (including spectators) to the rollback server
+  // Spectators are identified by playerIndex 8888
+  const activePlayers = config.players.filter((p) => !p.isSpectator);
   const players = config.players.map((p) => {
     return {
       player_index: p.playerIndex,
@@ -364,7 +366,7 @@ app.post("/ovs_register", async (req, res, next) => {
     };
   });
   res.json({
-    max_players: config.players.length,
+    max_players: activePlayers.length,
     match_duration: 36000,
     players,
   });

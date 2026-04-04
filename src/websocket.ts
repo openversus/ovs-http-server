@@ -2258,9 +2258,21 @@ export class WebSocketService {
       }
     }
 
-    // Preserve party lobby state for players who were in a multi-player lobby
-    // so they rejoin the same party after the match ends
-    this.handlePostMatchPartyPreservation(notification.playersIds);
+    // Preserve party lobby state ONLY if players are NOT in an active ranked set
+    // Ranked sets handle their own match creation via checkins — party preservation
+    // would interfere by creating matches through the lobby/rematch path instead
+    const anyInRankedSet = await Promise.any(
+      notification.playersIds.map(async (pid) => {
+        const setId = await redisClient.get(`player_ranked_set:${pid}`);
+        return !!setId;
+      })
+    ).catch(() => false);
+
+    if (!anyInRankedSet) {
+      this.handlePostMatchPartyPreservation(notification.playersIds);
+    } else {
+      logger.info(`[${serviceName}]: Skipping party preservation — players are in active ranked set`);
+    }
   }
 
   sendRematchDeclinedToPlayers(playerIds: string[], matchId: string) {

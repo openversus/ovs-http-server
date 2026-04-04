@@ -71,13 +71,19 @@ async function generateStaticAccess(req: express.Request) {
   const { steamId = "", epicId = "", hardwareId = "" } = identity ?? {};
 
   // Try to find existing player by identity fields first (prefer steamId > epicId > hardwareId)
-  // Only fall back to IP if NO identity was provided (old DLL without RegisterIdentity)
+  // Fall back to IP, but if steamId doesn't match the found player, create a new account
+  // (handles two Steam accounts on the same IP / same household)
   let player = null;
-  const hasIdentity = !!(steamId || epicId || hardwareId);
   if (steamId) player = await PlayerTesterModel.findOne({ steamId });
   if (!player && epicId) player = await PlayerTesterModel.findOne({ epicId });
   if (!player && hardwareId) player = await PlayerTesterModel.findOne({ hardwareId });
-  if (!player && !hasIdentity) player = await PlayerTesterModel.findOne({ ip });
+  if (!player) {
+    player = await PlayerTesterModel.findOne({ ip });
+    if (player && steamId && player.steamId && player.steamId !== steamId) {
+      logger.info(`${logPrefix} IP ${ip} matched player ${player.id} but steamId mismatch (${steamId} vs ${player.steamId}), creating new account`);
+      player = null;
+    }
+  }
 
   if (!player) {
     // generate a random name like OpenVersus_1247112554154

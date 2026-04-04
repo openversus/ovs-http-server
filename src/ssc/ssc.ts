@@ -337,9 +337,10 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
   const account = req.token;
 
   let ip = (req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
-  const aID = account?.id;
+  let player = ip ? await PlayerTesterModel.findOne({ ip }) : null;
+  const aID = account?.id ?? player?.id;
   if (!aID) {
-    logger.error(`${logPrefix} create_party_lobby: no account ID from token, IP=${ip}`);
+    logger.error(`${logPrefix} create_party_lobby: no account ID from token or IP, IP=${ip}`);
     res.send({ body: {}, metadata: null, return_code: 0 });
     return;
   }

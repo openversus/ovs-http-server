@@ -31,10 +31,10 @@ export class PlayerTester {
   // @prop({ required: false, unique: true })
   // public hydra_public_id!: string;
 
-  @prop({ required: false, unique: true, default: () => defaultToken })
+  @prop({ required: false, unique: false, default: () => defaultToken })
   public token!: SharedTypes.IAccountToken;
 
-  @prop({ required: false, unique: true, default: () => defaultToken })
+  @prop({ required: false, unique: false, default: () => defaultToken })
   public account!: SharedTypes.IAccountToken;
 
   @prop({ required: false, unique: false, default: 964 })
@@ -59,14 +59,14 @@ export class PlayerTester {
   @prop({ default: "" })
   public party_key!: string;
 
-  @prop({ index: true, sparse: true, unique: true })
-  public steamId?: string;
+  @prop({ default: "", index: true, sparse: true })
+  public steamId!: string;
 
-  @prop({ index: true, sparse: true, unique: true })
-  public epicId?: string;
+  @prop({ default: "", index: true, sparse: true })
+  public epicId!: string;
 
-  @prop({ index: true, sparse: true, unique: true })
-  public hardwareId?: string;
+  @prop({ default: "", index: true, sparse: true })
+  public hardwareId!: string;
 }
 
 export const PlayerTesterModel = getModelForClass(PlayerTester);

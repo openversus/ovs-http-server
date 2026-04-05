@@ -695,6 +695,7 @@ export async function startMatch(
       map,
       mode: lobby.mode,
       rollbackPort: customLobbyRollbackPort,
+      isCustomGame: true,
     };
 
     // Include spectators in playerIds so they receive all match notifications
@@ -1113,6 +1114,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
       map,
       mode: lobby.mode,
       rollbackPort: customLobbyRollbackPort,
+      isCustomGame: true,
     };
 
     const playerIds = [...players, ...rematchSpectatorEntries].map((p) => p.playerId);

@@ -49,6 +49,40 @@ sscRouter.put("/ssc/invoke/perks_absent", (req: Request, res: Response) => {
   set_perks_absent(req, res);
 });
 
+// Faceoff timeout — opponent never loaded into the match (dodged)
+// Clean up ranked set if one exists
+sscRouter.put("/ssc/invoke/faceoff_timeout", async (req: Request, res: Response) => {
+  try {
+    const account = AuthUtils.DecodeClientToken(req);
+    const playerId = account?.id;
+    logger.info(`[SSC.Routes]: faceoff_timeout from player ${playerId}`);
+
+    // Clean up any ranked set this player is in
+    if (playerId) {
+      const setId = await redisClient.get(`player_ranked_set:${playerId}`);
+      if (setId) {
+        const setRaw = await redisClient.get(`ranked_set:${setId}`);
+        if (setRaw) {
+          const setState = JSON.parse(setRaw);
+          const allPlayerIds = [...new Set(setState.players.map((p: any) => p.playerId))] as string[];
+          logger.info(`[SSC.Routes]: faceoff_timeout cleaning up ranked set ${setId}`);
+
+          // Clean up set state
+          for (const pid of allPlayerIds) {
+            await redisClient.del(`player_ranked_set:${pid}`);
+            await redisClient.del(`ranked_disconnect:${pid}`);
+          }
+          await redisClient.del(`ranked_set:${setId}`);
+          await redisClient.del(`ranked_set_checkins:${setId}`);
+        }
+      }
+    }
+  } catch (e) {
+    logger.error(`[SSC.Routes]: faceoff_timeout error: ${e}`);
+  }
+  res.send({ body: {}, metadata: null, return_code: 0 });
+});
+
 sscRouter.put("/ssc/invoke/perks_set_character_page", (req: Request, res: Response) => {
   perks_set_page(req, res);
 });
@@ -163,6 +197,7 @@ sscRouter.put("/ssc/invoke/match_set_concede", async (req: Request, res: Respons
             await redisClient.del(`player_ranked_set:${pid}`);
           }
           await redisClient.del(`ranked_set:${setId}`);
+      await redisClient.del(`ranked_set_checkins:${setId}`);
 
           // Send MatchSetLeaverNotification + empty OnGameplayConfigNotified to all players
           await redisClient.publish("ranked_set:leaver", JSON.stringify({
@@ -230,6 +265,13 @@ async function handleRankedSetCheckin(playerId: string) {
     return;
   }
 
+  // Atomic checkin using Redis SET — avoids read-modify-write race condition
+  // when multiple players check in simultaneously
+  const checkinKey = `ranked_set_checkins:${setId}`;
+  const added = await redisClient.sAdd(checkinKey, playerId);
+  await redisClient.expire(checkinKey, 600);
+  const checkinCount = await redisClient.sCard(checkinKey);
+
   const setRaw = await redisClient.get(`ranked_set:${setId}`);
   if (!setRaw) {
     logger.warn(`[SSC.Routes]: Ranked set ${setId} not found in Redis`);
@@ -238,18 +280,70 @@ async function handleRankedSetCheckin(playerId: string) {
 
   const setState = JSON.parse(setRaw);
 
-  // Avoid duplicate check-ins
-  if (setState.checkins.includes(playerId)) {
-    logger.info(`[SSC.Routes]: Player ${playerId} already checked in for set ${setId}`);
-    return;
+  if (added === 0) {
+    logger.info(`[SSC.Routes]: Player ${playerId} already checked in for set ${setId}, checking for disconnected opponents`);
+  } else {
+    // Update the checkins array in setState for compatibility with downstream code
+    setState.checkins = await redisClient.sMembers(checkinKey);
+    await redisClient.set(`ranked_set:${setId}`, JSON.stringify(setState), { EX: 600 });
+    const allPlayerIds = [...new Set(setState.players.map((p: any) => p.playerId))] as string[];
+    logger.info(`[SSC.Routes]: Set ${setId} check-in: ${checkinCount}/${allPlayerIds.length}`);
   }
-
-  setState.checkins.push(playerId);
-  await redisClient.set(`ranked_set:${setId}`, JSON.stringify(setState), { EX: 600 });
 
   // Get unique player IDs from team entries
   const allPlayerIds = [...new Set(setState.players.map((p: any) => p.playerId))] as string[];
-  logger.info(`[SSC.Routes]: Set ${setId} check-in: ${setState.checkins.length}/${allPlayerIds.length}`);
+
+  // Check if any player disconnected — auto-concede the set
+  // Verify the player is actually offline (not a stale flag from a previous match)
+  for (const pid of allPlayerIds) {
+    if (pid === playerId) continue; // skip the player who just checked in
+    const disconnectFlag = await redisClient.get(`ranked_disconnect:${pid}`);
+    if (disconnectFlag) {
+      // Verify player is actually offline before conceding
+      const isOnline = await redisClient.sIsMember("online_players", pid);
+      if (isOnline) {
+        // Player reconnected — stale flag from previous match, clean it up
+        logger.info(`[SSC.Routes]: Stale ranked_disconnect flag for ${pid} (online now), cleaning up`);
+        await redisClient.del(`ranked_disconnect:${pid}`);
+        continue;
+      }
+      logger.info(`[SSC.Routes]: Player ${pid} disconnected and offline — auto-conceding set ${setId}`);
+      await redisClient.del(`ranked_disconnect:${pid}`);
+
+      // Process as concede — disconnected player loses
+      const concederTeam = setState.players.find((p: any) => p.playerId === pid)?.teamIndex;
+      if (concederTeam !== undefined) {
+        const scores = setState.scores || [0, 0];
+        const winnerTeam = concederTeam === 0 ? 1 : 0;
+        const team0Ids = setState.players.filter((p: any) => p.teamIndex === 0).map((p: any) => p.playerId);
+        const team1Ids = setState.players.filter((p: any) => p.teamIndex === 1).map((p: any) => p.playerId);
+        const winnerIds = winnerTeam === 0 ? team0Ids : team1Ids;
+        const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
+        try {
+          const chars = await getPlayerCharacters([...winnerIds, ...loserIds]);
+          await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars);
+          await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
+        } catch (e) {
+          logger.error(`[SSC.Routes]: Error processing disconnect concede ELO: ${e}`);
+        }
+      }
+
+      // Clean up set
+      for (const cid of allPlayerIds) {
+        await redisClient.del(`player_ranked_set:${cid}`);
+      }
+      await redisClient.del(`ranked_set:${setId}`);
+      await redisClient.del(`ranked_set_checkins:${setId}`);
+
+      // Send leaver notification — this triggers MatchSetLeaverNotification + OnGameplayConfigNotified
+      await redisClient.publish("ranked_set:leaver", JSON.stringify({
+        playerIds: allPlayerIds,
+        leaverPlayerId: pid,
+        matchId: setId,
+      }));
+      return; // Don't proceed with normal checkin flow
+    }
+  }
 
   // Notify all players about the check-in so their UI updates
   await redisClient.publish("ranked_set:checkin", JSON.stringify({
@@ -260,7 +354,7 @@ async function handleRankedSetCheckin(playerId: string) {
     setId,
   }));
 
-  if (setState.checkins.length >= allPlayerIds.length) {
+  if (checkinCount >= allPlayerIds.length) {
     // Dedup: prevent double match creation from checkin + absent race
     const dedup = await redisClient.set(`set_match_dedup:${setId}:${setState.gamesPlayed}`, "1", { NX: true, EX: 30 });
     if (dedup !== "OK") {
@@ -300,6 +394,7 @@ async function handleRankedSetCheckin(playerId: string) {
         await redisClient.del(`player_ranked_set:${pid}`);
       }
       await redisClient.del(`ranked_set:${setId}`);
+      await redisClient.del(`ranked_set_checkins:${setId}`);
       // Send MatchSetLeaverNotification after SSC response
       const leaverPlayer = setState.concedingPlayer || allPlayerIds[0];
       setTimeout(async () => {
@@ -382,6 +477,7 @@ async function createNextSetMatch(setId: string, setState: any) {
 
   // Update set state: reset checkins, update matchId mappings
   setState.checkins = [];
+  await redisClient.del(`ranked_set_checkins:${setId}`);
   await redisClient.set(`ranked_set:${setId}`, JSON.stringify(setState), { EX: 600 });
 
   // Update player→set mappings (keep pointing to original setId)

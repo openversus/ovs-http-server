@@ -334,11 +334,21 @@ export async function perks_set_page(req: Request, res: Response) {
 }
 
 export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {}, {}>, res: Response) {
-  const account = req.token;
+//  const account = req.token;
+//
+//  let ip = (req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+//  let player = ip ? await PlayerTesterModel.findOne({ ip }) : null;
+//  const aID = account?.id ?? player?.id;
+  const account = AuthUtils.DecodeClientToken(req);
+  let ip = (account.current_ip || req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+  let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
+  const aID = rPlayerConnectionByIP.id
 
-  let ip = (req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
-  let player = ip ? await PlayerTesterModel.findOne({ ip }) : null;
-  const aID = account?.id ?? player?.id; //player ? player.id : account.id;
+  if (!aID) {
+    logger.error(`${logPrefix} create_party_lobby: no account ID from token or IP, IP=${ip}`);
+    res.send({ body: {}, metadata: null, return_code: 0 });
+    return;
+  }
 
   let character = "";
   let variant = "";
@@ -379,13 +389,15 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
     loadout.Skin = "skin_shaggy_default";
   }
 
-  let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
-  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.warn(`${logPrefix} No Redis player connection found for IP ${ip}, cannot set loadout.`);
-  }
-  let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`)) as unknown as RedisPlayerConnection;
+  // Look up connection data by player ID first, fall back to IP
+  let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${aID}`)) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
-    logger.warn(`${logPrefix} No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
+    const rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
+    if (rPlayerConnectionByIP?.id) {
+      rPlayerConnectionByID = rPlayerConnectionByIP;
+    } else {
+      logger.warn(`${logPrefix} No Redis connection found for player ${aID} or IP ${ip}`);
+    }
   }
 
   let rPlayerCosmetics = (await getEquippedCosmetics(rPlayerConnectionByID.id)) as Cosmetics;

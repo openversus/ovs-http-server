@@ -447,6 +447,9 @@ export class WebSocketService {
                   await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars);
                   await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: matchConfig.players.map((p) => p.playerId) }));
                   logger.info(`[${serviceName}]: Dodge: ${playerId} (${playerWS.account.username}) left match ${matchId} — ELO processed`);
+
+                  // Can't cancel pregame from server — game client ignores WS messages during faceoff wait.
+                  // ELO is processed above, remaining player will timeout naturally (~2min).
                 } catch (eloErr) {
                   logger.error(`[${serviceName}]: Error processing dodge ELO: ${eloErr}`);
                 }
@@ -2215,41 +2218,10 @@ export class WebSocketService {
                   },
                 };
 
-                // TEST: Send FullRankUpdate with empty character slug
-                const testBuildMode = (elo: number, wins: number, losses: number, rank: any) => {
-                  const DataByCharacter: Record<string, any> = {};
-                  DataByCharacter[""] = { // empty character slug
-                    CurrentPoints: elo, MaxPoints: elo,
-                    GamesPlayed: wins + losses, SetsPlayed: wins + losses,
-                    Wins: wins, Losses: losses,
-                    DamageDealt: 0, DamageTaken: 0, Ringouts: 0, Deaths: 0,
-                    LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
-                    LastDecayMs: 0,
-                  };
-                  return {
-                    BestCharacter: { CurrentPoints: elo, MaxPoints: elo, GamesPlayed: wins + losses, SetsPlayed: wins + losses, CharacterSlug: "", LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) } },
-                    DataByCharacter,
-                    GamesPlayed: wins + losses,
-                    LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
-                    SetsPlayed: wins + losses,
-                    FinalLeaderboardRank: rank?.rank || 0,
-                  };
-                };
                 client.send({
                   data: {
                     template_id: "FullRankUpdate",
-                    SeasonalData: {
-                      "Season:SeasonFive": {
-                        Ranked: {
-                          DataByMode: {
-                            "1v1": testBuildMode(elo1v1, wins1v1, losses1v1, rank1v1),
-                            "2v2": testBuildMode(elo2v2, wins2v2, losses2v2, rank2v2),
-                          },
-                          ClaimedRewards: [],
-                          bEndOfSeasonRewardsGranted: false,
-                        },
-                      },
-                    },
+                    ...rankedPayload,
                   },
                   payload: {
                     frm: { id: "internal-server", type: "server-api-key" },
@@ -2260,7 +2232,7 @@ export class WebSocketService {
                   header: "",
                   cmd: "profile-notification",
                 });
-                logger.info(`[${serviceName}]: Sent FullRankUpdate EMPTY-CHAR to ${pid} (elo=${elo1v1})`);
+                logger.info(`[${serviceName}]: Sent FullRankUpdate to ${pid} (elo=${elo1v1})`);
               } catch (e) {
                 logger.error(`[${serviceName}]: Error sending FullRankUpdate to ${pid}: ${e}`);
               }

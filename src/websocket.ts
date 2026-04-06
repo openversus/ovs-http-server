@@ -448,8 +448,17 @@ export class WebSocketService {
                   await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: matchConfig.players.map((p) => p.playerId) }));
                   logger.info(`[${serviceName}]: Dodge: ${playerId} (${playerWS.account.username}) left match ${matchId} — ELO processed`);
 
-                  // Can't cancel pregame from server — game client ignores WS messages during faceoff wait.
-                  // ELO is processed above, remaining player will timeout naturally (~2min).
+                  // Clean up player_ranked_set for ALL players in the set (not just dodger)
+                  // so their next match doesn't get linked to this dead set
+                  const allSetPlayerIds = matchConfig.players.map((p) => p.playerId);
+                  for (const pid of allSetPlayerIds) {
+                    await redisClient.del(`player_ranked_set:${pid}`);
+                  }
+                  if (setId !== matchId) {
+                    await redisClient.del(`ranked_set:${setId}`);
+                    await redisClient.del(`ranked_set_checkins:${setId}`);
+                  }
+                  logger.info(`[${serviceName}]: Cleaned up set ${setId} for all ${allSetPlayerIds.length} players after dodge`);
                 } catch (eloErr) {
                   logger.error(`[${serviceName}]: Error processing dodge ELO: ${eloErr}`);
                 }
@@ -2241,14 +2250,18 @@ export class WebSocketService {
             logger.error(`[${serviceName}]: Error processing set ELO: ${e}`);
           }
 
-          // Clean up set state
-          for (const playerId of notification.playersIds) {
+          // Clean up set state — use SET's player list, not the END_OF_MATCH notification's
+          // (notification.playersIds may be from a different match linked via stale player_ranked_set)
+          const setPlayerIds = existingSet
+            ? [...new Set(existingSet.players.map((p: any) => p.playerId))] as string[]
+            : notification.playersIds;
+          for (const playerId of setPlayerIds) {
             await redisClient.del(`player_ranked_set:${playerId}`);
           }
           await redisClient.del(`ranked_set:${setId}`);
           await redisClient.del(`ranked_set_checkins:${setId}`);
           // Send MatchSetLeaverNotification + empty OnGameplayConfigNotified to return to menus
-          for (const playerId of notification.playersIds) {
+          for (const playerId of setPlayerIds) {
             const client = this.clients.get(playerId);
             if (client) {
               setTimeout(() => {
@@ -2296,8 +2309,11 @@ export class WebSocketService {
           }
 
           await redisClient.set(`ranked_set:${setId}`, JSON.stringify(setState), { EX: 600 });
-          for (const playerId of notification.playersIds) {
-            await redisClient.set(`player_ranked_set:${playerId}`, setId, { EX: 600 });
+          // Use the set's player list for mappings (matchConfig.players), not notification.playersIds
+          // which could be from a different match linked via stale player_ranked_set
+          const setPlayers = matchConfig.players.map((p) => p.playerId);
+          for (const pid of setPlayers) {
+            await redisClient.set(`player_ranked_set:${pid}`, setId, { EX: 600 });
           }
           logger.info(`[${serviceName}]: Ranked set ${setId} — game ${gamesPlayed}/3 complete (${scores[0]}-${scores[1]}), waiting for check-ins`);
 

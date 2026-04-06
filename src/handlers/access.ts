@@ -133,6 +133,18 @@ async function generateStaticAccess(req: express.Request) {
     }
   }
 
+  // Clean up stale match state from previous session (e.g. server restart while player was in a set)
+  try {
+    const staleSetId = await Redis.redisClient.get(`player_ranked_set:${player.id}`);
+    if (staleSetId) {
+      logger.info(`${logPrefix} Cleaning up stale ranked set ${staleSetId} for player ${player.id} on login`);
+      await Redis.redisClient.del(`player_ranked_set:${player.id}`);
+      await Redis.redisClient.del(`ranked_disconnect:${player.id}`);
+    }
+  } catch (e) {
+    logger.error(`${logPrefix} Error cleaning up stale match state for ${player.id}: ${e}`);
+  }
+
   let ws = `ws://${env.WB_DOMAIN}:${env.WEBSOCKET_PORT}`;
   // if (ip === "127.0.0.1") {
   //   ws = `ws://testing.openversus.org:${env.WEBSOCKET_PORT}`;

@@ -377,8 +377,8 @@ export async function redisSaveIdentity(ip: string, steamId: string, epicId: str
 
 export async function redisGetIdentity(ip: string): Promise<{ steamId: string; epicId: string; hardwareId: string } | null> {
   const data = await redisClient.hGetAll(`identity:${ip}`);
-  if (!data || !data.steamId) return null;
-  return { steamId: data.steamId, epicId: data.epicId ?? "", hardwareId: data.hardwareId ?? "" };
+  if (!data || Object.keys(data).length === 0) return null;
+  return { steamId: data.steamId ?? "", epicId: data.epicId ?? "", hardwareId: data.hardwareId ?? "" };
 }
 
 export async function redisUpdatePlayerStatus(playerId: string, status: string) {

@@ -15,7 +15,7 @@ import {
 } from "./ssc";
 import * as AuthUtils from "../utils/auth";
 import { sendFriendRequest, removeFriend } from "../services/friendService";
-import { redisClient, redisOnGameplayConfigNotified, redisMatchMakingComplete, redisUpdateMatch, RedisMatch, MATCH_FOUND_NOTIFICATION, RedisMatchTicket, redisPublishLobbyReturn } from "../config/redis";
+import { redisClient, redisOnGameplayConfigNotified, redisUpdateMatch, RedisMatch, MATCH_FOUND_NOTIFICATION, RedisMatchTicket, redisPublishLobbyReturn } from "../config/redis";
 import ObjectID from "bson-objectid";
 import { randomBytes } from "crypto";
 import { getRandomMapByType } from "../data/maps";
@@ -27,6 +27,18 @@ import { customLobbyRouter } from "../modules/customLobby/lobby.routes";
 import { handleRematchAccept, handleRematchDecline } from "../services/customLobbyService";
 
 export const sscRouter = express.Router();
+
+// --- Set-level Redis lock for ranked set operations ---
+const SET_LOCK_TTL = 10;
+
+async function acquireSetLock(setId: string): Promise<boolean> {
+  const result = await redisClient.set(`ranked_set_lock:${setId}`, "1", { NX: true, EX: SET_LOCK_TTL });
+  return result === "OK";
+}
+
+async function releaseSetLock(setId: string): Promise<void> {
+  await redisClient.del(`ranked_set_lock:${setId}`);
+}
 
 // Mount shared lobby routes FIRST (handles multi-path endpoints: leave, invite, ready, loadout, rematch)
 sscRouter.use(sharedLobbyRouter);
@@ -165,12 +177,20 @@ sscRouter.put("/ssc/invoke/match_set_concede", async (req: Request, res: Respons
     if (playerId) {
       const setId = await redisClient.get(`player_ranked_set:${playerId}`);
       if (setId) {
+        if (!await acquireSetLock(setId)) {
+          logger.info(`[SSC.Routes]: Set ${setId} locked, skipping concede from ${playerId}`);
+          res.send({ body: {}, metadata: null, return_code: 0 });
+          return;
+        }
+        try {
         const setRaw = await redisClient.get(`ranked_set:${setId}`);
         if (setRaw) {
           const setState = JSON.parse(setRaw);
           const allPlayerIds = [...new Set(setState.players.map((p: any) => p.playerId))] as string[];
 
-          // Process ELO — concede = 2-0 loss for the conceding player's team
+          // Process ELO — concede (with dedup)
+          const eloDedup = await redisClient.set(`elo_processed_set:${setId}`, "concede", { NX: true, EX: 300 });
+          if (eloDedup === "OK") {
           const concederTeam = setState.players.find((p: any) => p.playerId === playerId)?.teamIndex;
           if (concederTeam !== undefined) {
             const scores = setState.scores || [0, 0];
@@ -180,24 +200,23 @@ sscRouter.put("/ssc/invoke/match_set_concede", async (req: Request, res: Respons
             const winnerIds = winnerTeam === 0 ? team0Ids : team1Ids;
             const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
             try {
-              const chars = await getPlayerCharacters([...winnerIds, ...loserIds]);
+              const chars = await getPlayerCharacters([...winnerIds, ...loserIds], setId);
               await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars);
-
-              // Send FullRankUpdate to all players after concede ELO processing
-              await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({
-                playerIds: allPlayerIds,
-              }));
+              await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
             } catch (e) {
               logger.error(`[SSC.Routes]: Error processing concede ELO: ${e}`);
             }
           }
+          } else {
+            logger.info(`[SSC.Routes]: ELO already processed for set ${setId}, skipping concede ELO`);
+          }
 
-          // Clean up ALL set state immediately
+          // Clean up ALL set state
           for (const pid of allPlayerIds) {
             await redisClient.del(`player_ranked_set:${pid}`);
           }
           await redisClient.del(`ranked_set:${setId}`);
-      await redisClient.del(`ranked_set_checkins:${setId}`);
+          await redisClient.del(`ranked_set_checkins:${setId}`);
 
           // Send MatchSetLeaverNotification + empty OnGameplayConfigNotified to all players
           await redisClient.publish("ranked_set:leaver", JSON.stringify({
@@ -206,6 +225,9 @@ sscRouter.put("/ssc/invoke/match_set_concede", async (req: Request, res: Respons
             matchId: setId,
           }));
           logger.info(`[SSC.Routes]: Player ${playerId} conceded set ${setId}, sending MatchSetLeaverNotification`);
+        }
+        } finally {
+          await releaseSetLock(setId);
         }
       }
     }
@@ -247,13 +269,31 @@ sscRouter.put("/ssc/invoke/match_set_absent", async (req: Request, res: Response
   res.send({ body: {}, metadata: null, return_code: 0 });
 });
 
-async function getPlayerCharacters(playerIds: string[]): Promise<Map<string, string>> {
+async function getPlayerCharacters(playerIds: string[], setId?: string): Promise<Map<string, string>> {
   const chars = new Map<string, string>();
-  for (const pid of playerIds) {
+
+  // Try stored match characters first (survives crashes/disconnects)
+  // The setId is the matchId of the first game — match_characters was stored at match start
+  if (setId) {
     try {
-      const conn = await redisClient.hGetAll(`connections:${pid}`);
-      if (conn?.character) chars.set(pid, conn.character);
+      const stored = await redisClient.get(`match_characters:${setId}`);
+      if (stored) {
+        const storedChars = JSON.parse(stored);
+        for (const pid of playerIds) {
+          if (storedChars[pid]) chars.set(pid, storedChars[pid]);
+        }
+      }
     } catch {}
+  }
+
+  // Fill in any missing from live Redis connections
+  for (const pid of playerIds) {
+    if (!chars.has(pid)) {
+      try {
+        const conn = await redisClient.hGetAll(`connections:${pid}`);
+        if (conn?.character) chars.set(pid, conn.character);
+      } catch {}
+    }
   }
   return chars;
 }
@@ -293,6 +333,13 @@ async function handleRankedSetCheckin(playerId: string) {
   // Get unique player IDs from team entries
   const allPlayerIds = [...new Set(setState.players.map((p: any) => p.playerId))] as string[];
 
+  // Acquire set lock for disconnect check and set-ending operations
+  if (!await acquireSetLock(setId)) {
+    logger.info(`[SSC.Routes]: Set ${setId} locked (concede in progress?), skipping post-checkin for ${playerId}`);
+    return;
+  }
+
+  try {
   // Check if any player disconnected — auto-concede the set
   // Verify the player is actually offline (not a stale flag from a previous match)
   for (const pid of allPlayerIds) {
@@ -310,22 +357,27 @@ async function handleRankedSetCheckin(playerId: string) {
       logger.info(`[SSC.Routes]: Player ${pid} disconnected and offline — auto-conceding set ${setId}`);
       await redisClient.del(`ranked_disconnect:${pid}`);
 
-      // Process as concede — disconnected player loses
-      const concederTeam = setState.players.find((p: any) => p.playerId === pid)?.teamIndex;
-      if (concederTeam !== undefined) {
-        const scores = setState.scores || [0, 0];
-        const winnerTeam = concederTeam === 0 ? 1 : 0;
-        const team0Ids = setState.players.filter((p: any) => p.teamIndex === 0).map((p: any) => p.playerId);
-        const team1Ids = setState.players.filter((p: any) => p.teamIndex === 1).map((p: any) => p.playerId);
-        const winnerIds = winnerTeam === 0 ? team0Ids : team1Ids;
-        const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
-        try {
-          const chars = await getPlayerCharacters([...winnerIds, ...loserIds]);
-          await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars);
-          await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
-        } catch (e) {
-          logger.error(`[SSC.Routes]: Error processing disconnect concede ELO: ${e}`);
+      // Process as concede — disconnected player loses (with dedup)
+      const eloDedup = await redisClient.set(`elo_processed_set:${setId}`, "disconnect_concede", { NX: true, EX: 300 });
+      if (eloDedup === "OK") {
+        const concederTeam = setState.players.find((p: any) => p.playerId === pid)?.teamIndex;
+        if (concederTeam !== undefined) {
+          const scores = setState.scores || [0, 0];
+          const winnerTeam = concederTeam === 0 ? 1 : 0;
+          const team0Ids = setState.players.filter((p: any) => p.teamIndex === 0).map((p: any) => p.playerId);
+          const team1Ids = setState.players.filter((p: any) => p.teamIndex === 1).map((p: any) => p.playerId);
+          const winnerIds = winnerTeam === 0 ? team0Ids : team1Ids;
+          const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
+          try {
+            const chars = await getPlayerCharacters([...winnerIds, ...loserIds], setId);
+            await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars);
+            await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
+          } catch (e) {
+            logger.error(`[SSC.Routes]: Error processing disconnect concede ELO: ${e}`);
+          }
         }
+      } else {
+        logger.info(`[SSC.Routes]: ELO already processed for set ${setId}, skipping disconnect concede`);
       }
 
       // Clean up set
@@ -378,16 +430,22 @@ async function handleRankedSetCheckin(playerId: string) {
       const winnerIds = winnerTeam === 0 ? team0Ids : team1Ids;
       const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
 
-      // Process set-based ELO
-      try {
-        const chars = await getPlayerCharacters([...winnerIds, ...loserIds]);
-        await processSetResult(
-          winnerIds, loserIds, setState.mode,
-          scores as [number, number], winnerTeam,
-          setState.conceded || false, chars,
-        );
-      } catch (e) {
-        logger.error(`[SSC.Routes]: Error processing set ELO: ${e}`);
+      // Process set-based ELO (with dedup)
+      const eloDedup2 = await redisClient.set(`elo_processed_set:${setId}`, "set_over", { NX: true, EX: 300 });
+      if (eloDedup2 === "OK") {
+        try {
+          const chars = await getPlayerCharacters([...winnerIds, ...loserIds], setId);
+          await processSetResult(
+            winnerIds, loserIds, setState.mode,
+            scores as [number, number], winnerTeam,
+            setState.conceded || false, chars,
+          );
+          await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
+        } catch (e) {
+          logger.error(`[SSC.Routes]: Error processing set ELO: ${e}`);
+        }
+      } else {
+        logger.info(`[SSC.Routes]: ELO already processed for set ${setId}, skipping`);
       }
 
       for (const pid of allPlayerIds) {
@@ -411,12 +469,14 @@ async function handleRankedSetCheckin(playerId: string) {
       await createNextSetMatch(setId, setState);
     }
   }
+  } finally {
+    await releaseSetLock(setId);
+  }
 }
 
 async function createNextSetMatch(setId: string, setState: any) {
   const matchId = ObjectID().toHexString();
   const resultId = ObjectID().toHexString();
-  const matchmakingRequestId = ObjectID().toHexString();
   const rollbackPort = DeployInfo.getRandomRollbackPort();
 
   const allPlayerIds = [...new Set(setState.players.map((p: any) => p.playerId))] as string[];
@@ -432,7 +492,7 @@ async function createNextSetMatch(setId: string, setState: any) {
     })),
     created_at: Date.now(),
     partyId: matchId,
-    matchmakingRequestId,
+    matchmakingRequestId: matchId,
   };
 
   const match: RedisMatch = {
@@ -473,7 +533,6 @@ async function createNextSetMatch(setId: string, setState: any) {
   };
 
   await redisOnGameplayConfigNotified(notification);
-  await redisMatchMakingComplete(matchId, matchmakingRequestId, allPlayerIds);
 
   // Update set state: reset checkins, update matchId mappings
   setState.checkins = [];

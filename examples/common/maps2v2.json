@@ -10,7 +10,7 @@
   {
     "M002_V3": {
       "id": "M002_V3",
-      "name": "Batcave",
+      "name": "Treefort 2",
       "enabled": true,
       "hazards": false
     }
@@ -18,19 +18,12 @@
   {
     "M003_V5": {
       "id": "M003_V5",
-      "name": "Treefort 2",
-      "enabled": true,
-      "hazards": false
-    }
-  },
-  {
-    "M001_V1": {
-      "id": "M001_V1",
       "name": "Trophy's Edge Single Plat",
       "enabled": true,
       "hazards": false
     }
   },
+  {
   {
     "M006_V2": {
       "id": "M006_V2",
@@ -43,13 +36,13 @@
     "M007_V1": {
       "id": "M007_V1",
       "name": "Water Tower",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   },
   {
-    "M008_V1": {
-      "id": "M008_V1",
+    "M008": {
+      "id": "M008",
       "name": "Throne Room",
       "enabled": true,
       "hazards": false

@@ -92,7 +92,7 @@ import env from "./env/env";
 import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./database/Cosmetics";
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 import { cancelMatchmakingForAll } from "./services/matchmakingService";
-import { processMatchLeave, getOrCreateRating, eloToTierDivision, processSetResult, getPlayerRank } from "./services/eloService";
+import { processMatchLeave, getOrCreateRating, eloToTierDivision } from "./services/eloService";
 import { PlayerTesterModel } from "./database/PlayerTester";
 
 const serviceName: string = "WebSocket";
@@ -436,6 +436,7 @@ export class WebSocketService {
               const canProcess = await redisClient.set(`elo_processed_set:${setId}`, "dodge", { NX: true, EX: 300 });
               if (canProcess === "OK") {
                 try {
+                  const { processSetResult } = await import("./services/eloService.js");
                   const chars = new Map<string, string>();
                   for (const pid of [...winnerIds, ...loserIds]) {
                     try {
@@ -2118,6 +2119,7 @@ export class WebSocketService {
           // Process set-based ELO (with dedup — disconnect concede may have already processed)
           const eloDedup = await redisClient.set(`elo_processed_set:${setId}`, "set_complete", { NX: true, EX: 300 });
           try {
+            const { processSetResult } = await import("./services/eloService.js");
             const team0Ids = existingSet.players.filter((p: any) => p.teamIndex === 0).map((p: any) => p.playerId);
             const team1Ids = existingSet.players.filter((p: any) => p.teamIndex === 1).map((p: any) => p.playerId);
             const winnerTeam = scores[0] > scores[1] ? 0 : 1;
@@ -2147,6 +2149,7 @@ export class WebSocketService {
             }
 
             // Send FullRankUpdate notification to each player with fresh ranked data
+            const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
             for (const pid of [...winnerIds, ...loserIds]) {
               const client = this.clients.get(pid);
               if (!client) continue;
@@ -2678,6 +2681,7 @@ export class WebSocketService {
       try {
         const { playerIds } = JSON.parse(message);
         logger.info(`[${serviceName}]: FullRankUpdate (concede) for ${playerIds.length} players`);
+        const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
         for (const pid of playerIds) {
           const client = this.clients.get(pid);
           if (!client) continue;

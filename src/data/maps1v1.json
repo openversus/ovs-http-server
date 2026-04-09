@@ -43,7 +43,7 @@
     "M007_V2": {
       "id": "M007_V2",
       "name": "Water Tower Locked Door",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   },
@@ -139,7 +139,7 @@
     "M023_V2": {
       "id": "M023_V2",
       "name": "Rabbit Season 1v1",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   },

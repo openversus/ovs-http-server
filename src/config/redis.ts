@@ -360,14 +360,22 @@ export async function redisSetPlayerConnectionByIp(ip: string, connection: Redis
   await redisClient.hSet(`connections:${ip}`, connectionStringObj);
 }
 
-export async function redisGetPlayerConnectionByPlayerId(playerId: string) {
+export async function redisGetPlayerConnectionByPlayerIDAsync(playerId: string) {
   const connection = (await redisClient.hGetAll(`connections:${playerId}`)) as unknown as RedisPlayerConnection;
   return connection;
 }
 
-export async function redisGetPlayerConnectionByIp(ip: string) {
+export function redisGetPlayerConnectionByPlayerID(playerId: string) {
+  return redisClient.hGetAll(`connections:${playerId}`).then((connection) => connection as unknown as RedisPlayerConnection);
+}
+
+export async function redisGetPlayerConnectionByIPAsync(ip: string) {
   const connection = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
   return connection;
+}
+
+export function redisGetPlayerConnectionByIP(ip: string) {
+  return redisClient.hGetAll(`connections:${ip}`).then((connection) => connection as unknown as RedisPlayerConnection);
 }
 
 export async function redisSaveIdentity(ip: string, steamId: string, epicId: string, hardwareId: string) {

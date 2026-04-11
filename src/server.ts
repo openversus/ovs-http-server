@@ -9,7 +9,23 @@ import * as path from "path";
 import { hydraTokenMiddleware } from "./middleware/auth";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
-import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby, redisGameServerInstanceReady, redisSetPendingJoinLobby, redisSaveIdentity } from "./config/redis";
+import { redisClient,
+  redisGetMatchConfig,
+  redisPublisdEndOfMatch,
+  redisGetLobbyState,
+  redisSaveLobbyState,
+  RedisPlayerConnection,
+  redisGetPlayerConnectionByIP,
+  redisSavePlayerLobby,
+  redisPublishLobbyRejoin,
+  RedisLobbyRejoinNotification,
+  redisSavePartyKey,
+  redisGetPartyKey,
+  redisDeletePartyKey,
+  redisGetPlayerLobby,
+  redisGameServerInstanceReady,
+  redisSetPendingJoinLobby,
+  redisSaveIdentity } from "./config/redis";
 import { getLeaderboard, getPlayerRank, processMatchLeave, eloToTierDivision } from "./services/eloService";
 import { performGenuineLeave } from "./ssc/ssc";
 import {
@@ -356,8 +372,15 @@ app.post("/ovs_register", async (req, res, next) => {
   }
   // Send all players (including spectators) to the rollback server so spectators can connect
   const players = config.players.map((p) => {
+    const rPlayerConnectionByIP = redisGetPlayerConnectionByIP(p.ip);
+    const playerName = rPlayerConnectionByIP.then((conn) => conn.username || "Unknown").catch(() => "Unknown");
+    const playerCharacter = rPlayerConnectionByIP.then((conn) => conn.character || "Unknown").catch(() => "Unknown");
+
     return {
       player_index: p.playerIndex,
+      player_id: p.playerId,
+      player_name: playerName,
+      player_character: playerCharacter,
       ip: p.ip,
       is_host: p.isHost,
       is_spectator: p.isSpectator ?? false,
@@ -539,7 +562,7 @@ app.post("/party/set-key", async (req, res) => {
     await redisClient.hSet(`connections:${ip}`, { party_key: newKey });
 
     // Save party key lookup in Redis (lobbyId from current lobby or empty)
-    const conn = await redisGetPlayerConnectionByIp(ip);
+    const conn = await redisGetPlayerConnectionByIP(ip);
     const currentLobbyId = conn?.lobby_id || "";
     await redisSavePartyKey(newKey, { playerId: player.id, lobbyId: currentLobbyId, username: player.name });
 

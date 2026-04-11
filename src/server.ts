@@ -371,21 +371,18 @@ app.post("/ovs_register", async (req, res, next) => {
     return;
   }
   // Send all players (including spectators) to the rollback server so spectators can connect
-  const players = config.players.map((p) => {
-    const rPlayerConnectionByIP = redisGetPlayerConnectionByIP(p.ip);
-    const playerName = rPlayerConnectionByIP.then((conn) => conn.username || "Unknown").catch(() => "Unknown");
-    const playerCharacter = rPlayerConnectionByIP.then((conn) => conn.character || "Unknown").catch(() => "Unknown");
-
+  const players = await Promise.all(config.players.map(async (p) => {
+    const conn = await redisGetPlayerConnectionByIP(p.ip).catch(() => null);
     return {
       player_index: p.playerIndex,
       player_id: p.playerId,
-      player_name: playerName,
-      player_character: playerCharacter,
+      player_name: conn?.username || "Unknown",
+      player_character: conn?.character || "Unknown",
       ip: p.ip,
       is_host: p.isHost,
       is_spectator: p.isSpectator ?? false,
     };
-  });
+  }));
   res.json({
     max_players: config.players.length,
     match_duration: 36000,

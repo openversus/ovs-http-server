@@ -51,6 +51,7 @@ import { RegExpMatcher, TextCensor, englishDataset, englishRecommendedTransforme
 import env from "./env/env";
 import { syncRouter } from "./dataAssetSync";
 import { loadAssets } from "./loadAssets";
+import { randomInt, createHmac } from "crypto";
 import * as SharedTypes from "./types/shared-types";
 import { isParameter } from "typescript";
 import * as nodeutil from "node:util";
@@ -60,7 +61,9 @@ import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { NameGenerator } from "./utils/namegeneration";
 import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
+import { handleMatchStatusUpdate } from "./handlers/match_status";
 import { initAccelByteLobbyWs, accelByteLobbyWs } from "./accelByteLobbyWs";
+import { IMatchStatus } from "./interfaces/IMatchStatus";
 
 // HTML Rendering
 const handlebars = require("handlebars");
@@ -84,6 +87,7 @@ app.disable("x-powered-by");
 const port = env.HTTP_PORT || 8000;
 const USE_INTERNAL_ROLLBACK = env.USE_INTERNAL_ROLLBACK === 1 ? true : false;
 const USE_INTERNAL_ROLLBACK_CPP = env.USE_INTERNAL_ROLLBACK_CPP === 1 ? true : false;
+const MATCH_UPDATE_KEY = env.MATCHUPDATEKEY || "MisconfiguredMatchUpdateKey";
 const stringIsOnlyWhitespace = (string: string): boolean => string.trim().length === 0;
 
 process.on("warning", (e) => {
@@ -1395,6 +1399,44 @@ app.put("/leaderboards/bulk/score-and-rank/:playerId", async (req, res) => {
     logger.error(`${logPrefix} Error in leaderboards/bulk/score-and-rank: ${e}`);
     res.send({ body: {}, metadata: null, return_code: 200 });
   }
+});
+
+app.post("/api/ovs_match_status", async (req, res) => {
+
+  if (!req.headers["MatchUpdateKey"]
+    || null === req.headers["MatchUpdateKey"]
+    || "" === req.headers["MatchUpdateKey"]
+    || !req.body
+  )
+  {
+    logger.warn(`${logPrefix} POST /api/ovs_match_status missing MatchUpdateKey header or body`);
+    res.status(403).json({ error: "Malformed request" });
+    return;
+  }
+  const matchUpdateKey = req.headers["MatchUpdateKey"] as string ?? "";
+  const matchStatus = req.body as IMatchStatus;
+  const rawStringPayload = JSON.stringify(matchStatus) ?? "";
+  const payloadHmacSha = createHmac("sha1", MATCH_UPDATE_KEY)
+                          .update(rawStringPayload)
+                          .digest("hex").toLowerCase();
+
+  if (payloadHmacSha !== matchUpdateKey.toLowerCase()) {
+    logger.warn(`${logPrefix} POST /api/ovs_match_status Received update request with invalid HMAC signature: expected ${payloadHmacSha}, got ${matchUpdateKey}. Payload: ${rawStringPayload}`);
+    res.status(403).json({ error: "Invalid signature" });
+    return;
+  }
+
+  logger.info(`${logPrefix} POST /api/ovs_match_status Received match status update for MatchId: ${matchStatus.matchId}`);
+  const updateStatus: boolean = Promise.resolve(handleMatchStatusUpdate(req, res)).catch((e) => {
+    logger.error(`${logPrefix} Error handling match status update: ${e}`);
+    return false;
+  }) as unknown as boolean;
+
+  if (!updateStatus) {
+    res.status(500).json({ error: "Failed to process match status update" });
+    return;
+  }
+  res.json({ status: "ok" });
 });
 
 app.use((req, res, next) => {

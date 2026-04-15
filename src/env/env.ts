@@ -19,6 +19,7 @@ const env = cleanEnv(process.env, {
   K_1V1: num({ default: 32 }),
   K_2V2: num({ default: 24 }),
   LOCAL_PUBLIC_IP: str(),
+  MATCHUPDATEKEY: str({ default: "MisconfiguredMatchUpdateKey" }),
   MONGODB_URI: str(),
   ON_DEMAND_ROLLBACK: num({ default: 0 }),
   ON_DEMAND_ROLLBACK_PORT_LOW: num({ default: 60000 }),

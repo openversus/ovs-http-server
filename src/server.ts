@@ -1,5 +1,6 @@
 import { logger, logwrapper, BE_VERBOSE } from "./config/logger";
 import express from "express";
+import cookieParser from "cookie-parser";
 import router from "./router";
 import { hydraDecoderMiddleware } from "./middleware/hydraParser";
 import * as https from "https";
@@ -98,6 +99,7 @@ process.on("warning", (e) => {
 
 app.use(express.json());
 app.use(express.urlencoded());
+app.use(cookieParser());
 
 // Leaderboard endpoint — BEFORE Hydra middleware, manual encoding
 import { HydraEncoder } from "mvs-dump";
@@ -1052,6 +1054,34 @@ app.get("/ovs/notifications", async (req, res) => {
 // polls /ovs/notifications and any entry with type="admin_banner"
 // pops a two-line in-game notification widget.
 // ============================================================
+
+// Admin auth — simple password gate via query param or session cookie.
+// Usage: /admin/banner?pw=yourpassword (sets cookie for subsequent requests)
+const ADMIN_PW = env.ADMIN_PASSWORD || "changeme";
+app.use("/admin", (req, res, next) => {
+  // Check query param first (login link)
+  if (req.query.pw === ADMIN_PW) {
+    res.cookie("admin_auth", ADMIN_PW, { httpOnly: true, maxAge: 24 * 60 * 60 * 1000 });
+    return next();
+  }
+  // Check cookie (subsequent requests)
+  if (req.cookies?.admin_auth === ADMIN_PW) {
+    return next();
+  }
+  res.status(401).send(`
+    <html><body style="font-family:Arial;display:grid;place-items:center;height:100vh;margin:0;background:#111;color:#fff">
+      <form style="text-align:center">
+        <h2>Admin Login</h2>
+        <input name="pw" type="password" placeholder="Password" style="padding:10px;font-size:16px;border-radius:8px;border:none;margin:8px"/>
+        <button type="submit" style="padding:10px 24px;font-size:16px;border-radius:8px;border:none;background:#ff7500;color:#fff;cursor:pointer">Login</button>
+      </form>
+    </body></html>
+  `);
+});
+app.use("/api/admin", (req, res, next) => {
+  if (req.cookies?.admin_auth === ADMIN_PW || req.query.pw === ADMIN_PW) return next();
+  res.status(401).json({ error: "Unauthorized" });
+});
 
 // Serve the HTML admin page.
 app.get("/admin/banner", async (req, res) => {

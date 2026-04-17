@@ -57851,6 +57851,14 @@ export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}
 
   logger.info(`${logPrefix} Received end of match stats for match ${matchId}, WinningTeamIndex: ${winningTeamIndex}`);
 
+  // Flag that this game ended with a real result. The rollback PlayerDisconnect
+  // handler checks this — if a game result was already received, the disconnect
+  // is normal post-game cleanup, NOT a dodge. Without this, the 5-second gap
+  // between submit_end_of_match_stats and MatchEnded causes false dodge detection.
+  if (matchId) {
+    await redisClient.set(`game_result_received:${matchId}`, "1", { NX: true, EX: 600 });
+  }
+
   // Capture pre-match ELO for delta calculation
   let preMatchElo: number | null = null;
   const account = AuthUtils.DecodeClientToken(req);

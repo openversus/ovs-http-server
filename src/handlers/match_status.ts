@@ -74,6 +74,15 @@ async function handlePlayerDisconnectElo(
     const matchEnded = await redisClient.get(`match_ended:${matchId}`);
     if (matchEnded) return;
 
+    // Skip if the game already received a result via submit_end_of_match_stats.
+    // This means the game finished naturally and the disconnect is normal post-game
+    // cleanup, NOT a dodge. The flag is set ~5s before PlayerDisconnect fires.
+    const gameResultReceived = await redisClient.get(`game_result_received:${matchId}`);
+    if (gameResultReceived) {
+      logger.info(`${logPrefix} Skipping ELO for PlayerDisconnect — game ${matchId} already has a result (normal post-game disconnect)`);
+      return;
+    }
+
     // Skip if server crashed (not fair to process ELO)
     const serverCrashed = await redisClient.get(`match_server_crash:${matchId}`);
     if (serverCrashed) return;

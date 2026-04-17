@@ -2092,6 +2092,37 @@ export class WebSocketService {
         // Ranked match — check if the set is over or should continue
         const setId = existingSetId || notification.matchId;
 
+        // If ELO was already processed for this set (dodge, concede, or set-over),
+        // the set is resolved — don't recreate it. Without this check, a mid-game
+        // dodge cleanup followed by a delayed END_OF_MATCH would recreate the set
+        // and leave the remaining player stuck in check-in limbo.
+        const alreadyProcessed = await redisClient.get(`elo_processed_set:${setId}`);
+        if (alreadyProcessed) {
+          logger.info(`[${serviceName}]: Set ${setId} already resolved (${alreadyProcessed}), skipping set creation for match ${notification.matchId}`);
+          // Send remaining players back to lobby
+          for (const pid of notification.playersIds) {
+            const remainClient = this.clients.get(pid);
+            if (remainClient) {
+              remainClient.matchConfig = undefined;
+              await redisUpdatePlayerStatus(pid, "idle");
+            }
+          }
+          // Send empty OnGameplayConfigNotified to kick clients back to lobby
+          for (const pid of notification.playersIds) {
+            const remainClient = this.clients.get(pid);
+            if (remainClient) {
+              remainClient.send({
+                data: { template_id: "OnGameplayConfigNotified", GameplayConfig: {} },
+                payload: { custom_notification: "realtime" },
+                header: "",
+                cmd: "update",
+              });
+              logger.info(`[${serviceName}]: Sent empty OnGameplayConfigNotified to ${pid} (set already resolved)`);
+            }
+          }
+          return;
+        }
+
         const gamesPlayed = existingSet ? existingSet.gamesPlayed + 1 : 1;
         let scores = existingSet?.scores || [0, 0];
 

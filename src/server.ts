@@ -9,7 +9,28 @@ import * as path from "path";
 import { hydraTokenMiddleware } from "./middleware/auth";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
-import { redisClient, redisGetMatchConfig, redisPublisdEndOfMatch, redisGetLobbyState, redisSaveLobbyState, redisGetPlayerConnectionByIp, redisSavePlayerLobby, redisPublishLobbyRejoin, RedisLobbyRejoinNotification, redisSavePartyKey, redisGetPartyKey, redisDeletePartyKey, redisGetPlayerLobby, redisGameServerInstanceReady, redisSetPendingJoinLobby, redisSaveIdentity } from "./config/redis";
+import { redisClient,
+  redisGetMatchConfig,
+  redisPublisdEndOfMatch,
+  redisGetLobbyState,
+  redisSaveLobbyState,
+  RedisPlayerConnection,
+  redisGetPlayerConnectionByIP,
+  redisSavePlayerLobby,
+  redisPublishLobbyRejoin,
+  RedisLobbyRejoinNotification,
+  redisSavePartyKey,
+  redisGetPartyKey,
+  redisDeletePartyKey,
+  redisGetPlayerLobby,
+  redisGameServerInstanceReady,
+  redisSetPendingJoinLobby,
+  redisSaveIdentity,
+  redisPopDLLNotifications,
+  redisPushDLLNotification,
+  redisGetOnlinePlayers,
+  redisGetActiveRankedSets,
+  redisGetInProgressMatches } from "./config/redis";
 import { getLeaderboard, getPlayerRank, processMatchLeave, eloToTierDivision } from "./services/eloService";
 import { performGenuineLeave } from "./ssc/ssc";
 import {
@@ -44,6 +65,7 @@ import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { NameGenerator } from "./utils/namegeneration";
 import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
+import { handleMatchStatusUpdate } from "./handlers/match_status";
 import { initAccelByteLobbyWs, accelByteLobbyWs } from "./accelByteLobbyWs";
 
 // HTML Rendering
@@ -188,6 +210,10 @@ const leaderboardFilePath = path.join(__dirname, "static/leaderboard.html");
 const leaderboardSource = fs.readFileSync(leaderboardFilePath, "utf8");
 const leaderboardTemplate = handlebars.compile(leaderboardSource);
 
+const matchesFilePath = path.join(__dirname, "static/matches.html");
+const matchesSource = fs.readFileSync(matchesFilePath, "utf8");
+const matchesTemplate = handlebars.compile(matchesSource);
+
 const customLobbyFilePath = path.join(__dirname, "static/custom_lobby.html");
 const customLobbySource = fs.readFileSync(customLobbyFilePath, "utf8");
 const customLobbyTemplate = handlebars.compile(customLobbySource);
@@ -195,6 +221,10 @@ const customLobbyTemplate = handlebars.compile(customLobbySource);
 const homeFilePath = path.join(__dirname, "static/home.html");
 const homeSource = fs.readFileSync(homeFilePath, "utf8");
 const homeTemplate = handlebars.compile(homeSource);
+
+const adminBannerFilePath = path.join(__dirname, "static/admin.html");
+const adminBannerSource = fs.readFileSync(adminBannerFilePath, "utf8");
+const adminBannerTemplate = handlebars.compile(adminBannerSource);
 
 app.get("/home", async (req, res) => {
   try {
@@ -355,14 +385,18 @@ app.post("/ovs_register", async (req, res, next) => {
     return;
   }
   // Send all players (including spectators) to the rollback server so spectators can connect
-  const players = config.players.map((p) => {
+  const players = await Promise.all(config.players.map(async (p) => {
+    const conn = await redisGetPlayerConnectionByIP(p.ip).catch(() => null);
     return {
       player_index: p.playerIndex,
+      player_id: p.playerId,
+      player_name: conn?.username || "Unknown",
+      player_character: conn?.character || "Unknown",
       ip: p.ip,
       is_host: p.isHost,
       is_spectator: p.isSpectator ?? false,
     };
-  });
+  }));
   res.json({
     max_players: config.players.length,
     match_duration: 36000,
@@ -374,6 +408,25 @@ app.post("/ovs_register", async (req, res, next) => {
   const playerIds = config.players.map((p) => p.playerId);
   await redisGameServerInstanceReady(body.matchId, playerIds);
   logger.info(`${logPrefix} Sent game-server-instance-ready for match ${body.matchId} after rollback server fetched config`);
+});
+
+// Called by the rollback server when gameplay actually begins (first frame).
+// Used to suppress match_cancel DLL notifications for mid-game disconnects —
+// those should let the game play out rather than yanking the remaining player to the menu.
+app.post("/ovs_match_started", async (req, res, next) => {
+  if (!req.body?.matchId || !req.body?.key) {
+    res.send("");
+    return;
+  }
+  const body = req.body;
+  const config = await redisGetMatchConfig(body.matchId);
+  if (!config || !config.matchKey || config.matchKey !== body.key) {
+    res.send("");
+    return;
+  }
+  await redisClient.set(`match_started:${body.matchId}`, "1", { EX: 600 });
+  logger.info(`${logPrefix} OVS MATCH STARTED for MatchID: ${body.matchId} — match_cancel DLL suppressed for mid-game disconnects`);
+  res.send("");
 });
 
 app.post("/ovs_end_match", async (req, res, next) => {
@@ -539,7 +592,7 @@ app.post("/party/set-key", async (req, res) => {
     await redisClient.hSet(`connections:${ip}`, { party_key: newKey });
 
     // Save party key lookup in Redis (lobbyId from current lobby or empty)
-    const conn = await redisGetPlayerConnectionByIp(ip);
+    const conn = await redisGetPlayerConnectionByIP(ip);
     const currentLobbyId = conn?.lobby_id || "";
     await redisSavePartyKey(newKey, { playerId: player.id, lobbyId: currentLobbyId, username: player.name });
 
@@ -745,6 +798,108 @@ app.get("/leaderboard", async (req, res) => {
   }
 });
 
+// ============================================================
+// Live Matches — Current ranked sets in progress
+// ============================================================
+//
+// Server-wide shared cache refreshed on a 2s tick (same cadence as the
+// matchmaking worker). All /api/matches requests return the same cached
+// snapshot, so cost is O(1) with viewer count instead of O(N). The tick
+// does one Redis sweep regardless of how many tabs are polling.
+
+const MATCHES_CACHE_TICK_MS = 2000;
+let matchesCache: { matches: any[]; count: number; generatedAt: number } = {
+  matches: [],
+  count: 0,
+  generatedAt: 0,
+};
+
+async function refreshMatchesCache(): Promise<void> {
+  try {
+    // Scan match_started:* so we catch matches even before game 1 finishes (0-0).
+    const matchIds = await redisGetInProgressMatches();
+    const results: any[] = [];
+    const seenSetIds = new Set<string>();
+
+    for (const matchId of matchIds) {
+      // Get the original match config (players, mode, isCustomGame).
+      const matchConfig = await redisGetMatchConfig(matchId);
+      if (!matchConfig || !Array.isArray(matchConfig.players)) continue;
+      if (matchConfig.isCustomGame) continue; // skip customs on the ranked matches page
+
+      // Resolve setId for scores. For game 1, setId = matchId. For later games,
+      // look up via any player's player_ranked_set mapping.
+      let setId = matchId;
+      let setState: any = null;
+      const anyPlayerId = matchConfig.players[0]?.playerId;
+      if (anyPlayerId) {
+        const mappedSetId = await redisClient.get(`player_ranked_set:${anyPlayerId}`);
+        if (mappedSetId) setId = mappedSetId;
+      }
+      // Dedup: if multiple game matchIds roll up to the same setId, only show once.
+      if (seenSetIds.has(setId)) continue;
+      seenSetIds.add(setId);
+
+      const setRaw = await redisClient.get(`ranked_set:${setId}`);
+      if (setRaw) {
+        try { setState = JSON.parse(setRaw); } catch {}
+      }
+
+      // Character resolution: prefer connections cache, fall back to match_characters.
+      const matchCharsRaw = await redisClient.get(`match_characters:${setId}`);
+      const matchChars = matchCharsRaw ? JSON.parse(matchCharsRaw) : {};
+
+      const teams: Record<string, any[]> = { "0": [], "1": [] };
+      for (const p of matchConfig.players) {
+        if (p.isSpectator) continue;
+        const conn = await redisClient.hGetAll(`connections:${p.playerId}`) as any;
+        const username = conn?.username || "Unknown";
+        const character = conn?.character || matchChars[p.playerId] || "unknown";
+        const team = String(p.teamIndex ?? 0);
+        if (!teams[team]) teams[team] = [];
+        teams[team].push({
+          playerId: p.playerId,
+          username,
+          character,
+        });
+      }
+
+      results.push({
+        setId,
+        matchId,
+        mode: matchConfig.mode,
+        scores: setState?.scores || [0, 0],
+        gamesPlayed: setState?.gamesPlayed || 0,
+        conceded: !!setState?.conceded,
+        teams,
+      });
+    }
+
+    matchesCache = { matches: results, count: results.length, generatedAt: Date.now() };
+  } catch (e) {
+    logger.error(`${logPrefix} refreshMatchesCache error: ${e}`);
+  }
+}
+
+// Kick off the refresh loop once at boot. All viewers share this cache.
+refreshMatchesCache();
+setInterval(refreshMatchesCache, MATCHES_CACHE_TICK_MS);
+
+app.get("/matches", async (req, res) => {
+  try {
+    const html = matchesTemplate({});
+    res.send(html);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /matches: ${e}`);
+    res.status(500).send("Error loading matches");
+  }
+});
+
+app.get("/api/matches", async (req, res) => {
+  // Return the shared cache — refreshed by the 2s tick above.
+  res.json(matchesCache);
+});
+
 app.post("/api/identify", async (req, res) => {
   try {
     let ip = req.ip?.replace(/^::ffff:/, "") ?? "";
@@ -854,6 +1009,123 @@ app.get("/ovs/client-version", async (req, res) => {
   } catch (e) {
     logger.error(`${logPrefix} Error in /ovs/client-version: ${e}`);
     res.json({ latest_version: "", download_url: "", is_latest: true, release_name: "" });
+  }
+});
+
+// ============================================================
+// /ovs/notifications — DLL polls this every 2s to receive queued
+// notifications (match_cancel, party invites, toasts, etc.)
+// Player is identified by IP via connections:{ip} Redis hash.
+// Returns JSON array (empty [] if no pending).
+// ============================================================
+app.get("/ovs/notifications", async (req, res) => {
+  try {
+    const ip = (req.ip || "").replace(/^::ffff:/, "");
+    if (!ip) {
+      res.json([]);
+      return;
+    }
+
+    // Look up the player by IP
+    const conn = await redisClient.hGetAll(`connections:${ip}`) as any;
+    const playerId = conn?.id;
+    if (!playerId) {
+      res.json([]);
+      return;
+    }
+
+    // Pop all queued DLL notifications for this player
+    const notifications = await redisPopDLLNotifications(playerId);
+    if (notifications.length > 0) {
+      logger.info(`${logPrefix} Delivered ${notifications.length} DLL notification(s) to ${playerId} (IP ${ip})`);
+    }
+    res.json(notifications);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in /ovs/notifications: ${e}`);
+    res.json([]);
+  }
+});
+
+// ============================================================
+// Admin banner — simple HTML page to push a notification banner
+// to all connected players (or a single player by ID). The DLL
+// polls /ovs/notifications and any entry with type="admin_banner"
+// pops a two-line in-game notification widget.
+// ============================================================
+
+// Serve the HTML admin page.
+app.get("/admin/banner", async (req, res) => {
+  try {
+    const onlineCount = (await redisGetOnlinePlayers()).length;
+    res.send(adminBannerTemplate({ onlineCount }));
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /admin/banner: ${e}`);
+    res.status(500).send("Error loading admin banner page");
+  }
+});
+
+// Lightweight count endpoint used by the admin page's "Refresh" button.
+app.get("/api/admin/banner/online-count", async (req, res) => {
+  try {
+    const players = await redisGetOnlinePlayers();
+    res.json({ count: players.length });
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /api/admin/banner/online-count: ${e}`);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// POST endpoint that actually pushes the notification.
+// Body: { title?, message?, timeout?, targetPlayerId? }
+// If targetPlayerId is omitted, broadcasts to every online player.
+app.post("/api/admin/banner", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const title = (body.title || "").toString().slice(0, 255);
+    const message = (body.message || "").toString().slice(0, 500);
+    const timeout = Number.isFinite(body.timeout) ? Number(body.timeout) : 8;
+    const targetPlayerId = body.targetPlayerId ? body.targetPlayerId.toString() : null;
+
+    if (!title && !message) {
+      res.status(400).json({ error: "title or message is required" });
+      return;
+    }
+
+    const notification = {
+      type: "admin_banner",
+      title,
+      message,
+      data: { timeout },
+      timestamp: Date.now(),
+    };
+
+    let targets: string[] = [];
+    if (targetPlayerId) {
+      targets = [targetPlayerId];
+    } else {
+      targets = await redisGetOnlinePlayers();
+    }
+
+    if (targets.length === 0) {
+      res.json({ ok: true, delivered: 0, note: "No online players" });
+      return;
+    }
+
+    let delivered = 0;
+    for (const pid of targets) {
+      try {
+        await redisPushDLLNotification(pid, notification);
+        delivered++;
+      } catch (e) {
+        logger.error(`${logPrefix} Failed to push admin banner to ${pid}: ${e}`);
+      }
+    }
+
+    logger.info(`${logPrefix} Admin banner broadcast: delivered to ${delivered}/${targets.length} players — title="${title}" message="${message}"`);
+    res.json({ ok: true, delivered, attempted: targets.length });
+  } catch (e) {
+    logger.error(`${logPrefix} Error in POST /api/admin/banner: ${e}`);
+    res.status(500).json({ error: String(e) });
   }
 });
 
@@ -1377,6 +1649,29 @@ app.put("/leaderboards/bulk/score-and-rank/:playerId", async (req, res) => {
   }
 });
 
+// ── Rollback Server Match Status Events ──
+// Receives status updates from the UDP rollback server (heartbeat, player connect/disconnect,
+// match start/end, errors, etc.). Currently just logs — will be wired to match_started gate,
+// ELO disconnect handling, and player stats once the event payloads are confirmed.
+app.post(["/ovs_match_status", "/api/ovs_match_status"], async (req, res) => {
+  if (!req.body) {
+    logger.warn(`${logPrefix} POST /api/ovs_match_status missing body`);
+    res.status(400).json({ error: "Missing body" });
+    return;
+  }
+
+  const ok = await handleMatchStatusUpdate(req, res).catch((e: unknown) => {
+    logger.error(`${logPrefix} Error handling match status update: ${e}`);
+    return false;
+  });
+
+  if (!ok) {
+    res.status(500).json({ error: "Failed to process match status update" });
+    return;
+  }
+  res.json({ status: "ok" });
+});
+
 app.use((req, res, next) => {
   // Suppress noisy polling endpoints from logs
   if (!req.url.includes('/ovs/notifications') && !req.url.includes('/ovs/my-friends')) {
@@ -1423,6 +1718,10 @@ export async function start() {
   await connect();
   await loadAssets();
   await LoadConfig();
+
+  // Flush stale online players — all WS connections died on restart,
+  // so nobody is actually online yet. They'll re-add on reconnect.
+  await redisClient.del("online_players");
 
   if (USE_INTERNAL_ROLLBACK) {
     if (!USE_INTERNAL_ROLLBACK_CPP) {

@@ -32,7 +32,8 @@
     "ts-node": "^10.9.2",
     "uuid": "^11.1.0",
     "ws": "^8.18.1",
-    "zod": "^3.24.2"
+    "zod": "^3.24.2",
+    "zstd-napi": "^0.0.12"
   },
   "devDependencies": {
     "@swc-node/register": "^1.10.10",

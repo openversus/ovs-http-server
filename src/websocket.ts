@@ -72,6 +72,7 @@ import {
   FRIEND_REQUEST_WS_CHANNEL,
   RedisFriendRequestWSNotification,
   DLLNotification,
+  redisPushDLLNotification,
   RedisLobbyState,
   redisUpdatePartyKeyLobby,
   redisSetPendingJoinLobby,
@@ -92,7 +93,7 @@ import env from "./env/env";
 import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./database/Cosmetics";
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 import { cancelMatchmakingForAll } from "./services/matchmakingService";
-import { processMatchLeave, getOrCreateRating, eloToTierDivision } from "./services/eloService";
+import { processMatchLeave, getOrCreateRating, eloToTierDivision, processSetResult, getPlayerRank } from "./services/eloService";
 import { PlayerTesterModel } from "./database/PlayerTester";
 
 const serviceName: string = "WebSocket";
@@ -146,8 +147,14 @@ interface MatchData {
   template_id: string;
 }
 
+interface ArenaModeInfo {
+  FaceoffWaitTime: number; // int32 seconds (UE5 FArenaModeInfo.FaceoffWaitTime @ +0x0)
+  ShopTime: number;        // int32 seconds (FArenaModeInfo.ShopTime @ +0x4)
+  bReadyToStart: boolean;  //               (FArenaModeInfo.bReadyToStart @ +0x8)
+}
+
 interface GameplayConfig {
-  ArenaModeInfo: null | string;
+  ArenaModeInfo: ArenaModeInfo | null | string;
   RiftNodeId: string;
   ScoreEvaluationRule: string;
   bIsPvP: boolean;
@@ -435,8 +442,10 @@ export class WebSocketService {
               const setId = await redisClient.get(`player_ranked_set:${playerId}`) || matchId;
               const canProcess = await redisClient.set(`elo_processed_set:${setId}`, "dodge", { NX: true, EX: 300 });
               if (canProcess === "OK") {
+                // Also claim the match-level dedup key so processMatchLeave (HTTP leave endpoint)
+                // won't double-apply ELO if the remaining player hits leave after receiving match_cancel.
+                await redisClient.set(`elo_processed:${matchId}`, "1", { NX: true, EX: 300 });
                 try {
-                  const { processSetResult } = await import("./services/eloService.js");
                   const chars = new Map<string, string>();
                   for (const pid of [...winnerIds, ...loserIds]) {
                     try {
@@ -444,13 +453,18 @@ export class WebSocketService {
                       if (conn?.character) chars.set(pid, conn.character);
                     } catch {}
                   }
-                  await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars);
+                  await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId);
                   await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: matchConfig.players.map((p) => p.playerId) }));
                   logger.info(`[${serviceName}]: Dodge: ${playerId} (${playerWS.account.username}) left match ${matchId} — ELO processed`);
+                } catch (eloErr) {
+                  logger.error(`[${serviceName}]: Error processing dodge ELO: ${eloErr}`);
+                }
 
-                  // Clean up player_ranked_set for ALL players in the set (not just dodger)
-                  // so their next match doesn't get linked to this dead set
-                  const allSetPlayerIds = matchConfig.players.map((p) => p.playerId);
+                // ---- Cleanup + DLL notification (runs regardless of ELO success) ----
+                // Clean up player_ranked_set for ALL players in the set (not just dodger)
+                // so their next match doesn't get linked to this dead set
+                const allSetPlayerIds = matchConfig.players.map((p) => p.playerId);
+                try {
                   for (const pid of allSetPlayerIds) {
                     await redisClient.del(`player_ranked_set:${pid}`);
                   }
@@ -458,27 +472,46 @@ export class WebSocketService {
                     await redisClient.del(`ranked_set:${setId}`);
                     await redisClient.del(`ranked_set_checkins:${setId}`);
                   }
-                  // Clear matchConfig for remaining players so faceoff_timeout doesn't
-                  // trigger a second dodge on the same match
-                  // Also send bogus GameplayConfig with invalid map to trigger
-                  // HandleGameplayConfigParsedOrReturnToLobby(false) on the client
-                  for (const pid of allSetPlayerIds) {
-                    if (pid === playerId) continue; // dodger already disconnecting
-                    const remainClient = this.clients.get(pid);
-                    if (remainClient) {
-                      remainClient.matchConfig = undefined;
-                    }
-                  }
-                  logger.info(`[${serviceName}]: Cleaned up set ${setId} for all ${allSetPlayerIds.length} players after dodge`);
-                } catch (eloErr) {
-                  logger.error(`[${serviceName}]: Error processing dodge ELO: ${eloErr}`);
+                } catch (cleanupErr) {
+                  logger.error(`[${serviceName}]: Error cleaning up ranked_set keys after dodge: ${cleanupErr}`);
                 }
+
+                // Clear matchConfig for remaining players so faceoff_timeout doesn't
+                // trigger a second dodge on the same match.
+                // Also push a DLL notification telling the client to force-return
+                // to main menu (DLL will call ClientReturnToMainMenu via ProcessEvent).
+                const matchStarted = await redisClient.get(`match_started:${matchId}`);
+                for (const pid of allSetPlayerIds) {
+                  if (pid === playerId) continue; // dodger already disconnecting
+                  const remainClient = this.clients.get(pid);
+                  if (remainClient && !matchStarted) {
+                    remainClient.matchConfig = undefined;
+                  }
+                  if (!matchStarted) {
+                    // Match hasn't started yet (pregame or loading screen) — send DLL to
+                    // cancel immediately rather than waiting for faceoff_timeout.
+                    try {
+                      await redisPushDLLNotification(pid, {
+                        type: "match_cancel",
+                        title: "Match Cancelled",
+                        message: "Opponent left the match",
+                        data: { matchId, reason: "opponent_dodge" },
+                        timestamp: Date.now(),
+                      });
+                      logger.info(`[${serviceName}]: Pushed match_cancel DLL notification to ${pid}`);
+                    } catch (notifErr) {
+                      logger.error(`[${serviceName}]: Error pushing match_cancel notif to ${pid}: ${notifErr}`);
+                    }
+                  } else {
+                    logger.info(`[${serviceName}]: Match ${matchId} in progress — skipping match_cancel DLL for ${pid}, letting game play out`);
+                  }
+                }
+                logger.info(`[${serviceName}]: Cleaned up set ${setId} for all ${allSetPlayerIds.length} players after dodge`);
               } else {
                 logger.info(`[${serviceName}]: Dodge: ${playerId} (${playerWS.account.username}) left match ${matchId} — ELO already processed`);
               }
             }
           }
-          await redisClient.set(`ranked_disconnect:${playerId}`, matchId, { EX: 120 });
         }
       } catch (e) {
         logger.error(`[${serviceName}]: Error processing match leave on disconnect for ${playerId}: ${e}`);
@@ -1177,6 +1210,9 @@ export class WebSocketService {
       data: {
         MatchId: notification.matchId,
         GameplayConfig: {
+          // Reverted — sending an inline object here causes client to fail
+          // matchmaking ("matchmaking failed"). Client probably expects null
+          // or a string path. Leave null until we know the expected format.
           ArenaModeInfo: null,
           RiftNodeId: "",
           ScoreEvaluationRule: "TargetScoreIsWin",
@@ -1446,56 +1482,19 @@ export class WebSocketService {
   }
 
   async handleToastReceived(notification: RedisToastNotification) {
-    const client = this.clients.get(notification.toasteeAccountId);
-    if (client) {
-      // Send both formats — the game might process one depending on context
-      // Format 1: profile-notification (native Hydra notification)
-      const toastMessage = {
-        data: {
-          template_id: "ToastReceived",
-          ToasterAccountID: notification.toasterAccountId,
-          ToasterUsername: notification.toasterUsername,
-          ContainerMatchId: notification.containerMatchId || "",
-          ToastInfo: {
-            ToasterAccountID: notification.toasterAccountId,
-            ToasterUsername: notification.toasterUsername,
-            ContainerMatchId: notification.containerMatchId || "",
-            Rewards: [],
-          },
-        },
-        payload: {
-          frm: { id: "internal-server", type: "server-api-key" },
-          template: "realtime",
-          account_id: notification.toasteeAccountId,
-          profile_id: notification.toasteeAccountId,
-          custom_notification: "realtime",
-          match: { id: notification.containerMatchId || "" },
-        },
-        header: "",
-        cmd: "profile-notification",
-      };
-      client.send(toastMessage);
-
-      // Format 2: update notification (same pattern as PlayerJoinedLobby)
-      const toastUpdate = {
-        data: {
-          template_id: "ToastReceived",
-          ToasterAccountID: notification.toasterAccountId,
-          ToasterUsername: notification.toasterUsername,
-          ContainerMatchId: notification.containerMatchId || "",
-        },
-        payload: {
-          custom_notification: "realtime",
-          match: { id: notification.containerMatchId || "" },
-        },
-        header: "",
-        cmd: "update",
-      };
-      client.send(toastUpdate);
-      logger.info(`[${serviceName}]: Sent toast notification (both formats) to ${notification.toasteeAccountId} from ${notification.toasterUsername} (${notification.toasterAccountId})`);
-    } else {
-      logger.warn(`[${serviceName}]: Could not find player ${notification.toasteeAccountId} to deliver toast from ${notification.toasterAccountId}`);
-    }
+    logger.info(`[${serviceName}]: handleToastReceived called — toastee: ${notification?.toasteeAccountId}, toaster: ${notification?.toasterAccountId}`);
+    // Queue a DLL notification for the toastee — the DLL's NotificationPoller
+    // will pick it up on its next 2s poll and show an in-game banner via
+    // ShowBanner. This works because the Hydra WS ToastReceived template_id
+    // isn't in the game's dispatch table (see game dump investigation).
+    await redisPushDLLNotification(notification.toasteeAccountId, {
+      type: "toast_received",
+      title: "Toast received!",
+      message: `${notification.toasterUsername} toasted you!`,
+      data: {},
+      timestamp: Date.now(),
+    });
+    logger.info(`[${serviceName}]: Queued toast_received DLL notification for ${notification.toasteeAccountId} from ${notification.toasterUsername} (${notification.toasterAccountId})`);
   }
 
   handlePlayerLoadoutLocked(notification: RedisPlayerLoadoutLockedNotification) {
@@ -2119,7 +2118,6 @@ export class WebSocketService {
           // Process set-based ELO (with dedup — disconnect concede may have already processed)
           const eloDedup = await redisClient.set(`elo_processed_set:${setId}`, "set_complete", { NX: true, EX: 300 });
           try {
-            const { processSetResult } = await import("./services/eloService.js");
             const team0Ids = existingSet.players.filter((p: any) => p.teamIndex === 0).map((p: any) => p.playerId);
             const team1Ids = existingSet.players.filter((p: any) => p.teamIndex === 1).map((p: any) => p.playerId);
             const winnerTeam = scores[0] > scores[1] ? 0 : 1;
@@ -2143,13 +2141,12 @@ export class WebSocketService {
                 logger.warn(`[${serviceName}]: No character found for player ${pid} — ELO will use global fallback`);
               }
             }
-            await processSetResult(winnerIds, loserIds, existingSet.mode, scores as [number, number], winnerTeam, false, playerChars);
+            await processSetResult(winnerIds, loserIds, existingSet.mode, scores as [number, number], winnerTeam, false, playerChars, notification.matchId);
             } else {
               logger.info(`[${serviceName}]: ELO already processed for set ${setId}, skipping set-complete processing`);
             }
 
             // Send FullRankUpdate notification to each player with fresh ranked data
-            const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
             for (const pid of [...winnerIds, ...loserIds]) {
               const client = this.clients.get(pid);
               if (!client) continue;
@@ -2523,8 +2520,19 @@ export class WebSocketService {
     });
 
     this.redisSub.subscribe(TOAST_RECEIVED_CHANNEL, (message) => {
-      const notification = JSON.parse(message) as RedisToastNotification;
-      this.handleToastReceived(notification);
+      logger.info(`[${serviceName}]: Toast subscriber callback fired, message: ${message}`);
+      try {
+        const notification = JSON.parse(message) as RedisToastNotification;
+        this.handleToastReceived(notification).catch((err) => {
+          logger.error(`[${serviceName}]: Unhandled error in handleToastReceived: ${err}`);
+        });
+      } catch (err) {
+        logger.error(`[${serviceName}]: Error parsing toast message: ${err} — raw: ${message}`);
+      }
+    }).then(() => {
+      logger.info(`[${serviceName}]: Subscribed to ${TOAST_RECEIVED_CHANNEL} successfully`);
+    }).catch((err) => {
+      logger.error(`[${serviceName}]: Failed to subscribe to ${TOAST_RECEIVED_CHANNEL}: ${err}`);
     });
 
     this.redisSub.subscribe(PLAYER_LOADOUT_LOCKED_CHANNEL, (message) => {
@@ -2681,7 +2689,6 @@ export class WebSocketService {
       try {
         const { playerIds } = JSON.parse(message);
         logger.info(`[${serviceName}]: FullRankUpdate (concede) for ${playerIds.length} players`);
-        const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
         for (const pid of playerIds) {
           const client = this.clients.get(pid);
           if (!client) continue;

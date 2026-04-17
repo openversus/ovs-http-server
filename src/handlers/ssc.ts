@@ -27,6 +27,7 @@ import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import * as KitchenSink from "../utils/garbagecan";
 import { processMatchResult, getOrCreateRating, getPlayerRank, eloToTierDivision, getLeaderboard } from "../services/eloService";
+import { recordGameStats } from "../services/statsService";
 import { handleRematchDecline, handleRematchAccept } from "../services/customLobbyService";
 
 const serviceName = "Handlers.SSC";
@@ -57890,6 +57891,19 @@ export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}
         logger.info(`${logPrefix} Stored pending winner (team ${winningTeamIndex}) for match ${matchId} (set not created yet)`);
       }
     }
+  }
+
+  // Fire-and-forget: record per-game stats (badges, aggregate, fighterStats, archive).
+  // We gate on the submitting player ID so we only process the payload once per game
+  // (both players submit but we only run recordGameStats on the first arrival).
+  if (pid && matchId && req.body?.EndOfMatchStats) {
+    const dedupKey = `game_stats_recorded:${matchId}`;
+    redisClient.set(dedupKey, "1", { NX: true, EX: 600 }).then((claimed: string | null) => {
+      if (claimed !== "OK") return; // already recorded by the other player's submit
+      recordGameStats(matchId, req.body.EndOfMatchStats, pid).catch((err: unknown) =>
+        logger.error(`${logPrefix} Game stats recording failed: ${err}`),
+      );
+    }).catch((err: unknown) => logger.error(`${logPrefix} Game stats dedup claim failed: ${err}`));
   }
 
   // Return ranked match payload with RP delta and updated record

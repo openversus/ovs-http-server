@@ -4,6 +4,7 @@ import { logger } from "../config/logger";
 import { PlayerTesterModel } from "../database/PlayerTester";
 import { Types } from "mongoose";
 import env from "../env/env";
+import { recordSetStats } from "./statsService";
 
 const serviceName = "Services.Elo";
 const logPrefix = `[${serviceName}]:`;
@@ -124,9 +125,20 @@ export async function processSetResult(
   winnerTeam: number,
   isConcede: boolean = false,
   playerCharacters: Map<string, string> = new Map(), // playerId → character_slug
+  matchId?: string, // optional — used to check for server crash flag
 ): Promise<{ deltas: Map<string, number>; rankUpdates: Map<string, any> }> {
   const deltas = new Map<string, number>();
   const rankUpdates = new Map<string, any>(); // playerId → MvsRankedServerMatchPayload
+
+  // If the rollback server crashed mid-match, skip ELO — not fair to process
+  if (matchId) {
+    const crashed = await redisClient.get(`match_server_crash:${matchId}`);
+    if (crashed) {
+      logger.info(`[Services.Elo]: Skipping ELO for match ${matchId} — rollback server crashed (match_server_crash flag set)`);
+      return { deltas, rankUpdates };
+    }
+  }
+  const expectedScores = new Map<string, number>();
   const is1v1 = mode === "1v1" || mode.includes("1v1");
   const eloField = is1v1 ? "elo_1v1" : "elo_2v2";
   const winsField = is1v1 ? "wins_1v1" : "wins_2v2";
@@ -171,6 +183,7 @@ export async function processSetResult(
     const totalSets = rating[winsField] + rating[lossesField];
     const K = getKFactor(totalSets);
     const expected = expectedScore(playerElo, avgLoserElo);
+    expectedScores.set(rating.account_id, expected);
     const currentStreak = (charSlug ? charData.streak : (rating[streakField] || 0)) + 1;
     const streakBonus = getStreakBonus(currentStreak);
 
@@ -250,6 +263,7 @@ export async function processSetResult(
     const totalSets = rating[winsField] + rating[lossesField];
     const K = getKFactor(totalSets);
     const expected = expectedScore(playerElo, avgWinnerElo);
+    expectedScores.set(rating.account_id, expected);
 
     let delta = Math.round(K * (0 - expected) * setModifier);
     delta = Math.max(MAX_LOSS, Math.min(MIN_LOSS, delta));
@@ -319,6 +333,14 @@ export async function processSetResult(
     `${logPrefix} Processed set result: winners=[${winnerIds}] losers=[${loserIds}] ` +
     `score=${setScore} concede=${isConcede} (avg ELO: winners=${Math.round(avgWinnerElo)} vs losers=${Math.round(avgLoserElo)})`,
   );
+
+  // Fire-and-forget: record stats for all three tiers
+  recordSetStats({
+    matchId: matchId || `set_${Date.now()}`,
+    mode, setScore, winnerTeam, isConcede,
+    winnerIds, loserIds, winnerRatings, loserRatings,
+    playerCharacters, deltas, avgWinnerElo, avgLoserElo, expectedScores,
+  }).catch((err) => logger.error(`${logPrefix} Stats recording failed: ${err}`));
 
   return { deltas, rankUpdates };
 }

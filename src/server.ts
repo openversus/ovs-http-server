@@ -1200,6 +1200,7 @@ app.use(hydraTokenMiddleware);
 
 // New friends/search/accounts routes — BEFORE old router for priority
 import { friendsRouter } from "./modules/friends/friends.routes";
+import { fromBase64 } from "bytebuffer";
 app.use(friendsRouter);
 
 app.use(router);
@@ -1403,30 +1404,35 @@ app.put("/leaderboards/bulk/score-and-rank/:playerId", async (req, res) => {
 
 app.post("/api/ovs_match_status", async (req, res) => {
 
-  if (!req.headers["MatchUpdateKey"]
-    || null === req.headers["MatchUpdateKey"]
-    || "" === req.headers["MatchUpdateKey"]
-    || !req.body
+  const matchUpdateKey: string = req.header("MatchUpdateKey") || "";
+  if (
+    !matchUpdateKey ||
+    null === matchUpdateKey ||
+    "" === matchUpdateKey
   )
   {
     logger.warn(`${logPrefix} POST /api/ovs_match_status missing MatchUpdateKey header or body`);
     res.status(403).json({ error: "Malformed request" });
     return;
   }
-  const matchUpdateKey = req.headers["MatchUpdateKey"] as string ?? "";
-  const matchStatus = req.body as IMatchStatus;
-  const rawStringPayload = JSON.stringify(matchStatus) ?? "";
-  const payloadHmacSha = createHmac("sha1", MATCH_UPDATE_KEY)
-                          .update(rawStringPayload)
-                          .digest("hex").toLowerCase();
+  //let tempMatchStatus: string = JSON.stringify(req.body);
+  // let bodyAsBase64: string = Buffer.from(JSON.stringify(bodyB64Header)).toString('utf8');
+  // const payloadHmacSha = createHmac("sha1", MATCH_UPDATE_KEY)
+  //                         .update(bodyAsBase64)
+  //                         .digest("hex");
 
-  if (payloadHmacSha !== matchUpdateKey.toLowerCase()) {
-    logger.warn(`${logPrefix} POST /api/ovs_match_status Received update request with invalid HMAC signature: expected ${payloadHmacSha}, got ${matchUpdateKey}. Payload: ${rawStringPayload}`);
-    res.status(403).json({ error: "Invalid signature" });
-    return;
+  // if (payloadHmacSha.toLowerCase() !== matchUpdateKey.toLowerCase()) {
+  if (matchUpdateKey.toLocaleLowerCase() !== MATCH_UPDATE_KEY.toLocaleLowerCase()) {
+    //logger.warn(`${logPrefix} POST /api/ovs_match_status Received update request with invalid HMAC signature: expected ${payloadHmacSha}, got ${matchUpdateKey}. B64Payload: ${bodyAsBase64} Payload: ${JSON.stringify(req.body)}`);
+      logger.warn(`${logPrefix} POST /api/ovs_match_status Received update request with invalid MatchUpdateKey. Payload: ${JSON.stringify(req.body)}`);
+      res.status(403).json({ error: "Invalid signature" });
+      return;
   }
 
-  logger.info(`${logPrefix} POST /api/ovs_match_status Received match status update for MatchId: ${matchStatus.matchId}`);
+  const matchStatus = req.body as IMatchStatus;
+  //const matchStatus: IMatchStatus = JSON.stringify(fromBase64(tempMatchStatus).toUTF8()) as unknown as IMatchStatus;
+  //const matchStatus = req.body as IMatchStatus;
+
   const updateStatus: boolean = Promise.resolve(handleMatchStatusUpdate(req, res)).catch((e) => {
     logger.error(`${logPrefix} Error handling match status update: ${e}`);
     return false;

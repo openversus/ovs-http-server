@@ -197,8 +197,10 @@ sscRouter.put("/ssc/invoke/match_set_concede", async (req: Request, res: Respons
             const winnerTeam = concederTeam === 0 ? 1 : 0;
             const team0Ids = setState.players.filter((p: any) => p.teamIndex === 0).map((p: any) => p.playerId);
             const team1Ids = setState.players.filter((p: any) => p.teamIndex === 1).map((p: any) => p.playerId);
-            const winnerIds = winnerTeam === 0 ? team0Ids : team1Ids;
-            const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
+            //const winnerIds = winnerTeam === 0 ? team0Ids : team1Ids;
+            //const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
+            const winnerIds = team0Ids.includes(playerId) ? team1Ids : team0Ids;
+            const loserIds = team0Ids.includes(playerId) ? team0Ids : team1Ids;
             try {
               const chars = await getPlayerCharacters([...winnerIds, ...loserIds], setId);
               await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars);

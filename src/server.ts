@@ -51,6 +51,7 @@ import { RegExpMatcher, TextCensor, englishDataset, englishRecommendedTransforme
 import env from "./env/env";
 import { syncRouter } from "./dataAssetSync";
 import { loadAssets } from "./loadAssets";
+import { randomInt, createHmac } from "crypto";
 import * as SharedTypes from "./types/shared-types";
 import { isParameter } from "typescript";
 import * as nodeutil from "node:util";
@@ -60,7 +61,9 @@ import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { NameGenerator } from "./utils/namegeneration";
 import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
+import { handleMatchStatusUpdate } from "./handlers/match_status";
 import { initAccelByteLobbyWs, accelByteLobbyWs } from "./accelByteLobbyWs";
+import { IMatchStatus } from "./interfaces/IMatchStatus";
 
 // HTML Rendering
 const handlebars = require("handlebars");
@@ -84,6 +87,7 @@ app.disable("x-powered-by");
 const port = env.HTTP_PORT || 8000;
 const USE_INTERNAL_ROLLBACK = env.USE_INTERNAL_ROLLBACK === 1 ? true : false;
 const USE_INTERNAL_ROLLBACK_CPP = env.USE_INTERNAL_ROLLBACK_CPP === 1 ? true : false;
+const MATCH_UPDATE_KEY = env.MATCHUPDATEKEY || "MisconfiguredMatchUpdateKey";
 const stringIsOnlyWhitespace = (string: string): boolean => string.trim().length === 0;
 
 process.on("warning", (e) => {
@@ -1196,6 +1200,7 @@ app.use(hydraTokenMiddleware);
 
 // New friends/search/accounts routes — BEFORE old router for priority
 import { friendsRouter } from "./modules/friends/friends.routes";
+import { fromBase64 } from "bytebuffer";
 app.use(friendsRouter);
 
 app.use(router);
@@ -1395,6 +1400,49 @@ app.put("/leaderboards/bulk/score-and-rank/:playerId", async (req, res) => {
     logger.error(`${logPrefix} Error in leaderboards/bulk/score-and-rank: ${e}`);
     res.send({ body: {}, metadata: null, return_code: 200 });
   }
+});
+
+app.post("/api/ovs_match_status", async (req, res) => {
+
+  const matchUpdateKey: string = req.header("MatchUpdateKey") || "";
+  if (
+    !matchUpdateKey ||
+    null === matchUpdateKey ||
+    "" === matchUpdateKey
+  )
+  {
+    logger.warn(`${logPrefix} POST /api/ovs_match_status missing MatchUpdateKey header or body`);
+    res.status(403).json({ error: "Malformed request" });
+    return;
+  }
+  //let tempMatchStatus: string = JSON.stringify(req.body);
+  // let bodyAsBase64: string = Buffer.from(JSON.stringify(bodyB64Header)).toString('utf8');
+  // const payloadHmacSha = createHmac("sha1", MATCH_UPDATE_KEY)
+  //                         .update(bodyAsBase64)
+  //                         .digest("hex");
+
+  // if (payloadHmacSha.toLowerCase() !== matchUpdateKey.toLowerCase()) {
+  if (matchUpdateKey.toLocaleLowerCase() !== MATCH_UPDATE_KEY.toLocaleLowerCase()) {
+    //logger.warn(`${logPrefix} POST /api/ovs_match_status Received update request with invalid HMAC signature: expected ${payloadHmacSha}, got ${matchUpdateKey}. B64Payload: ${bodyAsBase64} Payload: ${JSON.stringify(req.body)}`);
+      logger.warn(`${logPrefix} POST /api/ovs_match_status Received update request with invalid MatchUpdateKey. Payload: ${JSON.stringify(req.body)}`);
+      res.status(403).json({ error: "Invalid signature" });
+      return;
+  }
+
+  const matchStatus = req.body as IMatchStatus;
+  //const matchStatus: IMatchStatus = JSON.stringify(fromBase64(tempMatchStatus).toUTF8()) as unknown as IMatchStatus;
+  //const matchStatus = req.body as IMatchStatus;
+
+  const updateStatus: boolean = Promise.resolve(handleMatchStatusUpdate(req, res)).catch((e) => {
+    logger.error(`${logPrefix} Error handling match status update: ${e}`);
+    return false;
+  }) as unknown as boolean;
+
+  if (!updateStatus) {
+    res.status(500).json({ error: "Failed to process match status update" });
+    return;
+  }
+  res.json({ status: "ok" });
 });
 
 app.use((req, res, next) => {

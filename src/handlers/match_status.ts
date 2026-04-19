@@ -27,6 +27,16 @@ export async function handleMatchStatusUpdate(req: Request<{}, {}, IMatchStatus,
     );
   }
 
+  // Warn on any error events (NonTerminatingError, TerminatingError, etc.)
+  if (event.toLowerCase().includes("error")) {
+    logger.warn(`${logPrefix} Received ${event} for match ${matchId}: ${description}`);
+  }
+
+  // Warn on high tick time (server lag)
+  if (event === "TickPerformance" && description.includes(": 1668")) {
+    logger.warn(`${logPrefix} High tick time for match ${matchId}: ${description}`);
+  }
+
   // ── MatchStarted — set the match_started gate in Redis ──
   if (event === "MatchStarted" && matchId) {
     await redisClient.set(`match_started:${matchId}`, "1", { EX: 600 });

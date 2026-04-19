@@ -58,7 +58,7 @@ services:
     network_mode: host
     ports:
       - "${UDPPORT}:${UDPPORT}/udp"
-    restart: unless-stopped
+    restart: no
 
 EOF
 )

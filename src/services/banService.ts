@@ -9,6 +9,9 @@ const logPrefix: string = `[${serviceName}]:`;
 const IPBansFile: string = env.IP_BANS_FILE || "../data/bans.txt";
 const CIDRBansFile: string = env.CIDR_BANS_FILE || "../data/cidr_bans.txt";
 const BannedNamesFile: string = env.BANNED_NAMES_FILE || "../data/banned_names.txt";
+const SteamIDBansFile: string = env.HASHBANS_FILE || "../data/hashbans.txt";
+const EpicIDBansFile: string = env.HASHBANS_FILE || "../data/hashbans.txt";
+const HashbansFile: string = env.HASHBANS_FILE || "../data/hashbans.txt";
 const ForceChangeNamesFile: string = env.FORCE_CHANGE_NAMES_FILE || "../data/force_change_names.txt";
 
 function syncReadFile(filename: string = IPBansFile): string[] {
@@ -62,6 +65,9 @@ function syncWriteFile(filename: string, data: string | Array<string>): void {
 
 export const cidrBans = syncReadFile(CIDRBansFile);
 export const bannedNames = syncReadFile(BannedNamesFile);
+export const steamIDBans = syncReadFile(SteamIDBansFile);
+export const epicIDBans = syncReadFile(EpicIDBansFile);
+export const hashBans = syncReadFile(HashbansFile);
 export const forceChangeNames = syncReadFile(ForceChangeNamesFile);
 
 export function getBans(): string[] {
@@ -107,10 +113,17 @@ export function stringContainsForceChangeName(string: string): boolean {
   return forceChangePattern.test(string);
 }
 
-export function isBanned(ipAddress: string): boolean {
+export function isBanned(banQuery: string): boolean {
   const bans = getBans();
   const cidrBans = getCIDRBans();
-  return bans.includes(ipAddress) || cidrBans.some((cidr) => isIPInCIDRBlock(ipAddress, cidr));
+  const isBanned = bans.includes(banQuery) ||
+  cidrBans.some((cidr) => isIPInCIDRBlock(banQuery, cidr)) ||
+  steamIDBans.includes(banQuery) ||
+  epicIDBans.includes(banQuery) ||
+  hashBans.includes(banQuery);
+  return isBanned;
+
+  //return bans.includes(banQuery) || cidrBans.some((cidr) => isIPInCIDRBlock(banQuery, cidr));
 }
 
 export function isCIDRBanned(ipAddress: string): boolean {

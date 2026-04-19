@@ -743,6 +743,24 @@ router.get("/images/:image", (req: Request<{}, {}, {}, {}>, res: Response) => {
   h.handleImages(req, res);
 });
 
+router.get("/favicon/:image", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  // @ts-ignore TODO : implementation. Remove comment once implemented`
+  // Reuse image handler for favicons since they're just images with a different path
+  // This is getting its own route to avoid conflicts with the catch-all that serves SSC garbage for unknown paths
+  // and also to eventually support multiple favicon sizes/versions/etc if needed.
+  h.handleImages(req, res);
+});
+
+router.get("/favicon.ico", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  // Reuse image handler for favicons since they're just images with a different path
+  // This is getting its own route to avoid conflicts with the catch-all that serves SSC garbage for unknown paths
+  // and also to eventually support multiple favicon sizes/versions/etc if needed.
+
+  req.params = { image: "favicon.ico" }; // Set the image param so the handler knows which file to serve
+  // @ts-ignore TODO : implementation. Remove comment once implemented`
+  h.handleImages(req, res);
+});
+
 // /ovs/leave-party removed — leave_player_lobby in shared.routes.ts handles both custom and party lobbies natively.
 
 // DLL endpoints removed — all functionality now works server-side via WebSocket notifications.

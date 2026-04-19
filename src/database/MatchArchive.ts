@@ -2,7 +2,7 @@ import { prop, modelOptions, getModelForClass, index, Severity } from "@typegoos
 
 @modelOptions({ schemaOptions: { collection: "match_archives" }, options: { allowMixed: Severity.ALLOW } })
 @index({ match_id: 1 }, { unique: true })
-@index({ timestamp: 1 }, { expireAfterSeconds: 7776000 }) // 90-day TTL
+@index({ timestamp: 1 })
 export class MatchArchive {
   @prop({ required: true })
   public match_id!: string;

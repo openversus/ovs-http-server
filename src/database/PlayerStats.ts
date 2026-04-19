@@ -30,18 +30,24 @@ export class PlayerStats {
 }
 
 // TypeScript interfaces for documentation — Mongo stores these as plain objects
+export interface RecentMatchPlayerStats {
+  accountId: string;
+  character: string;
+  teamIndex: number;
+  damage: number;
+  ringouts: number;
+  deaths: number;
+  isWinner: boolean;
+}
+
 export interface RecentMatchEntry {
   matchId: string;
   timestamp: number;
   mode: string;
-  myCharacter: string;
-  opponentCharacter: string;
-  teammateCharacter?: string; // 2v2 only
+  map: string;
   result: "win" | "loss";
   score: [number, number];
-  eloChange: number;
-  eloBefore: number;
-  opponentElo: number;
+  players: RecentMatchPlayerStats[];
 }
 
 export interface MatchupCounters {

@@ -883,8 +883,7 @@ async function refreshMatchesCache(): Promise<void> {
   }
 }
 
-// Kick off the refresh loop once at boot. All viewers share this cache.
-refreshMatchesCache();
+// Refresh loop — interval handles it; no boot call needed (Redis may not be connected yet).
 setInterval(refreshMatchesCache, MATCHES_CACHE_TICK_MS);
 
 app.get("/matches", async (req, res) => {

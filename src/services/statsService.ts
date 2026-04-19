@@ -1,6 +1,6 @@
 import { logger } from "../config/logger";
 import { redisClient } from "../config/redis";
-import { PlayerStatsModel, RecentMatchEntry } from "../database/PlayerStats";
+import { PlayerStatsModel, RecentMatchEntry, RecentMatchPlayerStats } from "../database/PlayerStats";
 import { MatchArchiveModel } from "../database/MatchArchive";
 import * as zstd from "zstd-napi";
 
@@ -44,8 +44,8 @@ function normalizeAggregateKey(gameKey: string): string {
 
 // ════════════════════════════════════════════════════════════════════════
 // recordSetStats — called fire-and-forget from processSetResult (per-SET)
-// Handles: hot queue, set-level wins/losses, matchup outcomes, teammate outcomes
-// Does NOT write archives — that happens per-GAME in recordGameStats.
+// Handles: set-level wins/losses, matchup outcomes, teammate outcomes
+// Does NOT write recent matches or archives — those happen per-GAME in recordGameStats.
 // ════════════════════════════════════════════════════════════════════════
 
 export interface RecordSetStatsParams {
@@ -74,11 +74,7 @@ export async function recordSetStats(params: RecordSetStatsParams): Promise<void
 
   const is1v1 = mode === "1v1" || mode.includes("1v1");
   const charsField = is1v1 ? "characters_1v1" : "characters_2v2";
-  const recentField = is1v1 ? "recent_matches_1v1" : "recent_matches_2v2";
   const allIds = [...winnerIds, ...loserIds];
-
-  const ratingMap = new Map<string, any>();
-  for (const r of [...winnerRatings, ...loserRatings]) ratingMap.set(r.account_id, r);
 
   const updates: Promise<any>[] = [];
 
@@ -86,16 +82,11 @@ export async function recordSetStats(params: RecordSetStatsParams): Promise<void
     const isWinner = winnerIds.includes(playerId);
     const myChar = playerCharacters.get(playerId) || "unknown";
     const expected = expectedScores.get(playerId) ?? 0.5;
-    const delta = deltas.get(playerId) ?? 0;
-    const rating = ratingMap.get(playerId);
-    const eloField = is1v1 ? "elo_1v1" : "elo_2v2";
-    const eloBefore = rating ? (rating[eloField] ?? 0) : 0;
 
     const opponentIds = isWinner ? loserIds : winnerIds;
     const teammateIds = (isWinner ? winnerIds : loserIds).filter((id) => id !== playerId);
     const opponentChar = playerCharacters.get(opponentIds[0]) || "unknown";
     const teammateChar = teammateIds.length > 0 ? (playerCharacters.get(teammateIds[0]) || "unknown") : undefined;
-    const opponentElo = isWinner ? avgLoserElo : avgWinnerElo;
 
     const isTossup = expected >= TOSSUP_LOW && expected <= TOSSUP_HIGH;
     const isUpset = isWinner && expected < TOSSUP_LOW;
@@ -123,25 +114,13 @@ export async function recordSetStats(params: RecordSetStatsParams): Promise<void
       if (isChoke) inc[`${teammatePath}.chokes`] = 1;
     }
 
-    const recentEntry: RecentMatchEntry = {
-      matchId,
-      timestamp: Date.now(),
-      mode,
-      myCharacter: myChar,
-      opponentCharacter: opponentChar,
-      teammateCharacter: teammateChar,
-      result: isWinner ? "win" : "loss",
-      score: setScore,
-      eloChange: delta,
-      eloBefore,
-      opponentElo: Math.round(opponentElo),
-    };
+    // Recent match history is now written per-GAME in recordGameStats, not here.
+    // This function only handles set-level win/loss badges and matchup counters.
 
     updates.push(
       PlayerStatsModel.updateOne(
         { account_id: playerId },
         {
-          $push: { [recentField]: { $each: [recentEntry], $slice: -10 } },
           $inc: inc,
           $set: { updated_at: Date.now() },
         },
@@ -227,9 +206,67 @@ export async function recordGameStats(
       if (statName) inc[`${charPath}.fighterStats.${statName}`] = Math.round(val);
     }
 
-    if (Object.keys(inc).length === 0 && Object.keys(max).length === 0) continue;
+    // ── Recent match entry (per-GAME) ──
+    const recentField = is1v1 ? "recent_matches_1v1" : "recent_matches_2v2";
+    const winningTeamIdx = endOfMatchStats.WinningTeamIndex ?? -1;
+    const rawScore = endOfMatchStats.Score;
+    const gameScore: [number, number] = Array.isArray(rawScore)
+      ? [rawScore[0] ?? 0, rawScore[1] ?? 0]
+      : [0, 0];
 
-    const updateDoc: any = { $set: { updated_at: Date.now() } };
+    // Determine team indexes from match config (MATCH_FOUND_NOTIFICATION format)
+    const matchConfig = configRaw ? JSON.parse(configRaw) : null;
+    const teamMap = new Map<string, number>(); // playerId → teamIndex
+    if (matchConfig?.players && Array.isArray(matchConfig.players)) {
+      for (const p of matchConfig.players) {
+        if (p.playerId && p.teamIndex !== undefined) {
+          teamMap.set(p.playerId, p.teamIndex);
+        }
+      }
+    }
+
+    const myTeamIndex = teamMap.get(accountId) ?? -1;
+    const didWin = winningTeamIdx >= 0 && myTeamIndex === winningTeamIdx;
+
+    // Build per-player combat stats from PMU for match breakdown
+    const allPlayerStats: RecentMatchPlayerStats[] = [];
+    for (const [pid, pPmu] of Object.entries(pmu)) {
+      if (!pPmu || typeof pPmu !== "object") continue;
+      const pChar = matchChars[pid] || "unknown";
+      const pTeam = teamMap.get(pid) ?? -1;
+      const pWon = winningTeamIdx >= 0 && pTeam === winningTeamIdx;
+      allPlayerStats.push({
+        accountId: pid,
+        character: pChar,
+        teamIndex: pTeam,
+        damage: Math.round(Number(pPmu["Stat:Game:Character:TotalDamageDealt"]) ||
+                           Number(pPmu["Stat:Game:Character:TotalAttackDamageDealt"]) || 0),
+        ringouts: Math.round(Number(pPmu["Stat:Game:Character:TotalRingouts"]) || 0),
+        deaths: 0, // derived below from opponent ringouts
+        isWinner: pWon,
+      });
+    }
+    // Derive deaths: each player's deaths = sum of opponent team's ringouts
+    for (const ps of allPlayerStats) {
+      ps.deaths = allPlayerStats
+        .filter(other => other.teamIndex !== ps.teamIndex)
+        .reduce((sum, other) => sum + other.ringouts, 0);
+    }
+
+    const recentEntry: RecentMatchEntry = {
+      matchId,
+      timestamp: Date.now(),
+      mode,
+      map: matchConfig?.map || "",
+      result: didWin ? "win" : "loss",
+      score: gameScore,
+      players: allPlayerStats,
+    };
+
+    const updateDoc: any = {
+      $set: { updated_at: Date.now() },
+      $push: { [recentField]: { $each: [recentEntry], $slice: -10 } },
+    };
     if (Object.keys(inc).length > 0) updateDoc.$inc = inc;
     if (Object.keys(max).length > 0) updateDoc.$max = max;
 

@@ -93,7 +93,7 @@ import env from "./env/env";
 import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./database/Cosmetics";
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 import { cancelMatchmakingForAll } from "./services/matchmakingService";
-import { processMatchLeave, getOrCreateRating, eloToTierDivision, processSetResult, getPlayerRank } from "./services/eloService";
+import { processMatchLeave, getOrCreateRating, eloToTierDivision } from "./services/eloService";
 import { PlayerTesterModel } from "./database/PlayerTester";
 import { PlayerStatsModel } from "./database/PlayerStats";
 import { INVENTORY_DEFINITIONS } from "./data/inventoryDefs";
@@ -465,7 +465,9 @@ export class WebSocketService {
                         if (conn?.character) chars.set(pid, conn.character);
                       } catch {}
                     }
-                    await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId);
+                    // Pregame dodge — pass isPregameDodge=true so stats count it as a dodge
+                    const { processSetResult } = await import("./services/eloService.js");
+                    await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId, true);
                     await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: matchConfig.players.map((p) => p.playerId) }));
                     logger.info(`[${serviceName}]: Pregame dodge: ${playerId} (${playerWS.account.username}) left match ${matchId} — ELO processed`);
                   } catch (eloErr) {
@@ -2239,12 +2241,14 @@ export class WebSocketService {
                 logger.warn(`[${serviceName}]: No character found for player ${pid} — ELO will use global fallback`);
               }
             }
+            const { processSetResult } = await import("./services/eloService.js");
             await processSetResult(winnerIds, loserIds, existingSet.mode, scores as [number, number], winnerTeam, false, playerChars, notification.matchId);
             } else {
               logger.info(`[${serviceName}]: ELO already processed for set ${setId}, skipping set-complete processing`);
             }
 
             // Send FullRankUpdate notification to each player with fresh ranked data
+            const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
             for (const pid of [...winnerIds, ...loserIds]) {
               const client = this.clients.get(pid);
               if (!client) continue;
@@ -2796,6 +2800,7 @@ export class WebSocketService {
       try {
         const { playerIds } = JSON.parse(message);
         logger.info(`[${serviceName}]: FullRankUpdate (concede) for ${playerIds.length} players`);
+        const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
         for (const pid of playerIds) {
           const client = this.clients.get(pid);
           if (!client) continue;

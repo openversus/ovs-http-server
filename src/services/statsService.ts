@@ -54,6 +54,7 @@ export interface RecordSetStatsParams {
   setScore: [number, number];
   winnerTeam: number;
   isConcede: boolean;
+  isPregameDodge?: boolean; // only true for pregame dodges (no game played)
   winnerIds: string[];
   loserIds: string[];
   winnerRatings: any[];
@@ -67,7 +68,7 @@ export interface RecordSetStatsParams {
 
 export async function recordSetStats(params: RecordSetStatsParams): Promise<void> {
   const {
-    matchId, mode, setScore, winnerTeam, isConcede,
+    matchId, mode, setScore, winnerTeam, isConcede, isPregameDodge,
     winnerIds, loserIds, winnerRatings, loserRatings,
     playerCharacters, deltas, avgWinnerElo, avgLoserElo, expectedScores,
   } = params;
@@ -97,14 +98,26 @@ export async function recordSetStats(params: RecordSetStatsParams): Promise<void
 
     // Character-level wins/losses (set-level)
     inc[`${charPath}.${isWinner ? "wins" : "losses"}`] = 1;
+    // Character-level dodge tracking — ONLY pregame dodges (no game was played).
+    // Mid-match alt-F4 or between-games leaves count as real set wins/losses.
+    //   actualPlayedWins = wins - dodgeWins
+    //   actualPlayedLosses = losses - dodgeLosses
+    if (isPregameDodge) {
+      inc[`${charPath}.${isWinner ? "dodgeWins" : "dodgeLosses"}`] = 1;
+    }
+    // Character-level upset/choke/tossup tracking (aggregated across all opponents)
+    if (isUpset) inc[`${charPath}.upsets`] = 1;
+    if (isChoke) inc[`${charPath}.chokes`] = 1;
+    if (isTossup) inc[`${charPath}.${isWinner ? "tossupWins" : "tossupLosses"}`] = 1;
 
-    // Matchup-level outcomes vs opponent character
+    // Matchup-level outcomes vs opponent character (same stats, per-opponent)
     const matchupPath = `${charPath}.matchups.${opponentChar}`;
     inc[`${matchupPath}.${isWinner ? "wins" : "losses"}`] = 1;
     if (isUpset) inc[`${matchupPath}.upsets`] = 1;
     if (isChoke) inc[`${matchupPath}.chokes`] = 1;
     if (isTossup) inc[`${matchupPath}.${isWinner ? "tossupWins" : "tossupLosses"}`] = 1;
-    if (isConcede && isWinner) inc[`${matchupPath}.dodges`] = 1;
+    // Matchup-level "dodges" also only counts pregame dodges (consistent with character-level)
+    if (isPregameDodge && isWinner) inc[`${matchupPath}.dodges`] = 1;
 
     // Teammate-level outcomes (2v2 only)
     if (!is1v1 && teammateChar) {

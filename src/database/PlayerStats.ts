@@ -68,9 +68,21 @@ export interface TeammateCounters {
 }
 
 export interface CharacterStats {
-  // Set-level badges
+  // Set-level win/loss totals (include dodges)
   wins: number;
   losses: number;
+  // Pregame dodge tracking — only counts dodges that happened BEFORE the match
+  // actually started (no game played). Mid-match alt-F4 or between-games leaves
+  // are real set wins/losses, not dodges.
+  //   actualPlayedWins = wins - dodgeWins
+  //   actualPlayedLosses = losses - dodgeLosses
+  dodgeWins: number;       // wins where opponent dodged pregame
+  dodgeLosses: number;     // losses where YOU dodged pregame
+  // Character-level skill-based outcome counters (aggregated across all matchups)
+  upsets: number;          // wins as underdog (expected < 0.44)
+  chokes: number;          // losses as favorite (expected > 0.56)
+  tossupWins: number;      // wins in even matchups (expected ≈ 0.5)
+  tossupLosses: number;    // losses in even matchups
   // Game-level badges (accumulated)
   ringouts: number;
   totalDamageDealt: number;
@@ -78,7 +90,7 @@ export interface CharacterStats {
   highestDamageDealt: number;
   // Character-specific ability stats (Fighter:{X}:*, Hitbox:{X}:*, Marceline:*)
   fighterStats: Record<string, number>;
-  // Outcomes vs each opponent character
+  // Outcomes vs each opponent character (same skill breakdown, per-opponent)
   matchups: Record<string, MatchupCounters>;
   // 2v2 only: synergy outcomes with each teammate character
   teammates?: Record<string, TeammateCounters>;

@@ -97,6 +97,17 @@ async function handlePlayerDisconnectElo(
     const serverCrashed = await redisClient.get(`match_server_crash:${matchId}`);
     if (serverCrashed) return;
 
+    // Mid-game disconnect — DON'T process ELO immediately. Just flag ranked_disconnect
+    // and let the remaining player(s) finish the game. When they hit READY, auto-concede
+    // fires via handleRankedSetCheckin. This matches the WS disconnect handler flow.
+    const matchStartedFlag = await redisClient.get(`match_started:${matchId}`);
+    if (matchStartedFlag) {
+      await redisClient.set(`ranked_disconnect:${disconnectedPlayerId}`, "1", { EX: 600 });
+      logger.info(`${logPrefix} Mid-match PlayerDisconnect for ${disconnectedPlayerId} in ${matchId} — flagged for auto-concede`);
+      return;
+    }
+
+    // Pregame path — process ELO immediately since no game will play out
     // Get match config — need mode, team assignments, isCustomGame
     const matchConfig = await redisGetMatchConfig(matchId);
     if (!matchConfig || matchConfig.isCustomGame) return;
@@ -111,22 +122,14 @@ async function handlePlayerDisconnectElo(
     const winnerIds = winnerTeam === 0 ? team0Ids : team1Ids;
     const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
 
-    // Resolve setId (player_ranked_set mapping, or matchId for game 1)
     const setId = await redisClient.get(`player_ranked_set:${disconnectedPlayerId}`) || matchId;
 
-    // Match-level dedup check FIRST — catches the case where Player A's disconnect
-    // already processed ELO and cleaned up player_ranked_set, then Player B alt-F4s
-    // later with a different setId fallback. Without this, game 2+ of a set could
-    // double-process because the set-level key uses a different setId.
     const matchAlreadyProcessed = await redisClient.get(`elo_processed:${matchId}`);
     if (matchAlreadyProcessed) return;
 
-    // Set-level dedup — shared with WS disconnect handler and SSC check-in.
-    // Whichever fires first processes ELO. The rest see "already done" and skip.
-    const canProcess = await redisClient.set(`elo_processed_set:${setId}`, "rollback_disconnect", { NX: true, EX: 300 });
-    if (canProcess !== "OK") return; // already processed by another path
+    const canProcess = await redisClient.set(`elo_processed_set:${setId}`, "rollback_pregame_dodge", { NX: true, EX: 300 });
+    if (canProcess !== "OK") return;
 
-    // Also claim match-level dedup
     await redisClient.set(`elo_processed:${matchId}`, "1", { NX: true, EX: 300 });
 
     // Resolve characters
@@ -144,17 +147,14 @@ async function handlePlayerDisconnectElo(
       }
     }
 
-    // Process ELO
-    await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId);
-    logger.info(`${logPrefix} Dodge ELO processed via rollback PlayerDisconnect: ${disconnectedPlayerId} left match ${matchId} (set ${setId})`);
+    // Process ELO as pregame dodge
+    await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId, true);
+    logger.info(`${logPrefix} Pregame dodge ELO processed via rollback PlayerDisconnect: ${disconnectedPlayerId} left match ${matchId}`);
 
-    // Publish FullRankUpdate so WS can push to connected clients
     await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: matchConfig.players.map((p) => p.playerId) }));
-
-    // Flag the disconnecting player for auto-concede (so SSC check-in also knows)
     await redisClient.set(`ranked_disconnect:${disconnectedPlayerId}`, "1", { EX: 600 });
 
-    // Clean up ranked set keys so next match doesn't link to this dead set
+    // Clean up ranked set keys
     const allSetPlayerIds = matchConfig.players.filter((p) => !p.isSpectator).map((p) => p.playerId);
     for (const pid of allSetPlayerIds) {
       await redisClient.del(`player_ranked_set:${pid}`);
@@ -164,27 +164,24 @@ async function handlePlayerDisconnectElo(
       await redisClient.del(`ranked_set_checkins:${setId}`);
     }
 
-    // Push DLL match_cancel notification to remaining players if pre-game
-    const matchStarted = await redisClient.get(`match_started:${matchId}`);
-    if (!matchStarted) {
-      for (const pid of allSetPlayerIds) {
-        if (pid === disconnectedPlayerId) continue;
-        try {
-          await redisPushDLLNotification(pid, {
-            type: "match_cancel",
-            title: "Match Cancelled",
-            message: "Opponent left the match",
-            data: { matchId, reason: "opponent_dodge" },
-            timestamp: Date.now(),
-          });
-          logger.info(`${logPrefix} Pushed match_cancel DLL notification to ${pid}`);
-        } catch (err) {
-          logger.error(`${logPrefix} Error pushing match_cancel to ${pid}: ${err}`);
-        }
+    // Push DLL match_cancel notification to remaining players
+    for (const pid of allSetPlayerIds) {
+      if (pid === disconnectedPlayerId) continue;
+      try {
+        await redisPushDLLNotification(pid, {
+          type: "match_cancel",
+          title: "Match Cancelled",
+          message: "Opponent left the match",
+          data: { matchId, reason: "opponent_dodge" },
+          timestamp: Date.now(),
+        });
+        logger.info(`${logPrefix} Pushed match_cancel DLL notification to ${pid}`);
+      } catch (err) {
+        logger.error(`${logPrefix} Error pushing match_cancel to ${pid}: ${err}`);
       }
     }
 
-    logger.info(`${logPrefix} Cleaned up set ${setId} for ${allSetPlayerIds.length} players after dodge`);
+    logger.info(`${logPrefix} Cleaned up set ${setId} for ${allSetPlayerIds.length} players after pregame dodge`);
   } catch (err) {
     logger.error(`${logPrefix} Error processing PlayerDisconnect ELO: ${err}`);
   }

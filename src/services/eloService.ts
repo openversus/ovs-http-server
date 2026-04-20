@@ -126,6 +126,7 @@ export async function processSetResult(
   isConcede: boolean = false,
   playerCharacters: Map<string, string> = new Map(), // playerId → character_slug
   matchId?: string, // optional — used to check for server crash flag
+  isPregameDodge: boolean = false, // true only if dodge happened before match_started (no game played)
 ): Promise<{ deltas: Map<string, number>; rankUpdates: Map<string, any> }> {
   const deltas = new Map<string, number>();
   const rankUpdates = new Map<string, any>(); // playerId → MvsRankedServerMatchPayload
@@ -337,7 +338,7 @@ export async function processSetResult(
   // Fire-and-forget: record stats for all three tiers
   recordSetStats({
     matchId: matchId || `set_${Date.now()}`,
-    mode, setScore, winnerTeam, isConcede,
+    mode, setScore, winnerTeam, isConcede, isPregameDodge,
     winnerIds, loserIds, winnerRatings, loserRatings,
     playerCharacters, deltas, avgWinnerElo, avgLoserElo, expectedScores,
   }).catch((err) => logger.error(`${logPrefix} Stats recording failed: ${err}`));

@@ -52,6 +52,19 @@ export async function handleMatchStatusUpdate(req: Request<{}, {}, IMatchStatus,
     }
   }
 
+  // ── AllPlayersDisconnected without game result — probable crash/network issue ──
+  // If the match started and everyone left without any game completing, it's not a dodge
+  // by any individual — it's a server freeze, mass disconnect, or similar. Flag as crash
+  // so any pending auto-concede or dodge processing gets skipped for all players.
+  if (event === "AllPlayersDisconnected" && matchId) {
+    const matchInProgress = await redisClient.get(`match_started:${matchId}`);
+    const gameResultReceived = await redisClient.get(`game_result_received:${matchId}`);
+    if (matchInProgress && !gameResultReceived) {
+      await redisClient.set(`match_server_crash:${matchId}`, "1", { EX: 600 });
+      logger.warn(`${logPrefix} All players disconnected from match ${matchId} without game result — treating as crash, ELO skipped for all`);
+    }
+  }
+
   // ── MatchEnded — clean up flags ──
   if (event === "MatchEnded" && matchId) {
     await redisClient.set(`match_ended:${matchId}`, "1", { EX: 600 });

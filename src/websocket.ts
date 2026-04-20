@@ -422,49 +422,56 @@ export class WebSocketService {
         logger.error(`[${serviceName}]: Error disbanding party for disconnected player ${playerId}: ${err}`);
       }
 
-      // If the player was in an active match, process dodge ELO immediately.
-      // For mid-match alt-f4: END_OF_MATCH will also fire later, but ELO dedup prevents double processing.
-      // For pregame alt-f4: END_OF_MATCH never fires, so this is the only chance to process ELO.
+      // Handle player disconnect during a match.
+      // - PREGAME: process dodge ELO immediately + send match_cancel DLL (match never plays out)
+      // - MID-GAME: flag ranked_disconnect and let the remaining player finish. When they hit
+      //   READY, the existing concede-on-disconnect logic in handleRankedSetCheckin fires.
+      // - POST-GAME (game_result_received): normal disconnect, skip everything.
       try {
         const matchId = playerWS.matchConfig?.data?.GameplayConfig?.MatchId;
         if (matchId) {
-          const matchConfig = await redisGetMatchConfig(matchId);
-          if (matchConfig && !matchConfig.isCustomGame) {
-            const leaver = matchConfig.players.find((p) => p.playerId === playerId);
-            if (leaver) {
-              const winnerTeam = leaver.teamIndex === 0 ? 1 : 0;
-              const team0Ids = matchConfig.players.filter((p) => p.teamIndex === 0).map((p) => p.playerId);
-              const team1Ids = matchConfig.players.filter((p) => p.teamIndex === 1).map((p) => p.playerId);
-              const winnerIds = winnerTeam === 0 ? team0Ids : team1Ids;
-              const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
+          const gameResultReceived = await redisClient.get(`game_result_received:${matchId}`);
+          const matchStarted = await redisClient.get(`match_started:${matchId}`);
 
-              // Dedup — if END_OF_MATCH also fires later, auto-concede will see this and skip
-              const setId = await redisClient.get(`player_ranked_set:${playerId}`) || matchId;
-              const canProcess = await redisClient.set(`elo_processed_set:${setId}`, "dodge", { NX: true, EX: 300 });
-              if (canProcess === "OK") {
-                // Also claim the match-level dedup key so processMatchLeave (HTTP leave endpoint)
-                // won't double-apply ELO if the remaining player hits leave after receiving match_cancel.
-                await redisClient.set(`elo_processed:${matchId}`, "1", { NX: true, EX: 300 });
-                try {
-                  const chars = new Map<string, string>();
-                  for (const pid of [...winnerIds, ...loserIds]) {
-                    try {
-                      const conn = await redisClient.hGetAll(`connections:${pid}`);
-                      if (conn?.character) chars.set(pid, conn.character);
-                    } catch {}
+          if (gameResultReceived) {
+            logger.info(`[${serviceName}]: Skipping WS dodge for ${playerId} — game ${matchId} already has a result (normal post-game disconnect)`);
+          } else if (matchStarted) {
+            // Mid-game: set disconnect flag so auto-concede fires when remaining player hits READY
+            logger.info(`[${serviceName}]: Player ${playerId} disconnected mid-match ${matchId} — flagging for auto-concede (remaining player finishes game)`);
+            await redisClient.set(`ranked_disconnect:${playerId}`, "1", { EX: 600 });
+          } else {
+            // Pregame dodge: match hasn't started, process ELO immediately
+            const matchConfig = await redisGetMatchConfig(matchId);
+            if (matchConfig && !matchConfig.isCustomGame) {
+              const leaver = matchConfig.players.find((p) => p.playerId === playerId);
+              if (leaver) {
+                const winnerTeam = leaver.teamIndex === 0 ? 1 : 0;
+                const team0Ids = matchConfig.players.filter((p) => p.teamIndex === 0).map((p) => p.playerId);
+                const team1Ids = matchConfig.players.filter((p) => p.teamIndex === 1).map((p) => p.playerId);
+                const winnerIds = winnerTeam === 0 ? team0Ids : team1Ids;
+                const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
+
+                const setId = await redisClient.get(`player_ranked_set:${playerId}`) || matchId;
+                const canProcess = await redisClient.set(`elo_processed_set:${setId}`, "pregame_dodge", { NX: true, EX: 300 });
+                if (canProcess === "OK") {
+                  await redisClient.set(`elo_processed:${matchId}`, "1", { NX: true, EX: 300 });
+                  try {
+                    const chars = new Map<string, string>();
+                    for (const pid of [...winnerIds, ...loserIds]) {
+                      try {
+                        const conn = await redisClient.hGetAll(`connections:${pid}`);
+                        if (conn?.character) chars.set(pid, conn.character);
+                      } catch {}
+                    }
+                    await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId);
+                    await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: matchConfig.players.map((p) => p.playerId) }));
+                    logger.info(`[${serviceName}]: Pregame dodge: ${playerId} (${playerWS.account.username}) left match ${matchId} — ELO processed`);
+                  } catch (eloErr) {
+                    logger.error(`[${serviceName}]: Error processing pregame dodge ELO: ${eloErr}`);
                   }
-                  await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId);
-                  await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: matchConfig.players.map((p) => p.playerId) }));
-                  logger.info(`[${serviceName}]: Dodge: ${playerId} (${playerWS.account.username}) left match ${matchId} — ELO processed`);
-                } catch (eloErr) {
-                  logger.error(`[${serviceName}]: Error processing dodge ELO: ${eloErr}`);
-                }
 
-                // ---- Cleanup + DLL notification (runs regardless of ELO success) ----
-                // Clean up player_ranked_set for ALL players in the set (not just dodger)
-                // so their next match doesn't get linked to this dead set
-                const allSetPlayerIds = matchConfig.players.map((p) => p.playerId);
-                try {
+                  // Clean up set + send match_cancel DLL to remaining players
+                  const allSetPlayerIds = matchConfig.players.map((p) => p.playerId);
                   for (const pid of allSetPlayerIds) {
                     await redisClient.del(`player_ranked_set:${pid}`);
                   }
@@ -472,24 +479,11 @@ export class WebSocketService {
                     await redisClient.del(`ranked_set:${setId}`);
                     await redisClient.del(`ranked_set_checkins:${setId}`);
                   }
-                } catch (cleanupErr) {
-                  logger.error(`[${serviceName}]: Error cleaning up ranked_set keys after dodge: ${cleanupErr}`);
-                }
 
-                // Clear matchConfig for remaining players so faceoff_timeout doesn't
-                // trigger a second dodge on the same match.
-                // Also push a DLL notification telling the client to force-return
-                // to main menu (DLL will call ClientReturnToMainMenu via ProcessEvent).
-                const matchStarted = await redisClient.get(`match_started:${matchId}`);
-                for (const pid of allSetPlayerIds) {
-                  if (pid === playerId) continue; // dodger already disconnecting
-                  const remainClient = this.clients.get(pid);
-                  if (remainClient && !matchStarted) {
-                    remainClient.matchConfig = undefined;
-                  }
-                  if (!matchStarted) {
-                    // Match hasn't started yet (pregame or loading screen) — send DLL to
-                    // cancel immediately rather than waiting for faceoff_timeout.
+                  for (const pid of allSetPlayerIds) {
+                    if (pid === playerId) continue;
+                    const remainClient = this.clients.get(pid);
+                    if (remainClient) remainClient.matchConfig = undefined;
                     try {
                       await redisPushDLLNotification(pid, {
                         type: "match_cancel",
@@ -502,13 +496,8 @@ export class WebSocketService {
                     } catch (notifErr) {
                       logger.error(`[${serviceName}]: Error pushing match_cancel notif to ${pid}: ${notifErr}`);
                     }
-                  } else {
-                    logger.info(`[${serviceName}]: Match ${matchId} in progress — skipping match_cancel DLL for ${pid}, letting game play out`);
                   }
                 }
-                logger.info(`[${serviceName}]: Cleaned up set ${setId} for all ${allSetPlayerIds.length} players after dodge`);
-              } else {
-                logger.info(`[${serviceName}]: Dodge: ${playerId} (${playerWS.account.username}) left match ${matchId} — ELO already processed`);
               }
             }
           }
@@ -2107,18 +2096,38 @@ export class WebSocketService {
               await redisUpdatePlayerStatus(pid, "idle");
             }
           }
-          // Send empty OnGameplayConfigNotified to kick clients back to lobby
+          // Send MatchSetLeaverNotification + empty OnGameplayConfigNotified
+          // (same sequence as normal set-complete path so client returns to lobby)
           for (const pid of notification.playersIds) {
             const remainClient = this.clients.get(pid);
-            if (remainClient) {
+            if (!remainClient) continue;
+            setTimeout(() => {
               remainClient.send({
-                data: { template_id: "OnGameplayConfigNotified", GameplayConfig: {} },
-                payload: { custom_notification: "realtime" },
+                data: {
+                  AccountId: pid,
+                  MatchId: notification.matchId,
+                  template_id: "MatchSetLeaverNotification",
+                },
+                payload: {
+                  match: { id: notification.matchId },
+                  template: "realtime",
+                  account_id: pid,
+                  profile_id: pid,
+                  custom_notification: "realtime",
+                },
+                header: "",
+                cmd: "profile-notification",
+              });
+            }, 1000);
+            setTimeout(() => {
+              remainClient.send({
+                data: { MatchId: "", GameplayConfig: null, template_id: "OnGameplayConfigNotified" },
+                payload: { match: { id: "" }, custom_notification: "realtime" },
                 header: "",
                 cmd: "update",
               });
-              logger.info(`[${serviceName}]: Sent empty OnGameplayConfigNotified to ${pid} (set already resolved)`);
-            }
+              logger.info(`[${serviceName}]: Sent empty OnGameplayConfigNotified to ${pid} (set already resolved, return to lobby)`);
+            }, 1500);
           }
           return;
         }

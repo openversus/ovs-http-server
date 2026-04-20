@@ -14,6 +14,7 @@ import { getAssetsByType } from "../loadAssets";
 import * as SharedTypes from "../types/shared-types";
 import * as KitchenSink from "../utils/garbagecan";
 import { EloRatingModel } from "../database/EloRating";
+import { PlayerStatsModel } from "../database/PlayerStats";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { NameGenerator } from "../utils/namegeneration";
 import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
@@ -471,20 +472,36 @@ async function generateStaticAccess(req: express.Request) {
         MatchConfig: { MultiqueueConfigs: [{ QueueType: "Unranked", Context: "Matchmade", TeamStyle: "Duos", GameModeAlias: "Versus" }, { QueueType: "Ranked", Context: "Matchmade", TeamStyle: "Duos", GameModeAlias: "Versus" }] },
         BattlepassID: "63cef9c6609607a8deb2c31d",
         stat_trackers: await (async () => {
-          // Build stats from ELO database
-          const rating = await EloRatingModel.findOne({ account_id: account.id }).lean();
+          // Build stats from ELO database + PlayerStats
+          const [rating, playerStats] = await Promise.all([
+            EloRatingModel.findOne({ account_id: account.id }).lean(),
+            PlayerStatsModel.findOne({ account_id: account.id }).lean(),
+          ]);
           const totalWins = (rating?.wins_1v1 || 0) + (rating?.wins_2v2 || 0);
           const totalLosses = (rating?.losses_1v1 || 0) + (rating?.losses_2v2 || 0);
-          const chars1v1 = (rating as any)?.characters_1v1 || {};
-          const chars2v2 = (rating as any)?.characters_2v2 || {};
 
-          // Merge character data across modes
+          // Merge character data across modes from PlayerStats (badges: wins, ringouts, damage)
+          const ps1v1 = (playerStats as any)?.characters_1v1 || {};
+          const ps2v2 = (playerStats as any)?.characters_2v2 || {};
           const charWins: Record<string, number> = {};
           const charMatches: Record<string, number> = {};
-          for (const [slug, data] of Object.entries({ ...chars1v1, ...chars2v2 })) {
-            const d = data as any;
-            charWins[slug] = (charWins[slug] || 0) + (d.wins || 0);
-            charMatches[slug] = (charMatches[slug] || 0) + (d.wins || 0) + (d.losses || 0);
+          const charRingouts: Record<string, number> = {};
+          const charDamage: Record<string, number> = {};
+          const charHighestDamage: Record<string, number> = {};
+          let totalRingouts = 0;
+          let highestDamageDealt = 0;
+
+          for (const [slug, data] of Object.entries({ ...ps1v1, ...ps2v2 }) as [string, any][]) {
+            // Preserve slug casing as-is — the game client looks up character_wins[slug]
+            // using the exact casing it sends (e.g., character_BananaGuard, character_C030)
+            charWins[slug] = (charWins[slug] || 0) + (data.wins || 0);
+            charMatches[slug] = (charMatches[slug] || 0) + (data.wins || 0) + (data.losses || 0);
+            charRingouts[slug] = (charRingouts[slug] || 0) + (data.ringouts || 0);
+            charDamage[slug] = Math.round((charDamage[slug] || 0) + (data.totalDamageDealt || 0));
+            const hd = data.highestDamageDealt || 0;
+            charHighestDamage[slug] = Math.max(charHighestDamage[slug] || 0, hd);
+            totalRingouts += (data.ringouts || 0);
+            if (hd > highestDamageDealt) highestDamageDealt = hd;
           }
 
           // Find most played character
@@ -495,13 +512,13 @@ async function generateStaticAccess(req: express.Request) {
           }
 
           return {
-          HighestDamageDealt: 0,
+          HighestDamageDealt: highestDamageDealt,
           TotalRingoutLeader: 0,
-          TotalRingouts: 0,
+          TotalRingouts: totalRingouts,
           TotalWins: totalWins,
-          character_highest_damage_dealt: {},
-          character_ringouts: {},
-          character_total_damage_dealt: {},
+          character_highest_damage_dealt: charHighestDamage,
+          character_ringouts: charRingouts,
+          character_total_damage_dealt: charDamage,
           character_wins: charWins,
           TotalAttacksDodged: 0,
           Valentines2023Currency: 5200,
@@ -567,7 +584,12 @@ async function generateStaticAccess(req: express.Request) {
             ranked: { "1v1": { CharactersInGold: 1, Wins: totalWins } },
             character_matches: charMatches,
             character_wins: charWins,
+            character_ringouts: charRingouts,
+            character_total_damage_dealt: charDamage,
+            character_highest_damage_dealt: charHighestDamage,
             TotalWins: totalWins,
+            TotalRingouts: totalRingouts,
+            HighestDamageDealt: highestDamageDealt,
           },
         };
         })(),

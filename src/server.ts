@@ -1689,7 +1689,7 @@ app.post(["/ovs_match_status", "/api/ovs_match_status"], async (req, res) => {
   // Validate MatchUpdateKey header (auth from rollback server)
   const matchUpdateKey = req.header("MatchUpdateKey") || "";
   if (matchUpdateKey && matchUpdateKey.toLowerCase() !== MATCH_UPDATE_KEY.toLowerCase()) {
-    logger.warn(`${logPrefix} POST /api/ovs_match_status invalid MatchUpdateKey`);
+    logger.warn(`${logPrefix} POST /api/ovs_match_status invalid MatchUpdateKey — got "${matchUpdateKey}" expected "${MATCH_UPDATE_KEY}"`);
     res.status(403).json({ error: "Invalid signature" });
     return;
   }

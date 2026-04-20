@@ -17,6 +17,7 @@ import {
 } from "../config/redis";
 import {  getCurrentCRC, MATCHMAKING_CRC } from "../data/config";
 import { PerkPagesModel } from "../database/PerkPages";
+import { PlayerStatsModel } from "../database/PlayerStats";
 import { Cosmetics } from "../database/Cosmetics";
 import { getEquippedCosmetics } from "../services/cosmeticsService";
 import { MVSTime } from "../utils/date";
@@ -57677,11 +57678,16 @@ export async function handleSsc_invoke_ranked_data(req: Request<{}, {}, {}, {}>,
     const chars1v1 = (rating as any)?.characters_1v1 || {};
     const chars2v2 = (rating as any)?.characters_2v2 || {};
 
+    // Pull PlayerStats for damage/ringouts/deaths
+    const playerStatsDoc = playerId ? await PlayerStatsModel.findOne({ account_id: playerId }).lean() : null;
+    const psChars1v1 = (playerStatsDoc as any)?.characters_1v1 || {};
+    const psChars2v2 = (playerStatsDoc as any)?.characters_2v2 || {};
+
     // Get leaderboard rank
     const rank1v1 = playerId ? await getPlayerRank(playerId, "1v1") : null;
     const rank2v2 = playerId ? await getPlayerRank(playerId, "2v2") : null;
 
-    const buildModeData = (elo: number, wins: number, losses: number, games: number, rank: any, charMap: Record<string, any>) => {
+    const buildModeData = (elo: number, wins: number, losses: number, games: number, rank: any, charMap: Record<string, any>, psCharMap: Record<string, any>) => {
       // If no games played in this mode, return empty data so game shows "Unranked"
       if (games === 0 && Object.keys(charMap).length === 0) {
         return {
@@ -57703,6 +57709,7 @@ export async function handleSsc_invoke_ranked_data(req: Request<{}, {}, {}, {}>,
         const charElo = (data as any).elo || 0;
         const charWins = (data as any).wins || 0;
         const charLosses = (data as any).losses || 0;
+        const psc = psCharMap[slug] || {};
         DataByCharacter[slug] = {
           CurrentPoints: charElo,
           MaxPoints: charElo,
@@ -57710,9 +57717,9 @@ export async function handleSsc_invoke_ranked_data(req: Request<{}, {}, {}, {}>,
           SetsPlayed: charWins + charLosses,
           Wins: charWins,
           Losses: charLosses,
-          DamageDealt: 0,
+          DamageDealt: Math.round(psc.totalDamageDealt || 0),
           DamageTaken: 0,
-          Ringouts: 0,
+          Ringouts: psc.ringouts || 0,
           Deaths: 0,
           LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
           LastDecayMs: 0,
@@ -57725,11 +57732,12 @@ export async function handleSsc_invoke_ranked_data(req: Request<{}, {}, {}, {}>,
 
       // If no per-character data yet, use the current character as fallback
       if (Object.keys(DataByCharacter).length === 0) {
+        const psc = psCharMap[character] || {};
         DataByCharacter[character] = {
           CurrentPoints: elo, MaxPoints: elo,
           GamesPlayed: games, SetsPlayed: wins + losses,
           Wins: wins, Losses: losses,
-          DamageDealt: 0, DamageTaken: 0, Ringouts: 0, Deaths: 0,
+          DamageDealt: Math.round(psc.totalDamageDealt || 0), DamageTaken: 0, Ringouts: psc.ringouts || 0, Deaths: 0,
           LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
           LastDecayMs: 0,
         };
@@ -57758,8 +57766,8 @@ export async function handleSsc_invoke_ranked_data(req: Request<{}, {}, {}, {}>,
           "Season:SeasonFive": {
             Ranked: {
               DataByMode: {
-                "1v1": buildModeData(elo1v1, wins1v1, losses1v1, games1v1, rank1v1, chars1v1),
-                "2v2": buildModeData(elo2v2, wins2v2, losses2v2, games2v2, rank2v2, chars2v2),
+                "1v1": buildModeData(elo1v1, wins1v1, losses1v1, games1v1, rank1v1, chars1v1, psChars1v1),
+                "2v2": buildModeData(elo2v2, wins2v2, losses2v2, games2v2, rank2v2, chars2v2, psChars2v2),
               },
               ClaimedRewards: [],
               bEndOfSeasonRewardsGranted: false,

@@ -95,6 +95,8 @@ import { getEquippedCosmetics } from "./services/cosmeticsService";
 import { cancelMatchmakingForAll } from "./services/matchmakingService";
 import { processMatchLeave, getOrCreateRating, eloToTierDivision, processSetResult, getPlayerRank } from "./services/eloService";
 import { PlayerTesterModel } from "./database/PlayerTester";
+import { PlayerStatsModel } from "./database/PlayerStats";
+import { INVENTORY_DEFINITIONS } from "./data/inventoryDefs";
 
 const serviceName: string = "WebSocket";
 const logPrefix = `[${serviceName}]:`;
@@ -970,6 +972,71 @@ export class WebSocketService {
           "stat_tracking_bundle_default",
         ];
 
+        // Look up the actual value for each equipped stat tracker
+        const ps = await PlayerStatsModel.findOne({ account_id: player.playerId }).lean();
+        const psChars1v1 = (ps as any)?.characters_1v1 || {};
+        const psChars2v2 = (ps as any)?.characters_2v2 || {};
+        // Alias map: AssociatedCharacter (C-code) → stored character slug suffix
+        // (for characters where the C-code doesn't match the player-facing slug)
+        const ASSOC_CHAR_ALIASES: Record<string, string> = {
+          C034: "BananaGuard",
+          C015: "taz",
+          C017: "creature",       // Iron Giant
+          C001: "wonder_woman",
+          C003: "superman",
+          C016: "tom_and_jerry",  // LeBron / also used for Tom&Jerry, game may vary
+        };
+
+        const resolveStatTrackerValue = (slug: string): number => {
+          if (!slug || slug === "stat_tracking_bundle_default") return 0;
+          let statField = "";
+          if (slug.endsWith("highestdamagedealt") || slug.endsWith("_highest_damage_dealt")) statField = "highestDamageDealt";
+          else if (slug.endsWith("totaldamagedealt") || slug.endsWith("_total_damage_dealt")) statField = "totalDamageDealt";
+          else if (slug.endsWith("ringouts")) statField = "ringouts";
+          else if (slug.endsWith("wins") || /wins\d+$/.test(slug)) statField = "wins";
+          else return 0;
+
+          const bundle = (INVENTORY_DEFINITIONS as any)?.[slug];
+          const assocChar: string = bundle?.data?.AssociatedCharacter || "";
+
+          // Build candidate stored slugs to match against
+          const candidates = new Set<string>();
+          if (assocChar) {
+            candidates.add(`character_${assocChar}`);                  // e.g., character_C030, character_Jake
+            candidates.add(`character_${assocChar.toLowerCase()}`);    // e.g., character_c019
+            if (ASSOC_CHAR_ALIASES[assocChar]) {
+              candidates.add(`character_${ASSOC_CHAR_ALIASES[assocChar]}`); // C034 → character_BananaGuard
+            }
+          }
+
+          const allChars = { ...psChars1v1, ...psChars2v2 };
+          let total = 0;
+          let hasMatch = false;
+          for (const [charSlug, charData] of Object.entries(allChars) as [string, any][]) {
+            // Check direct match or case-insensitive match
+            const storedNorm = charSlug.toLowerCase();
+            let match = false;
+            for (const cand of candidates) {
+              if (charSlug === cand || storedNorm === cand.toLowerCase()) { match = true; break; }
+            }
+            // Also try name-portion match (no underscores, lowercase)
+            if (!match) {
+              const storedName = charSlug.replace(/^character_/, "").toLowerCase().replace(/_/g, "");
+              const badgeName = assocChar.toLowerCase();
+              if (storedName === badgeName) match = true;
+            }
+            if (match) {
+              hasMatch = true;
+              if (statField === "highestDamageDealt") {
+                total = Math.max(total, Number(charData[statField]) || 0);
+              } else {
+                total += Number(charData[statField]) || 0;
+              }
+            }
+          }
+          return Math.round(total);
+        };
+
         // Look up player's ranked tier/division from ELO
         let rankedTier: string | null = null;
         let rankedDivision: number | null = null;
@@ -1013,18 +1080,9 @@ export class WebSocketService {
           Character: character,
           Banner: playerConfig.Banner ?? "banner_default",
           StatTrackers: [
-            [
-              statTrackerSlots[0],
-              1,
-            ],
-            [
-              statTrackerSlots[1],
-              1,
-            ],
-            [
-              statTrackerSlots[2],
-              1,
-            ],
+            [statTrackerSlots[0], resolveStatTrackerValue(statTrackerSlots[0])],
+            [statTrackerSlots[1], resolveStatTrackerValue(statTrackerSlots[1])],
+            [statTrackerSlots[2], resolveStatTrackerValue(statTrackerSlots[2])],
           ],
           Perks: [],
           PlayerIndex: player.playerIndex,
@@ -2203,6 +2261,11 @@ export class WebSocketService {
                 const chars1v1 = (rating as any)?.characters_1v1 || {};
                 const chars2v2 = (rating as any)?.characters_2v2 || {};
 
+                // Pull PlayerStats for damage/ringouts/deaths (per-character badges)
+                const playerStats = await PlayerStatsModel.findOne({ account_id: pid }).lean();
+                const psChars1v1 = (playerStats as any)?.characters_1v1 || {};
+                const psChars2v2 = (playerStats as any)?.characters_2v2 || {};
+
                 // Get player's current character
                 let character = "";
                 try {
@@ -2214,7 +2277,7 @@ export class WebSocketService {
                   }
                 } catch {}
 
-                const buildMode = (elo: number, wins: number, losses: number, rank: any, charMap: Record<string, any>) => {
+                const buildMode = (elo: number, wins: number, losses: number, rank: any, charMap: Record<string, any>, psCharMap: Record<string, any>) => {
                   if ((wins + losses) === 0 && Object.keys(charMap).length === 0) {
                     return { BestCharacter: { CurrentPoints: 0, MaxPoints: 0, GamesPlayed: 0, SetsPlayed: 0, CharacterSlug: "", LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) } }, DataByCharacter: {}, GamesPlayed: 0, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) }, SetsPlayed: 0, FinalLeaderboardRank: 0 };
                   }
@@ -2225,22 +2288,26 @@ export class WebSocketService {
                     const ce = (data as any).elo || 0;
                     const cw = (data as any).wins || 0;
                     const cl = (data as any).losses || 0;
+                    const ps = psCharMap[slug] || {};
+                    const damage = Math.round(ps.totalDamageDealt || 0);
+                    const ringouts = ps.ringouts || 0;
                     DataByCharacter[slug] = {
                       CurrentPoints: ce, MaxPoints: ce,
                       GamesPlayed: cw + cl, SetsPlayed: cw + cl,
                       Wins: cw, Losses: cl,
-                      DamageDealt: 0, DamageTaken: 0, Ringouts: 0, Deaths: 0,
+                      DamageDealt: damage, DamageTaken: 0, Ringouts: ringouts, Deaths: 0,
                       LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
                       LastDecayMs: 0,
                     };
                     if (ce > bestElo) { bestElo = ce; bestChar = slug; }
                   }
                   if (Object.keys(DataByCharacter).length === 0) {
+                    const ps = psCharMap[character] || {};
                     DataByCharacter[character] = {
                       CurrentPoints: elo, MaxPoints: elo,
                       GamesPlayed: wins + losses, SetsPlayed: wins + losses,
                       Wins: wins, Losses: losses,
-                      DamageDealt: 0, DamageTaken: 0, Ringouts: 0, Deaths: 0,
+                      DamageDealt: Math.round(ps.totalDamageDealt || 0), DamageTaken: 0, Ringouts: ps.ringouts || 0, Deaths: 0,
                       LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
                       LastDecayMs: 0,
                     };
@@ -2265,8 +2332,8 @@ export class WebSocketService {
                     "Season:SeasonFive": {
                       Ranked: {
                         DataByMode: {
-                          "1v1": buildMode(elo1v1, wins1v1, losses1v1, rank1v1, chars1v1),
-                          "2v2": buildMode(elo2v2, wins2v2, losses2v2, rank2v2, chars2v2),
+                          "1v1": buildMode(elo1v1, wins1v1, losses1v1, rank1v1, chars1v1, psChars1v1),
+                          "2v2": buildMode(elo2v2, wins2v2, losses2v2, rank2v2, chars2v2, psChars2v2),
                         },
                         ClaimedRewards: [],
                         bEndOfSeasonRewardsGranted: false,
@@ -2740,6 +2807,10 @@ export class WebSocketService {
             const elo2v2 = rating?.elo_2v2 || 0;
             const chars1v1 = (rating as any)?.characters_1v1 || {};
             const chars2v2 = (rating as any)?.characters_2v2 || {};
+            // Pull PlayerStats for damage/ringouts
+            const ps = await PlayerStatsModel.findOne({ account_id: pid }).lean();
+            const psChars1v1 = (ps as any)?.characters_1v1 || {};
+            const psChars2v2 = (ps as any)?.characters_2v2 || {};
             let character = "";
             try {
               const conn = await redisClient.hGetAll(`connections:${pid}`);
@@ -2747,7 +2818,7 @@ export class WebSocketService {
               if (!character) { const pd = await PlayerTesterModel.findById(pid).lean(); character = (pd as any)?.character || "character_wonder_woman"; }
             } catch {}
 
-            const buildMode = (elo: number, wins: number, losses: number, rank: any, charMap: Record<string, any>) => {
+            const buildMode = (elo: number, wins: number, losses: number, rank: any, charMap: Record<string, any>, psCharMap: Record<string, any>) => {
               if ((wins + losses) === 0 && Object.keys(charMap).length === 0) {
                 return { BestCharacter: { CurrentPoints: 0, MaxPoints: 0, GamesPlayed: 0, SetsPlayed: 0, CharacterSlug: "", LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) } }, DataByCharacter: {}, GamesPlayed: 0, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) }, SetsPlayed: 0, FinalLeaderboardRank: 0 };
               }
@@ -2755,11 +2826,13 @@ export class WebSocketService {
               let bestChar = character; let bestElo = -1;
               for (const [slug, data] of Object.entries(charMap)) {
                 const ce = (data as any).elo || 0; const cw = (data as any).wins || 0; const cl = (data as any).losses || 0;
-                DataByCharacter[slug] = { CurrentPoints: ce, MaxPoints: ce, GamesPlayed: cw + cl, SetsPlayed: cw + cl, Wins: cw, Losses: cl, DamageDealt: 0, DamageTaken: 0, Ringouts: 0, Deaths: 0, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) }, LastDecayMs: 0 };
+                const psc = psCharMap[slug] || {};
+                DataByCharacter[slug] = { CurrentPoints: ce, MaxPoints: ce, GamesPlayed: cw + cl, SetsPlayed: cw + cl, Wins: cw, Losses: cl, DamageDealt: Math.round(psc.totalDamageDealt || 0), DamageTaken: 0, Ringouts: psc.ringouts || 0, Deaths: 0, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) }, LastDecayMs: 0 };
                 if (ce > bestElo) { bestElo = ce; bestChar = slug; }
               }
               if (Object.keys(DataByCharacter).length === 0) {
-                DataByCharacter[character] = { CurrentPoints: elo, MaxPoints: elo, GamesPlayed: wins + losses, SetsPlayed: wins + losses, Wins: wins, Losses: losses, DamageDealt: 0, DamageTaken: 0, Ringouts: 0, Deaths: 0, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) }, LastDecayMs: 0 };
+                const psc = psCharMap[character] || {};
+                DataByCharacter[character] = { CurrentPoints: elo, MaxPoints: elo, GamesPlayed: wins + losses, SetsPlayed: wins + losses, Wins: wins, Losses: losses, DamageDealt: Math.round(psc.totalDamageDealt || 0), DamageTaken: 0, Ringouts: psc.ringouts || 0, Deaths: 0, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) }, LastDecayMs: 0 };
               }
               return { BestCharacter: { CurrentPoints: bestElo > 0 ? bestElo : elo, MaxPoints: bestElo > 0 ? bestElo : elo, GamesPlayed: wins + losses, SetsPlayed: wins + losses, CharacterSlug: bestChar, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) } }, DataByCharacter, GamesPlayed: wins + losses, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) }, SetsPlayed: wins + losses, FinalLeaderboardRank: rank?.rank || 0 };
             };
@@ -2767,7 +2840,7 @@ export class WebSocketService {
             client.send({
               data: {
                 template_id: "FullRankUpdate",
-                SeasonalData: { "Season:SeasonFive": { Ranked: { DataByMode: { "1v1": buildMode(elo1v1, rating?.wins_1v1 || 0, rating?.losses_1v1 || 0, rank1v1, chars1v1), "2v2": buildMode(elo2v2, rating?.wins_2v2 || 0, rating?.losses_2v2 || 0, rank2v2, chars2v2) }, ClaimedRewards: [], bEndOfSeasonRewardsGranted: false } } },
+                SeasonalData: { "Season:SeasonFive": { Ranked: { DataByMode: { "1v1": buildMode(elo1v1, rating?.wins_1v1 || 0, rating?.losses_1v1 || 0, rank1v1, chars1v1, psChars1v1), "2v2": buildMode(elo2v2, rating?.wins_2v2 || 0, rating?.losses_2v2 || 0, rank2v2, chars2v2, psChars2v2) }, ClaimedRewards: [], bEndOfSeasonRewardsGranted: false } } },
               },
               payload: { frm: { id: "internal-server", type: "server-api-key" }, template: "realtime", account_id: pid, profile_id: pid },
               header: "", cmd: "profile-notification",

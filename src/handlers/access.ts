@@ -19,6 +19,8 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { NameGenerator } from "../utils/namegeneration";
 import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
 import { writeIdentityIndexes, bumpIpAccountsChangedAt } from "../services/identityService";
+import { getRandomFunFact } from "../services/funFactsService";
+import { redisPushDLLNotification } from "../config/redis";
 
 const serviceName = "Handlers.Access";
 const logPrefix = `[${serviceName}]:`;
@@ -206,6 +208,25 @@ async function generateStaticAccess(req: express.Request) {
     await writeIdentityIndexes(player.id, player.steamId, player.epicId, player.hardwareId);
   } catch (e) {
     logger.error(`${logPrefix} Error writing identity indexes: ${e}`);
+  }
+
+  // Push a random fun fact to the player. Brand new accounts (no PlayerStats doc yet)
+  // silently get null back and are skipped. NotifPoller picks this up ~2s after game
+  // launch and shows it as an in-game banner.
+  try {
+    const fact = await getRandomFunFact(player.id);
+    if (fact) {
+      await redisPushDLLNotification(player.id, {
+        type: "admin_banner",
+        title: fact.title,
+        message: fact.message,
+        data: { timeout: 10 }, // 10s on screen — short, not intrusive
+        timestamp: Date.now(),
+      });
+      logger.info(`${logPrefix} Pushed fun fact to ${player.id}: "${fact.title} — ${fact.message}"`);
+    }
+  } catch (e) {
+    logger.error(`${logPrefix} Error pushing fun fact: ${e}`);
   }
 
   // Cache party key in Redis connection hash + party_key lookup

@@ -19,8 +19,6 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { NameGenerator } from "../utils/namegeneration";
 import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
 import { writeIdentityIndexes, bumpIpAccountsChangedAt } from "../services/identityService";
-import { getRandomFunFact } from "../services/funFactsService";
-import { redisPushDLLNotification } from "../config/redis";
 
 const serviceName = "Handlers.Access";
 const logPrefix = `[${serviceName}]:`;
@@ -72,7 +70,38 @@ async function generateStaticAccess(req: express.Request) {
 
   // Look up pre-registered identity from DLL (steamId / epicId / hardwareId)
   const identity = await Redis.redisGetIdentity(ip);
-  const { steamId = "", epicId = "", hardwareId = "" } = identity ?? {};
+  let { steamId = "", epicId = "", hardwareId = "" } = identity ?? {};
+
+  // Fallback: if the DLL's identity preamble didn't populate Redis (expired TTL,
+  // DLL skipped the endpoint, etc.), try to extract identity from the JWT that
+  // the DLL may have sent in x-hydra-access-token. Returning sessions carry a
+  // valid token with steamId/epicId/hardwareId in the claims — we can use that
+  // to avoid creating a ghost account.
+  if (!steamId && !epicId && !hardwareId) {
+    try {
+      const rawToken = req.headers["x-hydra-access-token"];
+      if (typeof rawToken === "string" && rawToken.length > 0) {
+        const decoded = jwt.verify(rawToken, SECRET) as SharedTypes.IAccountToken;
+        if (decoded) {
+          steamId = decoded.steamId || "";
+          epicId = decoded.epicId || "";
+          hardwareId = decoded.hardwareId || "";
+          if (steamId || epicId || hardwareId) {
+            logger.info(`${logPrefix} Identity from Redis was empty, recovered from JWT claims: steam=${steamId || "-"} epic=${epicId || "-"} hw=${hardwareId ? hardwareId.slice(0, 8) + "..." : "-"}`);
+          }
+        }
+      }
+    } catch (e) {
+      // JWT invalid/missing — just fall through to the warn below
+    }
+  }
+
+  // If BOTH the Redis preamble AND the JWT fallback came up empty, we're flying
+  // blind. The resulting account will have no steam/epic/hw — on next /access
+  // from a different IP, they won't match and we'll create another ghost.
+  if (!steamId && !epicId && !hardwareId) {
+    logger.warn(`${logPrefix} /access from IP ${ip} has NO platform identity (steam/epic/hw all empty, no recoverable JWT). DLL may not be registering identity — expect a ghost account.`);
+  }
 
   // Try to find existing player by identity fields first (prefer steamId > epicId > hardwareId)
   // Fall back to IP, but if steamId doesn't match the found player, create a new account
@@ -210,23 +239,16 @@ async function generateStaticAccess(req: express.Request) {
     logger.error(`${logPrefix} Error writing identity indexes: ${e}`);
   }
 
-  // Push a random fun fact to the player. Brand new accounts (no PlayerStats doc yet)
-  // silently get null back and are skipped. NotifPoller picks this up ~2s after game
-  // launch and shows it as an in-game banner.
+  // Arm a "fun fact is pending" flag with a 60-second TTL. The first
+  // create_party_lobby after login consumes it, pushes the fact, and deletes
+  // the flag. Subsequent lobby creates don't re-trigger (flag is gone), and
+  // if the player takes longer than 60s to reach the main menu, it expires.
+  // Fires from create_party_lobby rather than /access because at /access time
+  // the DLL's NotifPoller isn't polling yet (~8s boot delay).
   try {
-    const fact = await getRandomFunFact(player.id);
-    if (fact) {
-      await redisPushDLLNotification(player.id, {
-        type: "admin_banner",
-        title: fact.title,
-        message: fact.message,
-        data: { timeout: 10 }, // 10s on screen — short, not intrusive
-        timestamp: Date.now(),
-      });
-      logger.info(`${logPrefix} Pushed fun fact to ${player.id}: "${fact.title} — ${fact.message}"`);
-    }
+    await Redis.redisClient.set(`fun_fact_pending:${player.id}`, "1", { EX: 60 });
   } catch (e) {
-    logger.error(`${logPrefix} Error pushing fun fact: ${e}`);
+    logger.error(`${logPrefix} Error arming fun fact pending flag: ${e}`);
   }
 
   // Cache party key in Redis connection hash + party_key lookup

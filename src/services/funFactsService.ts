@@ -379,9 +379,10 @@ const FACT_GENS: FactGen[] = [
   // === Pure jokes (still gated on real data — no 0 values) ===
   (c) => {
     // Marathon walker — contextualize the distance (rough: 3 seconds walk ≈ 5m ≈ 16ft)
-    if (c.agg.totalWalkTime < 600) return null;
-    const minutes = Math.round(c.agg.totalWalkTime / 60);
-    const roughMiles = (c.agg.totalWalkTime / 300).toFixed(1); // very rough; just for flavor
+    const walkTime = Number(c.agg.totalWalkTime) || 0;
+    if (walkTime < 600) return null;
+    const minutes = Math.round(walkTime / 60);
+    const roughMiles = (walkTime / 300).toFixed(1); // very rough; just for flavor
     return { title: "Pedometer", message: `You've walked for ${minutes} minutes in combat. That's roughly ${roughMiles} miles of pacing.` };
   },
   (c) => {

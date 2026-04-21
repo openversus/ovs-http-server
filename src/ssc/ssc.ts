@@ -48,6 +48,7 @@ import * as KitchenSink from "../utils/garbagecan";
 import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { resolveAccountFromRequest } from "../services/identityService";
+import { getRandomFunFact } from "../services/funFactsService";
 // import { IGameInstall } from "../types/shared-types";
 
 const serviceName = "SSC.SSC";
@@ -340,6 +341,33 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
     logger.error(`${logPrefix} create_party_lobby: no account ID from token or IP, IP=${ip}`);
     res.send({ body: {}, metadata: null, return_code: 0 });
     return;
+  }
+
+  // Push a random fun fact ONLY if /access armed it within the last 60 seconds.
+  // One-shot per login cycle: the flag is consumed (deleted) on the first lobby
+  // create after login. If the player takes >60s to reach main menu, the flag
+  // has expired and no fact fires until they re-login.
+  try {
+    const pendingKey = `fun_fact_pending:${aID}`;
+    const pending = await redisClient.get(pendingKey);
+    if (pending) {
+      await redisClient.del(pendingKey); // consume — one-shot
+      const fact = await getRandomFunFact(aID);
+      if (fact) {
+        await redisPushDLLNotification(aID, {
+          type: "admin_banner",
+          title: fact.title,
+          message: fact.message,
+          data: { timeout: 10 },
+          timestamp: Date.now(),
+        });
+        logger.info(`${logPrefix} Pushed fun fact to ${aID}: "${fact.title} — ${fact.message}"`);
+      } else {
+        logger.debug(`${logPrefix} No fun fact eligible for ${aID} (new player or no matching data)`);
+      }
+    }
+  } catch (e) {
+    logger.error(`${logPrefix} Error pushing fun fact: ${e}`);
   }
 
   let character = "";

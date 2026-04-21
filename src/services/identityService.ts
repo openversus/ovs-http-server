@@ -1,32 +1,18 @@
 import { Request } from "express";
-import { redisClient } from "../config/redis";
+import { redisClient, RedisPlayerConnection as FullRedisPlayerConnection } from "../config/redis";
 import { logger } from "../config/logger";
 import * as AuthUtils from "../utils/auth";
 import { IAccountToken } from "../types/AccountToken";
 
 /**
- * RedisPlayerConnection shape as stored under `connections:${key}`.
- * Matches what `/access` writes at login time (AccountToken fields).
+ * redisClient.hGetAll() returns `{}` when the key doesn't exist and partial data
+ * when some hash fields are missing. The canonical `RedisPlayerConnection` in
+ * config/redis.ts extends AccountToken with all fields declared non-nullable,
+ * which lies to TypeScript about runtime reality. Wrap in Partial<> so every
+ * field is correctly treated as possibly-undefined. Also exported for downstream
+ * consumers that were importing our previous local redefinition.
  */
-export interface RedisPlayerConnection {
-  id?: string;
-  current_ip?: string;
-  steamId?: string;
-  epicId?: string;
-  hardwareId?: string;
-  username?: string;
-  hydraUsername?: string;
-  profile_id?: string;
-  public_id?: string;
-  wb_network_id?: string;
-  lobby_id?: string;
-  GameplayPreferences?: string;
-  character?: string;
-  skin?: string;
-  profileIcon?: string;
-  party_key?: string;
-  [k: string]: any;
-}
+export type RedisPlayerConnection = Partial<FullRedisPlayerConnection>;
 
 const serviceName = "Services.Identity";
 const logPrefix = `[${serviceName}]:`;
@@ -41,18 +27,24 @@ const SILENT_ROUTES = [
   "/ovs/my-friends",
 ];
 
-function isSilentRoute(routeTag: string): boolean {
+function isSilentRoute(routeTag: string | null | undefined): boolean {
+  if (!routeTag || typeof routeTag !== "string") return false;
   return SILENT_ROUTES.some(r => routeTag === r || routeTag.startsWith(r));
 }
 
 /** Safely attempt to decode the JWT on a request. Returns null if missing/invalid. */
 function safeDecodeToken(req: Request): IAccountToken | null {
-  // Middleware sets req.token when valid; prefer that
-  if ((req as any).token?.id) return (req as any).token;
+  // Middleware sets req.token when valid; prefer that.
+  // Explicit null/undefined/empty-string guard on id — optional chaining handles
+  // the nested nullability but being explicit makes the intent obvious.
+  const middlewareToken = (req as any).token as IAccountToken | undefined | null;
+  if (middlewareToken && middlewareToken.id) return middlewareToken;
+
   // Fallback: try to decode raw header (for edge cases)
   try {
     const decoded = AuthUtils.DecodeClientToken(req as any);
-    return decoded?.id ? decoded : null;
+    if (decoded && decoded.id) return decoded;
+    return null;
   } catch {
     return null;
   }

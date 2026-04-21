@@ -2123,6 +2123,31 @@ export class WebSocketService {
         }
       }
 
+      // Skip set creation if the match was flagged as a crash (everyone disconnected
+      // without a game result). Prevents stale set state from contaminating next match.
+      const matchCrashed = await redisClient.get(`match_server_crash:${notification.matchId}`);
+      if (matchCrashed) {
+        logger.info(`[${serviceName}]: Match ${notification.matchId} flagged as crash (${matchCrashed}) — skipping set creation, cleaning up stale state`);
+        for (const pid of notification.playersIds) {
+          await redisClient.del(`player_ranked_set:${pid}`);
+          await redisClient.del(`ranked_disconnect:${pid}`);
+          const client = this.clients.get(pid);
+          if (client) {
+            client.matchConfig = undefined;
+            await redisUpdatePlayerStatus(pid, "idle");
+            // Send empty config so client returns to lobby
+            setTimeout(() => {
+              client.send({
+                data: { MatchId: "", GameplayConfig: null, template_id: "OnGameplayConfigNotified" },
+                payload: { match: { id: "" }, custom_notification: "realtime" },
+                header: "", cmd: "update",
+              });
+            }, 500);
+          }
+        }
+        return;
+      }
+
       if (matchConfig && !matchConfig.isCustomGame) {
         // Verify the existing set is still valid (not already completed/cleaned up)
         let existingSet = existingSetId

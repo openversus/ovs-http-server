@@ -7,7 +7,7 @@ import * as https from "https";
 import * as http from "http";
 import * as fs from "fs";
 import * as path from "path";
-import { hydraTokenMiddleware } from "./middleware/auth";
+import { hydraTokenMiddleware, SECRET } from "./middleware/auth";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
 import { redisClient,
@@ -53,11 +53,12 @@ import { GAME_SERVER_PORT } from "./game/udp";
 import { sscRouter } from "./ssc/routes";
 import { getCurrentCRC, LoadConfig, MATCHMAKING_CRC } from "./data/config";
 import { PlayerTester, PlayerTesterModel } from "./database/PlayerTester";
+import { Types } from "mongoose";
 import { RegExpMatcher, TextCensor, englishDataset, englishRecommendedTransformers, asteriskCensorStrategy } from "obscenity";
 import env from "./env/env";
 import { syncRouter } from "./dataAssetSync";
 import { loadAssets } from "./loadAssets";
-import { randomInt, createHmac } from "crypto";
+import { randomInt, createHmac, randomBytes } from "crypto";
 import * as SharedTypes from "./types/shared-types";
 import { isParameter } from "typescript";
 import * as nodeutil from "node:util";
@@ -68,6 +69,7 @@ import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContai
 import { NameGenerator } from "./utils/namegeneration";
 import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
 import { handleMatchStatusUpdate } from "./handlers/match_status";
+import { resolveAccountFromRequest } from "./services/identityService";
 import { initAccelByteLobbyWs, accelByteLobbyWs } from "./accelByteLobbyWs";
 import { IMatchStatus } from "./interfaces/IMatchStatus";
 
@@ -223,6 +225,14 @@ const customLobbyFilePath = path.join(__dirname, "static/custom_lobby.html");
 const customLobbySource = fs.readFileSync(customLobbyFilePath, "utf8");
 const customLobbyTemplate = handlebars.compile(customLobbySource);
 
+const accountPickerFilePath = path.join(__dirname, "static/account_picker.html");
+const accountPickerSource = fs.readFileSync(accountPickerFilePath, "utf8");
+const accountPickerTemplate = handlebars.compile(accountPickerSource);
+
+const accountVerifyFilePath = path.join(__dirname, "static/account_verify.html");
+const accountVerifySource = fs.readFileSync(accountVerifyFilePath, "utf8");
+const accountVerifyTemplate = handlebars.compile(accountVerifySource);
+
 const homeFilePath = path.join(__dirname, "static/home.html");
 const homeSource = fs.readFileSync(homeFilePath, "utf8");
 const homeTemplate = handlebars.compile(homeSource);
@@ -248,7 +258,9 @@ app.get("/namechange", async (req, res) => {
       res.status(400).send("Invalid IP");
       return;
     }
-    let player = await PlayerTesterModel.findOne({ ip });
+    const { player: resolvedPlayer, pickerShown } = await resolvePlayerForWeb(req, res, "/namechange");
+    if (pickerShown) return;
+    let player = resolvedPlayer;
     // If no player exists, create a new document with empty name
     if (!player) {
       var randomName = NameGenerator.NewName();
@@ -284,7 +296,9 @@ app.post("/namechange", async (req, res, next) => {
   try {
     let error = null;
     let ip = req.ip!.replace(/^::ffff:/, "");
-    let player = await PlayerTesterModel.findOne({ ip });
+    const { player: resolvedPlayer, pickerShown } = await resolvePlayerForWeb(req, res, "/namechange");
+    if (pickerShown) return;
+    let player = resolvedPlayer;
     if (!player) {
       logger.warn(
         `${logPrefix} No player found for IP ${ip} during name change POST. This should not happen since the GET route creates a player if one doesn't exist.`,
@@ -330,12 +344,23 @@ app.post("/namechange", async (req, res, next) => {
       }
     }
 
-    // Upsert the player's name based on IP
+    // Update the player's name by account id (household-safe). Falls back to IP-based
+    // upsert only if we couldn't resolve an account — preserves old behavior for fully
+    // unauthenticated admin access.
     let filtered;
     if(!error) {
       const matches = matcher.getAllMatches(name);
       filtered = censor.applyTo(name, matches);
-      await PlayerTesterModel.findOneAndUpdate({ ip }, { name: filtered.substring(0, 24).trim() }, { upsert: true, new: true });
+      const trimmed = filtered.substring(0, 24).trim();
+      if (player?.id) {
+        await PlayerTesterModel.findOneAndUpdate(
+          { _id: new Types.ObjectId(player.id) },
+          { name: trimmed },
+          { new: true },
+        );
+      } else {
+        await PlayerTesterModel.findOneAndUpdate({ ip }, { name: trimmed }, { upsert: true, new: true });
+      }
     }
 
     // HTML Replacement by brettlyc
@@ -391,7 +416,13 @@ app.post("/ovs_register", async (req, res, next) => {
   }
   // Send all players (including spectators) to the rollback server so spectators can connect
   const players = await Promise.all(config.players.map(async (p) => {
-    const conn = await redisGetPlayerConnectionByIP(p.ip).catch(() => null);
+    // Prefer ID-keyed connection (stable across NAT/VPN); fall back to IP-keyed for legacy records
+    let conn: any = p.playerId
+      ? await redisClient.hGetAll(`connections:${p.playerId}`).catch(() => null)
+      : null;
+    if (!conn || !conn.id) {
+      conn = await redisGetPlayerConnectionByIP(p.ip).catch(() => null);
+    }
     return {
       player_index: p.playerIndex,
       player_id: p.playerId,
@@ -533,7 +564,9 @@ app.post("/mvsi_end_match", async (req, res, next) => {
 app.get("/party", async (req, res) => {
   try {
     const ip = req.ip!.replace(/^::ffff:/, "");
-    let player = await PlayerTesterModel.findOne({ ip });
+    const { player: resolvedPlayer, pickerShown } = await resolvePlayerForWeb(req, res, "/party");
+    if (pickerShown) return;
+    let player = resolvedPlayer;
     const username = player?.name || "Unknown";
     const currentKey = player?.party_key || "";
 
@@ -553,7 +586,9 @@ app.get("/party", async (req, res) => {
 app.post("/party/set-key", async (req, res) => {
   try {
     const ip = req.ip!.replace(/^::ffff:/, "");
-    let player = await PlayerTesterModel.findOne({ ip });
+    const { player: resolvedPlayer, pickerShown } = await resolvePlayerForWeb(req, res, "/party");
+    if (pickerShown) return;
+    let player = resolvedPlayer;
     if (!player) {
       res.send(partyTemplate({ username: "Unknown", currentKey: "", error: "You must be connected to the game first.", success: null }));
       return;
@@ -597,7 +632,7 @@ app.post("/party/set-key", async (req, res) => {
     await redisClient.hSet(`connections:${ip}`, { party_key: newKey });
 
     // Save party key lookup in Redis (lobbyId from current lobby or empty)
-    const conn = await redisGetPlayerConnectionByIP(ip);
+    const conn = (await redisClient.hGetAll(`connections:${player.id}`)) as any;
     const currentLobbyId = conn?.lobby_id || "";
     await redisSavePartyKey(newKey, { playerId: player.id, lobbyId: currentLobbyId, username: player.name });
 
@@ -612,7 +647,9 @@ app.post("/party/set-key", async (req, res) => {
 app.post("/party/join", async (req, res) => {
   try {
     const ip = req.ip!.replace(/^::ffff:/, "");
-    let player = await PlayerTesterModel.findOne({ ip });
+    const { player: resolvedPlayer, pickerShown } = await resolvePlayerForWeb(req, res, "/party");
+    if (pickerShown) return;
+    let player = resolvedPlayer;
     if (!player) {
       res.send(partyTemplate({ username: "Unknown", currentKey: "", error: "You must be connected to the game first.", success: null }));
       return;
@@ -721,7 +758,11 @@ app.put("/ovs/accept-invite/:lobbyId", async (req, res) => {
     const ip = req.ip!.replace(/^::ffff:/, "");
     const lobbyId = req.params.lobbyId;
 
-    const player = await PlayerTesterModel.findOne({ ip });
+    // Resolve via JWT/Steam/Epic/HW/IP (household-safe); then load by account id.
+    const conn = await resolveAccountFromRequest(req);
+    const player = conn?.id
+      ? await PlayerTesterModel.findOne({ _id: new Types.ObjectId(conn.id) })
+      : null;
     if (!player) {
       res.status(401).json({ error: "not_connected" });
       return;
@@ -1030,8 +1071,8 @@ app.get("/ovs/notifications", async (req, res) => {
       return;
     }
 
-    // Look up the player by IP
-    const conn = await redisClient.hGetAll(`connections:${ip}`) as any;
+    // Look up the player — tries JWT, SteamID, EpicID, HardwareID, then IP fallback
+    const conn = await resolveAccountFromRequest(req);
     const playerId = conn?.id;
     if (!playerId) {
       res.json([]);
@@ -1165,13 +1206,338 @@ app.post("/api/admin/banner", async (req, res) => {
 // Custom Lobby — Web-based custom game lobbies
 // ============================================================
 
-// Helper: identify player by IP (same pattern as party page)
+// Helper: identify player for browser/AJAX calls via IP candidates + picker cookie.
+// - 1 account on IP → use it.
+// - 2+ accounts on IP → require the signed `ovs_web_account` cookie (set by /account/switch).
+//   Without the cookie, returns null — AJAX caller will get a 401 and the user should visit
+//   /custom (or /party / /namechange) once in a browser to pick an account.
 async function getPlayerFromReq(req: any): Promise<{ id: string; username: string; ip: string } | null> {
   const ip = req.ip!.replace(/^::ffff:/, "");
-  const player = await PlayerTesterModel.findOne({ ip });
-  if (!player) return null;
-  return { id: player.id, username: player.name || "Unknown", ip };
+  const accounts = await PlayerTesterModel.find({ ip }).lean();
+  if (accounts.length === 0) return null;
+
+  let picked: any | null = null;
+  if (accounts.length === 1) {
+    picked = accounts[0];
+  } else {
+    const claim = verifyAdminCookie(req.cookies?.[ADMIN_COOKIE]);
+    if (claim && claim.ip === ip) {
+      const stale = await isAdminCookieStale(claim, ip);
+      if (!stale) {
+        picked = accounts.find((a: any) => String(a._id) === claim.accountId) || null;
+      } else {
+        logger.info(`${logPrefix} getPlayerFromReq: cookie stale for IP ${ip} — user must re-pick account`);
+      }
+    }
+    if (!picked) {
+      logger.info(`${logPrefix} getPlayerFromReq: ${accounts.length} accounts on IP ${ip}, no valid picker cookie — returning null (user should visit /custom to pick)`);
+      return null;
+    }
+  }
+  return { id: String(picked._id), username: picked.name || "Unknown", ip };
 }
+
+// ============================================================
+// Admin web auth — cookie-based "which account are you" picker
+// ============================================================
+// Browser-facing admin pages (/namechange, /party, /custom) have no JWT. In the
+// single-user-per-IP case the identity resolver's IP fallback picks the right
+// account. But in a household, two accounts share an IP — without a picker the
+// server would arbitrarily pick one and let the user mutate the wrong player.
+//
+// Flow:
+//   1. resolvePlayerForWeb() finds all Mongo accounts with ip === req.ip
+//   2. If 0 → null (caller should handle: redirect, 401, or create-on-demand)
+//   3. If 1 → return that player
+//   4. If 2+ → check signed cookie `ovs_web_account`. If cookie's accountId is
+//      one of the candidates AND its steamId/hardware matches Mongo, use it.
+//      Otherwise render the picker page; caller just returns.
+// ============================================================
+const ADMIN_COOKIE = "ovs_web_account";
+const ADMIN_COOKIE_TTL = 60 * 60 * 24 * 30; // 30 days — the real invalidation is event-based (below)
+
+function signAdminCookie(accountId: string, ip: string): string {
+  const jwt = require("jsonwebtoken");
+  // `iat` is auto-set by jsonwebtoken in seconds-since-epoch.
+  return jwt.sign({ accountId, ip }, SECRET, { expiresIn: ADMIN_COOKIE_TTL });
+}
+
+function verifyAdminCookie(token: string | undefined): { accountId: string; ip: string; iat?: number } | null {
+  if (!token) return null;
+  try {
+    const jwt = require("jsonwebtoken");
+    return jwt.verify(token, SECRET) as { accountId: string; ip: string; iat?: number };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Returns true if the cookie was issued BEFORE the last time the IP's account
+ * set changed — meaning it's stale and the user must re-verify.
+ */
+async function isAdminCookieStale(claim: { iat?: number }, ip: string): Promise<boolean> {
+  if (!claim.iat) return true; // malformed
+  const issuedAtMs = claim.iat * 1000;
+  const changedAtStr = await redisClient.get(`admin:ip_changed_at:${ip}`);
+  if (!changedAtStr) return false; // no change ever recorded → cookie is fine
+  const changedAtMs = Number(changedAtStr);
+  return issuedAtMs < changedAtMs;
+}
+
+/**
+ * Resolve which player this browser request is acting on.
+ * @returns
+ *   - `{ player: <doc> }` on success (single match, or cookie match, or only one account)
+ *   - `{ pickerShown: true }` if multi-account and picker page was rendered. Caller should `return`.
+ *   - `{ player: null }` if no accounts at all — caller handles (redirect / create / error).
+ */
+async function resolvePlayerForWeb(
+  req: express.Request,
+  res: express.Response,
+  returnTo: string,
+): Promise<{ player: any | null; pickerShown: boolean }> {
+  const ip = req.ip!.replace(/^::ffff:/, "");
+
+  // Candidate accounts at this IP
+  const accounts = await PlayerTesterModel.find({ ip }).lean();
+
+  if (accounts.length === 0) {
+    return { player: null, pickerShown: false };
+  }
+  if (accounts.length === 1) {
+    // Single-user-per-IP: return directly, also set the cookie so subsequent reqs skip
+    // the Mongo candidate query.
+    const only = accounts[0] as any;
+    res.cookie(ADMIN_COOKIE, signAdminCookie(String(only._id), ip), {
+      maxAge: ADMIN_COOKIE_TTL * 1000,
+      httpOnly: true,
+      sameSite: "lax",
+    });
+    const player = await PlayerTesterModel.findById(only._id);
+    return { player, pickerShown: false };
+  }
+
+  // 2+ accounts on this IP — check the signed cookie
+  const cookieToken = (req as any).cookies?.[ADMIN_COOKIE];
+  const claim = verifyAdminCookie(cookieToken);
+  if (claim && claim.ip === ip) {
+    const stale = await isAdminCookieStale(claim, ip);
+    if (!stale) {
+      const match = accounts.find(a => String((a as any)._id) === claim.accountId);
+      if (match) {
+        const player = await PlayerTesterModel.findById((match as any)._id);
+        return { player, pickerShown: false };
+      }
+    } else {
+      logger.info(`${logPrefix} Admin cookie stale for IP ${ip} (new account arrived since issue) — re-showing picker`);
+    }
+  }
+
+  // Render picker
+  const html = accountPickerTemplate({
+    returnTo,
+    accounts: accounts.map(a => {
+      const hw = (a as any).hardwareId || "";
+      return {
+        id: String((a as any)._id),
+        name: (a as any).name || "Unknown",
+        steamId: (a as any).steamId || "",
+        epicId: (a as any).epicId || "",
+        hardwareId: hw ? hw.substring(0, 8) + "..." : "",
+      };
+    }),
+  });
+  res.send(html);
+  return { player: null, pickerShown: true };
+}
+
+// POST /account/switch — user clicked "Use This" on the picker.
+// Step 1 of verification: the user claims an account. We:
+//   1. Verify the account exists at this IP (cheap gate).
+//   2. Verify the account is currently logged in (has a Redis `connections:${id}` record).
+//      — If not online, reject: can't prove ownership of an account nobody's using.
+//   3. Generate a 6-digit verification code, store in Redis `admin:verify:${verifyId}`
+//      (with random verifyId so the URL doesn't leak the code).
+//   4. Push the code as an `admin_banner` in-game notification — only the real owner
+//      of that account sees it, because only their DLL is polling /ovs/notifications.
+//   5. Show the verify page with a code input.
+//
+// Step 2 happens in POST /account/verify.
+app.post("/account/switch", async (req, res) => {
+  try {
+    const ip = req.ip!.replace(/^::ffff:/, "");
+    const accountId = (req.body?.accountId || "").trim();
+    const rawReturnTo = (req.body?.returnTo || "/home").trim();
+    const returnTo = rawReturnTo.startsWith("/") && !rawReturnTo.startsWith("//") ? rawReturnTo : "/home";
+
+    if (!accountId || !Types.ObjectId.isValid(accountId)) {
+      res.status(400).send("Invalid accountId");
+      return;
+    }
+
+    // Helper: re-render the picker page with an error banner (keeps user in-flow).
+    const renderPickerWithError = async (errMsg: string) => {
+      const candidates = await PlayerTesterModel.find({ ip }).lean();
+      const html = accountPickerTemplate({
+        returnTo,
+        error: errMsg,
+        accounts: candidates.map(a => {
+          const hw = (a as any).hardwareId || "";
+          return {
+            id: String((a as any)._id),
+            name: (a as any).name || "Unknown",
+            steamId: (a as any).steamId || "",
+            epicId: (a as any).epicId || "",
+            hardwareId: hw ? hw.substring(0, 8) + "..." : "",
+          };
+        }),
+      });
+      res.send(html);
+    };
+
+    // 1. Verify the accountId has ip === req.ip (cheap gate against random accountIds)
+    const match = await PlayerTesterModel.findOne({ _id: new Types.ObjectId(accountId), ip });
+    if (!match) {
+      await renderPickerWithError("That account isn't recognized on this network. Pick one from the list below.");
+      return;
+    }
+
+    // 2. Verify account is currently online (has live Redis session). If the account
+    //    isn't logged in via the DLL right now, nobody can receive the verification
+    //    notification — which means whoever's asking isn't the owner.
+    const liveSession = await redisClient.hGetAll(`connections:${accountId}`) as any;
+    if (!liveSession || !liveSession.id) {
+      await renderPickerWithError(
+        `${match.name || "That account"} isn't signed in to the game right now — please log in to the main menu with that account, then click "Use This" again.`,
+      );
+      return;
+    }
+
+    // 3. Generate 6-digit code + opaque verifyId (the verifyId is what's in the form, not the code)
+    const code = String(randomInt(100000, 1000000));
+    const verifyId = randomBytes(16).toString("hex");
+    const payload = { accountId, ip, returnTo, code, createdAt: Date.now() };
+    await redisClient.set(`admin:verify:${verifyId}`, JSON.stringify(payload), { EX: 60 * 5 }); // 5 min code TTL
+    await redisClient.set(`admin:verify:attempts:${verifyId}`, "0", { EX: 60 * 5 });
+
+    // 4. Push the code as an in-game banner notification. DLL's NotifPoller picks it up
+    //    from Redis within ~2s and shows it as a two-line in-game toast.
+    //    `type: "admin_banner"` is the DLL-side notification type (preserves the existing
+    //    in-game widget), not a claim that this is an admin action — it's player account verification.
+    await redisPushDLLNotification(accountId, {
+      type: "admin_banner",
+      title: "Web Login Code",
+      message: `Enter ${code} in the browser to verify.`,
+      data: { timeout: 120 }, // 2 min on-screen. Code itself is valid for 5 min (Redis TTL above).
+      timestamp: Date.now(),
+    });
+
+    logger.info(`${logPrefix} Account verify code pushed to ${accountId} (IP ${ip}, banner 2min, code valid 5min)`);
+
+    // 5. Render the verify page. verifyId is hidden in the form.
+    const html = accountVerifyTemplate({
+      verifyId,
+      returnTo,
+      accountName: match.name || "Unknown",
+      steamId: match.steamId || "",
+      error: null,
+    });
+    res.send(html);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in /account/switch: ${e}`);
+    res.status(500).send("Error starting verification");
+  }
+});
+
+// POST /account/verify — user entered the code from the in-game banner.
+// On success: sets the signed cookie, deletes the verify record, redirects to returnTo.
+// On failure: increments attempt counter, re-renders the page with an error.
+// After 5 failed attempts the verify record is deleted entirely (user has to restart).
+app.post("/account/verify", async (req, res) => {
+  try {
+    const ip = req.ip!.replace(/^::ffff:/, "");
+    const verifyId = (req.body?.verifyId || "").toString().trim();
+    const submittedCode = (req.body?.code || "").toString().trim();
+
+    if (!verifyId || !/^[a-f0-9]{32}$/i.test(verifyId)) {
+      res.status(400).send("Invalid verify request");
+      return;
+    }
+    if (!submittedCode || !/^\d{6}$/.test(submittedCode)) {
+      // Bad code format — re-render with error (if the record still exists)
+      const raw = await redisClient.get(`admin:verify:${verifyId}`);
+      if (raw) {
+        const p = JSON.parse(raw);
+        const acct = await PlayerTesterModel.findOne({ _id: new Types.ObjectId(p.accountId) }).lean() as any;
+        res.send(accountVerifyTemplate({
+          verifyId,
+          returnTo: p.returnTo || "/home",
+          accountName: acct?.name || "Unknown",
+          steamId: acct?.steamId || "",
+          error: "Code must be 6 digits.",
+        }));
+        return;
+      }
+      res.status(400).send("Invalid or expired verification. Go back and try again.");
+      return;
+    }
+
+    const raw = await redisClient.get(`admin:verify:${verifyId}`);
+    if (!raw) {
+      res.status(400).send("Verification expired or already used. Go back and try again.");
+      return;
+    }
+    const payload = JSON.parse(raw) as { accountId: string; ip: string; returnTo: string; code: string; createdAt: number };
+
+    // Security: the IP of the verify must match the request IP. Prevents someone else
+    // on the LAN from stealing a code if they somehow learn the verifyId.
+    if (payload.ip !== ip) {
+      await redisClient.del(`admin:verify:${verifyId}`);
+      await redisClient.del(`admin:verify:attempts:${verifyId}`);
+      res.status(403).send("IP mismatch on verification. Start over from the picker.");
+      return;
+    }
+
+    // Attempt limiter
+    const attempts = Number(await redisClient.get(`admin:verify:attempts:${verifyId}`) || "0");
+    if (attempts >= 5) {
+      await redisClient.del(`admin:verify:${verifyId}`);
+      await redisClient.del(`admin:verify:attempts:${verifyId}`);
+      res.status(429).send("Too many attempts. Start over from the picker.");
+      return;
+    }
+
+    if (submittedCode !== payload.code) {
+      await redisClient.incr(`admin:verify:attempts:${verifyId}`);
+      const acct = await PlayerTesterModel.findOne({ _id: new Types.ObjectId(payload.accountId) }).lean() as any;
+      res.send(accountVerifyTemplate({
+        verifyId,
+        returnTo: payload.returnTo,
+        accountName: acct?.name || "Unknown",
+        steamId: acct?.steamId || "",
+        error: `Wrong code. ${5 - attempts - 1} attempts remaining.`,
+      }));
+      return;
+    }
+
+    // ✓ Code correct. One-time-use — delete immediately.
+    await redisClient.del(`admin:verify:${verifyId}`);
+    await redisClient.del(`admin:verify:attempts:${verifyId}`);
+
+    res.cookie(ADMIN_COOKIE, signAdminCookie(payload.accountId, ip), {
+      maxAge: ADMIN_COOKIE_TTL * 1000,
+      httpOnly: true,
+      sameSite: "lax",
+    });
+
+    logger.info(`${logPrefix} Admin verify SUCCESS: account ${payload.accountId} verified from IP ${ip} → ${payload.returnTo}`);
+    res.redirect(payload.returnTo);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in /account/verify: ${e}`);
+    res.status(500).send("Verification error");
+  }
+});
 
 app.get("/custom", async (req, res) => {
   try {

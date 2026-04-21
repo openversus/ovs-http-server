@@ -195,7 +195,12 @@ export async function recordGameStats(
 
     // Extract per-character badge values from THIS game
     const thisGameRingouts = Math.round(Number(playerPmu["Stat:Game:Character:TotalRingouts"]) || 0);
-    const thisGameDamage = Math.round(Number(playerPmu["Stat:Game:Character:TotalAttackDamageDealt"]) || 0);
+    // Use TotalDamageDealt (matches recent_matches.damage). Falls back to
+    // TotalAttackDamageDealt for legacy PMU payloads that didn't ship Total.
+    const thisGameDamage = Math.round(
+      Number(playerPmu["Stat:Game:Character:TotalDamageDealt"]) ||
+      Number(playerPmu["Stat:Game:Character:TotalAttackDamageDealt"]) || 0,
+    );
 
     // Badges: $inc accumulated, $max for highest-ever
     if (thisGameRingouts > 0) inc[`${charPath}.ringouts`] = thisGameRingouts;

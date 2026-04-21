@@ -824,11 +824,6 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
   const wb_network_id = rPlayerConnectionByID.wb_network_id || account.wb_network_id;
   const profile_id = rPlayerConnectionByID.profile_id || account.profile_id;
 
-  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${rPlayerConnectionByID.current_ip}`) as unknown as RedisPlayerConnection;
-  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.error(`${logPrefix} No Redis player connection found for IP ${rPlayerConnectionByID.current_ip}, this should not happen.`);
-  }
-
   let numCosmetics = await redisClient.keys(`player:${aID}:cosmetics`).then(keys => keys.length);
 
   if (numCosmetics === 0) {
@@ -845,7 +840,9 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
   }
 
   await redisClient.hSet(`connections:${aID}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
-  await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+  if (rPlayerConnectionByID.current_ip) {
+    await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+  }
 
   const data = {
     updated_at: { _hydra_unix_date: MVSTime(new Date()) },
@@ -972,11 +969,6 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   const wb_network_id = rPlayerConnectionByID.wb_network_id || account.wb_network_id;
   const profile_id = rPlayerConnectionByID.profile_id || account.profile_id;
 
-  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${rPlayerConnectionByID.current_ip}`) as unknown as RedisPlayerConnection;
-  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.error(`${logPrefix} No Redis player connection found for IP ${rPlayerConnectionByID.current_ip}, this should not happen.`);
-  }
-
   let numCosmetics = await redisClient.keys(`player:${aID}:cosmetics`).then(keys => keys.length);
 
   if (numCosmetics === 0) {
@@ -993,7 +985,9 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   }
 
   await redisClient.hSet(`connections:${aID}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
-  await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+  if (rPlayerConnectionByID.current_ip) {
+    await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+  }
 
   // Look up the lobby to include ALL players in matchmaking, not just the requester
   const lobbyId = await redisGetPlayerLobby(aID);

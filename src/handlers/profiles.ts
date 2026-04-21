@@ -13,6 +13,7 @@ import { HYDRA_ACCESS_TOKEN, SECRET, decodeToken } from "../middleware/auth";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { isIPv4Address } from "../utils/garbagecan";
 import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
+import { resolveAccountFromRequest } from "../services/identityService";
 
 const serviceName = "Handlers.Profiles";
 const logPrefix = `[${serviceName}]:`;
@@ -40,8 +41,8 @@ export async function handleProfiles_id_inventory(req: Request<{}, {}, {}, MVSQu
       ip = account.current_ip;
     }
     
-    let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${ip}`) as unknown as RedisPlayerConnection;
-    const aID = rPlayerConnectionByIP.id || account.id;
+    const resolvedConn = await resolveAccountFromRequest(req as any);
+    const aID = resolvedConn?.id || account.id;
     logger.info(`${logPrefix} Inventory request for account ${aID} with IP ${ip}`);
 
     //res.send([...unlockAll(account.id), GleamiumData]);

@@ -114,7 +114,6 @@ export class WebSocketPlayer {
 
   constructor(_ws: WebSocket, ip: string) {
     this.ip = ip;
-    logger.info(ip);
     this.ws = _ws;
   }
 
@@ -596,7 +595,19 @@ export class WebSocketService {
       await redisRemoveOnlinePlayer(playerId);
       await redisCleanupPlayerLobby(playerId); // Clean up lobby state before deleting player keys
       await redisDeletePlayerKeys(playerId);
-      await redisDeleteConnectionKeysByIp(playerWS.ip);
+      // HOUSEHOLD SAFETY: only wipe the IP-keyed record if it still points at THIS
+      // player. If a roommate logged in on the same IP after us, their /access
+      // overwrote connections:${ip} with their own id — we must not delete theirs.
+      try {
+        const ipRecord = (await redisClient.hGetAll(`connections:${playerWS.ip}`)) as any;
+        if (ipRecord?.id === playerId) {
+          await redisDeleteConnectionKeysByIp(playerWS.ip);
+        } else if (ipRecord?.id) {
+          logger.info(`${logPrefix} Skipping IP cleanup for ${playerWS.ip} — now belongs to ${ipRecord.id} (not disconnecting player ${playerId})`);
+        }
+      } catch (e) {
+        logger.error(`${logPrefix} Error guarding IP cleanup on disconnect: ${e}`);
+      }
       logger.info(
         `[${serviceName}]: Player ${playerId} with IP ${playerWS.ip} and name ${playerWS.account.username} disconnected from websocket`,
       );

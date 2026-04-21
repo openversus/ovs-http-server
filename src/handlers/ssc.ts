@@ -30,6 +30,7 @@ import * as KitchenSink from "../utils/garbagecan";
 import { processMatchResult, getOrCreateRating, getPlayerRank, eloToTierDivision, getLeaderboard } from "../services/eloService";
 import { recordGameStats } from "../services/statsService";
 import { handleRematchDecline, handleRematchAccept } from "../services/customLobbyService";
+import { resolveAccountFromRequest } from "../services/identityService";
 
 const serviceName = "Handlers.SSC";
 const logPrefix = `[${serviceName}]:`;
@@ -327,14 +328,11 @@ export async function handleSsc_invoke_get_equipped_cosmetics(req: Request<{}, {
   //let ip = req.ip!.replace(/^::ffff:/, "");
   let ip: string = account.current_ip;
 
-  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${ip}`) as unknown as RedisPlayerConnection;
-  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.warn(`${logPrefix} No Redis player connection found for IP ${ip}, cannot set loadout.`);
+  const resolvedConn = await resolveAccountFromRequest(req);
+  if (!resolvedConn || !resolvedConn.id) {
+    logger.warn(`${logPrefix} No Redis player connection resolved for IP ${ip}, cannot set loadout.`);
   }
-  let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`) as unknown as RedisPlayerConnection;
-  if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
-    logger.warn(`${logPrefix} No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
-  }
+  const rPlayerConnectionByID = (resolvedConn || {}) as unknown as RedisPlayerConnection;
 
   let rPlayerCosmetics = await getEquippedCosmetics(rPlayerConnectionByID.id) as Cosmetics;
 

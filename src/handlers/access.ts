@@ -18,6 +18,7 @@ import { PlayerStatsModel } from "../database/PlayerStats";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { NameGenerator } from "../utils/namegeneration";
 import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
+import { writeIdentityIndexes, bumpIpAccountsChangedAt } from "../services/identityService";
 
 const serviceName = "Handlers.Access";
 const logPrefix = `[${serviceName}]:`;
@@ -91,7 +92,15 @@ async function generateStaticAccess(req: express.Request) {
     player = new PlayerTesterModel({ ip, name: randomName, hydraUsername: hydraUsername, GameplayPreferences: 964, steamId, epicId, hardwareId });
     try {
       await player.save();
-      logger.info(`${logPrefix} No player found for IP ${ip}. Created new player with id ${player.id} and name ${randomName}.`);
+      const lookedUp = [
+        `steamId=${steamId || "-"}`,
+        `epicId=${epicId || "-"}`,
+        `hardwareId=${hardwareId || "-"}`,
+        `ip=${ip}`,
+      ].join(", ");
+      logger.info(`${logPrefix} No existing player matched [${lookedUp}]. Created new player with id ${player.id} and name ${randomName}.`);
+      // New account at this IP → invalidate any admin web cookies currently bound to this IP.
+      await bumpIpAccountsChangedAt(ip);
     }
     catch (error) {
       logger.error(`${logPrefix} Error creating new player, error: ${error}`);
@@ -104,7 +113,15 @@ async function generateStaticAccess(req: express.Request) {
     if (steamId && isStale(player.steamId)) { player.steamId = steamId; dirty = true; }
     if (epicId && isStale(player.epicId)) { player.epicId = epicId; dirty = true; }
     if (hardwareId && isStale(player.hardwareId)) { player.hardwareId = hardwareId; dirty = true; }
-    if (player.ip !== ip) { player.ip = ip; dirty = true; }
+    if (player.ip !== ip) {
+      // Existing account moving to a new IP — bump both the old IP (this account leaving)
+      // and the new IP (this account arriving) so stale cookies at either get re-verified.
+      const previousIp = player.ip;
+      player.ip = ip;
+      dirty = true;
+      if (previousIp) await bumpIpAccountsChangedAt(previousIp);
+      await bumpIpAccountsChangedAt(ip);
+    }
     if (dirty) {
       try {
         await player.save();
@@ -182,6 +199,14 @@ async function generateStaticAccess(req: express.Request) {
   logger.info(`${logPrefix} Player ${account.id} - ${account.username} connected; ws: ${ws}`);
 
   await Redis.redisAddPlayerConnection(player.id, ip, token, account);
+
+  // Write identity index keys so downstream lookups can resolve by steamId/epicId/hardwareId
+  // instead of IP. Solves same-household collision (two accounts sharing external IP).
+  try {
+    await writeIdentityIndexes(player.id, player.steamId, player.epicId, player.hardwareId);
+  } catch (e) {
+    logger.error(`${logPrefix} Error writing identity indexes: ${e}`);
+  }
 
   // Cache party key in Redis connection hash + party_key lookup
   if (player.party_key) {

@@ -16,6 +16,7 @@ import {
   RedisPartyMemberJoinNotification,
 } from "./config/redis";
 import { randomUUID } from "crypto";
+import { resolveAccountByIdentifiers } from "./services/identityService";
 
 const serviceName = "AccelByteLobbyWS";
 const logPrefix = `[${serviceName}]:`;
@@ -125,17 +126,20 @@ export class AccelByteLobbyWsService {
       }
     }
 
-    // If no token auth, try to identify by IP from Redis connections
+    // If no token auth, try to identify by platform IDs (from headers), then fall back to IP
     if (!playerId) {
       try {
-        const conn = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
+        const steamId = (request.headers["x-steam-id"] as string) || null;
+        const epicId = (request.headers["x-epic-id"] as string) || null;
+        const hardwareId = (request.headers["x-hw-id"] as string) || null;
+        const conn = await resolveAccountByIdentifiers({ steamId, epicId, hardwareId, ip });
         if (conn && conn.id) {
           playerId = conn.id;
           username = conn.username || conn.hydraUsername || "";
-          logger.info(`${logPrefix} Identified player ${playerId} (${username}) by IP ${ip}`);
+          logger.info(`${logPrefix} Identified player ${playerId} (${username}) via identity resolver (IP ${ip})`);
         }
       } catch (e) {
-        logger.warn(`${logPrefix} Could not identify player by IP ${ip}: ${e}`);
+        logger.warn(`${logPrefix} Could not identify player by identifiers (IP ${ip}): ${e}`);
       }
     }
 

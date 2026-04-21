@@ -5,6 +5,7 @@ dist
 build
 .vs/**
 .vscode/**
+.claude/
 
 packets/
 game.log

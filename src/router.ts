@@ -12,6 +12,7 @@ import { getProfileForMatch } from "./services/profileService";
 import { PlayerTesterModel } from "./database/PlayerTester";
 import * as AuthUtils from "./utils/auth";
 import { HydraEncoder } from "mvs-dump";
+import { resolveAccountFromRequest } from "./services/identityService";
 // SSC custom lobby imports removed — handled by shared.routes.ts
 
 interface MVSParams {
@@ -292,7 +293,7 @@ router.get("/ovs/all-players", async (req: Request, res: Response) => {
 router.put("/ovs/friends/send-request/:targetId", async (req: Request, res: Response) => {
   try {
     const ip = req.ip?.replace(/^::ffff:/, "") || "";
-    const connection = await redisClient.hGetAll(`connections:${ip}`) as any;
+    const connection = await resolveAccountFromRequest(req);
     if (!connection || !connection.id) {
       res.status(401).json({ error: "not_connected" });
       return;
@@ -322,7 +323,7 @@ router.put("/ovs/friends/send-request/:targetId", async (req: Request, res: Resp
 router.post("/ovs/friends/request", async (req: Request, res: Response) => {
   try {
     const ip = req.ip?.replace(/^::ffff:/, "") || "";
-    const connection = await redisClient.hGetAll(`connections:${ip}`);
+    const connection = await resolveAccountFromRequest(req);
     if (!connection || !connection.id) {
       res.status(401).json({ error: "not_connected" });
       return;
@@ -350,7 +351,7 @@ router.post("/ovs/friends/request", async (req: Request, res: Response) => {
 router.post("/ovs/friends/accept", async (req: Request, res: Response) => {
   try {
     const ip = req.ip?.replace(/^::ffff:/, "") || "";
-    const connection = await redisClient.hGetAll(`connections:${ip}`);
+    const connection = await resolveAccountFromRequest(req);
     if (!connection || !connection.id) {
       res.status(401).json({ error: "not_connected" });
       return;
@@ -373,7 +374,7 @@ router.post("/ovs/friends/accept", async (req: Request, res: Response) => {
 router.post("/ovs/friends/decline", async (req: Request, res: Response) => {
   try {
     const ip = req.ip?.replace(/^::ffff:/, "") || "";
-    const connection = await redisClient.hGetAll(`connections:${ip}`);
+    const connection = await resolveAccountFromRequest(req);
     if (!connection || !connection.id) {
       res.status(401).json({ error: "not_connected" });
       return;
@@ -396,7 +397,7 @@ router.post("/ovs/friends/decline", async (req: Request, res: Response) => {
 router.delete("/ovs/friends/:friendId", async (req: Request<{ friendId: string }>, res: Response) => {
   try {
     const ip = req.ip?.replace(/^::ffff:/, "") || "";
-    const connection = await redisClient.hGetAll(`connections:${ip}`);
+    const connection = await resolveAccountFromRequest(req);
     if (!connection || !connection.id) {
       res.status(401).json({ error: "not_connected" });
       return;
@@ -413,7 +414,7 @@ router.delete("/ovs/friends/:friendId", async (req: Request<{ friendId: string }
 router.post("/ovs/friends/block", async (req: Request, res: Response) => {
   try {
     const ip = req.ip?.replace(/^::ffff:/, "") || "";
-    const connection = await redisClient.hGetAll(`connections:${ip}`);
+    const connection = await resolveAccountFromRequest(req);
     if (!connection || !connection.id) {
       res.status(401).json({ error: "not_connected" });
       return;
@@ -739,6 +740,24 @@ router.post(/\/virtual_commerce\/purchases\/.{24}\/toasts_gleamium/, (req: Reque
 });
 
 router.get("/images/:image", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  // @ts-ignore TODO : implementation. Remove comment once implemented`
+  h.handleImages(req, res);
+});
+
+router.get("/favicon/:image", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  // @ts-ignore TODO : implementation. Remove comment once implemented`
+  // Reuse image handler for favicons since they're just images with a different path
+  // This is getting its own route to avoid conflicts with the catch-all that serves SSC garbage for unknown paths
+  // and also to eventually support multiple favicon sizes/versions/etc if needed.
+  h.handleImages(req, res);
+});
+
+router.get("/favicon.ico", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  // Reuse image handler for favicons since they're just images with a different path
+  // This is getting its own route to avoid conflicts with the catch-all that serves SSC garbage for unknown paths
+  // and also to eventually support multiple favicon sizes/versions/etc if needed.
+
+  req.params = { image: "favicon.ico" }; // Set the image param so the handler knows which file to serve
   // @ts-ignore TODO : implementation. Remove comment once implemented`
   h.handleImages(req, res);
 });

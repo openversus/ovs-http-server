@@ -26,6 +26,7 @@ import * as SharedTypes from "../types/shared-types";
 import { HYDRA_ACCESS_TOKEN, SECRET, decodeToken } from "../middleware/auth";
 import * as AuthUtils from "../utils/auth";
 import * as KitchenSink from "../utils/garbagecan";
+import { PlayerStatsModel, RecentMatchPlayerStats } from "../database/PlayerStats";
 
 const serviceName = "Handlers.Matches";
 const logPrefix = `[${serviceName}]:`;
@@ -509,13 +510,252 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
   });
 }
 
-export async function handleMatches_all_id(req: Request<{}, {}, {}, MVSQueries.Matches_all_id_QUERY>, res: Response) {
-  res.send({
-    matches: [],
-    total_matches: 0,
-    current_page: 1,
-    total_pages: 1,
-  });
+export async function handleMatches_all_id(req: Request<any, {}, {}, MVSQueries.Matches_all_id_QUERY>, res: Response) {
+  const accountId = req.params.id;
+
+  try {
+    const stats = await PlayerStatsModel.findOne({ account_id: accountId }).lean();
+    const entries: any[] = [
+      ...(stats?.recent_matches_1v1 || []),
+      ...(stats?.recent_matches_2v2 || []),
+    ];
+
+    // Sort oldest first (top-down chronological in the game's recent matches UI)
+    entries.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+    // Limit to count requested (default 20)
+    const count = parseInt(req.query.count as string) || 20;
+    const page = parseInt(req.query.page as string) || 1;
+    const sliced = entries.slice((page - 1) * count, page * count);
+
+    const matches: any[] = [];
+    for (const entry of sliced) {
+      try {
+        const is1v1 = entry.mode === "1v1" || entry.mode?.includes("1v1");
+        const templateSlug = is1v1 ? "1v1_container" : "2v2_container";
+        const didWin = entry.result === "win";
+        const score0 = entry.score?.[0] ?? 0;
+        const score1 = entry.score?.[1] ?? 0;
+        const ps = entry.players || [];
+
+        // Derive character/opponent info from players array
+        const me = ps.find((p: any) => p.accountId === accountId);
+        const opponent = ps.find((p: any) => p.accountId !== accountId);
+
+        matches.push(buildMatchResponse({
+          id: entry.matchId || ObjectID().toHexString(),
+          accountId,
+          username: "",
+          opponentId: opponent?.accountId || `opp_${entry.matchId || "unknown"}`,
+          opponentName: "",
+          myCharacter: me?.character || "character_shaggy",
+          opponentCharacter: opponent?.character || "character_batman",
+          templateSlug,
+          map: entry.map || "",
+          didWin,
+          myScore: score0,
+          opponentScore: score1,
+          createdAt: new Date(entry.timestamp || Date.now()),
+          playerStats: ps,
+        }));
+      } catch (e) {
+        logger.error(`[Matches]: Failed to build match entry ${entry.matchId}: ${e}`);
+      }
+    }
+
+    logger.info(`[Matches]: /matches/all/${accountId} — returning ${matches.length} matches from PlayerStats`);
+
+    res.send({
+      matches,
+      total_matches: entries.length,
+      current_page: page,
+      total_pages: Math.ceil(entries.length / count) || 1,
+    });
+  } catch (err) {
+    logger.error(`[Matches]: /matches/all/${accountId} error: ${err}`);
+    res.send({
+      matches: [],
+      total_matches: 0,
+      current_page: 1,
+      total_pages: 1,
+    });
+  }
+}
+
+function buildMatchResponse(opts: {
+  id: string;
+  accountId: string;
+  username: string;
+  opponentId: string;
+  opponentName: string;
+  myCharacter: string;
+  opponentCharacter: string;
+  templateSlug: string;
+  map: string;
+  didWin: boolean;
+  myScore: number;
+  opponentScore: number;
+  createdAt: Date;
+  playerStats?: RecentMatchPlayerStats[];
+}) {
+  const winnerIds = opts.didWin ? [opts.accountId] : [opts.opponentId];
+  const loserIds = opts.didWin ? [opts.opponentId] : [opts.accountId];
+  const winningTeamIdx = opts.didWin ? 0 : 1;
+  const ts = opts.createdAt.toISOString();
+
+  // Build per-player PMU-style stats from stored data
+  const playerPmu: Record<string, Record<string, number>> = {};
+  if (opts.playerStats) {
+    for (const ps of opts.playerStats) {
+      playerPmu[ps.accountId] = {
+        "Stat:Game:Character:TotalDamageDealt": ps.damage,
+        "Stat:Game:Character:TotalAttackDamageDealt": ps.damage,
+        "Stat:Game:Character:TotalRingouts": ps.ringouts,
+        "Stat:Game:Character:TotalDeaths": ps.deaths,
+      };
+    }
+  }
+
+  return {
+    access: "public",
+    access_level: "open",
+    account_id: null,
+    arbitration: {
+      conflict_resolved: false,
+      end_time: ts,
+      start_time: ts,
+    },
+    cluster: "ec2-us-east-1-dokken",
+    completion_time: { _hydra_unix_date: Math.floor(opts.createdAt.getTime() / 1000) },
+    created_at: { _hydra_unix_date: Math.floor(opts.createdAt.getTime() / 1000) },
+    criteria: { slug: opts.templateSlug },
+    draw: false,
+    id: opts.id,
+    last_warning_time: null,
+    loss: loserIds,
+    matchmaking: null,
+    name: opts.templateSlug,
+    origin: "matchmaking",
+    players: {
+      all: (opts.playerStats || [
+        { accountId: opts.accountId, character: opts.myCharacter, teamIndex: 0, damage: 0, ringouts: 0, deaths: 0, isWinner: opts.didWin },
+        { accountId: opts.opponentId, character: opts.opponentCharacter, teamIndex: 1, damage: 0, ringouts: 0, deaths: 0, isWinner: !opts.didWin },
+      ]).map((ps) => ({
+        account_id: ps.accountId,
+        data: {
+          EndOfMatchStats: {
+            Score: [opts.myScore, opts.opponentScore],
+            WinningTeamIndex: winningTeamIdx,
+            PlayerMissionUpdates: playerPmu,
+          },
+        },
+        identity: {
+          username: ps.accountId === opts.accountId ? opts.username : opts.opponentName,
+          avatar: "",
+          default_username: false,
+          personal_data: {},
+          alternate: {},
+          usernames: [{ auth: "steam", username: ps.accountId === opts.accountId ? opts.username : opts.opponentName }],
+          platforms: ["steam"],
+          current_platform: "steam",
+          is_cross_platform: false,
+        },
+        source: {},
+        state: "completed",
+        state_data: null,
+      })),
+      completed: (opts.playerStats || []).map((ps) => ps.accountId),
+      count: opts.playerStats?.length || 2,
+      current: [],
+    },
+    rand: Math.random(),
+    server_data: {
+      GameplayConfig: {
+        Map: opts.map,
+        ModeString: "1v1",
+        MatchId: opts.id,
+        bIsPvP: true,
+        bIsRanked: false,
+        bIsOnlineMatch: true,
+        bIsCustomGame: false,
+        bIsCasualSpecial: false,
+        bIsRift: false,
+        bIsTutorial: false,
+        bModeGrantsProgress: true,
+        bAllowMapHazards: true,
+        MatchDurationSeconds: 300,
+        ScoreEvaluationRule: "BestOf5",
+        ScoreAttributionRule: "RingoutAndTimer",
+        CountdownDisplay: "StocksRemaining",
+        Cluster: "ec2-us-east-1-dokken",
+        Created: ts,
+        EventQueueSlug: "",
+        RiftNodeId: "",
+        RiftNodeAttunement: "",
+        HudSettings: { bDisplayPortraits: true, bDisplayStocks: true, bDisplayTimer: true },
+        CustomGameSettings: { NumRingouts: 3, MatchTime: 300, bHazardsEnabled: true, bShieldsEnabled: true },
+        Players: Object.fromEntries(
+          (opts.playerStats || [
+            { accountId: opts.accountId, character: opts.myCharacter, teamIndex: 0, damage: 0, ringouts: 0, deaths: 0, isWinner: opts.didWin },
+            { accountId: opts.opponentId, character: opts.opponentCharacter, teamIndex: 1, damage: 0, ringouts: 0, deaths: 0, isWinner: !opts.didWin },
+          ]).map((ps, idx) => [ps.accountId, {
+            AccountId: ps.accountId,
+            Character: ps.character,
+            Skin: `skin_${ps.character.replace("character_", "")}_default`,
+            TeamIndex: ps.teamIndex,
+            PlayerIndex: idx,
+            Banner: "",
+            ProfileIcon: "",
+            RingoutVfx: "",
+            Perks: [],
+            Taunts: [],
+            Gems: [],
+            Buffs: [],
+            StatTrackers: [],
+            BotBehaviorOverride: "",
+            BotDifficultyMin: 0,
+            BotDifficultyMax: 0,
+            Handicap: 0,
+            StartingDamage: 0,
+            GameplayPreferences: 0,
+            CrossplayPreference: 0,
+            PartyId: "",
+            PartyMember: null,
+            LobbyPlayerIndex: idx,
+            RankedDivision: null,
+            RankedTier: null,
+            WinStreak: null,
+            bAutoPartyPreference: false,
+            bIsBot: false,
+            bUseCharacterDisplayName: false,
+          }]),
+        ),
+        Spectators: {},
+        TeamData: [],
+        WorldBuffs: [],
+      },
+      bGameplayStarted: true,
+      bGameplayEnded: true,
+    },
+    shortcode: null,
+    state: "completed",
+    template: {
+      type: "match",
+      name: opts.templateSlug,
+      slug: opts.templateSlug,
+      min_players: 2,
+      max_players: 2,
+      game_server_integration_enabled: true,
+      game_server_config: null,
+      data: { mode: "1v1" },
+      created_at: { _hydra_unix_date: 1658510618 },
+      updated_at: { _hydra_unix_date: 1658510618 },
+      id: ObjectID().toHexString(),
+    },
+    updated_at: { _hydra_unix_date: Math.floor(opts.createdAt.getTime() / 1000) },
+    win: winnerIds,
+    winning_team: opts.didWin ? [0] : [1],
+  };
 }
 
 export interface MATCH_MAKING_REQUEST {
@@ -584,11 +824,6 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
   const wb_network_id = rPlayerConnectionByID.wb_network_id || account.wb_network_id;
   const profile_id = rPlayerConnectionByID.profile_id || account.profile_id;
 
-  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${rPlayerConnectionByID.current_ip}`) as unknown as RedisPlayerConnection;
-  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.error(`${logPrefix} No Redis player connection found for IP ${rPlayerConnectionByID.current_ip}, this should not happen.`);
-  }
-
   let numCosmetics = await redisClient.keys(`player:${aID}:cosmetics`).then(keys => keys.length);
 
   if (numCosmetics === 0) {
@@ -605,7 +840,9 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
   }
 
   await redisClient.hSet(`connections:${aID}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
-  await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+  if (rPlayerConnectionByID.current_ip) {
+    await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+  }
 
   const data = {
     updated_at: { _hydra_unix_date: MVSTime(new Date()) },
@@ -732,11 +969,6 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   const wb_network_id = rPlayerConnectionByID.wb_network_id || account.wb_network_id;
   const profile_id = rPlayerConnectionByID.profile_id || account.profile_id;
 
-  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${rPlayerConnectionByID.current_ip}`) as unknown as RedisPlayerConnection;
-  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.error(`${logPrefix} No Redis player connection found for IP ${rPlayerConnectionByID.current_ip}, this should not happen.`);
-  }
-
   let numCosmetics = await redisClient.keys(`player:${aID}:cosmetics`).then(keys => keys.length);
 
   if (numCosmetics === 0) {
@@ -753,7 +985,9 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   }
 
   await redisClient.hSet(`connections:${aID}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
-  await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+  if (rPlayerConnectionByID.current_ip) {
+    await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+  }
 
   // Look up the lobby to include ALL players in matchmaking, not just the requester
   const lobbyId = await redisGetPlayerLobby(aID);

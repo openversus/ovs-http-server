@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpenVersus - Verify Account</title>
+  <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png?v=20260418" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg?v=20260418" />
+  <link rel="shortcut icon" href="/favicon/favicon.ico?v=20260418" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png?v=20260418" />
+  <meta name="apple-mobile-web-app-title" content="OpenVersus" />
+  <link rel="manifest" href="/favicon/site.webmanifest?v=20260418" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fugaz+One&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+  <style>
+      :root {
+          --mv-blue: #1f6feb; --mv-blue-dark: #0040a5;
+          --mv-orange: #ff7500; --mv-orange-dark: #ff4d00;
+          --ink: #343434;
+          --card: rgba(255, 255, 255, 0.92); --card2: rgba(255, 255, 255, 0.85);
+          --shadow: rgba(0, 0, 0, 0.28) 0px 19px 38px, rgba(0, 0, 0, 0.20) 0px 15px 12px;
+          --skew: -12deg; --radius: 18px;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+          margin: 0; font-family: "Fugaz One", Arial, sans-serif;
+          overflow-x: hidden; color: var(--ink); background: #000;
+      }
+      .background {
+          position: fixed; inset: 0; z-index: -2;
+          background-image: url("/images/name_change_background.jpeg");
+          background-size: cover; background-position: center; background-repeat: no-repeat;
+          transform: scale(1.03);
+      }
+      .background::after {
+          content: ""; position: absolute; inset: 0;
+          backdrop-filter: blur(6px); background: rgba(10, 12, 20, 0.20);
+      }
+      .main_wrapper { min-height: 100%; display: grid; place-items: center; padding: 24px 14px; }
+      .main_container {
+          width: min(640px, 100%);
+          background: linear-gradient(180deg, var(--card), var(--card2));
+          border-radius: var(--radius); box-shadow: var(--shadow);
+          padding: 28px; position: relative; overflow: hidden;
+      }
+      .content { position: relative; display: grid; gap: 18px; }
+      .top { display: grid; grid-template-columns: 140px 1fr; gap: 18px; align-items: center; }
+      .logo {
+          width: 100%; max-width: 140px; border-radius: 14px; display: block;
+          box-shadow: 0 10px 0 rgba(0, 0, 0, 0.10);
+      }
+      .panelTitle {
+          margin: 0; font-size: clamp(20px, 2.6vw, 28px); line-height: 1;
+          background: linear-gradient(0deg, var(--mv-orange-dark), #ff8825);
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+          font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase;
+      }
+      .subline {
+          margin: 8px 0 0; font-family: Helvetica, Arial, sans-serif;
+          color: rgba(20, 20, 20, 0.75); font-size: 14px; line-height: 1.5;
+      }
+      .picked-card {
+          padding: 14px 16px; border: 3px solid var(--mv-blue); background: rgba(31, 111, 235, 0.06);
+          box-shadow: 0 6px 0 rgba(0, 0, 0, 0.08);
+          font-family: Helvetica, Arial, sans-serif;
+      }
+      .picked-card .acct-name {
+          font-weight: 900; font-size: 18px; color: var(--ink); margin: 0;
+      }
+      .picked-card .acct-meta {
+          font-size: 12px; color: rgba(0,0,0,0.55); margin: 4px 0 0;
+      }
+      .instruction {
+          padding: 16px; border: 3px solid var(--mv-orange); background: rgba(255, 117, 0, 0.06);
+          box-shadow: 0 6px 0 rgba(0, 0, 0, 0.08);
+          font-family: Helvetica, Arial, sans-serif;
+          font-size: 14px; line-height: 1.5;
+      }
+      .instruction strong { color: var(--mv-orange-dark); }
+      .code-input-wrap {
+          transform: skewX(var(--skew));
+          background: #ffffff; border: 3px solid var(--mv-blue);
+          box-shadow: 0 8px 0 rgba(0, 0, 0, 0.15);
+      }
+      .code-input {
+          width: 100%; transform: skewX(calc(var(--skew) * -1));
+          background: transparent; border: none;
+          padding: 18px 24px; font-size: 28px; font-weight: 900;
+          color: var(--ink); outline: none;
+          font-family: "Courier New", Courier, monospace; letter-spacing: 0.4em;
+          text-align: center;
+      }
+      .code-input::placeholder { color: rgba(0, 0, 0, 0.30); font-weight: 400; }
+      .mv-btn-wrap {
+          display: inline-block; transform: skewX(var(--skew));
+          background: var(--mv-blue); border: 3px solid var(--ink);
+          box-shadow: 0 8px 0 rgba(0, 0, 0, 0.15);
+          padding: 0; cursor: pointer; white-space: nowrap;
+          justify-self: center;
+      }
+      .mv-btn {
+          transform: skewX(calc(var(--skew) * -1));
+          background: transparent; border: none;
+          padding: 14px 32px; font-size: 18px; font-weight: 1000;
+          text-transform: uppercase; color: #ffffff;
+          letter-spacing: 0.06em; cursor: pointer;
+          font-family: Helvetica, Arial, sans-serif;
+      }
+      .mv-btn-wrap:hover { box-shadow: 0 10px 0 rgba(0, 0, 0, 0.18); filter: brightness(1.08); }
+      form { margin: 0; display: grid; gap: 14px; }
+      .mv-tip-wrap {
+          width: fit-content; max-width: 100%; transform: skewX(var(--skew));
+          border: 3px solid darkred; background: indianred;
+          box-shadow: 0 8px 0 rgba(0, 0, 0, 0.15);
+      }
+      .mv-tip {
+          transform: skewX(calc(var(--skew) * -1));
+          color: #ffffff; font-size: 14px; font-weight: 900;
+          padding: 10px 18px; letter-spacing: 0.02em;
+          font-family: Helvetica, Arial, sans-serif;
+      }
+      .cancel-link {
+          display: inline-block; margin-top: 8px;
+          font-family: Helvetica, Arial, sans-serif;
+          font-size: 13px; color: rgba(0,0,0,0.55); text-decoration: none;
+          text-transform: uppercase; letter-spacing: 0.04em;
+      }
+      .cancel-link:hover { color: var(--mv-blue); }
+      @media (max-width: 560px) {
+          .top { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+          .logo { max-width: 120px; }
+          .code-input { font-size: 22px; padding: 14px 16px; }
+      }
+  </style>
+</head>
+<body>
+<section class="background"></section>
+<div class="main_wrapper">
+  <section class="main_container animate__animated animate__fadeIn">
+    <div class="content">
+      <div class="top">
+        <img src="/images/OpenVersus_logo.png" class="logo" alt="OpenVersus Logo"/>
+        <div>
+          <h1 class="panelTitle">Verify Account</h1>
+          <p class="subline">To prove you own this account, check your game for a <b>6-digit code</b> that was just sent as an in-game notification.</p>
+        </div>
+      </div>
+
+      <div class="picked-card">
+        <p class="acct-name">{{accountName}}</p>
+        <p class="acct-meta">{{#if steamId}}Steam: {{steamId}}{{/if}}</p>
+      </div>
+
+      {{#if error}}
+      <div class="mv-tip-wrap">
+        <div class="mv-tip">{{error}}</div>
+      </div>
+      {{/if}}
+
+      <div class="instruction">
+        <strong>How:</strong> Look at your game screen &mdash; the code will appear as an in-game banner within 2 seconds.
+        Type it below to confirm you're the one using this account.
+        The banner stays on screen for 2 minutes; the code itself is valid for 5 minutes and can only be used once.
+      </div>
+
+      <form action="/account/verify" method="POST">
+        <input type="hidden" name="verifyId" value="{{verifyId}}"/>
+        <div class="code-input-wrap">
+          <input class="code-input" type="text" name="code" placeholder="000000" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" autofocus autocomplete="off"/>
+        </div>
+        <div class="mv-btn-wrap">
+          <button class="mv-btn" type="submit">Verify</button>
+        </div>
+      </form>
+
+      <a href="{{returnTo}}" class="cancel-link">&larr; Cancel and go back</a>
+    </div>
+  </section>
+</div>
+</body>
+</html>

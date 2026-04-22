@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpenVersus - Live Matches</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fugaz+One&display=swap" rel="stylesheet">
+  <style>
+      :root {
+          --mv-blue: #1f6feb;
+          --mv-blue-dark: #0040a5;
+          --mv-orange: #ff7500;
+          --mv-orange-dark: #ff4d00;
+          --ink: #343434;
+          --card: rgba(255, 255, 255, 0.92);
+          --card2: rgba(255, 255, 255, 0.85);
+          --shadow: rgba(0, 0, 0, 0.28) 0px 19px 38px, rgba(0, 0, 0, 0.20) 0px 15px 12px;
+          --radius: 18px;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+          margin: 0;
+          font-family: "Fugaz One", Arial, sans-serif;
+          overflow-x: hidden;
+          color: var(--ink);
+          background: #000;
+      }
+      .background {
+          position: fixed; inset: 0; z-index: -2;
+          background-image: url("/images/name_change_background.jpeg");
+          background-size: cover; background-position: center; background-repeat: no-repeat;
+          transform: scale(1.03);
+      }
+      .background::after {
+          content: ""; position: absolute; inset: 0;
+          backdrop-filter: blur(6px);
+          background: rgba(10, 12, 20, 0.20);
+      }
+      .main_wrapper {
+          min-height: 100%;
+          display: flex; flex-direction: column; align-items: center;
+          padding: 24px 14px;
+      }
+      .main_container {
+          width: min(960px, 100%);
+          background: linear-gradient(180deg, var(--card), var(--card2));
+          border-radius: var(--radius);
+          box-shadow: var(--shadow);
+          padding: 22px;
+      }
+      h1 {
+          margin: 0 0 8px;
+          color: var(--mv-blue-dark);
+          text-align: center;
+          font-size: 36px;
+          letter-spacing: 1px;
+      }
+      .subtitle {
+          text-align: center;
+          color: #5a6170;
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          margin-bottom: 22px;
+      }
+      .subtitle .dot {
+          display: inline-block;
+          width: 8px; height: 8px;
+          border-radius: 50%;
+          background: #22c55e;
+          margin-right: 6px;
+          animation: pulse 1.8s ease-in-out infinite;
+          vertical-align: middle;
+      }
+      @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.35; }
+      }
+      .match_list {
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+      }
+      .match_card {
+          display: grid;
+          grid-template-columns: 1fr auto 1fr;
+          align-items: center;
+          gap: 18px;
+          padding: 16px 20px;
+          background: rgba(255,255,255,0.6);
+          border-radius: 14px;
+          border: 2px solid rgba(31, 111, 235, 0.18);
+          box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+          transition: transform 0.18s ease, box-shadow 0.18s ease;
+      }
+      .match_card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 24px rgba(0,0,0,0.14);
+      }
+      .team {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+      }
+      .team_right {
+          align-items: flex-end;
+      }
+      .player_row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+      }
+      .team_right .player_row {
+          flex-direction: row-reverse;
+      }
+      .char_icon {
+          width: 54px;
+          height: 54px;
+          border-radius: 10px;
+          background: #e9ecf2 center/cover no-repeat;
+          border: 2px solid var(--mv-blue);
+          flex-shrink: 0;
+      }
+      .player_meta {
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+      }
+      .team_right .player_meta {
+          align-items: flex-end;
+          text-align: right;
+      }
+      .player_name {
+          font-family: Arial, sans-serif;
+          font-weight: 700;
+          font-size: 15px;
+          color: var(--ink);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 200px;
+      }
+      .char_name {
+          font-family: Arial, sans-serif;
+          font-size: 12px;
+          color: #6b7280;
+      }
+      .score_block {
+          text-align: center;
+          min-width: 140px;
+      }
+      .score {
+          font-size: 42px;
+          color: var(--mv-blue-dark);
+          line-height: 1;
+          letter-spacing: 2px;
+      }
+      .mode_pill {
+          display: inline-block;
+          margin-top: 6px;
+          padding: 3px 12px;
+          background: var(--mv-orange);
+          color: white;
+          border-radius: 20px;
+          font-size: 12px;
+          font-family: Arial, sans-serif;
+          font-weight: 700;
+          letter-spacing: 1px;
+      }
+      .concede_flag {
+          display: block;
+          margin-top: 4px;
+          color: #dc2626;
+          font-family: Arial, sans-serif;
+          font-size: 11px;
+          font-weight: 700;
+      }
+      .empty_state {
+          text-align: center;
+          padding: 60px 20px;
+          color: #6b7280;
+          font-family: Arial, sans-serif;
+          font-size: 16px;
+      }
+      .refresh_note {
+          text-align: center;
+          margin-top: 16px;
+          font-family: Arial, sans-serif;
+          font-size: 11px;
+          color: #94a3b8;
+      }
+  </style>
+</head>
+<body>
+  <div class="background"></div>
+  <div class="main_wrapper">
+    <div class="main_container">
+      <h1>LIVE MATCHES</h1>
+      <div class="subtitle"><span class="dot"></span><span id="match_count">0 matches in progress</span></div>
+
+      <div class="match_list" id="match_list">
+        <div class="empty_state">Loading...</div>
+      </div>
+
+      <div class="refresh_note">Updates every 2 seconds</div>
+    </div>
+  </div>
+
+<script>
+  const CHARACTER_NAMES = {
+    'character_wonder_woman': 'Wonder Woman', 'character_batman': 'Batman', 'character_arya': 'Arya Stark',
+    'character_superman': 'Superman', 'character_steven': 'Steven Universe', 'character_garnet': 'Garnet',
+    'character_velma': 'Velma', 'character_finn': 'Finn', 'character_tom_and_jerry': 'Tom & Jerry',
+    'character_shaggy': 'Shaggy', 'character_jake': 'Jake', 'character_creature': 'Reindog',
+    'character_bugs_bunny': 'Bugs Bunny', 'character_harleyquinn': 'Harley Quinn', 'character_taz': 'Taz',
+    'character_c017': 'Iron Giant', 'character_c018': 'Marvin', 'character_c019': 'Morty',
+    'character_c020': 'Rick', 'character_c021': 'Black Adam', 'character_c023a': 'Gizmo',
+    'character_c023b': 'Stripe', 'character_c024': 'Betelgeuse', 'character_c025': 'Raven',
+    'character_c026': 'Samurai Jack', 'character_c027': 'Nubia', 'character_c028': 'The Joker',
+    'character_c029': 'Aquaman', 'character_c030': 'Powerpuff Girls', 'character_c031': 'Marceline',
+    'character_bananaguard': 'Banana Guard', 'character_jason': 'Jason Voorhees',
+    'character_c036': 'Agent Smith', 'character_c038': 'Lola Bunny', 'character_c16': 'LeBron James',
+  };
+
+  const WIKI = 'https://multiversus.wiki.gg/images/thumb/';
+  const CHARACTER_IMAGES = {
+    'character_wonder_woman': WIKI + 'WonderWoman_Icon.png/75px-WonderWoman_Icon.png',
+    'character_batman': WIKI + 'Batman_Icon.png/75px-Batman_Icon.png',
+    'character_arya': WIKI + 'Arya_Icon.png/75px-Arya_Icon.png',
+    'character_superman': WIKI + 'Superman_Icon.png/75px-Superman_Icon.png',
+    'character_steven': WIKI + 'Steven_Icon.png/75px-Steven_Icon.png',
+    'character_garnet': WIKI + 'Garnet_Icon.png/75px-Garnet_Icon.png',
+    'character_velma': WIKI + 'Velma_Icon.png/75px-Velma_Icon.png',
+    'character_finn': WIKI + 'Finn_Icon.png/75px-Finn_Icon.png',
+    'character_tom_and_jerry': WIKI + 'TomJerry_Icon.png/75px-TomJerry_Icon.png',
+    'character_shaggy': WIKI + 'Shaggy_Icon.png/75px-Shaggy_Icon.png',
+    'character_jake': WIKI + 'Jake_Icon.png/75px-Jake_Icon.png',
+    'character_creature': WIKI + 'Reindog_Icon.png/75px-Reindog_Icon.png',
+    'character_bugs_bunny': WIKI + 'Bugs_Icon.png/75px-Bugs_Icon.png',
+    'character_harleyquinn': WIKI + 'Harley_Icon.png/75px-Harley_Icon.png',
+    'character_taz': WIKI + 'Taz_Icon.png/75px-Taz_Icon.png',
+    'character_c017': WIKI + 'IronGiant_Icon.png/75px-IronGiant_Icon.png',
+    'character_c018': WIKI + 'Marvin_Icon.png/75px-Marvin_Icon.png',
+    'character_c019': WIKI + 'Morty_Icon.png/75px-Morty_Icon.png',
+    'character_c020': WIKI + 'Rick_Icon.png/75px-Rick_Icon.png',
+    'character_c021': WIKI + 'BlackAdamIcon.png/75px-BlackAdamIcon.png',
+    'character_c023a': WIKI + 'Gizmo_Icon.png/75px-Gizmo_Icon.png',
+    'character_c023b': WIKI + 'Stripe_Icon.png/75px-Stripe_Icon.png',
+    'character_c024': WIKI + 'Beetlejuice_Icon.png/75px-Beetlejuice_Icon.png',
+    'character_c025': WIKI + 'Raven_Icon.png/75px-Raven_Icon.png',
+    'character_c026': WIKI + 'SamuraiJackIcon.png/75px-SamuraiJackIcon.png',
+    'character_c027': WIKI + 'Nubia_Icon.png/75px-Nubia_Icon.png',
+    'character_c028': WIKI + 'Joker_Icon.png/75px-Joker_Icon.png',
+    'character_c029': WIKI + 'Aquaman_Icon.png/75px-Aquaman_Icon.png',
+    'character_c030': WIKI + 'PPGIcon.png/75px-PPGIcon.png',
+    'character_c031': WIKI + 'Marceline_Icon.png/75px-Marceline_Icon.png',
+    'character_bananaguard': WIKI + 'BananaGuard_Icon.png/75px-BananaGuard_Icon.png',
+    'character_jason': WIKI + 'JasonVoorhees_Icon.png/75px-JasonVoorhees_Icon.png',
+    'character_c036': WIKI + 'Agent_Smith_Icon.png/75px-Agent_Smith_Icon.png',
+    'character_c038': WIKI + 'Lola_Icon.png/75px-Lola_Icon.png',
+    'character_c16': WIKI + 'LeBron_Icon.png/75px-LeBron_Icon.png',
+  };
+
+  function getCharacterName(slug) {
+    if (!slug) return '';
+    const lower = slug.toLowerCase();
+    return CHARACTER_NAMES[lower] || CHARACTER_NAMES[slug] ||
+      slug.replace(/^character_/i, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  function getCharacterImage(slug) {
+    if (!slug) return '';
+    const lower = slug.toLowerCase();
+    return CHARACTER_IMAGES[lower] || CHARACTER_IMAGES[slug] || '';
+  }
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderPlayer(p, rightSide) {
+    const img = getCharacterImage(p.character);
+    const charName = getCharacterName(p.character);
+    return `
+      <div class="player_row">
+        <div class="char_icon" style="${img ? `background-image:url('${img}')` : ''}"></div>
+        <div class="player_meta">
+          <div class="player_name" title="${escapeHtml(p.username)}">${escapeHtml(p.username)}</div>
+          <div class="char_name">${escapeHtml(charName)}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderMatch(m) {
+    const team0 = (m.teams['0'] || []).map(p => renderPlayer(p, false)).join('');
+    const team1 = (m.teams['1'] || []).map(p => renderPlayer(p, true)).join('');
+    const s0 = (m.scores && m.scores[0]) || 0;
+    const s1 = (m.scores && m.scores[1]) || 0;
+    const concede = m.conceded ? '<span class="concede_flag">CONCEDED</span>' : '';
+    return `
+      <div class="match_card">
+        <div class="team team_left">${team0}</div>
+        <div class="score_block">
+          <div class="score">${s0} - ${s1}</div>
+          <div class="mode_pill">${escapeHtml(m.mode || '')}</div>
+          ${concede}
+        </div>
+        <div class="team team_right">${team1}</div>
+      </div>
+    `;
+  }
+
+  async function refresh() {
+    try {
+      const res = await fetch('/api/matches', { cache: 'no-store' });
+      const data = await res.json();
+      const list = document.getElementById('match_list');
+      const count = document.getElementById('match_count');
+      const matches = data.matches || [];
+
+      count.textContent = matches.length === 1
+        ? '1 match in progress'
+        : matches.length + ' matches in progress';
+
+      if (matches.length === 0) {
+        list.innerHTML = '<div class="empty_state">No ranked sets currently in progress.</div>';
+        return;
+      }
+
+      list.innerHTML = matches.map(renderMatch).join('');
+    } catch (e) {
+      console.error('Failed to fetch matches:', e);
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 2000);
+</script>
+</body>
+</html>

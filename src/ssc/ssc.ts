@@ -47,6 +47,8 @@ import * as AuthUtils from "../utils/auth";
 import * as KitchenSink from "../utils/garbagecan";
 import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
+import { resolveAccountFromRequest } from "../services/identityService";
+import { getRandomFunFact } from "../services/funFactsService";
 // import { IGameInstall } from "../types/shared-types";
 
 const serviceName = "SSC.SSC";
@@ -87,14 +89,11 @@ export async function set_lock_lobby_loadout(req: Request, res: Response<Lock_Lo
 
   let ip = req.ip!.replace(/^::ffff:/, "");
 
-  let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
-  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.warn(`${logPrefix} No Redis player connection found for IP ${ip}, cannot set loadout.`);
+  const resolvedConn = await resolveAccountFromRequest(req);
+  if (!resolvedConn || !resolvedConn.id) {
+    logger.warn(`${logPrefix} No Redis player connection resolved for IP ${ip}, cannot set loadout.`);
   }
-  let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`)) as unknown as RedisPlayerConnection;
-  if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
-    logger.warn(`${logPrefix} No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
-  }
+  let rPlayerConnectionByID = (resolvedConn || {}) as unknown as RedisPlayerConnection;
 
   // Try Redis cache first for cosmetics (avoids MongoDB timeout on Docker setups)
   const rawCosmetics = await redisClient.hGetAll(`connections:${rPlayerConnectionByID.id}:cosmetics`);
@@ -112,20 +111,14 @@ export async function set_lock_lobby_loadout(req: Request, res: Response<Lock_Lo
     rPlayerCosmetics = (await getEquippedCosmetics(rPlayerConnectionByID.id)) as Cosmetics;
   }
 
-  let player = await PlayerTesterModel.findOne({ ip });
+  // Resolve player by account id (from resolved Redis conn / JWT) — household-safe.
+  // Old IP-based lookup would pick the wrong account when two players share an IP.
+  let player = rPlayerConnectionByID?.id
+    ? await PlayerTesterModel.findOne({ _id: new Types.ObjectId(rPlayerConnectionByID.id) })
+    : null;
   if (!player) {
-    //player = await PlayerTesterModel.findOne({ _id: new Types.ObjectId(account.id) });
-    logger.warn(`${logPrefix} No player found for IP ${ip}, cannot set lobby loadout.`);
-
-    if (rPlayerConnectionByID && rPlayerConnectionByID.id) {
-      logger.info(`${logPrefix} Attempting to find player by ID ${rPlayerConnectionByID.id} as fallback.`);
-    }
-
-    player = await PlayerTesterModel.findOne({ _id: new Types.ObjectId(rPlayerConnectionByID.id) });
-    if (!player) {
-      logger.info(`${logPrefix} No player found for ID ${rPlayerConnectionByID.id}, cannot set lobby loadout.`);
-      return;
-    }
+    logger.warn(`${logPrefix} No player found for resolved id ${rPlayerConnectionByID?.id || "-"} (IP ${ip}), cannot set lobby loadout.`);
+    return;
   }
 
   //const aID = decodedToken.id;
@@ -341,13 +334,40 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
 //  const aID = account?.id ?? player?.id;
   const account = AuthUtils.DecodeClientToken(req);
   let ip = (account.current_ip || req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
-  let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
-  const aID = rPlayerConnectionByIP.id
+  const resolvedConn = await resolveAccountFromRequest(req);
+  const aID = resolvedConn?.id || account?.id;
 
   if (!aID) {
     logger.error(`${logPrefix} create_party_lobby: no account ID from token or IP, IP=${ip}`);
     res.send({ body: {}, metadata: null, return_code: 0 });
     return;
+  }
+
+  // Push a random fun fact ONLY if /access armed it within the last 60 seconds.
+  // One-shot per login cycle: the flag is consumed (deleted) on the first lobby
+  // create after login. If the player takes >60s to reach main menu, the flag
+  // has expired and no fact fires until they re-login.
+  try {
+    const pendingKey = `fun_fact_pending:${aID}`;
+    const pending = await redisClient.get(pendingKey);
+    if (pending) {
+      await redisClient.del(pendingKey); // consume — one-shot
+      const fact = await getRandomFunFact(aID);
+      if (fact) {
+        await redisPushDLLNotification(aID, {
+          type: "admin_banner",
+          title: fact.title,
+          message: fact.message,
+          data: { timeout: 10 },
+          timestamp: Date.now(),
+        });
+        logger.info(`${logPrefix} Pushed fun fact to ${aID}: "${fact.title} — ${fact.message}"`);
+      } else {
+        logger.debug(`${logPrefix} No fun fact eligible for ${aID} (new player or no matching data)`);
+      }
+    }
+  } catch (e) {
+    logger.error(`${logPrefix} Error pushing fun fact: ${e}`);
   }
 
   let character = "";
@@ -389,15 +409,10 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
     loadout.Skin = "skin_shaggy_default";
   }
 
-  // Look up connection data by player ID first, fall back to IP
-  let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${aID}`)) as unknown as RedisPlayerConnection;
+  // Connection data from identity resolver (covers ID + SteamID + EpicID + HardwareID + IP)
+  let rPlayerConnectionByID = (resolvedConn || (await redisClient.hGetAll(`connections:${aID}`))) as unknown as RedisPlayerConnection;
   if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
-    const rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
-    if (rPlayerConnectionByIP?.id) {
-      rPlayerConnectionByID = rPlayerConnectionByIP;
-    } else {
-      logger.warn(`${logPrefix} No Redis connection found for player ${aID} or IP ${ip}`);
-    }
+    logger.warn(`${logPrefix} No Redis connection found for player ${aID} or IP ${ip}`);
   }
 
   let rPlayerCosmetics = (await getEquippedCosmetics(rPlayerConnectionByID.id)) as Cosmetics;
@@ -616,8 +631,12 @@ export async function handleSsc_invoke_create_party(req: Request<{}, {}, {}, {}>
   const account = req.token;
 
   let ip = (req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
-  let player = ip ? await PlayerTesterModel.findOne({ ip }) : null;
-  const aID = account?.id ?? player?.id;
+  // Prefer the JWT-derived account id (household-safe). Fall back to resolver (Steam/Epic/HW/IP).
+  let aID: string | undefined = account?.id;
+  if (!aID) {
+    const resolved = await resolveAccountFromRequest(req);
+    aID = resolved?.id;
+  }
 
   logger.info(`${logPrefix} Received create_party request for AccountId ${aID} (IP: ${ip})`);
 
@@ -638,11 +657,11 @@ export async function handleSsc_invoke_create_party(req: Request<{}, {}, {}, {}>
     const newLobby = await createLobby(aID, lobbyMode);
     lobbyId = newLobby.id;
 
-    let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
+    const partyConn = await resolveAccountFromRequest(req);
     const lobbyState: RedisLobbyState = {
       lobbyId: newLobby.id,
       ownerId: aID,
-      ownerUsername: rPlayerConnectionByIP?.username || rPlayerConnectionByIP?.hydraUsername || "Unknown",
+      ownerUsername: partyConn?.username || partyConn?.hydraUsername || "Unknown",
       mode: lobbyMode.toString(),
       playerIds: [aID],
       createdAt: Date.now(),
@@ -833,22 +852,37 @@ export async function handle_ssc_update_player_preferences(req: Request<{}, {}, 
   let updatedPrefs = req.body as IUpdatePlayerPrefs;
   let updateGameplayPrefs = updatedPrefs.GameplayPreferences as number;
   try {
-    await PlayerTesterModel.findOneAndUpdate( { ip }, { GameplayPreferences: (updateGameplayPrefs as number) } , { upsert: true, new: true } );
-    logger.info(`${logPrefix} Updated GameplayPreferences to ${updateGameplayPrefs} for player with IP ${ip}`);  
+    // Update by account id (household-safe). Old `{ ip }` query would pick whichever
+    // player shared the IP — potentially the wrong one.
+    if (account?.id) {
+      await PlayerTesterModel.findOneAndUpdate(
+        { _id: new Types.ObjectId(account.id) },
+        { GameplayPreferences: (updateGameplayPrefs as number) },
+        { new: true },
+      );
+      logger.info(`${logPrefix} Updated GameplayPreferences to ${updateGameplayPrefs} for player ${account.id} (IP ${ip})`);
+    } else {
+      logger.warn(`${logPrefix} Cannot update GameplayPreferences — no account id from token (IP ${ip})`);
+    }
   }
   catch (error) {
-    logger.error(`${logPrefix} Error updating GameplayPreferences for player with IP ${ip}, error: ${error}`);
+    logger.error(`${logPrefix} Error updating GameplayPreferences for player ${account?.id} (IP ${ip}), error: ${error}`);
   }
 
   try {
-    let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
-    rPlayerConnectionByIP.GameplayPreferences = (updateGameplayPrefs as number) ?? 964;
-    await redisSetPlayerConnectionByIp(ip, rPlayerConnectionByIP);
-    let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`)) as unknown as RedisPlayerConnection;
-    rPlayerConnectionByID.GameplayPreferences = (updateGameplayPrefs as number) ?? 964;
-    await redisSetPlayerConnectionByID(rPlayerConnectionByID.id, rPlayerConnectionByID);
-
-    logger.info(`${logPrefix} Updated GameplayPreferences in Redis to ${updateGameplayPrefs} for player with IP ${ip} and ID ${rPlayerConnectionByIP.id}`);
+    const resolvedConn = await resolveAccountFromRequest(req);
+    if (!resolvedConn?.id) {
+      logger.warn(`${logPrefix} Could not resolve account to update GameplayPreferences (IP ${ip})`);
+    } else {
+      const rPlayerConnectionByID = resolvedConn as unknown as RedisPlayerConnection;
+      rPlayerConnectionByID.GameplayPreferences = ((updateGameplayPrefs as number) ?? 964) as any;
+      await redisSetPlayerConnectionByID(rPlayerConnectionByID.id!, rPlayerConnectionByID);
+      // Keep the legacy IP-keyed record in sync while it still exists
+      if (ip) {
+        await redisSetPlayerConnectionByIp(ip, rPlayerConnectionByID);
+      }
+      logger.info(`${logPrefix} Updated GameplayPreferences in Redis to ${updateGameplayPrefs} for player ID ${rPlayerConnectionByID.id} (IP ${ip})`);
+    }
   }
   catch (error) {
     logger.error(`${logPrefix} Error updating GameplayPreferences in Redis for player with IP ${ip}, error: ${error}`);
@@ -985,8 +1019,12 @@ export async function handleSsc_invoke_join_party_lobby(req: Request<{}, {}, {},
 
   const account = AuthUtils.DecodeClientToken(req);
   let ip = (req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
-  let player = ip ? await PlayerTesterModel.findOne({ ip }) : null;
-  const joiningPlayerId = account?.id ?? player?.id;
+  // Prefer JWT id; fall back to resolver chain (Steam/Epic/HW/IP) for household safety.
+  let joiningPlayerId: string | undefined = account?.id;
+  if (!joiningPlayerId) {
+    const resolved = await resolveAccountFromRequest(req);
+    joiningPlayerId = resolved?.id;
+  }
 
   if (!joiningPlayerId) {
     logger.error(`${logPrefix} join_party_lobby: Could not identify player (no token or IP match)`);

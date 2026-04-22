@@ -12,9 +12,11 @@
   "dependencies": {
     "@kishor82/jsonflat": "^0.1.0-beta.1",
     "@typegoose/typegoose": "^12.12.0",
+    "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.0",
     "bson-objectid": "^2.0.4",
     "chalk": "^5.4.1",
+    "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.7",
     "envalid": "^8.0.0",
     "express": "^4.22.1",
@@ -32,7 +34,8 @@
     "ts-node": "^10.9.2",
     "uuid": "^11.1.0",
     "ws": "^8.18.1",
-    "zod": "^3.24.2"
+    "zod": "^3.24.2",
+    "zstd-napi": "^0.0.12"
   },
   "devDependencies": {
     "@swc-node/register": "^1.10.10",

@@ -17,6 +17,7 @@ import {
 } from "../config/redis";
 import {  getCurrentCRC, MATCHMAKING_CRC } from "../data/config";
 import { PerkPagesModel } from "../database/PerkPages";
+import { PlayerStatsModel } from "../database/PlayerStats";
 import { Cosmetics } from "../database/Cosmetics";
 import { getEquippedCosmetics } from "../services/cosmeticsService";
 import { MVSTime } from "../utils/date";
@@ -27,7 +28,9 @@ import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import * as KitchenSink from "../utils/garbagecan";
 import { processMatchResult, getOrCreateRating, getPlayerRank, eloToTierDivision, getLeaderboard } from "../services/eloService";
+import { recordGameStats } from "../services/statsService";
 import { handleRematchDecline, handleRematchAccept } from "../services/customLobbyService";
+import { resolveAccountFromRequest } from "../services/identityService";
 
 const serviceName = "Handlers.SSC";
 const logPrefix = `[${serviceName}]:`;
@@ -325,14 +328,11 @@ export async function handleSsc_invoke_get_equipped_cosmetics(req: Request<{}, {
   //let ip = req.ip!.replace(/^::ffff:/, "");
   let ip: string = account.current_ip;
 
-  let rPlayerConnectionByIP = await redisClient.hGetAll(`connections:${ip}`) as unknown as RedisPlayerConnection;
-  if (!rPlayerConnectionByIP || !rPlayerConnectionByIP.id) {
-    logger.warn(`${logPrefix} No Redis player connection found for IP ${ip}, cannot set loadout.`);
+  const resolvedConn = await resolveAccountFromRequest(req);
+  if (!resolvedConn || !resolvedConn.id) {
+    logger.warn(`${logPrefix} No Redis player connection resolved for IP ${ip}, cannot set loadout.`);
   }
-  let rPlayerConnectionByID = await redisClient.hGetAll(`connections:${rPlayerConnectionByIP.id}`) as unknown as RedisPlayerConnection;
-  if (!rPlayerConnectionByID || !rPlayerConnectionByID.id) {
-    logger.warn(`${logPrefix} No Redis player connection found for player ID ${rPlayerConnectionByIP.id}, cannot set loadout.`);
-  }
+  const rPlayerConnectionByID = (resolvedConn || {}) as unknown as RedisPlayerConnection;
 
   let rPlayerCosmetics = await getEquippedCosmetics(rPlayerConnectionByID.id) as Cosmetics;
 
@@ -57676,11 +57676,16 @@ export async function handleSsc_invoke_ranked_data(req: Request<{}, {}, {}, {}>,
     const chars1v1 = (rating as any)?.characters_1v1 || {};
     const chars2v2 = (rating as any)?.characters_2v2 || {};
 
+    // Pull PlayerStats for damage/ringouts/deaths
+    const playerStatsDoc = playerId ? await PlayerStatsModel.findOne({ account_id: playerId }).lean() : null;
+    const psChars1v1 = (playerStatsDoc as any)?.characters_1v1 || {};
+    const psChars2v2 = (playerStatsDoc as any)?.characters_2v2 || {};
+
     // Get leaderboard rank
     const rank1v1 = playerId ? await getPlayerRank(playerId, "1v1") : null;
     const rank2v2 = playerId ? await getPlayerRank(playerId, "2v2") : null;
 
-    const buildModeData = (elo: number, wins: number, losses: number, games: number, rank: any, charMap: Record<string, any>) => {
+    const buildModeData = (elo: number, wins: number, losses: number, games: number, rank: any, charMap: Record<string, any>, psCharMap: Record<string, any>) => {
       // If no games played in this mode, return empty data so game shows "Unranked"
       if (games === 0 && Object.keys(charMap).length === 0) {
         return {
@@ -57702,6 +57707,7 @@ export async function handleSsc_invoke_ranked_data(req: Request<{}, {}, {}, {}>,
         const charElo = (data as any).elo || 0;
         const charWins = (data as any).wins || 0;
         const charLosses = (data as any).losses || 0;
+        const psc = psCharMap[slug] || {};
         DataByCharacter[slug] = {
           CurrentPoints: charElo,
           MaxPoints: charElo,
@@ -57709,9 +57715,9 @@ export async function handleSsc_invoke_ranked_data(req: Request<{}, {}, {}, {}>,
           SetsPlayed: charWins + charLosses,
           Wins: charWins,
           Losses: charLosses,
-          DamageDealt: 0,
+          DamageDealt: Math.round(psc.totalDamageDealt || 0),
           DamageTaken: 0,
-          Ringouts: 0,
+          Ringouts: psc.ringouts || 0,
           Deaths: 0,
           LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
           LastDecayMs: 0,
@@ -57724,11 +57730,12 @@ export async function handleSsc_invoke_ranked_data(req: Request<{}, {}, {}, {}>,
 
       // If no per-character data yet, use the current character as fallback
       if (Object.keys(DataByCharacter).length === 0) {
+        const psc = psCharMap[character] || {};
         DataByCharacter[character] = {
           CurrentPoints: elo, MaxPoints: elo,
           GamesPlayed: games, SetsPlayed: wins + losses,
           Wins: wins, Losses: losses,
-          DamageDealt: 0, DamageTaken: 0, Ringouts: 0, Deaths: 0,
+          DamageDealt: Math.round(psc.totalDamageDealt || 0), DamageTaken: 0, Ringouts: psc.ringouts || 0, Deaths: 0,
           LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
           LastDecayMs: 0,
         };
@@ -57757,8 +57764,8 @@ export async function handleSsc_invoke_ranked_data(req: Request<{}, {}, {}, {}>,
           "Season:SeasonFive": {
             Ranked: {
               DataByMode: {
-                "1v1": buildModeData(elo1v1, wins1v1, losses1v1, games1v1, rank1v1, chars1v1),
-                "2v2": buildModeData(elo2v2, wins2v2, losses2v2, games2v2, rank2v2, chars2v2),
+                "1v1": buildModeData(elo1v1, wins1v1, losses1v1, games1v1, rank1v1, chars1v1, psChars1v1),
+                "2v2": buildModeData(elo2v2, wins2v2, losses2v2, games2v2, rank2v2, chars2v2, psChars2v2),
               },
               ClaimedRewards: [],
               bEndOfSeasonRewardsGranted: false,
@@ -57850,6 +57857,14 @@ export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}
 
   logger.info(`${logPrefix} Received end of match stats for match ${matchId}, WinningTeamIndex: ${winningTeamIndex}`);
 
+  // Flag that this game ended with a real result. The rollback PlayerDisconnect
+  // handler checks this — if a game result was already received, the disconnect
+  // is normal post-game cleanup, NOT a dodge. Without this, the 5-second gap
+  // between submit_end_of_match_stats and MatchEnded causes false dodge detection.
+  if (matchId) {
+    await redisClient.set(`game_result_received:${matchId}`, "1", { NX: true, EX: 600 });
+  }
+
   // Capture pre-match ELO for delta calculation
   let preMatchElo: number | null = null;
   const account = AuthUtils.DecodeClientToken(req);
@@ -57890,6 +57905,19 @@ export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}
         logger.info(`${logPrefix} Stored pending winner (team ${winningTeamIndex}) for match ${matchId} (set not created yet)`);
       }
     }
+  }
+
+  // Fire-and-forget: record per-game stats (badges, aggregate, fighterStats, archive).
+  // We gate on the submitting player ID so we only process the payload once per game
+  // (both players submit but we only run recordGameStats on the first arrival).
+  if (pid && matchId && req.body?.EndOfMatchStats) {
+    const dedupKey = `game_stats_recorded:${matchId}`;
+    redisClient.set(dedupKey, "1", { NX: true, EX: 600 }).then((claimed: string | null) => {
+      if (claimed !== "OK") return; // already recorded by the other player's submit
+      recordGameStats(matchId, req.body.EndOfMatchStats, pid).catch((err: unknown) =>
+        logger.error(`${logPrefix} Game stats recording failed: ${err}`),
+      );
+    }).catch((err: unknown) => logger.error(`${logPrefix} Game stats dedup claim failed: ${err}`));
   }
 
   // Return ranked match payload with RP delta and updated record

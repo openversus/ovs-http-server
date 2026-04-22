@@ -5,8 +5,10 @@ dist
 build
 .vs/**
 .vscode/**
+.claude/
 
 packets/
+scripts/
 game.log
 dokken-api.wbagora.com.pem
 dokken-api.wbagora.com-key.pem

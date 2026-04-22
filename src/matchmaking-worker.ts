@@ -245,84 +245,56 @@ async function process2v2Queue(queueKey: string = MATCH_TYPES.TWO_V_TWO): Promis
 
     logger.trace(`${logPrefix} Found ${tickets.length} tickets (${totalPlayersInQueue} players) in ${queueKey} queue, attempting to create a match`);
 
-    // Split tickets into duos and solos (preserving FIFO order within each group)
-    const duos = tickets.filter((t) => t.players.length >= 2);
-    const solos = tickets.filter((t) => t.players.length === 1);
+    const now = Math.floor(Date.now() / 1000);
 
-    const now = Math.floor(Date.now() / 1000); // seconds to match MVSTime format
-    let matchedTickets: RedisMatchTicket[] | null = null;
+    // Sort all tickets by age (oldest first) — no composition priority.
+    // Whoever has been waiting longest gets matched first, whether solo or duo.
+    const sorted = tickets.sort((a, b) => a.created_at - b.created_at);
 
-    // ELO-based matching with composition priorities
+    // Greedy: start with the oldest ticket, accumulate compatible tickets until we have 4 players.
+    // Constraint: parties stay together (a duo is 1 ticket with 2 players).
+    for (let i = 0; i < sorted.length; i++) {
+      const candidates: RedisMatchTicket[] = [sorted[i]];
+      let playerCount = sorted[i].players.length;
 
-    // Priority 1: Two duos (2+2) within ELO range
-    if (duos.length >= 2) {
-      for (let i = 0; i < duos.length; i++) {
-        for (let j = i + 1; j < duos.length; j++) {
-          if (areTicketsInRange(duos[i], duos[j], now)) {
-            matchedTickets = [duos[i], duos[j]];
-            logger.info(`${logPrefix} ELO matched 2+2: avg ${getTicketAvgSkill(duos[i])} vs ${getTicketAvgSkill(duos[j])}`);
-            break;
+      for (let j = i + 1; j < sorted.length && playerCount < 4; j++) {
+        if (ticketsSharePlayers(sorted[i], sorted[j])) continue;
+
+        // Check ELO: compare candidate team avg vs existing candidates avg
+        const existingAvg = candidates.reduce((sum, t) => sum + getTicketAvgSkill(t), 0) / candidates.length;
+        const candidateAvg = getTicketAvgSkill(sorted[j]);
+        const ageMax = Math.max(...candidates.map(t => now - t.created_at), now - sorted[j].created_at);
+        const range = getEloRange(ageMax);
+
+        if (Math.abs(existingAvg - candidateAvg) <= range) {
+          // Don't exceed 4 players
+          if (playerCount + sorted[j].players.length <= 4) {
+            candidates.push(sorted[j]);
+            playerCount += sorted[j].players.length;
           }
         }
-        if (matchedTickets) break;
       }
-    }
 
-    // Priority 2: One duo + two solos (2+1+1) within ELO range
-    if (!matchedTickets && duos.length >= 1 && solos.length >= 2) {
-      for (const duo of duos) {
-        for (let i = 0; i < solos.length; i++) {
-          for (let j = i + 1; j < solos.length; j++) {
-            const combinedAvgSkill = (getTicketAvgSkill(solos[i]) + getTicketAvgSkill(solos[j])) / 2;
-            const duoAvgSkill = getTicketAvgSkill(duo);
-            const ageMax = Math.max(now - duo.created_at, now - solos[i].created_at, now - solos[j].created_at);
-            const range = getEloRange(ageMax);
-
-            if (Math.abs(duoAvgSkill - combinedAvgSkill) <= range) {
-              matchedTickets = [duo, solos[i], solos[j]];
-              logger.info(`${logPrefix} ELO matched 2+1+1: duo avg ${duoAvgSkill}, solos avg ${combinedAvgSkill}`);
-              break;
-            }
-          }
-          if (matchedTickets) break;
-        }
-        if (matchedTickets) break;
-      }
-    }
-
-    // Priority 3: Four solos (1+1+1+1) within ELO range
-    if (!matchedTickets && solos.length >= 4) {
-      const sortedSolos = solos.sort((a, b) => a.created_at - b.created_at);
-      for (let i = 0; i < sortedSolos.length - 3; i++) {
-        const candidates = [sortedSolos[i]];
-        for (let j = i + 1; j < sortedSolos.length && candidates.length < 4; j++) {
-          if (areTicketsInRange(sortedSolos[i], sortedSolos[j], now)) {
-            candidates.push(sortedSolos[j]);
-          }
-        }
-        if (candidates.length >= 4) {
-          matchedTickets = candidates.slice(0, 4);
-          logger.info(`${logPrefix} ELO matched 1+1+1+1 in ${queueKey}`);
-          break;
+      if (playerCount === 4) {
+        try {
+          const composition = candidates.map(t => t.players.length).join("+");
+          const avgSkills = candidates.map(t => Math.round(getTicketAvgSkill(t)));
+          logger.info(`${logPrefix} ELO matched ${composition}: skills [${avgSkills.join(", ")}]`);
+          await redisPopMatchTicketsFromQueue(queueKey, candidates);
+          await createMatch(candidates, getBaseMode(queueKey));
+          return true;
+        } catch (error) {
+          logger.error(`${logPrefix} Error removing matched tickets from ${queueKey}: ${error}`);
+          return false;
         }
       }
     }
 
-    if (matchedTickets) {
-      try {
-        await redisPopMatchTicketsFromQueue(queueKey, matchedTickets);
-        await createMatch(matchedTickets, getBaseMode(queueKey));
-        return true;
-      }
-      catch (error) {
-        logger.error(`${logPrefix} Error removing matched tickets from ${queueKey}: ${error}`);
-        return false;
-      }
-    }
-
-    logger.info(
+    const duoCount = tickets.filter(t => t.players.length >= 2).length;
+    const soloCount = tickets.filter(t => t.players.length === 1).length;
+    logger.trace(
       `${logPrefix} No ELO-compatible 2v2 match found in ${queueKey} yet ` +
-      `(${totalPlayersInQueue} players — ${duos.length} duo(s), ${solos.length} solo(s))`,
+      `(${totalPlayersInQueue} players — ${duoCount} duo(s), ${soloCount} solo(s))`,
     );
     return false;
   }

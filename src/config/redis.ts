@@ -574,6 +574,45 @@ export async function redisGetDeployedRollbackServer(containerMatchId: string): 
   return null;
 }
 
+// Enumerate all currently active ranked sets. Used by the /matches live page
+// and any other tool that wants a snapshot of what's happening right now.
+export async function redisGetActiveRankedSets(): Promise<Array<{ setId: string; state: any }>> {
+  const results: Array<{ setId: string; state: any }> = [];
+  let cursor = 0;
+  do {
+    const scan = await redisClient.scan(cursor, { MATCH: "ranked_set:*", COUNT: 100 });
+    cursor = Number(scan.cursor);
+    for (const key of scan.keys) {
+      const raw = await redisClient.get(key);
+      if (!raw) continue;
+      try {
+        results.push({ setId: key.replace("ranked_set:", ""), state: JSON.parse(raw) });
+      } catch {
+        // skip malformed
+      }
+    }
+  } while (cursor !== 0);
+  return results;
+}
+
+// Enumerate all currently in-progress matches by scanning `match_started:*`.
+// The rollback server sets this flag the instant MatchStarted fires, so this
+// catches matches even at 0-0 (before the first game completes). For later
+// games in a set, the setId is tracked via `player_ranked_set:{playerId}`
+// and scores come from `ranked_set:{setId}`.
+export async function redisGetInProgressMatches(): Promise<string[]> {
+  const matchIds: string[] = [];
+  let cursor = 0;
+  do {
+    const scan = await redisClient.scan(cursor, { MATCH: "match_started:*", COUNT: 100 });
+    cursor = Number(scan.cursor);
+    for (const key of scan.keys) {
+      matchIds.push(key.replace("match_started:", ""));
+    }
+  } while (cursor !== 0);
+  return matchIds;
+}
+
 export async function redisGetAllDeployedRollbackServers(): Promise<Record<string, IDeployInfo>> {
   const rollbackServers: Record<string, IDeployInfo> = {};
   let cursor = 0;

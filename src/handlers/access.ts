@@ -14,9 +14,11 @@ import { getAssetsByType } from "../loadAssets";
 import * as SharedTypes from "../types/shared-types";
 import * as KitchenSink from "../utils/garbagecan";
 import { EloRatingModel } from "../database/EloRating";
+import { PlayerStatsModel } from "../database/PlayerStats";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { NameGenerator } from "../utils/namegeneration";
 import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
+import { writeIdentityIndexes, bumpIpAccountsChangedAt } from "../services/identityService";
 
 const serviceName = "Handlers.Access";
 const logPrefix = `[${serviceName}]:`;
@@ -68,7 +70,38 @@ async function generateStaticAccess(req: express.Request) {
 
   // Look up pre-registered identity from DLL (steamId / epicId / hardwareId)
   const identity = await Redis.redisGetIdentity(ip);
-  const { steamId = "", epicId = "", hardwareId = "" } = identity ?? {};
+  let { steamId = "", epicId = "", hardwareId = "" } = identity ?? {};
+
+  // Fallback: if the DLL's identity preamble didn't populate Redis (expired TTL,
+  // DLL skipped the endpoint, etc.), try to extract identity from the JWT that
+  // the DLL may have sent in x-hydra-access-token. Returning sessions carry a
+  // valid token with steamId/epicId/hardwareId in the claims — we can use that
+  // to avoid creating a ghost account.
+  if (!steamId && !epicId && !hardwareId) {
+    try {
+      const rawToken = req.headers["x-hydra-access-token"];
+      if (typeof rawToken === "string" && rawToken.length > 0) {
+        const decoded = jwt.verify(rawToken, SECRET) as SharedTypes.IAccountToken;
+        if (decoded) {
+          steamId = decoded.steamId || "";
+          epicId = decoded.epicId || "";
+          hardwareId = decoded.hardwareId || "";
+          if (steamId || epicId || hardwareId) {
+            logger.info(`${logPrefix} Identity from Redis was empty, recovered from JWT claims: steam=${steamId || "-"} epic=${epicId || "-"} hw=${hardwareId ? hardwareId.slice(0, 8) + "..." : "-"}`);
+          }
+        }
+      }
+    } catch (e) {
+      // JWT invalid/missing — just fall through to the warn below
+    }
+  }
+
+  // If BOTH the Redis preamble AND the JWT fallback came up empty, we're flying
+  // blind. The resulting account will have no steam/epic/hw — on next /access
+  // from a different IP, they won't match and we'll create another ghost.
+  if (!steamId && !epicId && !hardwareId) {
+    logger.warn(`${logPrefix} /access from IP ${ip} has NO platform identity (steam/epic/hw all empty, no recoverable JWT). DLL may not be registering identity — expect a ghost account.`);
+  }
 
   // Try to find existing player by identity fields first (prefer steamId > epicId > hardwareId)
   // Fall back to IP, but if steamId doesn't match the found player, create a new account
@@ -90,7 +123,15 @@ async function generateStaticAccess(req: express.Request) {
     player = new PlayerTesterModel({ ip, name: randomName, hydraUsername: hydraUsername, GameplayPreferences: 964, steamId, epicId, hardwareId });
     try {
       await player.save();
-      logger.info(`${logPrefix} No player found for IP ${ip}. Created new player with id ${player.id} and name ${randomName}.`);
+      const lookedUp = [
+        `steamId=${steamId || "-"}`,
+        `epicId=${epicId || "-"}`,
+        `hardwareId=${hardwareId || "-"}`,
+        `ip=${ip}`,
+      ].join(", ");
+      logger.info(`${logPrefix} No existing player matched [${lookedUp}]. Created new player with id ${player.id} and name ${randomName}.`);
+      // New account at this IP → invalidate any admin web cookies currently bound to this IP.
+      await bumpIpAccountsChangedAt(ip);
     }
     catch (error) {
       logger.error(`${logPrefix} Error creating new player, error: ${error}`);
@@ -103,7 +144,15 @@ async function generateStaticAccess(req: express.Request) {
     if (steamId && isStale(player.steamId)) { player.steamId = steamId; dirty = true; }
     if (epicId && isStale(player.epicId)) { player.epicId = epicId; dirty = true; }
     if (hardwareId && isStale(player.hardwareId)) { player.hardwareId = hardwareId; dirty = true; }
-    if (player.ip !== ip) { player.ip = ip; dirty = true; }
+    if (player.ip !== ip) {
+      // Existing account moving to a new IP — bump both the old IP (this account leaving)
+      // and the new IP (this account arriving) so stale cookies at either get re-verified.
+      const previousIp = player.ip;
+      player.ip = ip;
+      dirty = true;
+      if (previousIp) await bumpIpAccountsChangedAt(previousIp);
+      await bumpIpAccountsChangedAt(ip);
+    }
     if (dirty) {
       try {
         await player.save();
@@ -181,6 +230,26 @@ async function generateStaticAccess(req: express.Request) {
   logger.info(`${logPrefix} Player ${account.id} - ${account.username} connected; ws: ${ws}`);
 
   await Redis.redisAddPlayerConnection(player.id, ip, token, account);
+
+  // Write identity index keys so downstream lookups can resolve by steamId/epicId/hardwareId
+  // instead of IP. Solves same-household collision (two accounts sharing external IP).
+  try {
+    await writeIdentityIndexes(player.id, player.steamId, player.epicId, player.hardwareId);
+  } catch (e) {
+    logger.error(`${logPrefix} Error writing identity indexes: ${e}`);
+  }
+
+  // Arm a "fun fact is pending" flag with a 60-second TTL. The first
+  // create_party_lobby after login consumes it, pushes the fact, and deletes
+  // the flag. Subsequent lobby creates don't re-trigger (flag is gone), and
+  // if the player takes longer than 60s to reach the main menu, it expires.
+  // Fires from create_party_lobby rather than /access because at /access time
+  // the DLL's NotifPoller isn't polling yet (~8s boot delay).
+  try {
+    await Redis.redisClient.set(`fun_fact_pending:${player.id}`, "1", { EX: 60 });
+  } catch (e) {
+    logger.error(`${logPrefix} Error arming fun fact pending flag: ${e}`);
+  }
 
   // Cache party key in Redis connection hash + party_key lookup
   if (player.party_key) {
@@ -471,20 +540,36 @@ async function generateStaticAccess(req: express.Request) {
         MatchConfig: { MultiqueueConfigs: [{ QueueType: "Unranked", Context: "Matchmade", TeamStyle: "Duos", GameModeAlias: "Versus" }, { QueueType: "Ranked", Context: "Matchmade", TeamStyle: "Duos", GameModeAlias: "Versus" }] },
         BattlepassID: "63cef9c6609607a8deb2c31d",
         stat_trackers: await (async () => {
-          // Build stats from ELO database
-          const rating = await EloRatingModel.findOne({ account_id: account.id }).lean();
+          // Build stats from ELO database + PlayerStats
+          const [rating, playerStats] = await Promise.all([
+            EloRatingModel.findOne({ account_id: account.id }).lean(),
+            PlayerStatsModel.findOne({ account_id: account.id }).lean(),
+          ]);
           const totalWins = (rating?.wins_1v1 || 0) + (rating?.wins_2v2 || 0);
           const totalLosses = (rating?.losses_1v1 || 0) + (rating?.losses_2v2 || 0);
-          const chars1v1 = (rating as any)?.characters_1v1 || {};
-          const chars2v2 = (rating as any)?.characters_2v2 || {};
 
-          // Merge character data across modes
+          // Merge character data across modes from PlayerStats (badges: wins, ringouts, damage)
+          const ps1v1 = (playerStats as any)?.characters_1v1 || {};
+          const ps2v2 = (playerStats as any)?.characters_2v2 || {};
           const charWins: Record<string, number> = {};
           const charMatches: Record<string, number> = {};
-          for (const [slug, data] of Object.entries({ ...chars1v1, ...chars2v2 })) {
-            const d = data as any;
-            charWins[slug] = (charWins[slug] || 0) + (d.wins || 0);
-            charMatches[slug] = (charMatches[slug] || 0) + (d.wins || 0) + (d.losses || 0);
+          const charRingouts: Record<string, number> = {};
+          const charDamage: Record<string, number> = {};
+          const charHighestDamage: Record<string, number> = {};
+          let totalRingouts = 0;
+          let highestDamageDealt = 0;
+
+          for (const [slug, data] of Object.entries({ ...ps1v1, ...ps2v2 }) as [string, any][]) {
+            // Preserve slug casing as-is — the game client looks up character_wins[slug]
+            // using the exact casing it sends (e.g., character_BananaGuard, character_C030)
+            charWins[slug] = (charWins[slug] || 0) + (data.wins || 0);
+            charMatches[slug] = (charMatches[slug] || 0) + (data.wins || 0) + (data.losses || 0);
+            charRingouts[slug] = (charRingouts[slug] || 0) + (data.ringouts || 0);
+            charDamage[slug] = Math.round((charDamage[slug] || 0) + (data.totalDamageDealt || 0));
+            const hd = data.highestDamageDealt || 0;
+            charHighestDamage[slug] = Math.max(charHighestDamage[slug] || 0, hd);
+            totalRingouts += (data.ringouts || 0);
+            if (hd > highestDamageDealt) highestDamageDealt = hd;
           }
 
           // Find most played character
@@ -495,13 +580,13 @@ async function generateStaticAccess(req: express.Request) {
           }
 
           return {
-          HighestDamageDealt: 0,
+          HighestDamageDealt: highestDamageDealt,
           TotalRingoutLeader: 0,
-          TotalRingouts: 0,
+          TotalRingouts: totalRingouts,
           TotalWins: totalWins,
-          character_highest_damage_dealt: {},
-          character_ringouts: {},
-          character_total_damage_dealt: {},
+          character_highest_damage_dealt: charHighestDamage,
+          character_ringouts: charRingouts,
+          character_total_damage_dealt: charDamage,
           character_wins: charWins,
           TotalAttacksDodged: 0,
           Valentines2023Currency: 5200,
@@ -567,7 +652,12 @@ async function generateStaticAccess(req: express.Request) {
             ranked: { "1v1": { CharactersInGold: 1, Wins: totalWins } },
             character_matches: charMatches,
             character_wins: charWins,
+            character_ringouts: charRingouts,
+            character_total_damage_dealt: charDamage,
+            character_highest_damage_dealt: charHighestDamage,
             TotalWins: totalWins,
+            TotalRingouts: totalRingouts,
+            HighestDamageDealt: highestDamageDealt,
           },
         };
         })(),

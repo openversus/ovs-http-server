@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpenVersus - Admin Banner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fugaz+One&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --mv-blue: #1f6feb;
+      --mv-blue-dark: #0040a5;
+      --mv-orange: #ff7500;
+      --mv-orange-dark: #ff4d00;
+      --ink: #343434;
+      --card: rgba(255, 255, 255, 0.92);
+      --card2: rgba(255, 255, 255, 0.85);
+      --shadow: rgba(0, 0, 0, 0.28) 0px 19px 38px, rgba(0, 0, 0, 0.20) 0px 15px 12px;
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: "Fugaz One", Arial, sans-serif;
+      overflow-x: hidden;
+      color: var(--ink);
+      background: #000;
+    }
+    .background {
+      position: fixed; inset: 0; z-index: -2;
+      background-image: url("/images/name_change_background.jpeg");
+      background-size: cover; background-position: center; background-repeat: no-repeat;
+      transform: scale(1.03);
+    }
+    .background::after {
+      content: ""; position: absolute; inset: 0;
+      backdrop-filter: blur(6px);
+      background: rgba(10, 12, 20, 0.20);
+    }
+    .main_wrapper {
+      min-height: 100%;
+      display: grid; place-items: center;
+      padding: 24px 14px;
+    }
+    .main_container {
+      width: min(640px, 100%);
+      background: linear-gradient(180deg, var(--card), var(--card2));
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 30px;
+      position: relative; overflow: hidden;
+    }
+    .main_container::before {
+      content: ""; position: absolute; inset: -60px;
+      background: linear-gradient(115deg,
+        transparent 0%, transparent 45%,
+        rgba(255, 117, 0, 0.10) 45%, rgba(255, 117, 0, 0.10) 52%,
+        transparent 52%, transparent 100%),
+        linear-gradient(115deg,
+        transparent 0%, transparent 62%,
+        rgba(31, 111, 235, 0.10) 62%, rgba(31, 111, 235, 0.10) 69%,
+        transparent 69%, transparent 100%);
+      pointer-events: none; opacity: 0.85;
+    }
+    .content { position: relative; display: grid; gap: 22px; }
+    .title {
+      margin: 0;
+      font-size: clamp(1.6rem, 4vw, 2.2rem);
+      color: var(--mv-blue-dark);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      text-shadow: 0 1px 0 rgba(255,255,255,0.6);
+    }
+    .subtitle {
+      margin: 0;
+      color: var(--ink);
+      opacity: 0.7;
+      font-size: 0.95rem;
+    }
+    .statBar {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      padding: 10px 16px;
+      background: rgba(31,111,235,0.08);
+      border: 1px solid rgba(31,111,235,0.2);
+      border-radius: 10px;
+      font-family: Arial, sans-serif;
+      font-size: 0.95rem;
+    }
+    .statBar strong { color: var(--mv-blue-dark); font-family: "Fugaz One", sans-serif; }
+    .form { display: grid; gap: 18px; font-family: Arial, sans-serif; }
+    label {
+      display: grid; gap: 6px;
+      font-size: 0.9rem;
+      color: var(--ink);
+    }
+    label span {
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-size: 0.8rem;
+      color: var(--mv-blue-dark);
+    }
+    input[type="text"], input[type="number"], textarea {
+      font-family: Arial, sans-serif;
+      font-size: 1rem;
+      padding: 10px 14px;
+      border: 2px solid rgba(31,111,235,0.3);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--ink);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, textarea:focus {
+      border-color: var(--mv-orange);
+    }
+    textarea { resize: vertical; min-height: 70px; }
+    .hint {
+      font-size: 0.8rem;
+      color: var(--ink);
+      opacity: 0.6;
+      font-style: italic;
+    }
+    .row2 {
+      display: grid; gap: 18px;
+      grid-template-columns: 1fr 1fr;
+    }
+    @media (max-width: 500px) {
+      .row2 { grid-template-columns: 1fr; }
+    }
+    .actionRow {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      margin-top: 8px;
+    }
+    button {
+      font-family: "Fugaz One", Arial, sans-serif;
+      font-size: 1.1rem;
+      padding: 12px 28px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(180deg, var(--mv-orange), var(--mv-orange-dark));
+      color: #fff;
+      cursor: pointer;
+      box-shadow: 0 4px 0 rgba(0,0,0,0.15);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 5px 0 rgba(0,0,0,0.15);
+    }
+    button:active {
+      transform: translateY(1px);
+      box-shadow: 0 2px 0 rgba(0,0,0,0.15);
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .secondaryBtn {
+      background: linear-gradient(180deg, var(--mv-blue), var(--mv-blue-dark));
+      font-size: 0.9rem;
+      padding: 10px 20px;
+    }
+    .status {
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-family: Arial, sans-serif;
+      font-size: 0.95rem;
+      min-height: 44px;
+      display: none;
+    }
+    .status.ok {
+      display: block;
+      background: rgba(58,180,55,0.12);
+      border: 1px solid rgba(58,180,55,0.4);
+      color: #1a5c1a;
+    }
+    .status.err {
+      display: block;
+      background: rgba(200,50,50,0.12);
+      border: 1px solid rgba(200,50,50,0.4);
+      color: #7a1a1a;
+    }
+    .preview {
+      padding: 14px 18px;
+      border: 2px dashed rgba(31,111,235,0.4);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.6);
+      font-family: Arial, sans-serif;
+    }
+    .preview .pTitle {
+      font-weight: 700;
+      color: var(--mv-blue-dark);
+      font-size: 1rem;
+      margin-bottom: 4px;
+    }
+    .preview .pMsg {
+      color: var(--ink);
+      font-size: 0.95rem;
+    }
+    .preview .pEmpty {
+      color: var(--ink);
+      opacity: 0.4;
+      font-style: italic;
+    }
+    details summary {
+      cursor: pointer;
+      color: var(--mv-blue-dark);
+      font-family: Arial, sans-serif;
+      font-size: 0.9rem;
+      padding: 4px 0;
+    }
+    details summary:hover { color: var(--mv-orange-dark); }
+  </style>
+</head>
+<body>
+  <div class="background"></div>
+  <div class="main_wrapper">
+    <div class="main_container">
+      <div class="content">
+        <div>
+          <h1 class="title">Admin Banner</h1>
+          <p class="subtitle">Push an in-game notification to connected players</p>
+        </div>
+
+        <div class="statBar">
+          Currently online: <strong id="onlineCount">{{onlineCount}}</strong> players
+        </div>
+
+        <form class="form" id="bannerForm">
+          <label>
+            <span>Line 1 — Title</span>
+            <input type="text" id="title" name="title" maxlength="255"
+                   placeholder="Server Maintenance" />
+          </label>
+
+          <label>
+            <span>Line 2 — Message</span>
+            <textarea id="message" name="message" maxlength="500"
+                      placeholder="Server will be restarting in 5 minutes"></textarea>
+          </label>
+
+          <div class="row2">
+            <label>
+              <span>Timeout (seconds)</span>
+              <input type="number" id="timeout" name="timeout"
+                     value="10" min="1" max="60" />
+            </label>
+            <label>
+              <span>Target Player ID (optional)</span>
+              <input type="text" id="targetPlayerId" name="targetPlayerId"
+                     placeholder="Leave blank to broadcast" />
+            </label>
+          </div>
+
+          <details>
+            <summary>Preview</summary>
+            <div class="preview" id="preview">
+              <div class="pTitle" id="previewTitle">Server Maintenance</div>
+              <div class="pMsg" id="previewMsg">Server will be restarting in 5 minutes</div>
+            </div>
+          </details>
+
+          <div class="actionRow">
+            <button type="button" class="secondaryBtn" onclick="loadOnlineCount()">
+              Refresh Online Count
+            </button>
+            <button type="submit" id="sendBtn">Send Banner</button>
+          </div>
+
+          <div class="status" id="status"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('bannerForm');
+    const titleInput = document.getElementById('title');
+    const msgInput = document.getElementById('message');
+    const timeoutInput = document.getElementById('timeout');
+    const targetInput = document.getElementById('targetPlayerId');
+    const sendBtn = document.getElementById('sendBtn');
+    const statusEl = document.getElementById('status');
+    const previewTitle = document.getElementById('previewTitle');
+    const previewMsg = document.getElementById('previewMsg');
+    const onlineCountEl = document.getElementById('onlineCount');
+
+    function updatePreview() {
+      const t = titleInput.value.trim();
+      const m = msgInput.value.trim();
+      previewTitle.textContent = t || 'OpenVersus';
+      previewMsg.textContent = m || '(no message)';
+      if (!t) previewTitle.className = 'pTitle pEmpty'; else previewTitle.className = 'pTitle';
+      if (!m) previewMsg.className = 'pMsg pEmpty'; else previewMsg.className = 'pMsg';
+    }
+
+    titleInput.addEventListener('input', updatePreview);
+    msgInput.addEventListener('input', updatePreview);
+    updatePreview();
+
+    async function loadOnlineCount() {
+      try {
+        const res = await fetch('/api/admin/banner/online-count');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (typeof data.count === 'number') {
+          onlineCountEl.textContent = data.count;
+        }
+      } catch (e) { /* silent */ }
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      statusEl.className = 'status';
+      statusEl.textContent = '';
+
+      const title = titleInput.value.trim();
+      const message = msgInput.value.trim();
+      const timeout = parseFloat(timeoutInput.value) || 10;
+      const targetPlayerId = targetInput.value.trim();
+
+      if (!title && !message) {
+        statusEl.className = 'status err';
+        statusEl.textContent = 'Please provide at least a title or a message.';
+        return;
+      }
+
+      sendBtn.disabled = true;
+      sendBtn.textContent = 'Sending...';
+
+      try {
+        const body = { title, message, timeout };
+        if (targetPlayerId) body.targetPlayerId = targetPlayerId;
+
+        const res = await fetch('/api/admin/banner', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          throw new Error(data.error || 'Request failed');
+        }
+
+        statusEl.className = 'status ok';
+        if (data.note) {
+          statusEl.textContent = data.note;
+        } else {
+          statusEl.textContent = 'Delivered to ' + data.delivered + ' of ' + data.attempted + ' player(s). The banner will appear on clients within ~2 seconds.';
+        }
+        loadOnlineCount();
+      } catch (err) {
+        statusEl.className = 'status err';
+        statusEl.textContent = 'Error: ' + err.message;
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send Banner';
+      }
+    });
+  </script>
+</body>
+</html>

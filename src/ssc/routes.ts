@@ -201,7 +201,7 @@ sscRouter.put("/ssc/invoke/match_set_concede", async (req: Request, res: Respons
             const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
             try {
               const chars = await getPlayerCharacters([...winnerIds, ...loserIds], setId);
-              await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars);
+              await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars, setId);
               await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
             } catch (e) {
               logger.error(`[SSC.Routes]: Error processing concede ELO: ${e}`);
@@ -340,6 +340,23 @@ async function handleRankedSetCheckin(playerId: string) {
   }
 
   try {
+  // Skip auto-concede if the match was flagged as a crash (everyone disconnected
+  // without a game result, or TerminatingError fired). Not fair to penalize anyone.
+  const matchCrashed = await redisClient.get(`match_server_crash:${setId}`);
+  if (matchCrashed) {
+    logger.info(`[SSC.Routes]: Set ${setId} flagged as crash (${matchCrashed}) — skipping auto-concede, cleaning up`);
+    for (const pid of allPlayerIds) {
+      await redisClient.del(`player_ranked_set:${pid}`);
+      await redisClient.del(`ranked_disconnect:${pid}`);
+    }
+    await redisClient.del(`ranked_set:${setId}`);
+    await redisClient.del(`ranked_set_checkins:${setId}`);
+    await redisClient.publish("ranked_set:leaver", JSON.stringify({
+      playerIds: [playerId], leaverPlayerId: playerId, matchId: setId,
+    }));
+    return;
+  }
+
   // Check if any player disconnected — auto-concede the set
   // Verify the player is actually offline (not a stale flag from a previous match)
   for (const pid of allPlayerIds) {
@@ -370,7 +387,7 @@ async function handleRankedSetCheckin(playerId: string) {
           const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
           try {
             const chars = await getPlayerCharacters([...winnerIds, ...loserIds], setId);
-            await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars);
+            await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars, setId);
             await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
           } catch (e) {
             logger.error(`[SSC.Routes]: Error processing disconnect concede ELO: ${e}`);
@@ -438,7 +455,7 @@ async function handleRankedSetCheckin(playerId: string) {
           await processSetResult(
             winnerIds, loserIds, setState.mode,
             scores as [number, number], winnerTeam,
-            setState.conceded || false, chars,
+            setState.conceded || false, chars, setId,
           );
           await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
         } catch (e) {

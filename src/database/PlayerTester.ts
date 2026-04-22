@@ -16,7 +16,10 @@ export class PlayerTester {
   @prop({ default: "" })
   public hydraUsername!: string;
 
-  @prop({ required: true, unique: true })
+  // NOTE: `ip` is NOT unique — multiple accounts can share an IP (household NAT,
+  // VPN, corporate network). Identity is disambiguated by steamId/epicId/hardwareId.
+  // Indexed (non-unique) for IP-based fallback lookups in admin/HTML routes.
+  @prop({ required: true, index: true })
   public ip!: string;
 
   // @prop({ required: false, unique: true })

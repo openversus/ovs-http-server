@@ -42,7 +42,7 @@ import { Types } from "mongoose";
 import { changeLobbyMode, createLobby, LOBBY_MODES } from "../services/lobbyService";
 import { MVSTime } from "../utils/date";
 import * as SharedTypes from "../types/shared-types";
-import { HYDRA_ACCESS_TOKEN, SECRET, decodeToken } from "../middleware/auth";
+import { HYDRA_ACCESS_TOKEN, SECRET, decodeToken, getRealIP, tryGetRealIP } from "../middleware/auth";
 import * as AuthUtils from "../utils/auth";
 import * as KitchenSink from "../utils/garbagecan";
 import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
@@ -87,7 +87,7 @@ export async function set_lock_lobby_loadout(req: Request, res: Response<Lock_Lo
   logger.info(`${logPrefix} Received set_lock_lobby_loadout request, body is: \n`);
   KitchenSink.TryInspectRequest(req.body);
 
-  let ip = req.ip!.replace(/^::ffff:/, "");
+  let ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
 
   const resolvedConn = await resolveAccountFromRequest(req);
   if (!resolvedConn || !resolvedConn.id) {
@@ -333,7 +333,8 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
 //  let player = ip ? await PlayerTesterModel.findOne({ ip }) : null;
 //  const aID = account?.id ?? player?.id;
   const account = AuthUtils.DecodeClientToken(req);
-  let ip = (account.current_ip || req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+  //let ip = (account.current_ip || req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+  let ip = (account.current_ip || tryGetRealIP(req) || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
   const resolvedConn = await resolveAccountFromRequest(req);
   const aID = resolvedConn?.id || account?.id;
 
@@ -630,7 +631,7 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
 export async function handleSsc_invoke_create_party(req: Request<{}, {}, {}, {}>, res: Response) {
   const account = req.token;
 
-  let ip = (req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+  let ip = (tryGetRealIP(req) || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
   // Prefer the JWT-derived account id (household-safe). Fall back to resolver (Steam/Epic/HW/IP).
   let aID: string | undefined = account?.id;
   if (!aID) {
@@ -1018,7 +1019,7 @@ export async function handleSsc_invoke_join_party_lobby(req: Request<{}, {}, {},
   KitchenSink.TryInspectRequest(req.body);
 
   const account = AuthUtils.DecodeClientToken(req);
-  let ip = (req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+  let ip = (tryGetRealIP(req) || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
   // Prefer JWT id; fall back to resolver chain (Steam/Epic/HW/IP) for household safety.
   let joiningPlayerId: string | undefined = account?.id;
   if (!joiningPlayerId) {

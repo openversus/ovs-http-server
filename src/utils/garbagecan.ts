@@ -1,6 +1,7 @@
 import { logger, logwrapper, BE_VERBOSE } from "../config/logger";
 import * as nodeutil from "node:util";
 import * as AuthUtils from "./auth";
+import { getRealIP, tryGetRealIP } from "../middleware/auth";
 import env from "../env/env";
 
 export function TryInspectRequestVerbose(req: any, depth: number = 4, showHidden: boolean = false, colors: boolean = true): void {
@@ -12,7 +13,7 @@ export function TryInspectRequestVerbose(req: any, depth: number = 4, showHidden
 export function TryInspectRequest(req: any, depth: number = 4, showHidden: boolean = false, colors: boolean = true): void {
   try {
     if (req.ip) {
-      logger.info(`Request IP: ${req.ip}`);
+      logger.info(`Request IP: ${tryGetRealIP(req) || req.ip}`);
     }
   }
   catch (error) {

@@ -862,19 +862,40 @@ let matchesCache: { matches: any[]; count: number; generatedAt: number } = {
 
 async function refreshMatchesCache(): Promise<void> {
   try {
-    // Scan match_started:* so we catch matches even before game 1 finishes (0-0).
+    // Two scans merged by setId:
+    // Pass 1 — match_started:* catches games actively playing (including 0-0 game 1).
+    // Pass 2 — ranked_set:* catches sets alive in the inter-game check-in phase
+    //          where no game is currently running but the set hasn't ended.
+    // Both scans dedupe against a shared seenSetIds set; keys are written together
+    // at set creation (websocket.handleOnMatchEnd), so setId always matches across passes.
     const matchIds = await redisGetInProgressMatches();
+    const activeSets = await redisGetActiveRankedSets();
     const results: any[] = [];
     const seenSetIds = new Set<string>();
 
+    // Helper: build `teams: {"0":[...], "1":[...]}` from a players array + characters map
+    const buildTeams = async (players: any[], matchChars: Record<string, string>): Promise<Record<string, any[]>> => {
+      const teams: Record<string, any[]> = { "0": [], "1": [] };
+      for (const p of players) {
+        if (p.isSpectator) continue;
+        const conn = await redisClient.hGetAll(`connections:${p.playerId}`) as any;
+        const username = conn?.username || "Unknown";
+        const character = conn?.character || matchChars[p.playerId] || "unknown";
+        const team = String(p.teamIndex ?? 0);
+        if (!teams[team]) teams[team] = [];
+        teams[team].push({ playerId: p.playerId, username, character });
+      }
+      return teams;
+    };
+
+    // ─── Pass 1: games actively playing (match_started:*) ───
     for (const matchId of matchIds) {
-      // Get the original match config (players, mode, isCustomGame).
       const matchConfig = await redisGetMatchConfig(matchId);
       if (!matchConfig || !Array.isArray(matchConfig.players)) continue;
-      if (matchConfig.isCustomGame) continue; // skip customs on the ranked matches page
+      if (matchConfig.isCustomGame) continue;
 
-      // Resolve setId for scores. For game 1, setId = matchId. For later games,
-      // look up via any player's player_ranked_set mapping.
+      // Resolve setId via player_ranked_set mapping. For game 1 (no set yet),
+      // setId defaults to matchId.
       let setId = matchId;
       let setState: any = null;
       const anyPlayerId = matchConfig.players[0]?.playerId;
@@ -882,7 +903,6 @@ async function refreshMatchesCache(): Promise<void> {
         const mappedSetId = await redisClient.get(`player_ranked_set:${anyPlayerId}`);
         if (mappedSetId) setId = mappedSetId;
       }
-      // Dedup: if multiple game matchIds roll up to the same setId, only show once.
       if (seenSetIds.has(setId)) continue;
       seenSetIds.add(setId);
 
@@ -891,24 +911,9 @@ async function refreshMatchesCache(): Promise<void> {
         try { setState = JSON.parse(setRaw); } catch {}
       }
 
-      // Character resolution: prefer connections cache, fall back to match_characters.
       const matchCharsRaw = await redisClient.get(`match_characters:${setId}`);
       const matchChars = matchCharsRaw ? JSON.parse(matchCharsRaw) : {};
-
-      const teams: Record<string, any[]> = { "0": [], "1": [] };
-      for (const p of matchConfig.players) {
-        if (p.isSpectator) continue;
-        const conn = await redisClient.hGetAll(`connections:${p.playerId}`) as any;
-        const username = conn?.username || "Unknown";
-        const character = conn?.character || matchChars[p.playerId] || "unknown";
-        const team = String(p.teamIndex ?? 0);
-        if (!teams[team]) teams[team] = [];
-        teams[team].push({
-          playerId: p.playerId,
-          username,
-          character,
-        });
-      }
+      const teams = await buildTeams(matchConfig.players, matchChars);
 
       results.push({
         setId,
@@ -917,6 +922,27 @@ async function refreshMatchesCache(): Promise<void> {
         scores: setState?.scores || [0, 0],
         gamesPlayed: setState?.gamesPlayed || 0,
         conceded: !!setState?.conceded,
+        teams,
+      });
+    }
+
+    // ─── Pass 2: active sets without a currently-playing game (inter-game) ───
+    for (const { setId, state: setState } of activeSets) {
+      if (seenSetIds.has(setId)) continue;
+      if (!setState || !Array.isArray(setState.players)) continue;
+      seenSetIds.add(setId);
+
+      const matchCharsRaw = await redisClient.get(`match_characters:${setId}`);
+      const matchChars = matchCharsRaw ? JSON.parse(matchCharsRaw) : {};
+      const teams = await buildTeams(setState.players, matchChars);
+
+      results.push({
+        setId,
+        matchId: setId, // no active game; use setId as the display id
+        mode: setState.mode,
+        scores: setState.scores || [0, 0],
+        gamesPlayed: setState.gamesPlayed || 0,
+        conceded: !!setState.conceded,
         teams,
       });
     }

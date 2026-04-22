@@ -13,7 +13,7 @@ import { PlayerTesterModel } from "./database/PlayerTester";
 import * as AuthUtils from "./utils/auth";
 import { HydraEncoder } from "mvs-dump";
 import { resolveAccountFromRequest } from "./services/identityService";
-import { tryGetRealIP } from "./utils/garbagecan";
+import { tryGetRealIP } from "./middleware/auth";
 // SSC custom lobby imports removed — handled by shared.routes.ts
 
 interface MVSParams {

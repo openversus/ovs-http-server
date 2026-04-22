@@ -1,6 +1,7 @@
 import { PlayerStatsModel } from "../database/PlayerStats";
 import { EloRatingModel } from "../database/EloRating";
 import { logger } from "../config/logger";
+import { INVENTORY_DEFINITIONS } from "../data/inventoryDefs";
 
 const serviceName = "Services.FunFacts";
 const logPrefix = `[${serviceName}]:`;
@@ -42,9 +43,15 @@ function formatDuration(seconds: number): string {
 
 function prettyChar(slug: string): string {
   if (!slug) return "Unknown";
+  // Try the game's own DisplayName first — it maps C-codes to real names
+  // (e.g. character_C027 → "Nubia", character_C034 → "Banana Guard").
+  const defEntry = (INVENTORY_DEFINITIONS as any)?.[slug];
+  const displayName = defEntry?.data?.DisplayName;
+  if (typeof displayName === "string" && displayName.length > 0) return displayName;
+
+  // Fallback: format the slug manually.
   const clean = slug.replace(/^character_/, "");
-  // Handle code names like C023A / C030 — leave as-is (likely internal codenames)
-  if (/^[cC]\d/.test(clean)) return clean;
+  if (/^[cC]\d/.test(clean)) return clean; // genuinely unknown C-code, leave as-is
   return clean
     .replace(/_/g, " ")
     .replace(/\b\w/g, c => c.toUpperCase());

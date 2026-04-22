@@ -520,8 +520,8 @@ export async function handleMatches_all_id(req: Request<any, {}, {}, MVSQueries.
       ...(stats?.recent_matches_2v2 || []),
     ];
 
-    // Sort newest first
-    entries.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    // Sort oldest first (top-down chronological in the game's recent matches UI)
+    entries.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
     // Limit to count requested (default 20)
     const count = parseInt(req.query.count as string) || 20;

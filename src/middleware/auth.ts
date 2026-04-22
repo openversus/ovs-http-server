@@ -1,4 +1,4 @@
-import { logger } from "../config/logger";
+import { logger, logwrapper } from "../config/logger";
 import { NextFunction, Request, Response } from "express";
 import * as jwt from "jsonwebtoken";
 import env from "../env/env";
@@ -16,6 +16,9 @@ declare global {
     }
   }
 }
+
+const serviceName = "Middleware.Auth";
+const logPrefix = `[${serviceName}]:`;
 
 export const HYDRA_ACCESS_TOKEN = "x-hydra-access-token";
 export const REAL_IP_HEADER = "x-real-ip";
@@ -107,12 +110,16 @@ export function tryGetRealIP(req: Request): string {
   try {
     if (req.realIp)
     {
+      logwrapper.verbose(`${logPrefix} Raw req.ip is: ${req.ip}; Using cached real IP: ${req.realIp}`);
       return req.realIp;
     }
     else {
-      return getRealIP(req).ip; // Ensure we get the real IP for name changes, not just the direct connection IP
+      const realIP = getRealIP(req).ip;
+      logwrapper.verbose(`${logPrefix} Raw req.ip is: ${req.ip}; Resolved real IP: ${realIP}`);
+      return realIP;
     }
   } catch (error) {
+    logwrapper.verbose(`${logPrefix} Error resolving real IP: ${error}; Falling back to req.ip: ${req.ip}`);
     return req.ip || "";
   }
 }

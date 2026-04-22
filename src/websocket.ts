@@ -484,6 +484,15 @@ export class WebSocketService {
                   }
 
                   for (const pid of allSetPlayerIds) {
+                    // Clear "in_match" status for EVERY player in the set (including the
+                    // dodger) so /ovs/accept-invite's ownerStatus gate doesn't block a
+                    // re-invite after the dodge. handleOnMatchEnd does this on normal
+                    // match end; the pregame-dodge branch has to do it explicitly.
+                    try {
+                      await redisUpdatePlayerStatus(pid, "idle");
+                    } catch (statusErr) {
+                      logger.error(`[${serviceName}]: Error resetting status for ${pid}: ${statusErr}`);
+                    }
                     if (pid === playerId) continue;
                     const remainClient = this.clients.get(pid);
                     if (remainClient) remainClient.matchConfig = undefined;

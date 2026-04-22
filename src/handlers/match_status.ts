@@ -1,7 +1,7 @@
 import { logger } from "../config/logger";
 import { Request, Response } from "express";
 import { IMatchStatus, IMatchStatusTimestamp } from "../interfaces/IMatchStatus";
-import { redisClient, redisGetMatchConfig, redisPushDLLNotification } from "../config/redis";
+import { redisClient, redisGetMatchConfig, redisPushDLLNotification, redisUpdatePlayerStatus } from "../config/redis";
 import { processSetResult } from "../services/eloService";
 
 const logPrefix = "[Handlers.MatchStatus]:";
@@ -175,6 +175,18 @@ async function handlePlayerDisconnectElo(
     if (setId !== matchId) {
       await redisClient.del(`ranked_set:${setId}`);
       await redisClient.del(`ranked_set_checkins:${setId}`);
+    }
+
+    // Reset status for EVERY player in the set (including the dodger) so a
+    // follow-up /ovs/accept-invite doesn't get blocked by a stale "in_match"
+    // status on the inviter. handleOnMatchEnd does this on normal match end;
+    // the pregame-dodge branch has to do it explicitly.
+    for (const pid of allSetPlayerIds) {
+      try {
+        await redisUpdatePlayerStatus(pid, "idle");
+      } catch (statusErr) {
+        logger.error(`${logPrefix} Error resetting status for ${pid}: ${statusErr}`);
+      }
     }
 
     // Push DLL match_cancel notification to remaining players

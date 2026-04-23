@@ -196,7 +196,13 @@ async function generateStaticAccess(req: express.Request) {
     logger.error(`${logPrefix} Error cleaning up stale match state for ${player.id}: ${e}`);
   }
 
+  const USE_SECURE_WS: number = env.USE_SECURE_WEBSOCKET || 0;
+  //let ws = `ws://${env.WB_DOMAIN}:${env.WEBSOCKET_PORT}`;
   let ws = `ws://${env.WB_DOMAIN}:${env.WEBSOCKET_PORT}`;
+  if (USE_SECURE_WS)
+  {
+    ws = `wss://${env.WB_DOMAIN}:${env.SECURE_WEBSOCKET_PORT}`;
+  }
   // if (ip === "127.0.0.1") {
   //   ws = `ws://testing.openversus.org:${env.WEBSOCKET_PORT}`;
   // } else {

@@ -72,6 +72,7 @@ import { handleMatchStatusUpdate } from "./handlers/match_status";
 import { resolveAccountFromRequest } from "./services/identityService";
 import { initAccelByteLobbyWs, accelByteLobbyWs } from "./accelByteLobbyWs";
 import { IMatchStatus } from "./interfaces/IMatchStatus";
+import { REAL_IP_HEADER, getRealIP, tryGetRealIP } from "./middleware/auth";
 
 // HTML Rendering
 const handlebars = require("handlebars");
@@ -253,7 +254,7 @@ app.get("/home", async (req, res) => {
 
 app.get("/namechange", async (req, res) => {
   try {
-    let ip = req.ip!.replace(/^::ffff:/, "");
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
     if (typeof ip !== "string") {
       res.status(400).send("Invalid IP");
       return;
@@ -295,7 +296,7 @@ app.post("/namechange", async (req, res, next) => {
   }
   try {
     let error = null;
-    let ip = req.ip!.replace(/^::ffff:/, "");
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
     const { player: resolvedPlayer, pickerShown } = await resolvePlayerForWeb(req, res, "/namechange");
     if (pickerShown) return;
     let player = resolvedPlayer;
@@ -563,7 +564,7 @@ app.post("/mvsi_end_match", async (req, res, next) => {
 
 app.get("/party", async (req, res) => {
   try {
-    const ip = req.ip!.replace(/^::ffff:/, "");
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, "");
     const { player: resolvedPlayer, pickerShown } = await resolvePlayerForWeb(req, res, "/party");
     if (pickerShown) return;
     let player = resolvedPlayer;
@@ -585,7 +586,7 @@ app.get("/party", async (req, res) => {
 
 app.post("/party/set-key", async (req, res) => {
   try {
-    const ip = req.ip!.replace(/^::ffff:/, "");
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
     const { player: resolvedPlayer, pickerShown } = await resolvePlayerForWeb(req, res, "/party");
     if (pickerShown) return;
     let player = resolvedPlayer;
@@ -646,7 +647,7 @@ app.post("/party/set-key", async (req, res) => {
 
 app.post("/party/join", async (req, res) => {
   try {
-    const ip = req.ip!.replace(/^::ffff:/, "");
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
     const { player: resolvedPlayer, pickerShown } = await resolvePlayerForWeb(req, res, "/party");
     if (pickerShown) return;
     let player = resolvedPlayer;
@@ -755,7 +756,7 @@ app.post("/party/join", async (req, res) => {
 
 app.put("/ovs/accept-invite/:lobbyId", async (req, res) => {
   try {
-    const ip = req.ip!.replace(/^::ffff:/, "");
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
     const lobbyId = req.params.lobbyId;
 
     // Resolve via JWT/Steam/Epic/HW/IP (household-safe); then load by account id.
@@ -973,7 +974,7 @@ app.get("/api/matches", async (req, res) => {
 
 app.post("/api/identify", async (req, res) => {
   try {
-    let ip = req.ip?.replace(/^::ffff:/, "") ?? "";
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
     const clean = (v: any) => (typeof v === "string" && v !== "Unknown" ? v : "");
     const { steamId: _s = "", epicId: _e = "", hardwareId: _h = "" } = req.body ?? {};
     const steamId = clean(_s), epicId = clean(_e), hardwareId = clean(_h);
@@ -1091,8 +1092,8 @@ app.get("/ovs/client-version", async (req, res) => {
 // ============================================================
 app.get("/ovs/notifications", async (req, res) => {
   try {
-    const ip = (req.ip || "").replace(/^::ffff:/, "");
-    if (!ip) {
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
+    if (!ip || ip === "") {
       res.json([]);
       return;
     }
@@ -1238,7 +1239,7 @@ app.post("/api/admin/banner", async (req, res) => {
 //   Without the cookie, returns null — AJAX caller will get a 401 and the user should visit
 //   /custom (or /party / /namechange) once in a browser to pick an account.
 async function getPlayerFromReq(req: any): Promise<{ id: string; username: string; ip: string } | null> {
-  const ip = req.ip!.replace(/^::ffff:/, "");
+  const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
   const accounts = await PlayerTesterModel.find({ ip }).lean();
   if (accounts.length === 0) return null;
 
@@ -1323,7 +1324,7 @@ async function resolvePlayerForWeb(
   res: express.Response,
   returnTo: string,
 ): Promise<{ player: any | null; pickerShown: boolean }> {
-  const ip = req.ip!.replace(/^::ffff:/, "");
+  const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
 
   // Candidate accounts at this IP
   const accounts = await PlayerTesterModel.find({ ip }).lean();
@@ -1392,7 +1393,7 @@ async function resolvePlayerForWeb(
 // Step 2 happens in POST /account/verify.
 app.post("/account/switch", async (req, res) => {
   try {
-    const ip = req.ip!.replace(/^::ffff:/, "");
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
     const accountId = (req.body?.accountId || "").trim();
     const rawReturnTo = (req.body?.returnTo || "/home").trim();
     const returnTo = rawReturnTo.startsWith("/") && !rawReturnTo.startsWith("//") ? rawReturnTo : "/home";
@@ -1482,7 +1483,7 @@ app.post("/account/switch", async (req, res) => {
 // After 5 failed attempts the verify record is deleted entirely (user has to restart).
 app.post("/account/verify", async (req, res) => {
   try {
-    const ip = req.ip!.replace(/^::ffff:/, "");
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
     const verifyId = (req.body?.verifyId || "").toString().trim();
     const submittedCode = (req.body?.code || "").toString().trim();
 

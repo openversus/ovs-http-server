@@ -3,7 +3,7 @@ import * as Redis from "../config/redis"; //nc
 import { MVSQueries } from "../interfaces/queries_types";
 import ObjectID from "bson-objectid";
 import * as jwt from "jsonwebtoken";
-import { SECRET } from "../middleware/auth";
+import { SECRET, tryGetRealIP, getRealIP } from "../middleware/auth";
 import ky from "ky";
 import { HydraDecoder } from "mvs-dump";
 import { parseAppTicket, parseEncryptedAppTicket } from "steam-appticket";
@@ -29,13 +29,14 @@ async function deleteStaticAccess(req: express.Request) {
 
   let tempIp = "";
   try {
-    tempIp = req.ip!.replace(/^::ffff:/, "");
+    tempIp = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
   }
   catch (error) {
     return;
   }
 
-  let ip = tempIp;
+  //let ip = tempIp;
+  let ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
   let player = await PlayerTesterModel.findOne({ ip });
   if (!player) {
     logger.info("No player found for IP:", ip);
@@ -52,13 +53,14 @@ async function generateStaticAccess(req: express.Request) {
 
   let tempIp = "";
   try {
-    tempIp = req.ip!.replace(/^::ffff:/, "");
+    tempIp = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
   }
   catch (error) {
     logger.error(`${logPrefix} Error extracting IP from request: ${error}`);
     return;
   }
-  let ip = tempIp;
+  //let ip = tempIp;
+  let ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
 
   if (isBanned(ip)) {
     logger.warn(GetBanWarningMessage(ip));
@@ -194,7 +196,13 @@ async function generateStaticAccess(req: express.Request) {
     logger.error(`${logPrefix} Error cleaning up stale match state for ${player.id}: ${e}`);
   }
 
+  const USE_SECURE_WS: number = env.USE_SECURE_WEBSOCKET || 0;
+  //let ws = `ws://${env.WB_DOMAIN}:${env.WEBSOCKET_PORT}`;
   let ws = `ws://${env.WB_DOMAIN}:${env.WEBSOCKET_PORT}`;
+  if (USE_SECURE_WS)
+  {
+    ws = `wss://${env.WB_DOMAIN}:${env.SECURE_WEBSOCKET_PORT}`;
+  }
   // if (ip === "127.0.0.1") {
   //   ws = `ws://testing.openversus.org:${env.WEBSOCKET_PORT}`;
   // } else {

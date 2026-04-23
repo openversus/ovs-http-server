@@ -2,7 +2,7 @@ import { logger } from "../config/logger";
 import express, { Request, Response } from "express";
 import * as SharedTypes from "../types/shared-types";
 import { Types } from "mongoose";
-import { HYDRA_ACCESS_TOKEN, SECRET, decodeToken } from "../middleware/auth";
+import { HYDRA_ACCESS_TOKEN, SECRET, decodeToken, getRealIP, tryGetRealIP } from "../middleware/auth";
 import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 
@@ -14,10 +14,10 @@ export function GetReqIP(req: Request | Request<{}, {}, {}, {}> | Request<{}, {}
     return null;
   }
 
-  let regexIsMatch = IPRegexPattern.test(req.ip || "");
+  let regexIsMatch = IPRegexPattern.test(tryGetRealIP(req) || "");
 
   if (regexIsMatch) {
-    var returnIP = IPRegexPattern.exec(req.ip || "") || null;
+    var returnIP = IPRegexPattern.exec(tryGetRealIP(req) || "") || null;
     if (returnIP && returnIP.groups) {
       return returnIP.groups.matchip;
     }

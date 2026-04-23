@@ -13,6 +13,7 @@ import { PlayerTesterModel } from "./database/PlayerTester";
 import * as AuthUtils from "./utils/auth";
 import { HydraEncoder } from "mvs-dump";
 import { resolveAccountFromRequest } from "./services/identityService";
+import { tryGetRealIP } from "./middleware/auth";
 // SSC custom lobby imports removed — handled by shared.routes.ts
 
 interface MVSParams {
@@ -292,7 +293,7 @@ router.get("/ovs/all-players", async (req: Request, res: Response) => {
 // Simple friend request from DLL search (PUT with target ID in URL, sender identified by IP)
 router.put("/ovs/friends/send-request/:targetId", async (req: Request, res: Response) => {
   try {
-    const ip = req.ip?.replace(/^::ffff:/, "") || "";
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
     const connection = await resolveAccountFromRequest(req);
     if (!connection || !connection.id) {
       res.status(401).json({ error: "not_connected" });
@@ -322,7 +323,7 @@ router.put("/ovs/friends/send-request/:targetId", async (req: Request, res: Resp
 
 router.post("/ovs/friends/request", async (req: Request, res: Response) => {
   try {
-    const ip = req.ip?.replace(/^::ffff:/, "") || "";
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
     const connection = await resolveAccountFromRequest(req);
     if (!connection || !connection.id) {
       res.status(401).json({ error: "not_connected" });
@@ -350,7 +351,7 @@ router.post("/ovs/friends/request", async (req: Request, res: Response) => {
 
 router.post("/ovs/friends/accept", async (req: Request, res: Response) => {
   try {
-    const ip = req.ip?.replace(/^::ffff:/, "") || "";
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
     const connection = await resolveAccountFromRequest(req);
     if (!connection || !connection.id) {
       res.status(401).json({ error: "not_connected" });
@@ -373,7 +374,7 @@ router.post("/ovs/friends/accept", async (req: Request, res: Response) => {
 
 router.post("/ovs/friends/decline", async (req: Request, res: Response) => {
   try {
-    const ip = req.ip?.replace(/^::ffff:/, "") || "";
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
     const connection = await resolveAccountFromRequest(req);
     if (!connection || !connection.id) {
       res.status(401).json({ error: "not_connected" });
@@ -396,7 +397,7 @@ router.post("/ovs/friends/decline", async (req: Request, res: Response) => {
 
 router.delete("/ovs/friends/:friendId", async (req: Request<{ friendId: string }>, res: Response) => {
   try {
-    const ip = req.ip?.replace(/^::ffff:/, "") || "";
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
     const connection = await resolveAccountFromRequest(req);
     if (!connection || !connection.id) {
       res.status(401).json({ error: "not_connected" });
@@ -413,7 +414,7 @@ router.delete("/ovs/friends/:friendId", async (req: Request<{ friendId: string }
 
 router.post("/ovs/friends/block", async (req: Request, res: Response) => {
   try {
-    const ip = req.ip?.replace(/^::ffff:/, "") || "";
+    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
     const connection = await resolveAccountFromRequest(req);
     if (!connection || !connection.id) {
       res.status(401).json({ error: "not_connected" });

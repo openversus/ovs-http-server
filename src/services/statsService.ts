@@ -165,9 +165,11 @@ export async function recordGameStats(
   const pmu = endOfMatchStats.PlayerMissionUpdates as Record<string, Record<string, any>> | undefined;
   if (!pmu || typeof pmu !== "object") return;
 
-  // Determine mode from matchConfig
+  // Determine mode from matchConfig — hoisted so it's accessible outside the
+  // per-player loop (the archive payload at the bottom also references it).
   const configRaw = await redisClient.get(matchId);
-  const mode = configRaw ? JSON.parse(configRaw).mode : "1v1";
+  const matchConfig = configRaw ? JSON.parse(configRaw) : null;
+  const mode = matchConfig?.mode || "1v1";
   const is1v1 = mode === "1v1" || mode.includes("1v1");
   const charsField = is1v1 ? "characters_1v1" : "characters_2v2";
 
@@ -233,7 +235,6 @@ export async function recordGameStats(
       : [0, 0];
 
     // Determine team indexes from match config (MATCH_FOUND_NOTIFICATION format)
-    const matchConfig = configRaw ? JSON.parse(configRaw) : null;
     const teamMap = new Map<string, number>(); // playerId → teamIndex
     if (matchConfig?.players && Array.isArray(matchConfig.players)) {
       for (const p of matchConfig.players) {

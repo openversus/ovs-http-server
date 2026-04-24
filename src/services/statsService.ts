@@ -301,6 +301,7 @@ export async function recordGameStats(
   const archivePayload = {
     match_id: matchId,
     mode,
+    is_custom: matchConfig?.isCustomGame === true,
     timestamp: Date.now(),
     winning_team: endOfMatchStats.WinningTeamIndex,
     score: endOfMatchStats.Score,

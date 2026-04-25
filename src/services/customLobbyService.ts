@@ -498,7 +498,7 @@ export async function selectMode(
 
 export async function startMatch(
   playerId: string,
-  useShields: boolean = true,
+  useShields: boolean = false,
 ): Promise<{ success: boolean; matchId: string } | { error: string }> {
   const code = await getPlayerLobby(playerId);
   if (!code) return { error: "Not in a lobby." };

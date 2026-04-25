@@ -934,7 +934,8 @@
     // Get value of the shields mode select with this, pass as param to API if needed in the future
     // document.getElementById('mode-select').value
     const shieldsValue = document.getElementById('shields-select').value;
-    const apiEndpoint = shieldsValue === 'Yes' ? '/api/custom/start' : '/api/custom/start-no-shields';
+    //const apiEndpoint = shieldsValue === 'Yes' ? '/api/custom/start' : '/api/custom/start-no-shields';
+    const apiEndpoint = '/api/custom/start-no-shields'
     hideStatus('lobby-status');
     showStatus('lobby-status', 'Starting match...', 'info');
     const result = await api('POST', apiEndpoint);

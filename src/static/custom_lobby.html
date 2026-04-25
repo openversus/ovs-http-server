@@ -458,6 +458,18 @@
             </div>
           </div>
 
+          <div class="section" id="shields">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <h3 class="section-title" style="margin: 0;">Shields</h3>
+              <div class="lobby-controls">
+                <select id="shields-select">
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           <!-- Map Pool -->
           <div class="section" id="map-pool-section">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -919,9 +931,13 @@
   }
 
   async function startMatch() {
+    // Get value of the shields mode select with this, pass as param to API if needed in the future
+    // document.getElementById('mode-select').value
+    const shieldsValue = document.getElementById('shields-select').value;
+    const apiEndpoint = shieldsValue === 'Yes' ? '/api/custom/start' : '/api/custom/start-no-shields';
     hideStatus('lobby-status');
     showStatus('lobby-status', 'Starting match...', 'info');
-    const result = await api('POST', '/api/custom/start');
+    const result = await api('POST', apiEndpoint);
     if (result.error) showStatus('lobby-status', result.error, 'error');
   }
 

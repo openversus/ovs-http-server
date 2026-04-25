@@ -498,6 +498,7 @@ export async function selectMode(
 
 export async function startMatch(
   playerId: string,
+  useShields: boolean = true,
 ): Promise<{ success: boolean; matchId: string } | { error: string }> {
   const code = await getPlayerLobby(playerId);
   if (!code) return { error: "Not in a lobby." };
@@ -696,6 +697,7 @@ export async function startMatch(
       mode: lobby.mode,
       rollbackPort: customLobbyRollbackPort,
       isCustomGame: true,
+      customShields: useShields,
     };
 
     // Include spectators in playerIds so they receive all match notifications

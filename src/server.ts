@@ -1711,11 +1711,20 @@ app.post("/api/custom/select-mode", async (req, res) => {
   } catch (e) { logger.error(`${logPrefix} Error in /api/custom/select-mode: ${e}`); res.status(500).json({ error: "Internal error" }); }
 });
 
+app.post("/api/custom/start-no-shields", async (req, res) => {
+  try {
+    const player = await getPlayerFromReq(req);
+    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
+    const result = await startMatch(player.id, false);
+    res.json(result);
+  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/start-no-shields: ${e}`); res.status(500).json({ error: "Internal error" }); }
+});
+
 app.post("/api/custom/start", async (req, res) => {
   try {
     const player = await getPlayerFromReq(req);
     if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
-    const result = await startMatch(player.id);
+    const result = await startMatch(player.id, true);
     res.json(result);
   } catch (e) { logger.error(`${logPrefix} Error in /api/custom/start: ${e}`); res.status(500).json({ error: "Internal error" }); }
 });

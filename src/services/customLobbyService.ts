@@ -700,6 +700,8 @@ export async function startMatch(
       customShields: useShields,
     };
 
+    logger.info(`${logPrefix} Match ${matchId} created from lobby ${code}, shield flag is: ${useShields}. notifying players...`);
+
     // Include spectators in playerIds so they receive all match notifications
     const playerIds = [...players, ...spectatorEntries].map((p) => p.playerId);
     await redisOnGameplayConfigNotified(notification);

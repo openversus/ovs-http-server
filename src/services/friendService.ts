@@ -2,7 +2,7 @@ import { logger } from "../config/logger";
 import { FriendListModel, FriendEntry } from "../database/FriendList";
 import { FriendRequestModel } from "../database/FriendRequest";
 import { PlayerTesterModel } from "../database/PlayerTester";
-import { redisGetOnlinePlayers, redisClient, RedisPlayerConnection, redisPushDLLNotification, DLLNotification } from "../config/redis";
+import { redisGetOnlinePlayers, redisClient, RedisPlayerConnection, redisPushDLLNotification, redisGetBlockedPlayers, redisSetBlockedPlayers, DLLNotification } from "../config/redis";
 
 const serviceName = "FriendService";
 const logPrefix = `[${serviceName}]:`;
@@ -239,6 +239,8 @@ export async function removeFriend(
       mongoPlayer.blockedPlayers = mongoPlayer.blockedPlayers.filter(id => id !== friendAccountId);
       await mongoPlayer.save();
     }
+
+    await redisSetBlockedPlayers(accountId, mongoPlayer.blockedPlayers);
   }
 
   logger.info(`${logPrefix} Friend removed: ${accountId} <-> ${friendAccountId}`);
@@ -300,6 +302,8 @@ export async function blockPlayer(
       mongoPlayer.blockedPlayers.push(targetAccountId);
       await mongoPlayer.save();
     }
+
+    await redisSetBlockedPlayers(accountId, mongoPlayer.blockedPlayers);
   }
 
   logger.info(`${logPrefix} Player blocked: ${accountId} blocked ${targetAccountId}`);

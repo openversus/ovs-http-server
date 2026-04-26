@@ -2,7 +2,7 @@ import { Types } from "mongoose";
 import { PlayerTesterModel } from "../../database/PlayerTester";
 import { FriendListModel } from "../../database/FriendList";
 import { FriendRequestModel } from "../../database/FriendRequest";
-import { redisClient } from "../../config/redis";
+import { redisClient, redisSetBlockedPlayers } from "../../config/redis";
 import { logger } from "../../config/logger";
 
 const logPrefix = "[Friends.Service]:";

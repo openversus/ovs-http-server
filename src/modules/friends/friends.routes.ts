@@ -1,6 +1,6 @@
 import express, { Request, Response } from "express";
 import { logger } from "../../config/logger";
-import { redisClient, FRIEND_REQUEST_WS_CHANNEL, redisPushDLLNotification, DLLNotification } from "../../config/redis";
+import { redisClient, FRIEND_REQUEST_WS_CHANNEL, redisPushDLLNotification, DLLNotification, redisSetBlockedPlayers } from "../../config/redis";
 import { blockPlayer, getFriends, removeFriend } from "../../services/friendService";
 import { PlayerTester, PlayerTesterModel } from "../../database/PlayerTester";
 import { HydraEncoder } from "mvs-dump";
@@ -26,6 +26,26 @@ friendsRouter.get("/friends/me", async (req: Request, res: Response) => {
     const account = AuthUtils.DecodeClientToken(req);
     const fContentType = req.headers["content-type"] || "none";
     const friends = await getUserFriendsList(account.id, "active");
+
+    const mongoPlayer = await PlayerTesterModel.findOne({ id: account.id });
+    const blocked = await getFriends(account.id, "blocked");
+
+    if (mongoPlayer) {
+      for (const b of blocked)
+      {
+        if (!mongoPlayer.blockedPlayers)
+        {
+          mongoPlayer.blockedPlayers = [];
+        }
+        if (!mongoPlayer.blockedPlayers.includes(b.friendAccountId))
+        {
+          mongoPlayer.blockedPlayers.push(b.friendAccountId);
+        }
+        await mongoPlayer.save().catch(e => logger.error(`${logPrefix} Error saving blocked player ${b.friendAccountId} to MongoDB for account ${account.id}: ${e}`));
+      }
+      await redisSetBlockedPlayers(account.id, mongoPlayer.blockedPlayers);
+    }
+
     logger.info(`${logPrefix} GET /friends/me — returning ${friends.length} friends for ${account.id} (content-type: ${fContentType})`);
     res.send({
       total: friends.length,
@@ -177,8 +197,26 @@ friendsRouter.get("/social/me/blocked", async (req: Request, res: Response) => {
 
   try {
     const account = AuthUtils.DecodeClientToken(req);
+    const mongoPlayer = await PlayerTesterModel.findOne({ id: account.id });
     const fContentType = req.headers["content-type"] || "none";
     const blocked = await getFriends(account.id, "blocked");
+
+    if (mongoPlayer) {
+      for (const b of blocked)
+      {
+        if (!mongoPlayer.blockedPlayers)
+        {
+          mongoPlayer.blockedPlayers = [];
+        }
+        if (!mongoPlayer.blockedPlayers.includes(b.friendAccountId))
+        {
+          mongoPlayer.blockedPlayers.push(b.friendAccountId);
+        }
+        await mongoPlayer.save().catch(e => logger.error(`${logPrefix} Error saving blocked player ${b.friendAccountId} to MongoDB for account ${account.id}: ${e}`));
+      }
+      await redisSetBlockedPlayers(account.id, mongoPlayer.blockedPlayers);
+    }
+
     logger.info(`${logPrefix} GET /social/me/blocked — returning ${blocked.length} blocked players for ${account.id} (content-type: ${fContentType})`);
     res.send({
       total: blocked.length,

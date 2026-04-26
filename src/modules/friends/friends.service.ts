@@ -313,54 +313,68 @@ export async function getProfileBulk(userIds: string[]) {
   });
 }
 
-export async function addBlockedPlayer(accountId: string, blockId: string) {
-  let mongoPlayer = await PlayerTesterModel.findOne({ id: accountId });
-  if (!mongoPlayer)
-  {
-    return;
-  }
+// export async function addBlockedPlayer(accountId: string, blockId: string) {
+//   const fromList = await ensureFriendList(accountId);
 
-  mongoPlayer.blockedPlayers = mongoPlayer.blockedPlayers || [];
-  if (!mongoPlayer.blockedPlayers.includes(blockId)) {
-    mongoPlayer.blockedPlayers.push(blockId);
-    await mongoPlayer.save();
-  }
+//   // Add to block list (if not already there)
+//   if (!fromList.friends.find((f) => f.friendAccountId === blockId)) {
+//     let blockedPlayerUsername = await PlayerTesterModel.findById(blockId).lean().then((p) => p?.name || p?.hydraUsername || "Unknown");
+//     fromList.friends.push({
+//       friendAccountId: blockId,
+//       friendUsername: blockedPlayerUsername,
+//       status: "blocked",
+//       addedAt: new Date(),
+//     } as FriendEntry);
+//     await fromList.save();
+//   }
 
-  let blockDoc = await FriendListModel.findOne({ accountId });
-  if (!blockDoc) {
-    blockDoc = await FriendListModel.create({ accountId, friends: [] });
-  }
-  let blockedPlayerUsername = await PlayerTesterModel.findById(blockId).lean().then((p) => p?.name || p?.hydraUsername || "Unknown");
+//   // let mongoPlayer = await PlayerTesterModel.findOne({ id: accountId });
+//   // if (!mongoPlayer)
+//   // {
+//   //   return;
+//   // }
 
-  const existingEntry = blockDoc.friends.find((f) => f.friendAccountId === blockId);
-  if (existingEntry) {
-    existingEntry.status = "blocked";
-  } else {
-    blockDoc.friends.push({
-      friendAccountId: blockId,
-      friendUsername: blockedPlayerUsername,
-      status: "blocked",
-      addedAt: new Date(),
-    });
-  }
+//   // mongoPlayer.blockedPlayers = mongoPlayer.blockedPlayers || [];
+//   // if (!mongoPlayer.blockedPlayers.includes(blockId)) {
+//   //   mongoPlayer.blockedPlayers.push(blockId);
+//   //   await mongoPlayer.save();
+//   // }
 
-  await blockDoc.save();
-}
+//   // let blockDoc = await FriendListModel.findOne({ accountId });
+//   // if (!blockDoc) {
+//   //   blockDoc = await FriendListModel.create({ accountId, friends: [] });
+//   // }
+//   // let blockedPlayerUsername = await PlayerTesterModel.findById(blockId).lean().then((p) => p?.name || p?.hydraUsername || "Unknown");
 
-export async function removeBlockedPlayer(accountId: string, blockId: string) {
-  let mongoPlayer = await PlayerTesterModel.findOne({ id: accountId });
-  if (!mongoPlayer || !mongoPlayer.blockedPlayers) {
-    return;
-  }
+//   // const existingEntry = blockDoc.friends.find((f) => f.friendAccountId === blockId);
+//   // if (existingEntry) {
+//   //   existingEntry.status = "blocked";
+//   // } else {
+//   //   blockDoc.friends.push({
+//   //     friendAccountId: blockId,
+//   //     friendUsername: blockedPlayerUsername,
+//   //     status: "blocked",
+//   //     addedAt: new Date(),
+//   //   });
+//   // }
 
-  mongoPlayer.blockedPlayers = mongoPlayer.blockedPlayers.filter((id) => id !== blockId);
-  await mongoPlayer.save();
+//   // await blockDoc.save();
+// }
 
-  let blockDoc = await FriendListModel.findOne({ accountId });
-  if (!blockDoc) {
-    return;
-  }
+// export async function removeBlockedPlayer(accountId: string, blockId: string) {
+//   let mongoPlayer = await PlayerTesterModel.findOne({ id: accountId });
+//   if (!mongoPlayer || !mongoPlayer.blockedPlayers) {
+//     return;
+//   }
 
-  blockDoc.friends = blockDoc.friends.filter((f) => f.friendAccountId !== blockId);
-  await blockDoc.save();
-}
+//   mongoPlayer.blockedPlayers = mongoPlayer.blockedPlayers.filter((id) => id !== blockId);
+//   await mongoPlayer.save();
+
+//   let blockDoc = await FriendListModel.findOne({ accountId });
+//   if (!blockDoc) {
+//     return;
+//   }
+
+//   blockDoc.friends = blockDoc.friends.filter((f) => f.friendAccountId !== blockId);
+//   await blockDoc.save();
+// }

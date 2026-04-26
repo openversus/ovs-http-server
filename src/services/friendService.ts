@@ -8,7 +8,7 @@ const serviceName = "FriendService";
 const logPrefix = `[${serviceName}]:`;
 
 // Ensure a FriendList document exists for the given account
-async function ensureFriendList(accountId: string) {
+export async function ensureFriendList(accountId: string) {
   let fl = await FriendListModel.findOne({ accountId });
   if (!fl) {
     fl = await FriendListModel.create({ accountId, friends: [] });
@@ -285,9 +285,9 @@ export async function blockPlayer(
 /**
  * Get a player's friend list with online status from Redis.
  */
-export async function getFriends(accountId: string) {
+export async function getFriends(accountId: string, friendType: string = "active") {
   const fl = await ensureFriendList(accountId);
-  const activeFriends = fl.friends.filter((f) => f.status === "active");
+  const activeFriends = fl.friends.filter((f) => f.status === friendType);
 
   // Get online player set from Redis
   const onlinePlayerIds = await redisGetOnlinePlayers();

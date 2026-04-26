@@ -6145,7 +6145,7 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
   ];
 
   // === HIDDEN: Online players in accounts disabled until DLL change is made ===
-
+/*
   try {
     const onlinePlayerIds = await redisGetOnlinePlayers();
     for (const playerId of onlinePlayerIds) {
@@ -6202,7 +6202,7 @@ export async function handleAccounts_wb_network_bulk(req: Request<{}, {}, {}, MV
   } catch (err) {
     logger.error(`[Handlers.Accounts]: Error appending online players to accounts bulk: ${err}`);
   }
-
+*/
   res.send(staticAccounts);
 }
 

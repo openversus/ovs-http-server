@@ -227,7 +227,7 @@ async function process1v1Queue(queueKey: string = MATCH_TYPES.ONE_V_ONE): Promis
               const blockedPlayer2 = shouldMakeMatch.blockedPairs![0][1];
               const blockedPlayer2Username = (await resolveAccountByIdentifiers({ accountId: blockedPlayer2 }))?.username || blockedPlayer2;
               logger.warn(`${logPrefix} Cannot match players for matchmakingRequestIds ${ticketA.matchmakingRequestId} & ${ticketB.matchmakingRequestId} due to player blocks between: ${blockedPlayer1} (${blockedPlayer1Username}) & ${blockedPlayer2} (${blockedPlayer2Username})`);
-              return false;
+              continue;
             }
             await redisPopMatchTicketsFromQueue(queueKey, matchedTickets);
             await createMatch(matchedTickets, getBaseMode(queueKey));
@@ -319,7 +319,7 @@ async function process2v2Queue(queueKey: string = MATCH_TYPES.TWO_V_TWO): Promis
             const blockedPlayer2Username = (await resolveAccountByIdentifiers({ accountId: blockedPlayer2 }))?.username || blockedPlayer2;
 
             logger.warn(`${logPrefix} Cannot match players for matchmakingRequestIds ${candidates.map(t => t.matchmakingRequestId).join(", ")} due to player blocks between: ${blockedPlayer1} (${blockedPlayer1Username}) & ${blockedPlayer2} (${blockedPlayer2Username})`);
-            return false;
+            continue;
           }
 
           await redisPopMatchTicketsFromQueue(queueKey, candidates);

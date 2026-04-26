@@ -1,26 +1,33 @@
-import express, { Request, Response } from "express";
-import { MVSQueries } from "../interfaces/queries_types";
-import * as AuthUtils from "../utils/auth";
-import * as KitchenSink from "../utils/garbagecan";
-import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
+// import express, { Request, Response } from "express";
+// import { MVSQueries } from "../interfaces/queries_types";
+// import { redisClient } from "../config/redis";
+// import * as AuthUtils from "../utils/auth";
+// import * as KitchenSink from "../utils/garbagecan";
+// import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 
-export async function handleSocial_me_blocked(req: Request<{}, {}, {}, {}>, res: Response) {
-  const account = AuthUtils.DecodeClientToken(req);
-  const aID = account.id;
-  const playerUsername = account.username;
-  
-  if (!aID) {
-    res.status(200).send({ total: 0, page: 1, page_size: 20, results: [] });
-    return;
-  }
 
-  let mongoPlayer = await PlayerTesterModel.findOne({ id: aID });
-  let blockedPlayers: string[] = mongoPlayer?.blockedPlayers ?? [];
-  let totalBlocked = blockedPlayers.length;
-
-  // For simplicity, we are not implementing pagination here since the blocked players list is expected to be small.
-
-  res.send({ total: totalBlocked, page: 1, page_size: 20, results: blockedPlayers });
-
-  //res.send({ total: 0, page: 1, page_size: 20, results: [] });
-}
+// export async function getUserBlockList(userId: string) {
+//   const mongoPlayer = await PlayerTesterModel.findOne({ accountId: userId });
+//   if (!mongoPlayer || !mongoPlayer.blockedPlayers) return [];
+//   // 4-field format wrapped in account object — game parser extracts public_id from this.
+//   // Check actual online status for each blocked player
+//   const blockedEntries = mongoPlayer.blockedPlayers;
+//   const results = await Promise.all(
+//     blockedEntries.map(async (f) => {
+//       const mongoBlockedPlayer = await PlayerTesterModel.findOne({ id: f });
+//       const isOnline = await redisClient.sIsMember("online_players", f);
+//       return {
+//         created_at: new Date().toISOString(),
+//         account: {
+//           public_id: f,
+//           username: mongoBlockedPlayer?.name || "Unknown",
+//           avatar: {
+//             name: "MultiVersus",
+//             image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-finn.jpg",
+//           },
+//         },
+//       };
+//     }),
+//   );
+//   return results;
+// }

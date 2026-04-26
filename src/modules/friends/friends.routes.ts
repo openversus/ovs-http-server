@@ -1,6 +1,7 @@
 import express, { Request, Response } from "express";
 import { logger } from "../../config/logger";
 import { redisClient, FRIEND_REQUEST_WS_CHANNEL, redisPushDLLNotification, DLLNotification } from "../../config/redis";
+import { PlayerTester, PlayerTesterModel } from "../../database/PlayerTester";
 import { HydraEncoder } from "mvs-dump";
 import * as AuthUtils from "../../utils/auth";
 import {
@@ -11,6 +12,8 @@ import {
   generateInvitation,
   searchProfiles,
   getProfileBulk,
+  addBlockedPlayer,
+  removeBlockedPlayer
 } from "./friends.service";
 
 const logPrefix = "[Friends.Routes]:";
@@ -23,7 +26,7 @@ friendsRouter.get("/friends/me", async (req: Request, res: Response) => {
   try {
     const account = AuthUtils.DecodeClientToken(req);
     const fContentType = req.headers["content-type"] || "none";
-    const friends = await getUserFriendsList(account.id);
+    const friends = await getUserFriendsList(account.id, "active");
     logger.info(`${logPrefix} GET /friends/me — returning ${friends.length} friends for ${account.id} (content-type: ${fContentType})`);
     res.send({
       total: friends.length,
@@ -171,5 +174,75 @@ friendsRouter.put("/profiles/bulk", async (req: Request, res: Response) => {
 
 // ─── GET /social/me/blocked ──────────────────────────────────────────────────
 friendsRouter.get("/social/me/blocked", async (req: Request, res: Response) => {
-  res.send({ status: "ok" });
+  try {
+    const account = AuthUtils.DecodeClientToken(req);
+    const fContentType = req.headers["content-type"] || "none";
+    const blocked = await getUserFriendsList(account.id, "blocked");
+    logger.info(`${logPrefix} GET /social/me/blocked — returning ${blocked.length} blocked players for ${account.id} (content-type: ${fContentType})`);
+    res.send({
+      total: blocked.length,
+      page: 1,
+      page_size: 20,
+      results: blocked,
+    });
+  } catch (e) {
+    logger.error(`${logPrefix} GET /social/me/blocked error: ${e}`);
+    res.send({ total: 0, page: 1, page_size: 1000, results: [] });
+  }
+
+    // const account = AuthUtils.DecodeClientToken(req);
+    // const aID = account.id;
+    // const playerUsername = account.username;
+    
+    // if (!aID) {
+    //   res.status(200).send({ total: 0, page: 1, page_size: 20, results: [] });
+    //   return;
+    // }
+  
+    // let mongoPlayer = await PlayerTesterModel.findOne({ id: aID });
+    // let blockedPlayers: string[] = mongoPlayer?.blockedPlayers ?? [];
+    // let totalBlocked = blockedPlayers.length;
+  
+    // For simplicity, we are not implementing pagination here since the blocked players list is expected to be small.
+  
+    // res.send({ total: totalBlocked, page: 1, page_size: 20, results: blockedPlayers });
+  
+    ////res.send({ total: 0, page: 1, page_size: 20, results: [] });
+
+  //////res.send({ status: "ok" });
+});
+
+friendsRouter.put("/accounts/me/relationships/:blockid/block", async (req: Request<{ blockid: string }, {}, {}, {}>, res: Response) => {
+  // @ts-ignore TODO : implementation. Remove comment once implemented`
+
+  if (null == req.params.blockid || undefined == req.params.blockid || req.params.blockid === "") {
+    res.status(200).send({});
+    return;
+  }
+
+  try {
+    const account = AuthUtils.DecodeClientToken(req);
+    const aID = account.id;
+    await addBlockedPlayer(aID, req.params.blockid);
+  } catch (e) {
+    logger.error(`${logPrefix} PUT /accounts/me/relationships/${req.params.blockid}/block: ${e}`);
+    res.status(200).send({});
+  }
+});
+
+friendsRouter.put("/accounts/me/relationships/:blockid/unblock", async (req: Request<{ blockid: string }, {}, {}, {}>, res: Response) => {
+  // @ts-ignore TODO : implementation. Remove comment once implemented`
+  if (null == req.params.blockid || undefined == req.params.blockid || req.params.blockid === "") {
+    res.status(200).send({});
+    return;
+  }
+
+  try {
+    const account = AuthUtils.DecodeClientToken(req);
+    const aID = account.id;
+    await removeBlockedPlayer(aID, req.params.blockid);
+  } catch (e) {
+    logger.error(`${logPrefix} PUT /accounts/me/relationships/${req.params.blockid}/unblock: ${e}`);
+    res.status(200).send({});
+  }
 });

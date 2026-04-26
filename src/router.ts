@@ -635,21 +635,6 @@ router.post("/sessions/auth/token", (req: Request<{}, {}, {}, MVSQueries.Session
   h.handleSessions_auth_token(req, res);
 });
 
-router.put("/accounts/me/relationships/:blockid/block", (req: Request<{}, {}, {}, {}>, res: Response) => {
-  // @ts-ignore TODO : implementation. Remove comment once implemented`
-  h.handleAccounts_me_relationships_block(req, res);
-});
-
-router.put("/accounts/me/relationships/:blockid/unblock", (req: Request<{}, {}, {}, {}>, res: Response) => {
-  // @ts-ignore TODO : implementation. Remove comment once implemented`
-  h.handleAccounts_me_relationships_unblock(req, res);
-});
-
-router.get("/social/me/blocked", (req: Request<{}, {}, {}, {}>, res: Response) => {
-  // @ts-ignore TODO : implementation. Remove comment once implemented`
-  h.handleSocial_me_blocked(req, res);
-});
-
 router.post("/ssc/invoke/attempt_daily_refresh", (req: Request<{}, {}, {}, {}>, res: Response) => {
   // @ts-ignore TODO : implementation. Remove comment once implemented`
   h.handleSsc_invoke_attempt_daily_refresh(req, res);

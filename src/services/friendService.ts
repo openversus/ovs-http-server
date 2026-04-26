@@ -229,6 +229,18 @@ export async function removeFriend(
     { $pull: { friends: { friendAccountId: accountId } } },
   );
 
+  const mongoPlayer = await PlayerTesterModel.findById(accountId);
+  if (mongoPlayer) {
+    if (!mongoPlayer.blockedPlayers)
+    {
+      mongoPlayer.blockedPlayers = [];
+    }
+    if (mongoPlayer.blockedPlayers.includes(friendAccountId)) {
+      mongoPlayer.blockedPlayers = mongoPlayer.blockedPlayers.filter(id => id !== friendAccountId);
+      await mongoPlayer.save();
+    }
+  }
+
   logger.info(`${logPrefix} Friend removed: ${accountId} <-> ${friendAccountId}`);
   return { success: true };
 }
@@ -246,6 +258,7 @@ export async function blockPlayer(
   }
 
   const myList = await ensureFriendList(accountId);
+  const mongoPlayer = await PlayerTesterModel.findById(accountId);
 
   // Remove any active friendship
   myList.friends = myList.friends.filter(
@@ -277,6 +290,17 @@ export async function blockPlayer(
     },
     { $set: { status: "declined", updatedAt: new Date() } },
   );
+
+  if (mongoPlayer) {
+    if (!mongoPlayer.blockedPlayers)
+    {
+      mongoPlayer.blockedPlayers = [];
+    }
+    if (!mongoPlayer.blockedPlayers.includes(targetAccountId)) {
+      mongoPlayer.blockedPlayers.push(targetAccountId);
+      await mongoPlayer.save();
+    }
+  }
 
   logger.info(`${logPrefix} Player blocked: ${accountId} blocked ${targetAccountId}`);
   return { success: true };

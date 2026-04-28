@@ -227,6 +227,13 @@ async function generateStaticAccess(req: express.Request) {
   player.token = account;
   player.account = account;
 
+  if (!player.blockedPlayers)
+  {
+    player.blockedPlayers = [];
+  }
+
+  await Redis.redisSetBlockedPlayers(account.id, player.blockedPlayers);
+
   try {
     await player.save();
   }

@@ -9,6 +9,8 @@ import {
   redisMatchMakingComplete,
   redisPopMatchTicketsFromQueue,
   redisGetPlayer,
+  redisGetBlockedPlayers,
+  redisSetBlockedPlayers,
   redisUpdateMatch,
   redisOnGameplayConfigNotified,
   redisGetMatchTickets,
@@ -20,6 +22,7 @@ import { MATCH_TYPES, getBaseMode } from "./services/matchmakingService";
 import { getRandomMapByType } from "./data/maps";
 import { randomUUID, randomInt } from "crypto";
 import { IDeployInfo, DeployInfo, getDefaultDeployInfo, useOnDemandRollback } from "./services/rollbackService";
+import { resolveAccountByIdentifiers } from "./services/identityService";
 import env from "./env/env";
 
 const serviceName = "MatchmakingWorker";
@@ -27,6 +30,22 @@ const logPrefix = `[${serviceName}]:`;
 const CHECK_INTERVAL_MS = 2000;
 const LOCK_TTL_SECONDS = 10; // Auto-expire lock if worker crashes
 const workerId = `worker_${process.pid}_${Date.now()}`;
+
+async function playersBlockedEachOther(playerIds: string[]): Promise<{result: boolean, blockedPairs?: [string, string][]}> {
+  const blockedPairs: [string, string][] = [];
+  for (const playerId of playerIds) {
+    const blocked = await redisGetBlockedPlayers(playerId);
+    for (const b of blocked) {
+      if (playerIds.includes(b)) {
+        blockedPairs.push([playerId, b]);
+      }
+    }
+  }
+  if (blockedPairs.length > 0) {
+    return { result: true, blockedPairs };
+  }
+  return { result: false };
+}
 
 /**
  * Acquire a distributed lock via Redis SET NX EX.
@@ -200,6 +219,18 @@ async function process1v1Queue(queueKey: string = MATCH_TYPES.ONE_V_ONE): Promis
         if (areTicketsInRange(ticketA, ticketB, now)) {
           const matchedTickets = [ticketA, ticketB];
           try {
+            //const allPlayers = matchedTickets.flatMap((t) => t.players.map((p) => p.id)).join(", ");
+            //const shouldMakeMatch = await playersBlockedEachOther(allPlayers.split(", "));
+            const allPlayers = matchedTickets.flatMap(t => t.players.map(p => p.id));
+            const shouldMakeMatch = await playersBlockedEachOther(allPlayers);
+            if (shouldMakeMatch.result) {
+              const blockedPlayer1 = shouldMakeMatch.blockedPairs![0][0];
+              const blockedPlayer1Username = (await resolveAccountByIdentifiers({ accountId: blockedPlayer1 }))?.username || blockedPlayer1;
+              const blockedPlayer2 = shouldMakeMatch.blockedPairs![0][1];
+              const blockedPlayer2Username = (await resolveAccountByIdentifiers({ accountId: blockedPlayer2 }))?.username || blockedPlayer2;
+              logger.warn(`${logPrefix} Cannot match players for matchmakingRequestIds ${ticketA.matchmakingRequestId} & ${ticketB.matchmakingRequestId} due to player blocks between: ${blockedPlayer1} (${blockedPlayer1Username}) & ${blockedPlayer2} (${blockedPlayer2Username})`);
+              continue;
+            }
             await redisPopMatchTicketsFromQueue(queueKey, matchedTickets);
             await createMatch(matchedTickets, getBaseMode(queueKey));
             logger.info(
@@ -280,6 +311,21 @@ async function process2v2Queue(queueKey: string = MATCH_TYPES.TWO_V_TWO): Promis
           const composition = candidates.map(t => t.players.length).join("+");
           const avgSkills = candidates.map(t => Math.round(getTicketAvgSkill(t)));
           logger.info(`${logPrefix} ELO matched ${composition}: skills [${avgSkills.join(", ")}]`);
+
+          // const allPlayers = candidates.flatMap((t) => t.players.map((p) => p.id)).join(", ");
+          // const shouldMakeMatch = await playersBlockedEachOther(allPlayers.split(", "));
+          const allPlayers = candidates.flatMap((t) => t.players.map((p) => p.id));
+          const shouldMakeMatch = await playersBlockedEachOther(allPlayers);
+          if (shouldMakeMatch.result) {
+            const blockedPlayer1 = shouldMakeMatch.blockedPairs![0][0];
+            const blockedPlayer1Username = (await resolveAccountByIdentifiers({ accountId: blockedPlayer1 }))?.username || blockedPlayer1;
+            const blockedPlayer2 = shouldMakeMatch.blockedPairs![0][1];
+            const blockedPlayer2Username = (await resolveAccountByIdentifiers({ accountId: blockedPlayer2 }))?.username || blockedPlayer2;
+
+            logger.warn(`${logPrefix} Cannot match players for matchmakingRequestIds ${candidates.map(t => t.matchmakingRequestId).join(", ")} due to player blocks between: ${blockedPlayer1} (${blockedPlayer1Username}) & ${blockedPlayer2} (${blockedPlayer2Username})`);
+            continue;
+          }
+
           await redisPopMatchTicketsFromQueue(queueKey, candidates);
           await createMatch(candidates, getBaseMode(queueKey));
           return true;

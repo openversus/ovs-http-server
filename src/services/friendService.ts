@@ -1,14 +1,43 @@
 import { logger } from "../config/logger";
 import { FriendListModel, FriendEntry } from "../database/FriendList";
 import { FriendRequestModel } from "../database/FriendRequest";
-import { PlayerTesterModel } from "../database/PlayerTester";
-import { redisGetOnlinePlayers, redisClient, RedisPlayerConnection, redisPushDLLNotification, DLLNotification } from "../config/redis";
+import { DocumentType } from "@typegoose/typegoose";
+import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
+import { redisGetOnlinePlayers, redisClient, RedisPlayerConnection, redisPushDLLNotification, redisGetBlockedPlayers, redisSetBlockedPlayers, DLLNotification } from "../config/redis";
 
 const serviceName = "FriendService";
 const logPrefix = `[${serviceName}]:`;
 
+export async function ensureNoAssholes(mongoPlayer: DocumentType<PlayerTester>, accountId: string): Promise<void> {
+  const blocked = await getFriends(accountId, "blocked");
+    if (!mongoPlayer.blockedPlayers) {
+      mongoPlayer.blockedPlayers = [];
+    }
+
+    let blockedUpdated = false;
+
+    for (const b of blocked) {
+      if (!mongoPlayer.blockedPlayers.includes(b.friendAccountId)) {
+        mongoPlayer.blockedPlayers.push(b.friendAccountId);
+        blockedUpdated = true;
+      }
+    }
+
+    if (blockedUpdated) {
+      await mongoPlayer
+        .save()
+        .catch(e =>
+          logger.error(
+            `${logPrefix} Error saving blocked players to MongoDB for account ${accountId}: ${e}`,
+          ),
+        );
+
+      await redisSetBlockedPlayers(accountId, mongoPlayer.blockedPlayers);
+    }
+}
+
 // Ensure a FriendList document exists for the given account
-async function ensureFriendList(accountId: string) {
+export async function ensureFriendList(accountId: string) {
   let fl = await FriendListModel.findOne({ accountId });
   if (!fl) {
     fl = await FriendListModel.create({ accountId, friends: [] });
@@ -229,6 +258,20 @@ export async function removeFriend(
     { $pull: { friends: { friendAccountId: accountId } } },
   );
 
+  const mongoPlayer = await PlayerTesterModel.findById(accountId);
+  if (mongoPlayer) {
+    if (!mongoPlayer.blockedPlayers)
+    {
+      mongoPlayer.blockedPlayers = [];
+    }
+    if (mongoPlayer.blockedPlayers.includes(friendAccountId)) {
+      mongoPlayer.blockedPlayers = mongoPlayer.blockedPlayers.filter(id => id !== friendAccountId);
+      await mongoPlayer.save();
+    }
+
+    await redisSetBlockedPlayers(accountId, mongoPlayer.blockedPlayers);
+  }
+
   logger.info(`${logPrefix} Friend removed: ${accountId} <-> ${friendAccountId}`);
   return { success: true };
 }
@@ -246,6 +289,7 @@ export async function blockPlayer(
   }
 
   const myList = await ensureFriendList(accountId);
+  const mongoPlayer = await PlayerTesterModel.findById(accountId);
 
   // Remove any active friendship
   myList.friends = myList.friends.filter(
@@ -278,6 +322,19 @@ export async function blockPlayer(
     { $set: { status: "declined", updatedAt: new Date() } },
   );
 
+  if (mongoPlayer) {
+    if (!mongoPlayer.blockedPlayers)
+    {
+      mongoPlayer.blockedPlayers = [];
+    }
+    if (!mongoPlayer.blockedPlayers.includes(targetAccountId)) {
+      mongoPlayer.blockedPlayers.push(targetAccountId);
+      await mongoPlayer.save();
+    }
+
+    await redisSetBlockedPlayers(accountId, mongoPlayer.blockedPlayers);
+  }
+
   logger.info(`${logPrefix} Player blocked: ${accountId} blocked ${targetAccountId}`);
   return { success: true };
 }
@@ -285,9 +342,9 @@ export async function blockPlayer(
 /**
  * Get a player's friend list with online status from Redis.
  */
-export async function getFriends(accountId: string) {
+export async function getFriends(accountId: string, friendType: string = "active") {
   const fl = await ensureFriendList(accountId);
-  const activeFriends = fl.friends.filter((f) => f.status === "active");
+  const activeFriends = fl.friends.filter((f) => f.status === friendType);
 
   // Get online player set from Redis
   const onlinePlayerIds = await redisGetOnlinePlayers();

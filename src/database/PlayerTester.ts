@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import { getModelForClass, prop, modelOptions, Severity } from "@typegoose/typegoose";
 import { randomUUID } from "crypto";
 import * as SharedTypes from "../types/shared-types";
+import { str } from "dot-object";
 
 const defaultToken = new SharedTypes.AccountToken() as SharedTypes.IAccountToken;
 
@@ -52,6 +53,9 @@ export class PlayerTester {
 
   @prop({ default: "profile_icon_default" })
   public profile_icon!: string;
+
+  @prop({ required: false, unique: false, default: [] })
+  public blockedPlayers!: string[];
 
   @prop({ default: "character_shaggy" })
   public character!: string;

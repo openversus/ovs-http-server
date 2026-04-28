@@ -1,6 +1,8 @@
 import express, { Request, Response } from "express";
 import { logger } from "../../config/logger";
-import { redisClient, FRIEND_REQUEST_WS_CHANNEL, redisPushDLLNotification, DLLNotification } from "../../config/redis";
+import { redisClient, FRIEND_REQUEST_WS_CHANNEL, redisPushDLLNotification, DLLNotification, redisSetBlockedPlayers } from "../../config/redis";
+import { blockPlayer, ensureNoAssholes, getFriends, removeFriend } from "../../services/friendService";
+import { PlayerTester, PlayerTesterModel } from "../../database/PlayerTester";
 import { HydraEncoder } from "mvs-dump";
 import * as AuthUtils from "../../utils/auth";
 import {
@@ -10,7 +12,7 @@ import {
   getOutgoingInvitations,
   generateInvitation,
   searchProfiles,
-  getProfileBulk,
+  getProfileBulk
 } from "./friends.service";
 
 const logPrefix = "[Friends.Routes]:";
@@ -23,7 +25,15 @@ friendsRouter.get("/friends/me", async (req: Request, res: Response) => {
   try {
     const account = AuthUtils.DecodeClientToken(req);
     const fContentType = req.headers["content-type"] || "none";
-    const friends = await getUserFriendsList(account.id);
+    const friends = await getUserFriendsList(account.id, "active");
+
+    const mongoPlayer = await PlayerTesterModel.findOne({ id: account.id });
+    const blocked = await getFriends(account.id, "blocked");
+
+    if (mongoPlayer) {
+      await ensureNoAssholes(mongoPlayer, account.id);
+    }
+
     logger.info(`${logPrefix} GET /friends/me — returning ${friends.length} friends for ${account.id} (content-type: ${fContentType})`);
     res.send({
       total: friends.length,
@@ -171,5 +181,117 @@ friendsRouter.put("/profiles/bulk", async (req: Request, res: Response) => {
 
 // ─── GET /social/me/blocked ──────────────────────────────────────────────────
 friendsRouter.get("/social/me/blocked", async (req: Request, res: Response) => {
-  res.send({ status: "ok" });
+  //@ts-ignore TODO : implementation. Remove comment once implemented`
+
+  try {
+    const account = AuthUtils.DecodeClientToken(req);
+    const mongoPlayer = await PlayerTesterModel.findOne({ id: account.id });
+    const fContentType = req.headers["content-type"] || "none";
+    const blocked = await getFriends(account.id, "blocked");
+
+    if (mongoPlayer) {
+      await ensureNoAssholes(mongoPlayer, account.id);
+    }
+
+    logger.info(`${logPrefix} GET /social/me/blocked — returning ${blocked.length} blocked players for ${account.id} (content-type: ${fContentType})`);
+    res.send({
+      total: blocked.length,
+      page: 1,
+      page_size: 20,
+      results: blocked,
+    });
+  } catch (e) {
+    logger.error(`${logPrefix} GET /social/me/blocked error: ${e}`);
+    res.send({ total: 0, page: 1, page_size: 1000, results: [] });
+  }
+});
+
+friendsRouter.put("/social/me/block/:blockid", async (req: Request<{ blockid: string }, {}, {}, {}>, res: Response) => {
+  //@ts-ignore TODO : implementation. Remove comment once implemented`
+
+  if (null == req.params.blockid || undefined == req.params.blockid || req.params.blockid === "") {
+    res.status(200).send({});
+    return;
+  }
+
+  try {
+    const account = AuthUtils.DecodeClientToken(req);
+    const aID = account.id;
+    const blockedPlayerUsername = (await PlayerTesterModel.findOne({ id: req.params.blockid }))?.name || "Unknown";
+    const blockResult = await blockPlayer(aID, req.params.blockid, blockedPlayerUsername);
+    if (!blockResult.success) {
+      logger.error(`${logPrefix} Failed to block player ${req.params.blockid} for account ${aID}: ${blockResult.error}`);
+    }
+  } catch (e) {
+    logger.error(`${logPrefix} PUT /social/me/block/${req.params.blockid}: ${e}`);
+  }
+
+  res.status(200).send({});
+});
+
+friendsRouter.put("/social/me/unblock/:blockid", async (req: Request<{ blockid: string }, {}, {}, {}>, res: Response) => {
+  //@ts-ignore TODO : implementation. Remove comment once implemented`
+
+  if (null == req.params.blockid || undefined == req.params.blockid || req.params.blockid === "") {
+    res.status(200).send({});
+    return;
+  }
+
+  try {
+    const account = AuthUtils.DecodeClientToken(req);
+    const aID = account.id;
+    const unblockResult = await removeFriend(aID, req.params.blockid);
+    if (!unblockResult.success) {
+      logger.error(`${logPrefix} Failed to unblock player ${req.params.blockid} for account ${aID}: ${unblockResult.error}`);
+    }
+  } catch (e) {
+    logger.error(`${logPrefix} PUT /social/me/unblock/${req.params.blockid}: ${e}`);
+  }
+
+  res.status(200).send({});
+});
+
+friendsRouter.put("/accounts/me/relationships/:blockid/block", async (req: Request<{ blockid: string }, {}, {}, {}>, res: Response) => {
+  //@ts-ignore TODO : implementation. Remove comment once implemented`
+
+  if (null == req.params.blockid || undefined == req.params.blockid || req.params.blockid === "") {
+    res.status(200).send({});
+    return;
+  }
+
+  try {
+    const account = AuthUtils.DecodeClientToken(req);
+    const aID = account.id;
+    const blockedPlayerUsername = (await PlayerTesterModel.findOne({ id: req.params.blockid }))?.name || "Unknown";
+    const blockResult = await blockPlayer(aID, req.params.blockid, blockedPlayerUsername);
+    if (!blockResult.success) {
+      logger.error(`${logPrefix} Failed to block player ${req.params.blockid} for account ${aID}: ${blockResult.error}`);
+    }
+  } catch (e) {
+    logger.error(`${logPrefix} PUT /social/me/block/${req.params.blockid}: ${e}`);
+  }
+
+  res.status(200).send({});
+});
+
+friendsRouter.put("/accounts/me/relationships/:blockid/unblock", async (req: Request<{ blockid: string }, {}, {}, {}>, res: Response) => {
+  //@ts-ignore TODO : implementation. Remove comment once implemented`
+
+  if (null == req.params.blockid || undefined == req.params.blockid || req.params.blockid === "") {
+    res.status(200).send({});
+    return;
+  }
+
+  try {
+    const account = AuthUtils.DecodeClientToken(req);
+    const aID = account.id;
+    const unblockResult = await removeFriend(aID, req.params.blockid);
+    if (!unblockResult.success) {
+      logger.error(`${logPrefix} Failed to unblock player ${req.params.blockid} for account ${aID}: ${unblockResult.error}`);
+    }
+  } catch (e) {
+    logger.error(`${logPrefix} PUT /social/me/unblock/${req.params.blockid}: ${e}`);
+  }
+
+  res.status(200).send({});
 });

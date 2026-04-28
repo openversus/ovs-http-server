@@ -193,6 +193,7 @@ export interface RedisPlayer {
   character: string;
   skin: string;
   ip: string;
+  blockedPlayers?: string[];
 }
 
 export interface RedisOnGameModeUpdatedNotification {
@@ -218,6 +219,19 @@ export async function redisGetGamePort(matchId: string) {
     const redisMatch = JSON.parse(matchStr) as RedisMatch;
     return redisMatch.rollbackPort;
   }
+}
+
+export async function redisSetBlockedPlayers(playerId: string, blockedPlayers: string[]) {
+  const result = await redisClient.set(`player:${playerId}:blocked`, JSON.stringify(blockedPlayers));
+  return result;
+}
+
+export async function redisGetBlockedPlayers(playerId: string) {
+  const result = await redisClient.get(`player:${playerId}:blocked`);
+  if (result) {
+    return JSON.parse(result) as string[];
+  }
+  return [];
 }
 
 export async function redisSaveEquippedCosmetics(playerId: string, data: Cosmetics) {

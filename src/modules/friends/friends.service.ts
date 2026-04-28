@@ -20,23 +20,22 @@ export async function getUserFriendsList(userId: string, friendType = "active") 
   // 4-field format wrapped in account object — game parser extracts public_id from this.
   // Check actual online status for each friend
   const friendEntries = friendDoc.friends.filter((f) => f.status === friendType);
-  const results = await Promise.all(
-    friendEntries.map(async (f) => {
-      const isOnline = await redisClient.sIsMember("online_players", f.friendAccountId);
-      return {
-        created_at: f.addedAt ? new Date(f.addedAt).toISOString() : new Date().toISOString(),
-        account: {
-          public_id: f.friendAccountId,
-          username: f.friendUsername || "Unknown",
-          avatar: {
-            name: "MultiVersus",
-            image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-finn.jpg",
+  return await Promise.all(
+      friendEntries.map(async (f) => {
+        const isOnline = await redisClient.sIsMember("online_players", f.friendAccountId);
+        return {
+          created_at: f.addedAt ? new Date(f.addedAt).toISOString() : new Date().toISOString(),
+          account: {
+            public_id: f.friendAccountId,
+            username: f.friendUsername || "Unknown",
+            avatar: {
+              name: "MultiVersus",
+              image_url: "https://prod-network-images.wbagora.com/network/account-wbgames-com/multiversus-finn.jpg",
+            },
           },
-        },
-      };
-    }),
-  );
-  return results;
+        };
+      }),
+    );
 }
 
 // ─── Friend Details (for /accounts/wb_network/bulk and /:id) ─────────────────

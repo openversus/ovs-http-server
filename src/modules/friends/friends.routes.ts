@@ -1,7 +1,7 @@
 import express, { Request, Response } from "express";
 import { logger } from "../../config/logger";
 import { redisClient, FRIEND_REQUEST_WS_CHANNEL, redisPushDLLNotification, DLLNotification, redisSetBlockedPlayers } from "../../config/redis";
-import { blockPlayer, getFriends, removeFriend } from "../../services/friendService";
+import { blockPlayer, ensureNoAssholes, getFriends, removeFriend } from "../../services/friendService";
 import { PlayerTester, PlayerTesterModel } from "../../database/PlayerTester";
 import { HydraEncoder } from "mvs-dump";
 import * as AuthUtils from "../../utils/auth";
@@ -31,19 +31,7 @@ friendsRouter.get("/friends/me", async (req: Request, res: Response) => {
     const blocked = await getFriends(account.id, "blocked");
 
     if (mongoPlayer) {
-      for (const b of blocked)
-      {
-        if (!mongoPlayer.blockedPlayers)
-        {
-          mongoPlayer.blockedPlayers = [];
-        }
-        if (!mongoPlayer.blockedPlayers.includes(b.friendAccountId))
-        {
-          mongoPlayer.blockedPlayers.push(b.friendAccountId);
-        }
-        await mongoPlayer.save().catch(e => logger.error(`${logPrefix} Error saving blocked player ${b.friendAccountId} to MongoDB for account ${account.id}: ${e}`));
-      }
-      await redisSetBlockedPlayers(account.id, mongoPlayer.blockedPlayers);
+      await ensureNoAssholes(mongoPlayer, account.id);
     }
 
     logger.info(`${logPrefix} GET /friends/me — returning ${friends.length} friends for ${account.id} (content-type: ${fContentType})`);
@@ -202,19 +190,7 @@ friendsRouter.get("/social/me/blocked", async (req: Request, res: Response) => {
     const blocked = await getFriends(account.id, "blocked");
 
     if (mongoPlayer) {
-      for (const b of blocked)
-      {
-        if (!mongoPlayer.blockedPlayers)
-        {
-          mongoPlayer.blockedPlayers = [];
-        }
-        if (!mongoPlayer.blockedPlayers.includes(b.friendAccountId))
-        {
-          mongoPlayer.blockedPlayers.push(b.friendAccountId);
-        }
-        await mongoPlayer.save().catch(e => logger.error(`${logPrefix} Error saving blocked player ${b.friendAccountId} to MongoDB for account ${account.id}: ${e}`));
-      }
-      await redisSetBlockedPlayers(account.id, mongoPlayer.blockedPlayers);
+      await ensureNoAssholes(mongoPlayer, account.id);
     }
 
     logger.info(`${logPrefix} GET /social/me/blocked — returning ${blocked.length} blocked players for ${account.id} (content-type: ${fContentType})`);
@@ -241,7 +217,7 @@ friendsRouter.put("/social/me/block/:blockid", async (req: Request<{ blockid: st
   try {
     const account = AuthUtils.DecodeClientToken(req);
     const aID = account.id;
-    const blockedPlayerUsername = PlayerTesterModel.findOne({ id: req.params.blockid })?.name || "Unknown";
+    const blockedPlayerUsername = (await PlayerTesterModel.findOne({ id: req.params.blockid }))?.name || "Unknown";
     const blockResult = await blockPlayer(aID, req.params.blockid, blockedPlayerUsername);
     if (!blockResult.success) {
       logger.error(`${logPrefix} Failed to block player ${req.params.blockid} for account ${aID}: ${blockResult.error}`);
@@ -286,7 +262,7 @@ friendsRouter.put("/accounts/me/relationships/:blockid/block", async (req: Reque
   try {
     const account = AuthUtils.DecodeClientToken(req);
     const aID = account.id;
-    const blockedPlayerUsername = PlayerTesterModel.findOne({ id: req.params.blockid })?.name || "Unknown";
+    const blockedPlayerUsername = (await PlayerTesterModel.findOne({ id: req.params.blockid }))?.name || "Unknown";
     const blockResult = await blockPlayer(aID, req.params.blockid, blockedPlayerUsername);
     if (!blockResult.success) {
       logger.error(`${logPrefix} Failed to block player ${req.params.blockid} for account ${aID}: ${blockResult.error}`);

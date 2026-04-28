@@ -2,6 +2,7 @@ import express, { Request, Response } from "express";
 import { MVSQueries } from "../interfaces/queries_types";
 import { redisClient, redisGetOnlinePlayers, RedisPlayerConnection } from "../config/redis";
 import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
+import { ensureNoAssholes } from "../services/friendService";
 import { logger, logwrapper } from "../config/logger";
 import * as AuthUtils from "../utils/auth";
 import * as KitchenSink from "../utils/garbagecan";
@@ -6241,6 +6242,7 @@ export async function handleAccounts_me_relationships_block(req: Request<{ block
     blockedPlayers.push(blockedPlayer);
     mongoPlayer.blockedPlayers = blockedPlayers;
     await mongoPlayer.save();
+    await ensureNoAssholes(mongoPlayer, mongoPlayer.id);
     logger.info(`${logPrefix} Player ${playerUsername} (${aID}) blocked player ${mongoBlockedPlayer.name} (${blockedPlayer}).`);
   } else {
     logger.info(`${logPrefix} Player ${playerUsername} (${aID}) attempted to block player ${mongoBlockedPlayer.name} (${blockedPlayer}), but they were already blocked.`);

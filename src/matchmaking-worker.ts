@@ -219,8 +219,10 @@ async function process1v1Queue(queueKey: string = MATCH_TYPES.ONE_V_ONE): Promis
         if (areTicketsInRange(ticketA, ticketB, now)) {
           const matchedTickets = [ticketA, ticketB];
           try {
-            const allPlayers = matchedTickets.flatMap((t) => t.players.map((p) => p.id)).join(", ");
-            const shouldMakeMatch = await playersBlockedEachOther(allPlayers.split(", "));
+            //const allPlayers = matchedTickets.flatMap((t) => t.players.map((p) => p.id)).join(", ");
+            //const shouldMakeMatch = await playersBlockedEachOther(allPlayers.split(", "));
+            const allPlayers = matchedTickets.flatMap(t => t.players.map(p => p.id));
+            const shouldMakeMatch = await playersBlockedEachOther(allPlayers);
             if (shouldMakeMatch.result) {
               const blockedPlayer1 = shouldMakeMatch.blockedPairs![0][0];
               const blockedPlayer1Username = (await resolveAccountByIdentifiers({ accountId: blockedPlayer1 }))?.username || blockedPlayer1;
@@ -310,8 +312,10 @@ async function process2v2Queue(queueKey: string = MATCH_TYPES.TWO_V_TWO): Promis
           const avgSkills = candidates.map(t => Math.round(getTicketAvgSkill(t)));
           logger.info(`${logPrefix} ELO matched ${composition}: skills [${avgSkills.join(", ")}]`);
 
-          const allPlayers = candidates.flatMap((t) => t.players.map((p) => p.id)).join(", ");
-          const shouldMakeMatch = await playersBlockedEachOther(allPlayers.split(", "));
+          // const allPlayers = candidates.flatMap((t) => t.players.map((p) => p.id)).join(", ");
+          // const shouldMakeMatch = await playersBlockedEachOther(allPlayers.split(", "));
+          const allPlayers = candidates.flatMap((t) => t.players.map((p) => p.id));
+          const shouldMakeMatch = await playersBlockedEachOther(allPlayers);
           if (shouldMakeMatch.result) {
             const blockedPlayer1 = shouldMakeMatch.blockedPairs![0][0];
             const blockedPlayer1Username = (await resolveAccountByIdentifiers({ accountId: blockedPlayer1 }))?.username || blockedPlayer1;

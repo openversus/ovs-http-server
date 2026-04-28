@@ -1,11 +1,40 @@
 import { logger } from "../config/logger";
 import { FriendListModel, FriendEntry } from "../database/FriendList";
 import { FriendRequestModel } from "../database/FriendRequest";
-import { PlayerTesterModel } from "../database/PlayerTester";
+import { DocumentType } from "@typegoose/typegoose";
+import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { redisGetOnlinePlayers, redisClient, RedisPlayerConnection, redisPushDLLNotification, redisGetBlockedPlayers, redisSetBlockedPlayers, DLLNotification } from "../config/redis";
 
 const serviceName = "FriendService";
 const logPrefix = `[${serviceName}]:`;
+
+export async function ensureNoAssholes(mongoPlayer: DocumentType<PlayerTester>, accountId: string): Promise<void> {
+  const blocked = await getFriends(accountId, "blocked");
+    if (!mongoPlayer.blockedPlayers) {
+      mongoPlayer.blockedPlayers = [];
+    }
+
+    let blockedUpdated = false;
+
+    for (const b of blocked) {
+      if (!mongoPlayer.blockedPlayers.includes(b.friendAccountId)) {
+        mongoPlayer.blockedPlayers.push(b.friendAccountId);
+        blockedUpdated = true;
+      }
+    }
+
+    if (blockedUpdated) {
+      await mongoPlayer
+        .save()
+        .catch(e =>
+          logger.error(
+            `${logPrefix} Error saving blocked players to MongoDB for account ${accountId}: ${e}`,
+          ),
+        );
+
+      await redisSetBlockedPlayers(accountId, mongoPlayer.blockedPlayers);
+    }
+}
 
 // Ensure a FriendList document exists for the given account
 export async function ensureFriendList(accountId: string) {

@@ -222,8 +222,7 @@ export async function redisGetGamePort(matchId: string) {
 }
 
 export async function redisSetBlockedPlayers(playerId: string, blockedPlayers: string[]) {
-  const result = await redisClient.set(`player:${playerId}:blocked`, JSON.stringify(blockedPlayers));
-  return result;
+  return await redisClient.set(`player:${playerId}:blocked`, JSON.stringify(blockedPlayers));
 }
 
 export async function redisGetBlockedPlayers(playerId: string) {
@@ -235,8 +234,7 @@ export async function redisGetBlockedPlayers(playerId: string) {
 }
 
 export async function redisSaveEquippedCosmetics(playerId: string, data: Cosmetics) {
-  const result = await redisClient.set(`player:${playerId}:cosmetics`, JSON.stringify(data));
-  return result;
+  return await redisClient.set(`player:${playerId}:cosmetics`, JSON.stringify(data));
 }
 
 export async function redisGetAllPlayersEquippedCosmetics(playerIds: string[]) {
@@ -245,9 +243,7 @@ export async function redisGetAllPlayersEquippedCosmetics(playerIds: string[]) {
     multi.get(`player:${playerId}:cosmetics`);
   }
   const cosmeticsStrArray = await multi.exec();
-  const Cosmetics = cosmeticsStrArray.map((str) => JSON.parse(str as string) as Cosmetics);
-
-  return Cosmetics;
+  return cosmeticsStrArray.map((str) => JSON.parse(str as string) as Cosmetics);
 }
 
 export async function redisGetPlayers(playerIds: string[]) {
@@ -255,9 +251,7 @@ export async function redisGetPlayers(playerIds: string[]) {
   for (const playerId of playerIds) {
     multi.hGetAll(`player:${playerId}`);
   }
-  const players = (await multi.exec()) as unknown as RedisPlayer[];
-
-  return players;
+  return (await multi.exec()) as unknown as RedisPlayer[];
 }
 
 export async function redisGetEquippedCosmetics(playerId: string) {
@@ -270,8 +264,7 @@ export async function redisGetEquippedCosmetics(playerId: string) {
 
 export async function redisGetMatchTickets(queueKey: string) {
   const ticketsStr = await redisClient.lRange(queueKey, 0, -1);
-  const tickets = ticketsStr.map((t) => JSON.parse(t) as RedisMatchTicket);
-  return tickets;
+  return ticketsStr.map((t) => JSON.parse(t) as RedisMatchTicket);
 }
 
 export async function redisPopMatchTicketsFromQueue(queueType: string, tickets: RedisMatchTicket[]) {
@@ -375,8 +368,7 @@ export async function redisSetPlayerConnectionByIp(ip: string, connection: Redis
 }
 
 export async function redisGetPlayerConnectionByPlayerIDAsync(playerId: string) {
-  const connection = (await redisClient.hGetAll(`connections:${playerId}`)) as unknown as RedisPlayerConnection;
-  return connection;
+  return (await redisClient.hGetAll(`connections:${playerId}`)) as unknown as RedisPlayerConnection;
 }
 
 export function redisGetPlayerConnectionByPlayerID(playerId: string) {
@@ -384,8 +376,7 @@ export function redisGetPlayerConnectionByPlayerID(playerId: string) {
 }
 
 export async function redisGetPlayerConnectionByIPAsync(ip: string) {
-  const connection = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
-  return connection;
+  return (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
 }
 
 export function redisGetPlayerConnectionByIP(ip: string) {
@@ -442,15 +433,13 @@ export async function redisPublisdEndOfMatch(playerIds: string[], matchId: strin
 }
 
 export async function redisGetPlayer(playerId: string) {
-  const player = (await redisClient.hGetAll(`player:${playerId}`)) as unknown as RedisPlayer;
-  return player;
+  return (await redisClient.hGetAll(`player:${playerId}`)) as unknown as RedisPlayer;
 }
 
 export async function redisGetMatch(containerMatchId: string) {
   const matchStr = await redisClient.get(MATCH_KEY(containerMatchId));
   if (matchStr) {
-    const redisMatch = JSON.parse(matchStr) as RedisMatch;
-    return redisMatch;
+    return JSON.parse(matchStr) as RedisMatch;
   }
   return null;
 }
@@ -494,8 +483,7 @@ export async function redisPublishAllPerksLocked(containerMatchId: string, playe
 export async function redisGetPlayerPerk(containerMatchId: string, playerId: string) {
   const playerPerkStr = await redisClient.GET(MATCH_PERKS_PLAYER_KEY(containerMatchId, playerId));
   if (playerPerkStr) {
-    const playerPerk = JSON.parse(playerPerkStr) as string[];
-    return playerPerk;
+    return JSON.parse(playerPerkStr) as string[];
   }
   return null;
 }
@@ -513,10 +501,9 @@ export async function redisGetAllLockedPerks(containerMatchId: string) {
     const results = await multi.exec();
     if (results) {
       let playerIndex = 0;
-      const perks = results.map((reply) => {
+      return results.map((reply) => {
         return { playerId: playersIds[playerIndex++], perks: JSON.parse(reply as string) as string[] };
       });
-      return perks;
     }
   }
 

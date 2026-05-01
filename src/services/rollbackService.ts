@@ -278,8 +278,8 @@ export class DeployInfo implements IDeployInfo {
     }
     try {
       let nextPort = (await DeployInfo.getCurrentRollbackPort()) + 1;
-      if (nextPort > env.ROLLBACK_UDP_PORT_HIGH) {
-        nextPort = env.ROLLBACK_UDP_PORT_LOW;
+      if (nextPort > onDemandRollbackPortHigh) {
+        nextPort = onDemandRollbackPortLow;
       }
       await redisSetCurrentRollbackPort(nextPort);
       logwrapper.verbose(`${logPrefix} Incremented current rollback port in Redis to: ${nextPort}`);
@@ -294,8 +294,8 @@ export class DeployInfo implements IDeployInfo {
     let returnObject: IDeployInfo = deployObject || new DeployInfo() as IDeployInfo;
     returnObject.port = port || (await DeployInfo.getCurrentRollbackPort()) + 1;
 
-    if (returnObject.port > env.ROLLBACK_UDP_PORT_HIGH) {
-      returnObject.port = env.ROLLBACK_UDP_PORT_LOW;
+    if (returnObject.port > onDemandRollbackPortHigh) {
+      returnObject.port = onDemandRollbackPortLow;
     }
 
     try {

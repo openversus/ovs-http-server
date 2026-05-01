@@ -2318,8 +2318,12 @@ export class WebSocketService {
         const gamesPlayed = existingSet ? existingSet.gamesPlayed + 1 : 1;
         let scores = existingSet?.scores || [0, 0];
 
-        // For game 1, the set didn't exist when submit_end_of_match_stats fired,
-        // so check for a pending score stored directly on the match
+        // FALLBACK PATH: pending_winner mechanism. With set-state pre-creation in
+        // matchmaking-worker (added 2026-05-01), `existingSet` should always exist
+        // for ranked matches when handleMatchEnd runs. If it doesn't, something
+        // upstream failed (Redis hiccup during pre-creation, or set TTL expired
+        // before this match ended). Use pending_winner from SSC stats handler to
+        // recover the score and create the set state from scratch.
         if (!existingSet) {
           const pendingWinner = await redisClient.get(`ranked_set_pending_winner:${notification.matchId}`);
           if (pendingWinner !== null) {
@@ -2329,6 +2333,7 @@ export class WebSocketService {
               scores[winIdx]++;
             }
             await redisClient.del(`ranked_set_pending_winner:${notification.matchId}`);
+            logger.warn(`[${serviceName}]: FALLBACK: Match ${notification.matchId} reached handleMatchEnd with no existingSet — recovering via pending_winner=${pendingWinner}. Pre-creation likely failed.`);
           }
         }
 

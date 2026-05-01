@@ -57898,11 +57898,21 @@ export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}
             await redisClient.set(`ranked_set:${setId}`, JSON.stringify(setState), { EX: 600 });
             logger.info(`${logPrefix} Ranked set ${setId} scores updated: ${setState.scores[0]}-${setState.scores[1]}`);
           }
+        } else {
+          // setId is set but ranked_set:{setId} doesn't exist. Should not happen
+          // in normal flow with set-state pre-creation in the worker. This means
+          // either Redis TTL expired (set state lasted >600s without resolution)
+          // or pre-creation failed silently. Log so we can trace.
+          logger.warn(`${logPrefix} FALLBACK: player_ranked_set:${pid}=${setId} but ranked_set:${setId} is missing. Score for match ${matchId} (winner=team ${winningTeamIndex}) cannot be incremented. Pre-creation failed or set state expired before resolution.`);
         }
       } else {
-        // No set exists yet (game 1) — store pending winner for handleOnMatchEnd to pick up
+        // No set exists yet — fallback path. With matchmaking-worker pre-creation
+        // (added 2026-05-01), this should be unreachable for ranked matches.
+        // If we hit this, either pre-creation failed or this is a non-worker path
+        // (e.g., custom games which don't track ranked sets — for those, this
+        // pending_winner is harmless dead state that expires at TTL).
         await redisClient.set(`ranked_set_pending_winner:${matchId}`, winningTeamIndex.toString(), { EX: 120 });
-        logger.info(`${logPrefix} Stored pending winner (team ${winningTeamIndex}) for match ${matchId} (set not created yet)`);
+        logger.warn(`${logPrefix} FALLBACK: Stored pending_winner (team ${winningTeamIndex}) for match ${matchId} — player ${pid} has no player_ranked_set. Pre-creation failed OR this is a non-ranked match.`);
       }
     }
   }

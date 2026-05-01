@@ -489,6 +489,11 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
     // is populated from the moment the match is created, so the "disconnected during ranked
     // set" path in websocket.ts works for the entire set duration including game 1 itself
     // and the post-game-1 screen.
+    //
+    // If this block fails (Redis hiccup, etc.), the system falls back to the legacy
+    // pending_winner path. handleMatchEnd / submit_end_of_match_stats both log WARN
+    // lines tagged "FALLBACK:" so we can grep for any case where pre-creation failed
+    // and we recovered via the older mechanism.
     try {
       const setState = {
         players: notification.players,
@@ -501,8 +506,9 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       for (const pid of playerIds) {
         await redisClient.set(`player_ranked_set:${pid}`, matchId, { EX: 600 });
       }
+      logger.info(`${logPrefix} Pre-created ranked set state for match ${matchId} (${playerIds.length} players, mode=${notification.mode})`);
     } catch (e) {
-      logger.error(`${logPrefix} Error pre-creating ranked set state for match ${matchId}: ${e}`);
+      logger.error(`${logPrefix} FAILED to pre-create ranked set state for match ${matchId}: ${e} — system will fall back to lazy pending_winner path. Watch for FALLBACK: warns downstream.`);
     }
 
     // Notify about the matchmaking complete — one per ticket (each has its own matchmakingRequestId)

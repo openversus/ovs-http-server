@@ -160,13 +160,20 @@ async function handlePlayerDisconnectElo(
         : allPlayerIds;
 
       // Clean up ranked set state so the next match starts fresh.
+      // Always delete the set keys (DEL of a non-existent key is a no-op). The
+      // earlier `setIdForCrash !== matchId` guard left a zombie set when handleMatchEnd
+      // had already created `ranked_set:{matchId}` as a fresh game-1 set before the
+      // crash branch fired — that set would survive and get hit by phantom-set logic
+      // on the next match. Per Sourcery review on PR #28.
       for (const pid of allSetPlayerIdsForCrash) {
         await redisClient.del(`player_ranked_set:${pid}`);
       }
-      if (setIdForCrash !== matchId) {
-        await redisClient.del(`ranked_set:${setIdForCrash}`);
-        await redisClient.del(`ranked_set_checkins:${setIdForCrash}`);
-      }
+      await redisClient.del(`ranked_set:${setIdForCrash}`);
+      await redisClient.del(`ranked_set_checkins:${setIdForCrash}`);
+      // Also clean the match_to_set reverse index in case createNextSetMatch wrote it
+      // for this matchId (continuation game). Prevents the fallback in handleMatchEnd
+      // from resurrecting a now-cleaned setId on a delayed End-of-Match.
+      await redisClient.del(`match_to_set:${matchId}`);
       await redisClient.del(`match_started:${matchId}`);
 
       // Reset every player's status so /ovs/accept-invite isn't blocked

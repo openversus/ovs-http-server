@@ -479,6 +479,32 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
     const playerIds = players.map((p) => p.playerId);
     // Notify about the match creation
     await redisOnGameplayConfigNotified(notification);
+
+    // Pre-create ranked set state at match start (for ranked matches from this worker —
+    // custom matches use a separate path). Game 1's matchId IS the setId for the whole
+    // set lifetime, so create the set state now rather than lazily at handleMatchEnd.
+    //
+    // This eliminates the timing race where a player's WS-disconnect handler can't flag
+    // ranked_disconnect because player_ranked_set isn't populated yet. Now player_ranked_set
+    // is populated from the moment the match is created, so the "disconnected during ranked
+    // set" path in websocket.ts works for the entire set duration including game 1 itself
+    // and the post-game-1 screen.
+    try {
+      const setState = {
+        players: notification.players,
+        mode: notification.mode,
+        gamesPlayed: 0,
+        scores: [0, 0],
+        checkins: [] as string[],
+      };
+      await redisClient.set(`ranked_set:${matchId}`, JSON.stringify(setState), { EX: 600 });
+      for (const pid of playerIds) {
+        await redisClient.set(`player_ranked_set:${pid}`, matchId, { EX: 600 });
+      }
+    } catch (e) {
+      logger.error(`${logPrefix} Error pre-creating ranked set state for match ${matchId}: ${e}`);
+    }
+
     // Notify about the matchmaking complete — one per ticket (each has its own matchmakingRequestId)
     for (const ticket of tickets) {
       await redisMatchMakingComplete(

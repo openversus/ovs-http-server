@@ -2,7 +2,7 @@ import { Types } from "mongoose";
 import { PlayerTesterModel } from "../../database/PlayerTester";
 import { FriendListModel } from "../../database/FriendList";
 import { FriendRequestModel } from "../../database/FriendRequest";
-import { redisClient } from "../../config/redis";
+import { redisClient, redisSetBlockedPlayers } from "../../config/redis";
 import { logger } from "../../config/logger";
 
 const logPrefix = "[Friends.Service]:";
@@ -14,12 +14,12 @@ const logPrefix = "[Friends.Service]:";
  * The game calls GET /friends/me, gets these IDs, then calls
  * PUT /accounts/wb_network/bulk to get detailed friend info.
  */
-export async function getUserFriendsList(userId: string) {
+export async function getUserFriendsList(userId: string, friendType = "active") {
   const friendDoc = await FriendListModel.findOne({ accountId: userId });
   if (!friendDoc || !friendDoc.friends) return [];
   // 4-field format wrapped in account object — game parser extracts public_id from this.
   // Check actual online status for each friend
-  const friendEntries = friendDoc.friends.filter((f) => f.status === "active");
+  const friendEntries = friendDoc.friends.filter((f) => f.status === friendType);
   const results = await Promise.all(
     friendEntries.map(async (f) => {
       const isOnline = await redisClient.sIsMember("online_players", f.friendAccountId);
@@ -312,3 +312,69 @@ export async function getProfileBulk(userIds: string[]) {
     };
   });
 }
+
+// export async function addBlockedPlayer(accountId: string, blockId: string) {
+//   const fromList = await ensureFriendList(accountId);
+
+//   // Add to block list (if not already there)
+//   if (!fromList.friends.find((f) => f.friendAccountId === blockId)) {
+//     let blockedPlayerUsername = await PlayerTesterModel.findById(blockId).lean().then((p) => p?.name || p?.hydraUsername || "Unknown");
+//     fromList.friends.push({
+//       friendAccountId: blockId,
+//       friendUsername: blockedPlayerUsername,
+//       status: "blocked",
+//       addedAt: new Date(),
+//     } as FriendEntry);
+//     await fromList.save();
+//   }
+
+//   // let mongoPlayer = await PlayerTesterModel.findOne({ id: accountId });
+//   // if (!mongoPlayer)
+//   // {
+//   //   return;
+//   // }
+
+//   // mongoPlayer.blockedPlayers = mongoPlayer.blockedPlayers || [];
+//   // if (!mongoPlayer.blockedPlayers.includes(blockId)) {
+//   //   mongoPlayer.blockedPlayers.push(blockId);
+//   //   await mongoPlayer.save();
+//   // }
+
+//   // let blockDoc = await FriendListModel.findOne({ accountId });
+//   // if (!blockDoc) {
+//   //   blockDoc = await FriendListModel.create({ accountId, friends: [] });
+//   // }
+//   // let blockedPlayerUsername = await PlayerTesterModel.findById(blockId).lean().then((p) => p?.name || p?.hydraUsername || "Unknown");
+
+//   // const existingEntry = blockDoc.friends.find((f) => f.friendAccountId === blockId);
+//   // if (existingEntry) {
+//   //   existingEntry.status = "blocked";
+//   // } else {
+//   //   blockDoc.friends.push({
+//   //     friendAccountId: blockId,
+//   //     friendUsername: blockedPlayerUsername,
+//   //     status: "blocked",
+//   //     addedAt: new Date(),
+//   //   });
+//   // }
+
+//   // await blockDoc.save();
+// }
+
+// export async function removeBlockedPlayer(accountId: string, blockId: string) {
+//   let mongoPlayer = await PlayerTesterModel.findOne({ id: accountId });
+//   if (!mongoPlayer || !mongoPlayer.blockedPlayers) {
+//     return;
+//   }
+
+//   mongoPlayer.blockedPlayers = mongoPlayer.blockedPlayers.filter((id) => id !== blockId);
+//   await mongoPlayer.save();
+
+//   let blockDoc = await FriendListModel.findOne({ accountId });
+//   if (!blockDoc) {
+//     return;
+//   }
+
+//   blockDoc.friends = blockDoc.friends.filter((f) => f.friendAccountId !== blockId);
+//   await blockDoc.save();
+// }

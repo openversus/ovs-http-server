@@ -533,6 +533,36 @@ app.post("/ovs_end_match", async (req, res, next) => {
   }
 });
 
+// ── Rollback Server Match Status Events ──
+// Receives status updates from the UDP rollback server (heartbeat, player connect/disconnect,
+// match start/end, errors, etc.).
+app.post(["/ovs_match_status", "/api/ovs_match_status"], async (req, res) => {
+  // Validate MatchUpdateKey header (auth from rollback server)
+  const matchUpdateKey = req.header("MatchUpdateKey") || "";
+  if (matchUpdateKey && matchUpdateKey.toLowerCase() !== MATCH_UPDATE_KEY.toLowerCase()) {
+    logger.warn(`${logPrefix} POST /api/ovs_match_status invalid MatchUpdateKey — got "${matchUpdateKey}" expected "${MATCH_UPDATE_KEY}"`);
+    res.status(403).json({ error: "Invalid signature" });
+    return;
+  }
+
+  if (!req.body) {
+    logger.warn(`${logPrefix} POST /api/ovs_match_status missing body`);
+    res.status(400).json({ error: "Missing body" });
+    return;
+  }
+
+  const ok = await handleMatchStatusUpdate(req, res).catch((e: unknown) => {
+    logger.error(`${logPrefix} Error handling match status update: ${e}`);
+    return false;
+  });
+
+  if (!ok) {
+    res.status(500).json({ error: "Failed to process match status update" });
+    return;
+  }
+  res.json({ status: "ok" });
+});
+
 // Being kept for backwards compatibility with older OVS versions, can be removed eventually
 app.post("/mvsi_register", async (req, res, next) => {
   logger.info(`${logPrefix} GET REGISTRY call from rollback server`);
@@ -2154,36 +2184,6 @@ app.put("/leaderboards/bulk/score-and-rank/:playerId", async (req, res) => {
     logger.error(`${logPrefix} Error in leaderboards/bulk/score-and-rank: ${e}`);
     res.send({ body: {}, metadata: null, return_code: 200 });
   }
-});
-
-// ── Rollback Server Match Status Events ──
-// Receives status updates from the UDP rollback server (heartbeat, player connect/disconnect,
-// match start/end, errors, etc.).
-app.post(["/ovs_match_status", "/api/ovs_match_status"], async (req, res) => {
-  // Validate MatchUpdateKey header (auth from rollback server)
-  const matchUpdateKey = req.header("MatchUpdateKey") || "";
-  if (matchUpdateKey && matchUpdateKey.toLowerCase() !== MATCH_UPDATE_KEY.toLowerCase()) {
-    logger.warn(`${logPrefix} POST /api/ovs_match_status invalid MatchUpdateKey — got "${matchUpdateKey}" expected "${MATCH_UPDATE_KEY}"`);
-    res.status(403).json({ error: "Invalid signature" });
-    return;
-  }
-
-  if (!req.body) {
-    logger.warn(`${logPrefix} POST /api/ovs_match_status missing body`);
-    res.status(400).json({ error: "Missing body" });
-    return;
-  }
-
-  const ok = await handleMatchStatusUpdate(req, res).catch((e: unknown) => {
-    logger.error(`${logPrefix} Error handling match status update: ${e}`);
-    return false;
-  });
-
-  if (!ok) {
-    res.status(500).json({ error: "Failed to process match status update" });
-    return;
-  }
-  res.json({ status: "ok" });
 });
 
 app.use((req, res, next) => {

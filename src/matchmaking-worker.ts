@@ -427,6 +427,7 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
     const totalPlayers = tickets.reduce((sum, ticket) => sum + ticket.players.length, 0);
     const matchId = ObjectID().toHexString();
     const resultId = ObjectID().toHexString();
+    const rollbackPort = (await DeployInfo.getNextRollbackPort(true)) || DeployInfo.getRandomRollbackPort();
 
     // Create match object
     const match: RedisMatch = {
@@ -438,7 +439,8 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       matchType,
       totalPlayers,
       //rollbackPort: randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH),
-      rollbackPort: DeployInfo.getRandomRollbackPort(),
+      //rollbackPort: DeployInfo.getRandomRollbackPort(),
+      rollbackPort: rollbackPort,
     };
 
     // Get all player IDs from all tickets

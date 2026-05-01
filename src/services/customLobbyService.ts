@@ -594,7 +594,8 @@ export async function startMatch(
     let tempCustomLobbyRollbackPort: number = 0;
     if (useOnDemandRollback)
     {
-      tempCustomLobbyRollbackPort = randomInt(customLobbyUDPPortLow, customLobbyUDPPortHigh);
+      //tempCustomLobbyRollbackPort = randomInt(customLobbyUDPPortLow, customLobbyUDPPortHigh);
+      tempCustomLobbyRollbackPort = (await DeployInfo.getNextRollbackPort()) || DeployInfo.getRandomRollbackPort();
     }
     else
     {

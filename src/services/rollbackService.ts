@@ -3,6 +3,7 @@ import { readFileSync, appendFileSync } from "fs";
 import { join } from "path";
 import { randomInt, createHmac } from "crypto";
 import * as http from "http";
+import { redisGetCurrentRollbackPort, redisSetCurrentRollbackPort } from "../config/redis";
 import env from "../env/env";
 
 const serviceName = "Services.RollbackService";
@@ -15,6 +16,8 @@ const webhookDestroyPath: string = env.WEBHOOK_DESTROY_PATH ?? "/hooks/destroy-r
 const deployKey: string = env.WEBHOOK_HMAC_SECRET ?? "CHANGEME";
 const deployInfoFile: string = env.DEPLOY_ROLLBACK_DEFAULTS_FILE ?? "../data/deploy-rollback-defaults.json";
 export const useOnDemandRollback: boolean = env.ON_DEMAND_ROLLBACK === 1;
+const onDemandRollbackPortLow: number = env.ON_DEMAND_ROLLBACK_PORT_LOW || 60000;
+const onDemandRollbackPortHigh: number = env.ON_DEMAND_ROLLBACK_PORT_HIGH || 64000;
 
 export interface IDeployInfo
 {
@@ -244,7 +247,7 @@ export class DeployInfo implements IDeployInfo {
 
   static getRandomRollbackPort(): number {
     if (useOnDemandRollback) {
-      return randomInt(env.ON_DEMAND_ROLLBACK_PORT_LOW, env.ON_DEMAND_ROLLBACK_PORT_HIGH);
+      return onDemandRollbackPortLow;
     }
     return randomInt(env.ROLLBACK_UDP_PORT_LOW, env.ROLLBACK_UDP_PORT_HIGH);
   }
@@ -252,6 +255,55 @@ export class DeployInfo implements IDeployInfo {
   static GetEmpty(): IDeployInfo {
     var returnObject = new DeployInfo() as IDeployInfo;
     returnObject.port = DeployInfo.getRandomRollbackPort();
+    return returnObject;
+  }
+
+  static async getCurrentRollbackPort(): Promise<number> {
+    let currentPort: number = onDemandRollbackPortLow;
+
+    try {
+      currentPort = await redisGetCurrentRollbackPort() || onDemandRollbackPortLow;
+      logwrapper.verbose(`${logPrefix} Current rollback port from Redis: ${currentPort}`);
+    } catch (error) {
+      logwrapper.error(`${logPrefix} Error getting current rollback port from Redis. Error: ${JSON.stringify(error)}`);
+      currentPort = DeployInfo.getRandomRollbackPort();
+      logwrapper.verbose(`${logPrefix} Returning random rollback port: ${currentPort}`);
+    }
+    return currentPort;
+  }
+
+  static async getNextRollbackPort(increment?: boolean): Promise<number> {
+    if (!increment) {
+      return (await redisGetCurrentRollbackPort() || onDemandRollbackPortLow) + 1;
+    }
+    try {
+      let nextPort = (await DeployInfo.getCurrentRollbackPort()) + 1;
+      if (nextPort > onDemandRollbackPortHigh) {
+        nextPort = onDemandRollbackPortLow;
+      }
+      await redisSetCurrentRollbackPort(nextPort);
+      logwrapper.verbose(`${logPrefix} Incremented current rollback port in Redis to: ${nextPort}`);
+      return nextPort;
+    } catch (error) {
+      logwrapper.error(`${logPrefix} Error incrementing current rollback port in Redis. Error: ${JSON.stringify(error)}`);
+      return (await redisGetCurrentRollbackPort() || onDemandRollbackPortLow) + 1;
+    }
+  }
+
+  static async setCurrentRollbackPort(deployObject?: IDeployInfo, port?: number): Promise<IDeployInfo> {
+    let returnObject: IDeployInfo = deployObject || new DeployInfo() as IDeployInfo;
+    returnObject.port = port || (await DeployInfo.getCurrentRollbackPort()) + 1;
+
+    if (returnObject.port > onDemandRollbackPortHigh) {
+      returnObject.port = onDemandRollbackPortLow;
+    }
+
+    try {
+      await redisSetCurrentRollbackPort(returnObject.port);
+      logwrapper.verbose(`${logPrefix} Set current rollback port in Redis: ${returnObject.port}`);
+    } catch (error) {
+      logwrapper.error(`${logPrefix} Error setting current rollback port in Redis. Error: ${JSON.stringify(error)}`);
+    }
     return returnObject;
   }
 

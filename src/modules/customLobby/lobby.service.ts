@@ -1738,7 +1738,8 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
   let tempCustomLobbyRollbackPort: number = 0;
   if (useOnDemandRollback)
   {
-    tempCustomLobbyRollbackPort = randomInt(customLobbyUDPPortLow, customLobbyUDPPortHigh);
+    //tempCustomLobbyRollbackPort = randomInt(customLobbyUDPPortLow, customLobbyUDPPortHigh);
+    tempCustomLobbyRollbackPort = (await DeployInfo.getNextRollbackPort(true)) || DeployInfo.getRandomRollbackPort();
   }
   else
   {

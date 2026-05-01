@@ -70,32 +70,49 @@ async function generateStaticAccess(req: express.Request) {
   let hydraUsername = "";
   let randomName = hydraUsername = NameGenerator.NewName();
 
-  // Look up pre-registered identity from DLL (steamId / epicId / hardwareId)
-  const identity = await Redis.redisGetIdentity(ip);
-  let { steamId = "", epicId = "", hardwareId = "" } = identity ?? {};
+  // Resolve identity with preference for JWT claims (Option B from the race-condition
+  // analysis). Two sources, used in this priority:
+  //   1. A valid x-hydra-access-token JWT on the request. Per-client, can't race
+  //      across players at the same IP. Used when the DLL caches the /api/identify
+  //      JWT and echoes it on /access (or when an old DLL reuses a prior-session
+  //      token). Immune to the same-IP collision bug.
+  //   2. Redis identity:${ip} written by /api/identify. IP-keyed, races when two
+  //      players at the same public IP hit /api/identify concurrently. Kept for
+  //      backward compat with old DLLs that don't echo the JWT.
+  // If both are present, prefer the JWT. If only one, use whichever. If neither,
+  // we log a warning — the resulting account will have no platform IDs (ghost).
+  let steamId = "", epicId = "", hardwareId = "";
+  let identitySource = "none";
 
-  // Fallback: if the DLL's identity preamble didn't populate Redis (expired TTL,
-  // DLL skipped the endpoint, etc.), try to extract identity from the JWT that
-  // the DLL may have sent in x-hydra-access-token. Returning sessions carry a
-  // valid token with steamId/epicId/hardwareId in the claims — we can use that
-  // to avoid creating a ghost account.
-  if (!steamId && !epicId && !hardwareId) {
-    try {
-      const rawToken = req.headers["x-hydra-access-token"];
-      if (typeof rawToken === "string" && rawToken.length > 0) {
-        const decoded = jwt.verify(rawToken, SECRET) as SharedTypes.IAccountToken;
-        if (decoded) {
-          steamId = decoded.steamId || "";
-          epicId = decoded.epicId || "";
-          hardwareId = decoded.hardwareId || "";
-          if (steamId || epicId || hardwareId) {
-            logger.info(`${logPrefix} Identity from Redis was empty, recovered from JWT claims: steam=${steamId || "-"} epic=${epicId || "-"} hw=${hardwareId ? hardwareId.slice(0, 8) + "..." : "-"}`);
-          }
-        }
+  try {
+    const rawToken = req.headers["x-hydra-access-token"];
+    if (typeof rawToken === "string" && rawToken.length > 0) {
+      const decoded = jwt.verify(rawToken, SECRET) as SharedTypes.IAccountToken;
+      if (decoded && (decoded.steamId || decoded.epicId || decoded.hardwareId)) {
+        steamId = decoded.steamId || "";
+        epicId = decoded.epicId || "";
+        hardwareId = decoded.hardwareId || "";
+        identitySource = "jwt";
       }
-    } catch (e) {
-      // JWT invalid/missing — just fall through to the warn below
     }
+  } catch (e) {
+    // JWT invalid/missing — fall through to Redis lookup
+  }
+
+  if (identitySource === "none") {
+    const identity = await Redis.redisGetIdentity(ip);
+    if (identity && (identity.steamId || identity.epicId || identity.hardwareId)) {
+      steamId = identity.steamId || "";
+      epicId = identity.epicId || "";
+      hardwareId = identity.hardwareId || "";
+      identitySource = "redis";
+    }
+  }
+
+  if (identitySource === "jwt") {
+    logger.info(`${logPrefix} Identity from JWT claims (preferred over Redis): steam=${steamId || "-"} epic=${epicId || "-"} hw=${hardwareId ? hardwareId.slice(0, 8) + "..." : "-"}`);
+  } else if (identitySource === "redis") {
+    logger.debug(`${logPrefix} Identity from Redis (no JWT present): steam=${steamId || "-"} epic=${epicId || "-"} hw=${hardwareId ? hardwareId.slice(0, 8) + "..." : "-"}`);
   }
 
   // If BOTH the Redis preamble AND the JWT fallback came up empty, we're flying

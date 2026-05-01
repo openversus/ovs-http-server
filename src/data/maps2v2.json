@@ -1,5 +1,13 @@
 [
   {
+    "M021": {
+      "id": "M021",
+      "name": "Coyote Canyon",
+      "enabled": true,
+      "hazards": false
+    }
+  },
+  {
     "M001": {
       "id": "M001",
       "name": "Batcave",
@@ -23,7 +31,6 @@
       "hazards": false
     }
   },
-  {
   {
     "M006_V2": {
       "id": "M006_V2",

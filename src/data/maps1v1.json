@@ -1,5 +1,13 @@
 [
   {
+    "M021": {
+      "id": "M021",
+      "name": "Coyote Canyon",
+      "enabled": true,
+      "hazards": false
+    }
+  },
+  {
     "M001_V2": {
       "id": "M001_V2",
       "name": "Batcave 1v1",
@@ -35,7 +43,7 @@
     "M006_V3": {
       "id": "M006_V3",
       "name": "Scooby's No Roof 1v1",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   },
@@ -107,7 +115,7 @@
     "M015_V2": {
       "id": "M015_V2",
       "name": "Townsville Destroyed",
-      "enabled": true,
+      "enabled": false,
       "hazards": false
     }
   },

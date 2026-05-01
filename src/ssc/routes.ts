@@ -494,7 +494,8 @@ async function handleRankedSetCheckin(playerId: string) {
 async function createNextSetMatch(setId: string, setState: any) {
   const matchId = ObjectID().toHexString();
   const resultId = ObjectID().toHexString();
-  const rollbackPort = DeployInfo.getRandomRollbackPort();
+  //const rollbackPort = DeployInfo.getRandomRollbackPort();
+  const rollbackPort = (await DeployInfo.getNextRollbackPort(true)) || DeployInfo.getRandomRollbackPort();
 
   const allPlayerIds = [...new Set(setState.players.map((p: any) => p.playerId))] as string[];
 

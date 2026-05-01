@@ -558,6 +558,17 @@ export async function redisDeleteConnectionKeysByIp(ip: string): Promise<void> {
 export async function redisDeleteConnectionKeysById(playerId: string): Promise<void> {
   await redisDeleteKeysByPattern(`connections`, `${playerId}`);
 }
+export async function redisGetCurrentRollbackPort(): Promise<number> {
+  const portStr = await redisClient.get("rollback:current_port");
+  if (portStr) {
+    return parseInt(portStr);
+  }
+  return 0;
+}
+
+export async function redisSetCurrentRollbackPort(port: number): Promise<void> {
+  await redisClient.set("rollback:current_port", port.toString());
+}
 
 export async function redisAddDeployedRollbackServer(containerMatchId: string, deployInfo: IDeployInfo): Promise<void> {
   await redisClient.set(`rollback:${containerMatchId}`, JSON.stringify(deployInfo));

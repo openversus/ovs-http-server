@@ -35,6 +35,19 @@ export const hydraTokenMiddleware = (req: Request, res: Response, next: NextFunc
     return next();
   }
 
+  // Browser-facing static asset routes — no hydra token, served directly to browser <img>.
+  // Without this bypass, prod (where req.hostname !== WB_DOMAIN) hits the 401 path below
+  // which sets status but never calls next() or sends a body, hanging the request until
+  // the proxy times out → broken image icons. Local dev usually passes the hostname check
+  // (localhost === localhost) so the bypass doesn't fire and images "work" by accident.
+  if (
+    req.url.startsWith("/images/") ||
+    req.url.startsWith("/favicon/") ||
+    req.url === "/favicon.ico"
+  ) {
+    return next();
+  }
+
   if (req.hostname === env.WB_DOMAIN) {
     return next();
   }

@@ -2128,6 +2128,26 @@ export class WebSocketService {
         ? await redisClient.get(`player_ranked_set:${notification.playersIds[0]}`)
         : null;
 
+      // Fallback: if the player's pointer is null, try the match→set reverse index
+      // written by `createNextSetMatch`. This recovers from the race where access.ts
+      // cleanup-on-relogin wipes `player_ranked_set` between submit_end_of_match_stats
+      // (which already updated the real set's score) and this handler firing. Without
+      // the fallback, we'd create a phantom set with setId=matchId and the real set's
+      // ELO would never be processed (or worse, future matches get glued onto the
+      // phantom and produce out-of-bounds scores like 1-1 or 3-0 final results).
+      if (!existingSetId) {
+        const fallbackSetId = await redisClient.get(`match_to_set:${notification.matchId}`);
+        if (fallbackSetId) {
+          existingSetId = fallbackSetId;
+          logger.info(`[${serviceName}]: Recovered setId ${fallbackSetId} for match ${notification.matchId} via match_to_set fallback (player_ranked_set was null — likely access.ts cleanup race)`);
+          // Re-establish player pointers since they were wiped. This makes
+          // subsequent SSC stat submits and other lookups behave normally.
+          for (const pid of notification.playersIds) {
+            await redisClient.set(`player_ranked_set:${pid}`, fallbackSetId, { EX: 600 });
+          }
+        }
+      }
+
       if (existingSetId) {
         logger.info(`[${serviceName}]: Match ${notification.matchId} belongs to set ${existingSetId}`);
       }
@@ -2181,6 +2201,64 @@ export class WebSocketService {
             await redisClient.del(`player_ranked_set:${pid}`);
           }
           existingSetId = null;
+        }
+
+        // Orphan-match guard: if we have no setId and no pending winner, this is
+        // not a legitimate game-1 fresh-set match. It's an orphan whose parent set
+        // state was lost (typically by the access.ts cleanup race). Creating a new
+        // set here with setId=matchId would be a phantom set — it would accumulate
+        // wrong scores from any subsequent matches the players join, producing
+        // out-of-bounds final scores like 1-1 or 3-0.
+        //
+        // The legitimate game-1 path requires `ranked_set_pending_winner:{matchId}`
+        // to have been stored by the SSC end-of-match handler when it found
+        // `player_ranked_set` was null. If both are absent, refuse to create state
+        // and just kick players to lobby cleanly.
+        if (!existingSetId) {
+          const pendingWinner = await redisClient.get(`ranked_set_pending_winner:${notification.matchId}`);
+          if (pendingWinner === null) {
+            logger.warn(`[${serviceName}]: Match ${notification.matchId} has no existingSetId, no match_to_set fallback, and no pending_winner — orphan match, refusing to create phantom set. Cleaning up and kicking players to lobby.`);
+            for (const pid of notification.playersIds) {
+              await redisClient.del(`player_ranked_set:${pid}`);
+              await redisClient.del(`ranked_disconnect:${pid}`);
+              const orphanClient = this.clients.get(pid);
+              if (orphanClient) {
+                orphanClient.matchConfig = undefined;
+                try { await redisUpdatePlayerStatus(pid, "idle"); } catch {}
+                setTimeout(() => {
+                  try {
+                    orphanClient.send({
+                      data: {
+                        AccountId: pid,
+                        MatchId: notification.matchId,
+                        template_id: "MatchSetLeaverNotification",
+                      },
+                      payload: {
+                        match: { id: notification.matchId },
+                        template: "realtime",
+                        account_id: pid,
+                        profile_id: pid,
+                        custom_notification: "realtime",
+                      },
+                      header: "",
+                      cmd: "profile-notification",
+                    });
+                  } catch {}
+                }, 1000);
+                setTimeout(() => {
+                  try {
+                    orphanClient.send({
+                      data: { MatchId: "", GameplayConfig: null, template_id: "OnGameplayConfigNotified" },
+                      payload: { match: { id: "" }, custom_notification: "realtime" },
+                      header: "", cmd: "update",
+                    });
+                    logger.info(`[${serviceName}]: Sent empty OnGameplayConfigNotified to ${pid} (orphan match, return to lobby)`);
+                  } catch {}
+                }, 1500);
+              }
+            }
+            return;
+          }
         }
 
         // Ranked match — check if the set is over or should continue
@@ -2240,8 +2318,12 @@ export class WebSocketService {
         const gamesPlayed = existingSet ? existingSet.gamesPlayed + 1 : 1;
         let scores = existingSet?.scores || [0, 0];
 
-        // For game 1, the set didn't exist when submit_end_of_match_stats fired,
-        // so check for a pending score stored directly on the match
+        // FALLBACK PATH: pending_winner mechanism. With set-state pre-creation in
+        // matchmaking-worker (added 2026-05-01), `existingSet` should always exist
+        // for ranked matches when handleMatchEnd runs. If it doesn't, something
+        // upstream failed (Redis hiccup during pre-creation, or set TTL expired
+        // before this match ended). Use pending_winner from SSC stats handler to
+        // recover the score and create the set state from scratch.
         if (!existingSet) {
           const pendingWinner = await redisClient.get(`ranked_set_pending_winner:${notification.matchId}`);
           if (pendingWinner !== null) {
@@ -2251,6 +2333,7 @@ export class WebSocketService {
               scores[winIdx]++;
             }
             await redisClient.del(`ranked_set_pending_winner:${notification.matchId}`);
+            logger.warn(`[${serviceName}]: FALLBACK: Match ${notification.matchId} reached handleMatchEnd with no existingSet — recovering via pending_winner=${pendingWinner}. Pre-creation likely failed.`);
           }
         }
 

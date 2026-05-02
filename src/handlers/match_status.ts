@@ -110,6 +110,107 @@ async function handlePlayerDisconnectElo(
     const serverCrashed = await redisClient.get(`match_server_crash:${matchId}`);
     if (serverCrashed) return;
 
+    // Detect rollback-side disconnect while WS is still alive.
+    //
+    // Real dodges close the WebSocket; rollback crashes / level-load
+    // failures / UDP timeouts do not. So if PlayerDisconnect arrives
+    // from the rollback side but `online_players` still has this player,
+    // it's a rollback issue — NOT the player choosing to leave.
+    //
+    // We still need to clean up the set state so it doesn't leak into
+    // the player's next match. We skip ELO processing and skip setting
+    // the ranked_disconnect flag (which would have misfired the concede
+    // flow on their next match).
+    //
+    // For mass rollback crashes mid-match, the AllPlayersDisconnected
+    // → match_server_crash detection (above) still catches the event
+    // when all rollback connections drop.
+    const stillOnline = await redisClient.sIsMember("online_players", disconnectedPlayerId);
+    if (stillOnline) {
+      // Dedup so cleanup only runs once even if multiple players' rollback
+      // connections drop and each fires its own PlayerDisconnect.
+      const cleanupClaim = await redisClient.set(
+        `rollback_crash_cleanup:${matchId}`,
+        "1",
+        { NX: true, EX: 300 },
+      );
+      if (cleanupClaim !== "OK") {
+        logger.info(
+          `${logPrefix} PlayerDisconnect for ${disconnectedPlayerId} in ${matchId} ` +
+          `but WS still alive (rollback issue) — cleanup already running, skipping`,
+        );
+        return;
+      }
+
+      // Mark match as crashed so any later disconnects also skip ELO.
+      await redisClient.set(`match_server_crash:${matchId}`, "1", { EX: 600 });
+
+      logger.warn(
+        `${logPrefix} PlayerDisconnect for ${disconnectedPlayerId} in ${matchId} ` +
+        `with WS still alive — rollback server issue. Cleaning up set state, skipping ELO.`,
+      );
+
+      // Resolve set + all participating players from match config (or fall
+      // back to the allPlayerIds the disconnect event carried).
+      const matchConfigForCrash = await redisGetMatchConfig(matchId);
+      const setIdForCrash =
+        (await redisClient.get(`player_ranked_set:${disconnectedPlayerId}`)) || matchId;
+      const allSetPlayerIdsForCrash = matchConfigForCrash
+        ? matchConfigForCrash.players.filter((p) => !p.isSpectator).map((p) => p.playerId)
+        : allPlayerIds;
+
+      // Clean up ranked set state so the next match starts fresh.
+      // Always delete the set keys (DEL of a non-existent key is a no-op). The
+      // earlier `setIdForCrash !== matchId` guard left a zombie set when handleMatchEnd
+      // had already created `ranked_set:{matchId}` as a fresh game-1 set before the
+      // crash branch fired — that set would survive and get hit by phantom-set logic
+      // on the next match. Per Sourcery review on PR #28.
+      for (const pid of allSetPlayerIdsForCrash) {
+        await redisClient.del(`player_ranked_set:${pid}`);
+      }
+      await redisClient.del(`ranked_set:${setIdForCrash}`);
+      await redisClient.del(`ranked_set_checkins:${setIdForCrash}`);
+      // Also clean the match_to_set reverse index in case createNextSetMatch wrote it
+      // for this matchId (continuation game). Prevents the fallback in handleMatchEnd
+      // from resurrecting a now-cleaned setId on a delayed End-of-Match.
+      await redisClient.del(`match_to_set:${matchId}`);
+      await redisClient.del(`match_started:${matchId}`);
+
+      // Reset every player's status so /ovs/accept-invite isn't blocked
+      // by a stale "in_match" status.
+      for (const pid of allSetPlayerIdsForCrash) {
+        try {
+          await redisUpdatePlayerStatus(pid, "idle");
+        } catch (statusErr) {
+          logger.error(`${logPrefix} Error resetting status for ${pid}: ${statusErr}`);
+        }
+      }
+
+      // Notify every player that the match was cancelled (rollback issue,
+      // not a dodge). Different reason code so the client can distinguish
+      // if it wants — and importantly NO ELO penalty was applied.
+      for (const pid of allSetPlayerIdsForCrash) {
+        try {
+          await redisPushDLLNotification(pid, {
+            type: "match_cancel",
+            title: "Match Cancelled",
+            message: "Server connection failed — no ELO change",
+            data: { matchId, reason: "rollback_crash" },
+            timestamp: Date.now(),
+          });
+          logger.info(`${logPrefix} Pushed rollback_crash match_cancel notification to ${pid}`);
+        } catch (err) {
+          logger.error(`${logPrefix} Error pushing rollback_crash notif to ${pid}: ${err}`);
+        }
+      }
+
+      logger.info(
+        `${logPrefix} Cleaned up set ${setIdForCrash} for ${allSetPlayerIdsForCrash.length} players ` +
+        `after rollback crash (no ELO change)`,
+      );
+      return;
+    }
+
     // Mid-game disconnect — DON'T process ELO immediately. Just flag ranked_disconnect
     // and let the remaining player(s) finish the game. When they hit READY, auto-concede
     // fires via handleRankedSetCheckin. This matches the WS disconnect handler flow.

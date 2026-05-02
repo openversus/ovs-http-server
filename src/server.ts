@@ -69,7 +69,7 @@ import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContai
 import { NameGenerator } from "./utils/namegeneration";
 import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
 import { handleMatchStatusUpdate } from "./handlers/match_status";
-import { resolveAccountFromRequest } from "./services/identityService";
+import { resolveAccountFromRequest, resolveAccountWithSource } from "./services/identityService";
 import { initAccelByteLobbyWs, accelByteLobbyWs } from "./accelByteLobbyWs";
 import { IMatchStatus } from "./interfaces/IMatchStatus";
 import { REAL_IP_HEADER, getRealIP, tryGetRealIP } from "./middleware/auth";
@@ -361,6 +361,28 @@ app.post("/namechange", async (req, res, next) => {
         );
       } else {
         await PlayerTesterModel.findOneAndUpdate({ ip }, { name: trimmed }, { upsert: true, new: true });
+      }
+
+      // Also update the live Redis connection hash so the live matches page,
+      // notification routing, and any in-flight handlers see the new name
+      // immediately — without waiting for the player to reconnect via /access.
+      // We only update the username field (partial hSet) so other JWT claims
+      // already in the hash aren't disturbed.
+      try {
+        if (player?.id) {
+          await redisClient.hSet(`connections:${player.id}`, { username: trimmed });
+          // Also keep the IP-keyed legacy mirror in sync if it exists.
+          if (ip) {
+            const ipHashExists = await redisClient.exists(`connections:${ip}`);
+            if (ipHashExists) {
+              await redisClient.hSet(`connections:${ip}`, { username: trimmed });
+            }
+          }
+        }
+      } catch (redisErr) {
+        logger.error(`${logPrefix} Name change: Mongo updated but Redis sync failed for ${player?.id}: ${redisErr}`);
+        // Don't fail the request — Mongo is source of truth and the next
+        // /access will re-sync Redis from it.
       }
     }
 
@@ -910,7 +932,13 @@ async function refreshMatchesCache(): Promise<void> {
       for (const p of players) {
         if (p.isSpectator) continue;
         const conn = await redisClient.hGetAll(`connections:${p.playerId}`) as any;
-        const username = conn?.username || "Unknown";
+        // Fallback chain: connections.username (preferred — set on /access from
+        // player.name) → connections.hydraUsername (auto-gen, always populated)
+        // → "Unknown". The hydraUsername fallback handles the case where the
+        // connection hash got partial-updated and lost the username field, OR
+        // where Mongo's name was renamed via /namechange but the Redis hash
+        // hasn't been refreshed by a follow-up /access yet.
+        const username = conn?.username || conn?.hydraUsername || "Unknown";
         const character = conn?.character || matchChars[p.playerId] || "unknown";
         const team = String(p.teamIndex ?? 0);
         if (!teams[team]) teams[team] = [];
@@ -1014,7 +1042,59 @@ app.post("/api/identify", async (req, res) => {
     }
     await redisSaveIdentity(ip, steamId, epicId, hardwareId);
     logger.info(`${logPrefix} Identity registered for IP ${ip} — steam:${steamId} epic:${epicId} hw:${hardwareId.slice(0, 8)}...`);
-    res.json({ ok: true });
+
+    // Construct an OVS-side JWT and return it so the DLL can attach it to
+    // un-authenticated polling routes (NotificationPoller, etc.). This avoids
+    // IP-collision bugs where two players behind one public IP would drain
+    // each other's notification queues. DLL stores the token and sends it
+    // as x-hydra-access-token on /ovs/notifications. The server's resolver
+    // decodes the claims at step 1/2/3/4 (id → steam → epic → hw) before
+    // falling back to IP.
+    //
+    // Try to resolve an existing account id for these identifiers so the
+    // JWT's `id` claim is populated where possible (resolver fast path).
+    // First-time signups haven't hit /access yet → id is empty but steam/
+    // epic/hw still resolve via the identity indexes we wrote at last login.
+    let resolvedId = "";
+    try {
+      if (steamId) {
+        const byId = await redisClient.get(`identity:steam:${steamId}`);
+        if (byId) resolvedId = byId;
+      }
+      if (!resolvedId && epicId) {
+        const byId = await redisClient.get(`identity:epic:${epicId}`);
+        if (byId) resolvedId = byId;
+      }
+      if (!resolvedId && hardwareId) {
+        const byId = await redisClient.get(`identity:hw:${hardwareId}`);
+        if (byId) resolvedId = byId;
+      }
+    } catch (lookupErr) {
+      logger.error(`${logPrefix} /api/identify: identity-index lookup failed: ${lookupErr}`);
+    }
+
+    const jwtLib = require("jsonwebtoken");
+    const claims = {
+      // Full AccountToken-compatible shape so the resolver hits JWT id fast path
+      id: resolvedId,
+      steamId,
+      epicId,
+      hardwareId,
+      current_ip: ip,
+      // Leave unrelated fields empty — resolver only consults id/steamId/epicId/hardwareId
+      profile_id: "",
+      public_id: "",
+      wb_network_id: resolvedId,
+      username: "",
+      hydraUsername: "",
+      lobby_id: "",
+      GameplayPreferences: 964,
+    };
+    // 30 days so the DLL doesn't need to refresh during a session. Short-lived
+    // mid-session re-keying would break NotifPoller's long-running background thread.
+    const token = jwtLib.sign(claims, SECRET, { expiresIn: "30d" });
+
+    res.json({ ok: true, token, accountId: resolvedId || null });
   } catch (e) {
     logger.error(`${logPrefix} Error in POST /api/identify: ${e}`);
     res.status(500).json({ error: "Internal error" });
@@ -1128,8 +1208,9 @@ app.get("/ovs/notifications", async (req, res) => {
       return;
     }
 
-    // Look up the player — tries JWT, SteamID, EpicID, HardwareID, then IP fallback
-    const conn = await resolveAccountFromRequest(req);
+    // Look up the player — tries JWT, SteamID, EpicID, HardwareID, then IP fallback.
+    // Use the with-source variant so the delivery log can show which path resolved.
+    const { conn, source } = await resolveAccountWithSource(req);
     const playerId = conn?.id;
     if (!playerId) {
       res.json([]);
@@ -1139,7 +1220,7 @@ app.get("/ovs/notifications", async (req, res) => {
     // Pop all queued DLL notifications for this player
     const notifications = await redisPopDLLNotifications(playerId);
     if (notifications.length > 0) {
-      logger.info(`${logPrefix} Delivered ${notifications.length} DLL notification(s) to ${playerId} (IP ${ip})`);
+      logger.info(`${logPrefix} Delivered ${notifications.length} DLL notification(s) to ${playerId} via=${source} (IP ${ip})`);
     }
     res.json(notifications);
   } catch (e) {

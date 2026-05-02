@@ -60,6 +60,92 @@ function safeGetIP(req: Request): string | null {
 }
 
 /**
+ * Tag identifying which path resolved an account. Useful for observability on
+ * chatty routes where resolver logs are normally silenced — callers can log
+ * the source on meaningful events (e.g. actual notification delivery) without
+ * spamming on every poll.
+ */
+export type ResolutionSource = "jwt" | "steam" | "epic" | "hw" | "ip" | "unresolved";
+
+export interface ResolvedAccount {
+  conn: RedisPlayerConnection | null;
+  source: ResolutionSource;
+}
+
+/**
+ * Same resolution as resolveAccountFromRequest but also returns which step hit.
+ * Prefer this when you want to log the source on successful work events.
+ */
+export async function resolveAccountWithSource(req: Request): Promise<ResolvedAccount> {
+  const token = safeDecodeToken(req);
+  const routeTag = (req as any).route?.path || req.path || "?";
+  const silent = isSilentRoute(routeTag);
+
+  // 1. Direct account ID from JWT
+  if (token?.id) {
+    const conn = (await redisClient.hGetAll(`connections:${token.id}`)) as RedisPlayerConnection;
+    if (conn?.id) {
+      if (!silent) logger.info(`${logPrefix} [${routeTag}] resolved via JWT id=${conn.id}`);
+      return { conn, source: "jwt" };
+    }
+    if (!silent) logger.debug(`${logPrefix} [${routeTag}] JWT id=${token.id} had no connections:* record, falling through`);
+  }
+
+  const resolveByIndex = async (indexKey: string): Promise<RedisPlayerConnection | null> => {
+    const accountId = await redisClient.get(indexKey);
+    if (!accountId) return null;
+    const conn = (await redisClient.hGetAll(`connections:${accountId}`)) as RedisPlayerConnection;
+    return conn?.id ? conn : null;
+  };
+
+  // 2. SteamID
+  const steamId = (req.header("x-steam-id") as string) || token?.steamId;
+  if (steamId) {
+    const hit = await resolveByIndex(`identity:steam:${steamId}`);
+    if (hit) {
+      if (!silent) logger.info(`${logPrefix} [${routeTag}] resolved via SteamID=${steamId} → id=${hit.id}`);
+      return { conn: hit, source: "steam" };
+    }
+  }
+
+  // 3. EpicID
+  const epicId = (req.header("x-epic-id") as string) || token?.epicId;
+  if (epicId) {
+    const hit = await resolveByIndex(`identity:epic:${epicId}`);
+    if (hit) {
+      if (!silent) logger.info(`${logPrefix} [${routeTag}] resolved via EpicID=${epicId} → id=${hit.id}`);
+      return { conn: hit, source: "epic" };
+    }
+  }
+
+  // 4. HardwareID
+  const hardwareId = (req.header("x-hw-id") as string) || token?.hardwareId;
+  if (hardwareId) {
+    const hit = await resolveByIndex(`identity:hw:${hardwareId}`);
+    if (hit) {
+      if (!silent) logger.info(`${logPrefix} [${routeTag}] resolved via HardwareID=${hardwareId} → id=${hit.id}`);
+      return { conn: hit, source: "hw" };
+    }
+  }
+
+  // 5. IP fallback
+  const tokenIp = token?.current_ip ? token.current_ip.replace(/^::ffff:/, "") : null;
+  const reqIp = safeGetIP(req);
+  const ipsToTry = [tokenIp, reqIp].filter((v, i, a) => v && a.indexOf(v) === i) as string[];
+  for (const ip of ipsToTry) {
+    const conn = (await redisClient.hGetAll(`connections:${ip}`)) as RedisPlayerConnection;
+    if (conn?.id) {
+      if (!silent) logger.warn(`${logPrefix} [${routeTag}] resolved via IP fallback ip=${ip} → id=${conn.id}`);
+      return { conn, source: "ip" };
+    }
+  }
+  const ip = ipsToTry[0] || null;
+
+  if (!silent) logger.warn(`${logPrefix} [${routeTag}] UNRESOLVED: jwt=${token?.id ?? "-"} steam=${steamId ?? "-"} epic=${epicId ?? "-"} hw=${hardwareId ?? "-"} ip=${ip ?? "-"}`);
+  return { conn: null, source: "unresolved" };
+}
+
+/**
  * Resolve the account connection for a request, trying identifiers in order
  * of uniqueness/reliability. Falls back through:
  *   1. JWT account ID (most handler calls)

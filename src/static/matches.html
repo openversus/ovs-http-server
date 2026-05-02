@@ -191,12 +191,23 @@
           font-size: 11px;
           color: #94a3b8;
       }
+      .back-btn {
+          display: inline-flex; align-items: center; gap: 6px;
+          text-decoration: none; color: var(--mv-blue);
+          font-family: Helvetica, Arial, sans-serif;
+          font-weight: 800; font-size: 13px;
+          text-transform: uppercase; letter-spacing: 0.06em;
+          padding: 8px 0; margin-bottom: 8px; transition: opacity 0.15s;
+      }
+      .back-btn:hover { opacity: 0.7; }
+      .back-btn svg { width: 16px; height: 16px; }
   </style>
 </head>
 <body>
   <div class="background"></div>
   <div class="main_wrapper">
     <div class="main_container">
+      <a href="/home" class="back-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back to Home</a>
       <h1>LIVE MATCHES</h1>
       <div class="subtitle"><span class="dot"></span><span id="match_count">0 matches in progress</span></div>
 

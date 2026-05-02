@@ -31,6 +31,42 @@ import { PlayerStatsModel, RecentMatchPlayerStats } from "../database/PlayerStat
 const serviceName = "Handlers.Matches";
 const logPrefix = `[${serviceName}]:`;
 
+/**
+ * Clears any lingering ranked-set state for a player about to enter fresh matchmaking.
+ * Prevents the bug where a stalled between-games match leaves the set alive (600s TTL),
+ * and a fresh queue + match gets glued onto the dead set as "game 2".
+ * Also nukes the set itself and clears teammates' player_ranked_set pointers so they
+ * can't accidentally re-attribute their next match either.
+ */
+async function clearStaleRankedSetForPlayer(playerId: string): Promise<void> {
+  try {
+    const setId = await redisClient.get(`player_ranked_set:${playerId}`);
+    if (!setId) return;
+
+    let allPlayerIds: string[] = [playerId];
+    const setStateRaw = await redisClient.get(`ranked_set:${setId}`);
+    if (setStateRaw) {
+      try {
+        const setState = JSON.parse(setStateRaw);
+        const playerObjs = Array.isArray(setState?.players) ? setState.players : [];
+        const teammateIds = playerObjs.map((p: any) => p?.playerId).filter((id: any) => typeof id === "string" && id);
+        allPlayerIds = Array.from(new Set<string>([playerId, ...teammateIds]));
+      } catch (e) {
+        logger.error(`${logPrefix} Error parsing ranked_set:${setId} during stale-set cleanup: ${e}`);
+      }
+    }
+
+    for (const pid of allPlayerIds) {
+      await redisClient.del(`player_ranked_set:${pid}`);
+    }
+    await redisClient.del(`ranked_set:${setId}`);
+    await redisClient.del(`ranked_set_checkins:${setId}`);
+    logger.info(`${logPrefix} Cleared stale ranked set ${setId} on fresh matchmaking enqueue (player ${playerId}, ${allPlayerIds.length} pointer(s) cleared)`);
+  } catch (e) {
+    logger.error(`${logPrefix} Error clearing stale ranked set for player ${playerId}: ${e}`);
+  }
+}
+
 export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Response) {
   const account = AuthUtils.DecodeClientToken(req);
   const aID = account.id;
@@ -797,6 +833,10 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
     logger.error(`${logPrefix} Error cleaning up stale tickets for player ${preCheckAccount.id}: ${e}`);
   }
 
+  // If the player is back in queue, they're not in a ranked set anymore.
+  // Clear any lingering set state so the next match doesn't get attributed to a dead set.
+  await clearStaleRankedSetForPlayer(preCheckAccount.id);
+
   const preCheckLobbyId = await redisGetPlayerLobby(preCheckAccount.id);
   if (preCheckLobbyId) {
     const preCheckLobby = await redisGetLobbyState(preCheckLobbyId);
@@ -953,6 +993,10 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
     logger.error(`${logPrefix} Error cleaning up stale tickets for player ${account.id}: ${e}`);
   }
 
+  // If the player is back in queue, they're not in a ranked set anymore.
+  // Clear any lingering set state so the next match doesn't get attributed to a dead set.
+  await clearStaleRankedSetForPlayer(account.id);
+
   if (BE_VERBOSE) {
     logger.info(`${logPrefix} Request is: \n`)
     KitchenSink.TryInspectRequestVerbose(req);
@@ -993,6 +1037,14 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
   const lobbyId = await redisGetPlayerLobby(aID);
   const lobbyState = lobbyId ? await redisGetLobbyState(lobbyId) : null;
   const allPlayerIds = lobbyState ? lobbyState.playerIds : [aID];
+
+  // Also clear stale ranked set state for any teammates in the lobby (they might
+  // have lingering pointers to a different dead set than the requester's).
+  for (const pid of allPlayerIds) {
+    if (pid !== aID) {
+      await clearStaleRankedSetForPlayer(pid);
+    }
+  }
 
   // DIAGNOSTIC: Log exactly what happened with lobby lookup so we can trace party drops
   if (!lobbyId) {

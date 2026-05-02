@@ -562,6 +562,13 @@ async function createNextSetMatch(setId: string, setState: any) {
     await redisClient.set(`player_ranked_set:${pid}`, setId, { EX: 600 });
   }
 
+  // Reverse index: matchId → setId. Used by handleMatchEnd as a fallback when a
+  // player's `player_ranked_set` pointer was wiped between submit_end_of_match_stats
+  // and handleMatchEnd (e.g. by access.ts cleanup-on-relogin). Without this fallback,
+  // the End-of-Match handler creates a phantom set with setId=matchId that accumulates
+  // wrong scores. See "phantom set" investigation in Apr/May 2026 logs.
+  await redisClient.set(`match_to_set:${matchId}`, setId, { EX: 600 });
+
   logger.info(`[SSC.Routes]: Created set match ${matchId} (game ${setState.gamesPlayed + 1}/3) on map ${map}`);
 }
 

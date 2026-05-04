@@ -4,6 +4,7 @@ import { Types } from "mongoose";
 import {
   redisClient,
   redisGetMatch,
+  redisGetMatchConfig,
   redisGetPlayerPerk,
   redisLockPerks,
   redisPublishAllPerksLocked,
@@ -57882,8 +57883,18 @@ export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}
   // Per-game: only track set scores and pending winners.
   if (matchId && typeof winningTeamIndex === "number" && (winningTeamIndex === 0 || winningTeamIndex === 1)) {
 
-    // Track win in ranked set (best-of-3)
-    if (pid) {
+    // Read isCustomGame so we can skip ranked-set tracking for custom matches
+    // (they have their own match flow and don't go through best-of-3 sets).
+    let isCustomMatch = false;
+    try {
+      const cfg = await redisGetMatchConfig(matchId);
+      isCustomMatch = !!cfg?.isCustomGame;
+    } catch (e) {
+      logger.warn(`${logPrefix} isCustomMatch lookup failed for match ${matchId}: ${e}`);
+    }
+
+    // Track win in ranked set (best-of-3) — only for non-custom matches
+    if (pid && !isCustomMatch) {
       const setId = await redisClient.get(`player_ranked_set:${pid}`);
       if (setId) {
         const setRaw = await redisClient.get(`ranked_set:${setId}`);
@@ -57908,11 +57919,9 @@ export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}
       } else {
         // No set exists yet — fallback path. With matchmaking-worker pre-creation
         // (added 2026-05-01), this should be unreachable for ranked matches.
-        // If we hit this, either pre-creation failed or this is a non-worker path
-        // (e.g., custom games which don't track ranked sets — for those, this
-        // pending_winner is harmless dead state that expires at TTL).
+        // If we hit this, pre-creation likely failed.
         await redisClient.set(`ranked_set_pending_winner:${matchId}`, winningTeamIndex.toString(), { EX: 120 });
-        logger.warn(`${logPrefix} FALLBACK: Stored pending_winner (team ${winningTeamIndex}) for match ${matchId} — player ${pid} has no player_ranked_set. Pre-creation failed OR this is a non-ranked match.`);
+        logger.warn(`${logPrefix} FALLBACK: Stored pending_winner (team ${winningTeamIndex}) for match ${matchId} — player ${pid} has no player_ranked_set. Pre-creation likely failed.`);
       }
     }
   }

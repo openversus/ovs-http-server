@@ -97,6 +97,7 @@ import { processMatchLeave, getOrCreateRating, eloToTierDivision } from "./servi
 import { PlayerTesterModel } from "./database/PlayerTester";
 import { PlayerStatsModel } from "./database/PlayerStats";
 import { INVENTORY_DEFINITIONS } from "./data/inventoryDefs";
+import { BOT_DEFAULT_PERKS, BOT_DEFAULT_CHARACTER, BOT_DEFAULT_SKIN } from "./data/botDefaults";
 
 const serviceName: string = "WebSocket";
 const logPrefix = `[${serviceName}]:`;
@@ -783,6 +784,9 @@ export class WebSocketService {
     ];
     const randomIndex = Math.floor(Math.random() * arr.length);
     for (const matchPlayer of notification.players) {
+      // Bots have no WS connection — skip notification + client lookup.
+      if (matchPlayer.isBot) continue;
+
       let tempPlayer = null;
       try {
         tempPlayer = this.clients.get(matchPlayer.playerId);
@@ -898,6 +902,15 @@ export class WebSocketService {
       //   playerConfigs.push(cosmetics);
       // }
 
+      // Bots have no Cosmetics row — push an empty placeholder; the player-config
+      // builder loop below detects bots via notification.players[i].isBot and
+      // ignores playerConfigs[i] entirely.
+      const isBotPlayer = notification.players.find((p) => p.playerId === playerId)?.isBot;
+      if (isBotPlayer) {
+        playerConfigs.push({} as Cosmetics);
+        continue;
+      }
+
       const rawCosmetics = await redisClient.hGetAll(`connections:${playerId}:cosmetics`);
       const matchPlayer = (await redisClient.hGetAll(`connections:${playerId}`)) as unknown as RedisPlayerConnection;
 
@@ -941,6 +954,59 @@ export class WebSocketService {
 
     for (let i = 0; i < notification.players.length; i++) {
       const player = notification.players[i];
+
+      // ── Bot branch ──
+      // Bots have no Mongo doc, no Cosmetics row, no `connections:{id}` hash.
+      // Build a minimal valid PlayerConfig directly from `bot_config:{id}` that
+      // the lobby stashed in Redis at start_custom_match time.
+      if (player.isBot) {
+        const botCfg = await redisClient.hGetAll(`bot_config:${player.playerId}`);
+        const botCharacter = botCfg.character || BOT_DEFAULT_CHARACTER;
+        const botSkin = botCfg.skin || BOT_DEFAULT_SKIN;
+        const botDiffMin = Number(botCfg.difficultyMin ?? 2);
+        const botDiffMax = Number(botCfg.difficultyMax ?? 2);
+
+        const target = player.isSpectator ? Spectators : Players;
+        target[player.playerId] = {
+          Taunts: ["", "", "", ""],
+          BotBehaviorOverride: "",
+          AccountId: player.playerId,
+          bAutoPartyPreference: false,
+          Gems: [],
+          PartyMember: null,
+          GameplayPreferences: 0,
+          BotDifficultyMax: botDiffMax,
+          bIsBot: true,
+          RankedDivision: null,
+          bUseCharacterDisplayName: true,
+          StartingDamage: 0,
+          TeamIndex: player.teamIndex,
+          ProfileIcon: "profile_icon_default_gold",
+          WinStreak: null,
+          RankedTier: null,
+          Handicap: 0,
+          RingoutVfx: "ring_out_vfx_default",
+          Character: botCharacter,
+          Banner: "banner_default",
+          StatTrackers: [
+            ["stat_tracking_bundle_default", 0],
+            ["stat_tracking_bundle_default", 0],
+            ["stat_tracking_bundle_default", 0],
+          ],
+          Perks: [...BOT_DEFAULT_PERKS],
+          PlayerIndex: player.playerIndex,
+          PartyId: player.partyId,
+          Username: {},
+          Buffs: notification.playerBuffs?.[player.playerId] ?? [],
+          Skin: botSkin,
+          BotDifficultyMin: botDiffMin,
+        };
+        logger.info(
+          `[${serviceName}]: Built bot config for ${player.playerId} (char=${botCharacter}, skin=${botSkin}, diff=${botDiffMin}-${botDiffMax}) for match ${notification.matchId}`,
+        );
+        continue;
+      }
+
       //const rPlayerByConnectionId = (await redisClient.hGetAll(`connections:${player.playerId}`)) as unknown as RedisPlayerConnection;
       const rPlayerConnectionByID = await redisClient.hGetAll(`connections:${player.playerId}`) as unknown as RedisPlayerConnection;
       const playerLoadout = playerLoadouts[i];
@@ -1109,7 +1175,6 @@ export class WebSocketService {
           Perks: [],
           PlayerIndex: player.playerIndex,
           PartyId: player.partyId,
-          // Username: { default: rPlayerConnectionByID.username || "Player" },
           Username: {},
           Buffs: notification.playerBuffs?.[player.playerId] ?? [],
           Skin: skin,
@@ -1171,7 +1236,6 @@ export class WebSocketService {
           Perks: [],
           PlayerIndex: player.playerIndex,
           PartyId: player.partyId,
-//          Username: { default: rPlayerConnectionByID.username || "Player" },
           Username: {},
           Buffs: notification.playerBuffs?.[player.playerId] ?? [],
           Skin: skin,

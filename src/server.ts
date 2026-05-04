@@ -464,15 +464,11 @@ app.post("/ovs_register", async (req, res, next) => {
   if (botCount > 0) {
     logger.info(`${logPrefix} Match ${body.matchId} has ${botCount} bot(s) — excluded from rollback registration. max_players=${realPlayers.length}`);
   }
-  const ovsRegisterResponse = {
+  res.json({
     max_players: realPlayers.length,
     match_duration: 36000,
     players,
-  };
-  logger.info(
-    `${logPrefix} [DEBUG-OVS-REGISTER] match=${body.matchId} response=${JSON.stringify(ovsRegisterResponse)}`,
-  );
-  res.json(ovsRegisterResponse);
+  });
 
   // Now that the rollback server has the match config, tell ALL real-player clients
   // (including spectators, excluding bots) to connect. Bots have no client to notify.

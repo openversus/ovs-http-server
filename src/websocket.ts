@@ -1424,10 +1424,6 @@ export class WebSocketService {
       return;
     }
 
-    logger.info(
-      `[${serviceName}]: [DEBUG-GAMEPLAY-CONFIG] match=${notification.matchId} message=${JSON.stringify(message)}`,
-    );
-
     // Send the message to each player in the match
     for (const player of notification.players) {
       const client = this.clients.get(player.playerId);

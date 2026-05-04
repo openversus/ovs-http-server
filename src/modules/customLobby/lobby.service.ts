@@ -15,6 +15,7 @@ import { logger, logwrapper } from "../../config/logger";
 import env from "../../env/env";
 import { GAME_MODES_CONFIG } from "./gameModes.data";
 import { MAP_ROTATIONS } from "./maps.data";
+import { BOT_DEFAULT_PERKS, BOT_DIFFICULTY } from "../../data/botDefaults";
 import {
   TeamStyle,
   MATCH_TYPES,
@@ -1573,13 +1574,6 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
 
   const playerConfigs = await getPlayersConfig(Object.keys(lobby.PlayerGameplayPreferences));
 
-  const BOT_DIFFICULTY: Record<string, { min: number; max: number }> = {
-    VeryEasy: { min: 0, max: 0 },
-    Easy: { min: 1, max: 1 },
-    Medium: { min: 2, max: 2 },
-    Hard: { min: 3, max: 3 },
-  };
-
   const Players: Record<string, PlayerConfig> = {};
   const Spectators: Record<string, PlayerConfig> = {};
 
@@ -1603,12 +1597,7 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
           Character: lobbyPlayer.Fighter?.Slug ?? "",
           Skin: lobbyPlayer.Skin?.Slug ?? "",
           Taunts: [],
-          Perks: [
-            "perk_gen_boxer",
-            "perk_team_speed_force_assist",
-            "perk_purest_of_motivations",
-            "perk_gen_well_rounded",
-          ],
+          Perks: [...BOT_DEFAULT_PERKS],
           Banner: "banner_default",
           ProfileIcon: "",
           RingoutVfx: "ring_out_vfx_default",
@@ -1795,12 +1784,7 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
   // Pre-lock perks for bots — they don't send /ssc/invoke/perks_lock, so without
   // this the all-perks-locked check in handleSsc_invoke_perks_lock would never
   // pass and the match stays stuck in pregame.
-  const botPerks = [
-    "perk_gen_boxer",
-    "perk_team_speed_force_assist",
-    "perk_purest_of_motivations",
-    "perk_gen_well_rounded",
-  ];
+  const botPerks = [...BOT_DEFAULT_PERKS];
   for (const entry of teamEntries) {
     if (entry.isBot) {
       await redisLockPerks({

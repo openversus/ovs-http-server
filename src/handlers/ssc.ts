@@ -4,6 +4,7 @@ import { Types } from "mongoose";
 import {
   redisClient,
   redisGetMatch,
+  redisGetMatchConfig,
   redisGetPlayerPerk,
   redisLockPerks,
   redisPublishAllPerksLocked,
@@ -57886,12 +57887,11 @@ export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}
     // (they have their own match flow and don't go through best-of-3 sets).
     let isCustomMatch = false;
     try {
-      const cfgRaw = await redisClient.get(matchId);
-      if (cfgRaw) {
-        const cfg = JSON.parse(cfgRaw);
-        isCustomMatch = !!cfg?.isCustomGame;
-      }
-    } catch {}
+      const cfg = await redisGetMatchConfig(matchId);
+      isCustomMatch = !!cfg?.isCustomGame;
+    } catch (e) {
+      logger.warn(`${logPrefix} isCustomMatch lookup failed for match ${matchId}: ${e}`);
+    }
 
     // Track win in ranked set (best-of-3) — only for non-custom matches
     if (pid && !isCustomMatch) {

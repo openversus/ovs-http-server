@@ -97,6 +97,7 @@ import { processMatchLeave, getOrCreateRating, eloToTierDivision } from "./servi
 import { PlayerTesterModel } from "./database/PlayerTester";
 import { PlayerStatsModel } from "./database/PlayerStats";
 import { INVENTORY_DEFINITIONS } from "./data/inventoryDefs";
+import { BOT_DEFAULT_PERKS, BOT_DEFAULT_CHARACTER, BOT_DEFAULT_SKIN } from "./data/botDefaults";
 
 const serviceName: string = "WebSocket";
 const logPrefix = `[${serviceName}]:`;
@@ -960,8 +961,8 @@ export class WebSocketService {
       // the lobby stashed in Redis at start_custom_match time.
       if (player.isBot) {
         const botCfg = await redisClient.hGetAll(`bot_config:${player.playerId}`);
-        const botCharacter = botCfg.character || "character_jason";
-        const botSkin = botCfg.skin || "skin_jason_000";
+        const botCharacter = botCfg.character || BOT_DEFAULT_CHARACTER;
+        const botSkin = botCfg.skin || BOT_DEFAULT_SKIN;
         const botDiffMin = Number(botCfg.difficultyMin ?? 2);
         const botDiffMax = Number(botCfg.difficultyMax ?? 2);
 
@@ -992,12 +993,7 @@ export class WebSocketService {
             ["stat_tracking_bundle_default", 0],
             ["stat_tracking_bundle_default", 0],
           ],
-          Perks: [
-            "perk_gen_boxer",
-            "perk_team_speed_force_assist",
-            "perk_purest_of_motivations",
-            "perk_gen_well_rounded",
-          ],
+          Perks: [...BOT_DEFAULT_PERKS],
           PlayerIndex: player.playerIndex,
           PartyId: player.partyId,
           Username: {},

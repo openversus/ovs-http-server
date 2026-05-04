@@ -437,8 +437,12 @@ app.post("/ovs_register", async (req, res, next) => {
     res.send("");
     return;
   }
-  // Send all players (including spectators) to the rollback server so spectators can connect
-  const players = await Promise.all(config.players.map(async (p) => {
+  // Send all players (including spectators, excluding bots) to the rollback server.
+  // Bots are DLL/game-side fictions — they have no client to make a UDP connection,
+  // so the rollback must NOT wait for them. The game spawns bots locally based on the
+  // separately-delivered gameplay config; the rollback only orchestrates real UDP clients.
+  const realPlayers = config.players.filter((p) => !p.isBot);
+  const players = await Promise.all(realPlayers.map(async (p) => {
     // Prefer ID-keyed connection (stable across NAT/VPN); fall back to IP-keyed for legacy records
     let conn: any = p.playerId
       ? await redisClient.hGetAll(`connections:${p.playerId}`).catch(() => null)
@@ -456,15 +460,23 @@ app.post("/ovs_register", async (req, res, next) => {
       is_spectator: p.isSpectator ?? false,
     };
   }));
-  res.json({
-    max_players: config.players.length,
+  const botCount = config.players.length - realPlayers.length;
+  if (botCount > 0) {
+    logger.info(`${logPrefix} Match ${body.matchId} has ${botCount} bot(s) — excluded from rollback registration. max_players=${realPlayers.length}`);
+  }
+  const ovsRegisterResponse = {
+    max_players: realPlayers.length,
     match_duration: 36000,
     players,
-  });
+  };
+  logger.info(
+    `${logPrefix} [DEBUG-OVS-REGISTER] match=${body.matchId} response=${JSON.stringify(ovsRegisterResponse)}`,
+  );
+  res.json(ovsRegisterResponse);
 
-  // Now that the rollback server has the match config, tell ALL clients (including spectators) to connect.
-  // This MUST happen after the response so the rollback server is ready before clients arrive.
-  const playerIds = config.players.map((p) => p.playerId);
+  // Now that the rollback server has the match config, tell ALL real-player clients
+  // (including spectators, excluding bots) to connect. Bots have no client to notify.
+  const playerIds = realPlayers.map((p) => p.playerId);
   await redisGameServerInstanceReady(body.matchId, playerIds);
   logger.info(`${logPrefix} Sent game-server-instance-ready for match ${body.matchId} after rollback server fetched config`);
 });

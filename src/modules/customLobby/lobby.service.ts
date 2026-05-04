@@ -5,6 +5,7 @@ import {
   redisUpdateMatch,
   redisOnGameplayConfigNotified,
   redisMatchMakingComplete,
+  redisLockPerks,
   type RedisMatch,
   type RedisMatchTicket,
   type RedisTeamEntry,
@@ -1683,36 +1684,68 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
 
   for (const team of lobby.Teams) {
     if (team.TeamIndex === 4) {
-      // Spectators
+      // Spectators — each gets a unique sentinel PlayerIndex starting at 8888.
+      // The rollback uses PlayerIndex to look up the player in match config; if
+      // multiple specs share the same index, the rollback collapses them onto
+      // one PlayerInfo entry and only one spec actually loads in.
+      let specIdx = 0;
       for (const [playerId, lobbyPlayer] of Object.entries(team.Players)) {
         if (lobbyPlayer.BotSettingSlug !== "") continue; // skip bots in spectator
         const config = Players[playerId] || Spectators[playerId];
         spectatorEntries.push({
           playerId,
           partyId: matchId,
-          playerIndex: 8888, // rollback server detects spectators by playerIndex 8888
+          playerIndex: 8888 + specIdx, // 8888, 8889, 8890, ... — each spec unique
           teamIndex: 0 as 0 | 1,
           isHost: false,
           ip: config?.Ip || "",
           isSpectator: true,
         });
+        specIdx++;
       }
     } else if (team.TeamIndex >= 0 && team.TeamIndex <= 3) {
       let idxInTeam = 0;
-      for (const [playerId, lobbyPlayer] of Object.entries(team.Players)) {
+      // Sort entries so humans take the LOW PlayerIndex slots within the team
+      // before bots. Otherwise — because Object.entries iterates in insertion
+      // order — a bot added to the team first ends up with PlayerIndex 0 and
+      // the human gets PlayerIndex 2, which then crashes the rollback because
+      // it sizes match.Inputs by the human count and indexes by PlayerIndex.
+      const sortedEntries = Object.entries(team.Players).sort(([, a], [, b]) => {
+        const aBot = a.BotSettingSlug !== "" ? 1 : 0;
+        const bBot = b.BotSettingSlug !== "" ? 1 : 0;
+        return aBot - bBot;
+      });
+      for (const [playerId, lobbyPlayer] of sortedEntries) {
         const config = Players[playerId];
         if (!config) continue;
         const playerIndex = idxInTeam * 2 + team.TeamIndex;
+        const isBot = lobbyPlayer.BotSettingSlug !== "";
         teamEntries.push({
           playerId,
           partyId: matchId,
           playerIndex,
           teamIndex: team.TeamIndex as any,
-          isHost: globalIdx === 0, // first player is host
+          isHost: !isBot && globalIdx === 0, // first NON-BOT player is host (bots can't host)
           ip: config.Ip || "",
+          isBot,
         });
         idxInTeam++;
-        globalIdx++;
+        if (!isBot) globalIdx++; // only humans count toward host-selection ordering
+
+        // Stash bot config in Redis so the WebSocket gameplay-config builder
+        // can produce a PlayerConfig for the bot without doing any DB/cosmetics
+        // lookups (bot IDs aren't valid ObjectIds and have no Cosmetics row).
+        if (isBot) {
+          const diff = BOT_DIFFICULTY[lobbyPlayer.BotSettingSlug] ?? BOT_DIFFICULTY.Medium;
+          await redisClient.hSet(`bot_config:${playerId}`, {
+            character: lobbyPlayer.Fighter?.Slug ?? "character_jason",
+            skin: lobbyPlayer.Skin?.Slug ?? "skin_jason_000",
+            difficultyMin: String(diff.min),
+            difficultyMax: String(diff.max),
+            settingSlug: lobbyPlayer.BotSettingSlug,
+          });
+          await redisClient.expire(`bot_config:${playerId}`, 86400);
+        }
       }
     }
   }
@@ -1758,6 +1791,25 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
     isPasswordMatch: true, // Custom lobby = no ELO
   };
   await redisUpdateMatch(matchId, match);
+
+  // Pre-lock perks for bots — they don't send /ssc/invoke/perks_lock, so without
+  // this the all-perks-locked check in handleSsc_invoke_perks_lock would never
+  // pass and the match stays stuck in pregame.
+  const botPerks = [
+    "perk_gen_boxer",
+    "perk_team_speed_force_assist",
+    "perk_purest_of_motivations",
+    "perk_gen_well_rounded",
+  ];
+  for (const entry of teamEntries) {
+    if (entry.isBot) {
+      await redisLockPerks({
+        containerMatchId: matchId,
+        playerId: entry.playerId,
+        perks: botPerks,
+      });
+    }
+  }
 
   // Select map
   const map = randomMap?.Map ?? "M003_V1";
@@ -1881,15 +1933,18 @@ export async function handleSscRematchAccept(playerId: string): Promise<void> {
 
   logger.info(`${logPrefix} Player ${playerId} accepted rematch in SSC lobby ${lobbyId}`);
 
-  // Count total non-spectator players
+  // Count total non-spectator HUMAN players (bots can't accept rematch)
   let totalPlayers = 0;
   for (const team of lobby.Teams) {
-    if (team.TeamIndex !== 4) totalPlayers += team.Length;
+    if (team.TeamIndex === 4) continue;
+    for (const lp of Object.values(team.Players)) {
+      if (lp.BotSettingSlug === "") totalPlayers++;
+    }
   }
 
   const acceptedCount = await redisClient.sCard(acceptKey);
   if (acceptedCount >= totalPlayers) {
-    logger.info(`${logPrefix} All ${totalPlayers} players accepted rematch in SSC lobby ${lobbyId} — triggering immediately`);
+    logger.info(`${logPrefix} All ${totalPlayers} human players accepted rematch in SSC lobby ${lobbyId} — triggering immediately`);
     await redisClient.del(rematchTimerKey);
     await redisClient.del(acceptKey);
     await triggerSscRematch(lobbyId);

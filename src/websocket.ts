@@ -1420,9 +1420,13 @@ export class WebSocketService {
       return;
     }
 
-    logger.info(
-      `[${serviceName}]: [DEBUG-GAMEPLAY-CONFIG] match=${notification.matchId} message=${JSON.stringify(message)}`,
-    );
+    // Only dump full gameplay config for custom games — ranked is high-volume
+    // and not the focus of current debugging.
+    if (notification.isCustomGame) {
+      logger.info(
+        `[${serviceName}]: [DEBUG-GAMEPLAY-CONFIG] match=${notification.matchId} message=${JSON.stringify(message)}`,
+      );
+    }
 
     // Send the message to each player in the match
     for (const player of notification.players) {

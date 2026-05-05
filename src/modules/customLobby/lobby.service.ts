@@ -1685,7 +1685,12 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
           playerId,
           partyId: matchId,
           playerIndex: 8888 + specIdx, // 8888, 8889, 8890, ... — each spec unique
-          teamIndex: 0 as 0 | 1,
+          // TeamIndex -1 ("no team") so the host's post-match team-iteration code
+          // skips spec entries when walking team 0/1 player arrays. UE iteration
+          // is overwhelmingly `for (i=0; i<NumTeams; i++)` — a negative TeamIndex
+          // means the spec is never dereferenced as a "teammate," dodging the
+          // post-game-2 use-after-free seen in 4-human 2v2+spec lobbies.
+          teamIndex: -1 as unknown as 0 | 1,
           isHost: false,
           ip: config?.Ip || "",
           isSpectator: true,

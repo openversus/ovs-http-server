@@ -181,14 +181,20 @@ friendsRouter.put("/profiles/bulk", async (req: Request, res: Response) => {
 
 // ─── GET /social/me/blocked ──────────────────────────────────────────────────
 friendsRouter.get("/social/me/blocked", async (req: Request, res: Response) => {
-  //@ts-ignore TODO : implementation. Remove comment once implemented`
-
   try {
     const account = AuthUtils.DecodeClientToken(req);
-    const mongoPlayer = await PlayerTesterModel.findOne({ id: account.id });
     const fContentType = req.headers["content-type"] || "none";
-    const blocked = await getFriends(account.id, "blocked");
+    // Use the same response shape as /friends/me (account: { public_id, username, avatar })
+    // so the game's blocklist UI renders the username + the unblock action button.
+    // The legacy getFriends() returned a flat shape (friendAccountId/username/publicId/...)
+    // which the client couldn't bind to its row template — entries showed up nameless
+    // and the "Unblock" affordance was missing.
+    const blocked = await getUserFriendsList(account.id, "blocked");
 
+    // Side-effect housekeeping (kept for parity with the prior code path).
+    // findById is the right query; the previous findOne({id: ...}) silently returned
+    // null for everyone because PlayerTester has no 'id' field, only _id/profile_id/public_id.
+    const mongoPlayer = await PlayerTesterModel.findById(account.id);
     if (mongoPlayer) {
       await ensureNoAssholes(mongoPlayer, account.id);
     }

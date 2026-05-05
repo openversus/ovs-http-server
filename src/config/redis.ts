@@ -113,6 +113,7 @@ export interface RedisTeamEntry {
   isHost: boolean;
   ip: string;
   isSpectator?: boolean;
+  isBot?: boolean;
 }
 
 export interface MVS_NOTIFICATION {}

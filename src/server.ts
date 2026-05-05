@@ -1117,8 +1117,11 @@ app.get("/api/leaderboard/:mode", async (req, res) => {
       return;
     }
 
-    const players = await getLeaderboard(mode, 100);
-    res.json({ players });
+    const character = typeof req.query.character === "string" && req.query.character !== "global"
+      ? req.query.character
+      : undefined;
+    const players = await getLeaderboard(mode, 100, character);
+    res.json({ players, character: character || null });
   } catch (e) {
     logger.error(`${logPrefix} Error in GET /api/leaderboard: ${e}`);
     res.status(500).json({ error: "Error fetching leaderboard" });
@@ -1137,9 +1140,12 @@ app.get("/api/leaderboard/:mode/me", async (req, res) => {
       res.json({ error: "Not connected to game" });
       return;
     }
-    const rank = await getPlayerRank(player.id, mode);
+    const character = typeof req.query.character === "string" && req.query.character !== "global"
+      ? req.query.character
+      : undefined;
+    const rank = await getPlayerRank(player.id, mode, character);
     if (!rank) {
-      res.json({ error: "No ranked games played" });
+      res.json({ error: character ? `No games on ${character}` : "No ranked games played" });
       return;
     }
     res.json(rank);

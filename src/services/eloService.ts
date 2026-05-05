@@ -547,7 +547,16 @@ export function eloToTierDivision(elo: number): { tier: string; division: number
  * Get a specific player's rank and stats for a given mode.
  * Returns null if the player hasn't played any games in this mode.
  */
-export async function getPlayerRank(accountId: string, mode: "1v1" | "2v2") {
+export async function getPlayerRank(
+  accountId: string,
+  mode: "1v1" | "2v2",
+  characterSlug?: string,
+) {
+  // Character-specific rank
+  if (characterSlug) {
+    return getPlayerCharacterRank(accountId, mode, characterSlug);
+  }
+
   const eloField = mode === "1v1" ? "elo_1v1" : "elo_2v2";
   const winsField = mode === "1v1" ? "wins_1v1" : "wins_2v2";
   const lossesField = mode === "1v1" ? "losses_1v1" : "losses_2v2";
@@ -586,11 +595,77 @@ export async function getPlayerRank(accountId: string, mode: "1v1" | "2v2") {
 }
 
 /**
+ * Look up a player's rank within a single character's leaderboard. Uses an
+ * aggregation pipeline so we can do a case-insensitive key match against the
+ * stored characters_{mode} map (slugs are stored with inconsistent casing per
+ * the game client — see CLAUDE.md — so we match by lowercased key).
+ */
+async function getPlayerCharacterRank(
+  accountId: string,
+  mode: "1v1" | "2v2",
+  characterSlug: string,
+) {
+  const charsField = mode === "1v1" ? "characters_1v1" : "characters_2v2";
+  const slugLower = characterSlug.toLowerCase();
+
+  // Pull all players with stats on this character, project their character ELO/W/L
+  const pipeline = [
+    { $set: { _charArray: { $objectToArray: { $ifNull: [`$${charsField}`, {}] } } } },
+    { $set: {
+      _charEntry: {
+        $first: {
+          $filter: {
+            input: "$_charArray",
+            as: "c",
+            cond: { $eq: [{ $toLower: "$$c.k" }, slugLower] },
+          },
+        },
+      },
+    } },
+    { $match: { _charEntry: { $ne: null } } },
+    { $set: {
+      charElo: { $ifNull: ["$_charEntry.v.elo", 0] },
+      charWins: { $ifNull: ["$_charEntry.v.wins", 0] },
+      charLosses: { $ifNull: ["$_charEntry.v.losses", 0] },
+    } },
+    { $match: { $expr: { $gt: [{ $add: ["$charWins", "$charLosses"] }, 0] } } },
+    { $sort: { charElo: -1 as -1 } },
+    { $project: { account_id: 1, username: 1, charElo: 1, charWins: 1, charLosses: 1 } },
+  ];
+
+  const ranked = await EloRatingModel.aggregate(pipeline);
+  const me = ranked.findIndex((r: any) => r.account_id === accountId);
+  if (me === -1) return null;
+
+  const myEntry = ranked[me];
+  let username = myEntry.username;
+  if (!username || username === "Unknown") {
+    username = await getPlayerUsername(accountId) || "Unknown";
+  }
+  return {
+    rank: me + 1,
+    account_id: accountId,
+    username,
+    elo: myEntry.charElo,
+    wins: myEntry.charWins,
+    losses: myEntry.charLosses,
+    bestCharacter: characterSlug,
+  };
+}
+
+/**
  * Get leaderboard for a specific mode.
  * Returns top players sorted by ELO descending.
  * Only includes players who have played at least 1 game.
  */
-export async function getLeaderboard(mode: "1v1" | "2v2", limit: number = 100) {
+export async function getLeaderboard(
+  mode: "1v1" | "2v2",
+  limit: number = 100,
+  characterSlug?: string,
+) {
+  if (characterSlug) {
+    return getCharacterLeaderboard(mode, characterSlug, limit);
+  }
   const eloField = mode === "1v1" ? "elo_1v1" : "elo_2v2";
   const winsField = mode === "1v1" ? "wins_1v1" : "wins_2v2";
   const lossesField = mode === "1v1" ? "losses_1v1" : "losses_2v2";
@@ -651,6 +726,72 @@ export async function getLeaderboard(mode: "1v1" | "2v2", limit: number = 100) {
       };
     }),
   );
+
+  return results;
+}
+
+/**
+ * Top-N leaderboard filtered to a single character. Pulls each player's stats
+ * for that character (ELO, wins, losses) using a case-insensitive match
+ * against the stored characters_{mode} keys (slugs have inconsistent casing
+ * per CLAUDE.md). Players who have never played the character are excluded.
+ */
+async function getCharacterLeaderboard(
+  mode: "1v1" | "2v2",
+  characterSlug: string,
+  limit: number,
+) {
+  const charsField = mode === "1v1" ? "characters_1v1" : "characters_2v2";
+  const slugLower = characterSlug.toLowerCase();
+
+  const pipeline = [
+    { $set: { _charArray: { $objectToArray: { $ifNull: [`$${charsField}`, {}] } } } },
+    { $set: {
+      _charEntry: {
+        $first: {
+          $filter: {
+            input: "$_charArray",
+            as: "c",
+            cond: { $eq: [{ $toLower: "$$c.k" }, slugLower] },
+          },
+        },
+      },
+    } },
+    { $match: { _charEntry: { $ne: null } } },
+    { $set: {
+      charElo: { $ifNull: ["$_charEntry.v.elo", 0] },
+      charWins: { $ifNull: ["$_charEntry.v.wins", 0] },
+      charLosses: { $ifNull: ["$_charEntry.v.losses", 0] },
+    } },
+    { $match: { $expr: { $gt: [{ $add: ["$charWins", "$charLosses"] }, 0] } } },
+    { $sort: { charElo: -1 as -1 } },
+    { $limit: limit },
+    { $project: { account_id: 1, username: 1, charElo: 1, charWins: 1, charLosses: 1 } },
+  ];
+
+  const players = await EloRatingModel.aggregate(pipeline);
+
+  const results = await Promise.all(players.map(async (p: any, index: number) => {
+    let username = p.username;
+    if (!username || username === "Unknown") {
+      username = await getPlayerUsername(p.account_id);
+      if (!username) {
+        try {
+          const playerDoc = await PlayerTesterModel.findOne({ _id: new Types.ObjectId(p.account_id) });
+          username = playerDoc?.name || "";
+        } catch { /* ignore */ }
+      }
+    }
+    return {
+      rank: index + 1,
+      account_id: p.account_id,
+      username: username || "Unknown",
+      elo: p.charElo,
+      wins: p.charWins,
+      losses: p.charLosses,
+      bestCharacter: characterSlug,
+    };
+  }));
 
   return results;
 }

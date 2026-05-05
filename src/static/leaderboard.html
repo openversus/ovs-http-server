@@ -111,7 +111,31 @@
       }
       .tab-row {
           display: flex; gap: 10px; margin-bottom: 4px;
+          align-items: center;
       }
+      .char-select-wrap {
+          margin-left: auto;
+          display: flex; align-items: center; gap: 8px;
+      }
+      .char-select-label {
+          font-family: Helvetica, Arial, sans-serif;
+          font-size: 11px; font-weight: 800;
+          text-transform: uppercase; letter-spacing: 0.08em;
+          color: rgba(0,0,0,0.55);
+      }
+      .char-select {
+          font-family: Helvetica, Arial, sans-serif;
+          font-size: 13px; font-weight: 700;
+          padding: 8px 12px;
+          border: 2px solid var(--ink);
+          border-radius: 6px;
+          background: #fff;
+          color: var(--ink);
+          cursor: pointer;
+          min-width: 180px;
+      }
+      .char-select:hover { border-color: var(--mv-blue); }
+      .char-select:focus { outline: none; border-color: var(--mv-blue); }
       .tab-btn {
           display: inline-block; transform: skewX(var(--skew));
           border: 3px solid var(--ink);
@@ -224,6 +248,12 @@
           <div class="tab-btn" id="tab-2v2" onclick="switchTab('2v2')">
             <span class="tab-label">2v2 Rankings</span>
           </div>
+          <div class="char-select-wrap">
+            <span class="char-select-label">Filter</span>
+            <select class="char-select" id="char-select" onchange="onCharacterChange(this.value)">
+              <option value="global">Global</option>
+            </select>
+          </div>
         </div>
 
         <div id="leaderboard-content">
@@ -237,6 +267,7 @@
 
 <script>
   let currentMode = '1v1';
+  let currentCharacter = 'global'; // 'global' or character_xxx slug
 
   const CHARACTER_NAMES = {
     'character_wonder_woman': 'Wonder Woman', 'character_batman': 'Batman', 'character_arya': 'Arya Stark',
@@ -308,7 +339,26 @@
     currentMode = mode;
     document.getElementById('tab-1v1').classList.toggle('active', mode === '1v1');
     document.getElementById('tab-2v2').classList.toggle('active', mode === '2v2');
-    loadLeaderboard(mode);
+    loadLeaderboard(mode, currentCharacter);
+  }
+
+  function onCharacterChange(slug) {
+    currentCharacter = slug;
+    loadLeaderboard(currentMode, currentCharacter);
+  }
+
+  function populateCharacterDropdown() {
+    const sel = document.getElementById('char-select');
+    // Sort by display name for a friendly dropdown order
+    const entries = Object.entries(CHARACTER_NAMES)
+      .map(([slug, name]) => ({ slug, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const e of entries) {
+      const opt = document.createElement('option');
+      opt.value = e.slug;
+      opt.textContent = e.name;
+      sel.appendChild(opt);
+    }
   }
 
   function getRankBadgeClass(rank) {
@@ -318,21 +368,27 @@
     return 'rank-badge';
   }
 
-  async function loadLeaderboard(mode) {
+  async function loadLeaderboard(mode, character) {
+    character = character || 'global';
     const container = document.getElementById('leaderboard-content');
     container.innerHTML = '<div class="loading">Loading...</div>';
 
     try {
+      const qs = character !== 'global' ? '?character=' + encodeURIComponent(character) : '';
       // Fetch top 100 and current player's rank in parallel
       const [lbRes, meRes] = await Promise.all([
-        fetch('/api/leaderboard/' + mode),
-        fetch('/api/leaderboard/' + mode + '/me'),
+        fetch('/api/leaderboard/' + mode + qs),
+        fetch('/api/leaderboard/' + mode + '/me' + qs),
       ]);
       const data = await lbRes.json();
       const meData = await meRes.json();
 
       if (!data.players || data.players.length === 0) {
-        container.innerHTML = '<div class="loading">No players ranked yet. Play some matches!</div>';
+        const charName = character !== 'global' ? getCharacterName(character) : null;
+        const msg = charName
+          ? 'No one has played ' + escapeHtml(charName) + ' yet in this mode.'
+          : 'No players ranked yet. Play some matches!';
+        container.innerHTML = '<div class="loading">' + msg + '</div>';
         return;
       }
 
@@ -396,8 +452,9 @@
     return div.innerHTML;
   }
 
-  // Load 1v1 by default
-  loadLeaderboard('1v1');
+  // Populate the character dropdown and load global 1v1 by default
+  populateCharacterDropdown();
+  loadLeaderboard('1v1', 'global');
 </script>
 </body>
 </html>

@@ -105,11 +105,26 @@ export interface RedisMatch {
   isPasswordMatch?: boolean;
 }
 
+/**
+ * TeamIndex as serialized into the host's UMvsGameplayConfig.Players map.
+ *
+ * - 0 / 1 / 2 / 3 — real team slots (1v1 uses 0+1, 2v2 uses 0+1, FFA uses 0..3)
+ * - -1            — "no team" sentinel for spectators. UE iterates teams as
+ *                   `for (i = 0; i < NumTeams; i++)`, so a negative TeamIndex
+ *                   falls outside every team's player walk and the spec entry
+ *                   is never dereferenced as a "teammate." Used on the custom-
+ *                   game spec path to dodge the post-game-2 use-after-free
+ *                   reproduced in 4-human 2v2+spec lobbies.
+ *
+ * Callers MUST handle the -1 case explicitly when grouping players by team.
+ */
+export type TeamIndex = -1 | 0 | 1 | 2 | 3;
+
 export interface RedisTeamEntry {
   playerId: string;
   partyId: string;
   playerIndex: number;
-  teamIndex: 0 | 1 | 2 | 3;
+  teamIndex: TeamIndex;
   isHost: boolean;
   ip: string;
   isSpectator?: boolean;

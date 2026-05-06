@@ -1685,7 +1685,12 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
           playerId,
           partyId: matchId,
           playerIndex: 8888 + specIdx, // 8888, 8889, 8890, ... — each spec unique
-          teamIndex: 0 as 0 | 1,
+          // TeamIndex -1 ("no team") sentinel — see TeamIndex type doc in
+          // src/config/redis.ts for full rationale. Short version: UE iterates
+          // teams as `for (i=0; i<NumTeams; i++)`, so a negative TeamIndex
+          // excludes the spec from every team-walk and dodges the post-game-2
+          // use-after-free in 4-human 2v2+spec lobbies.
+          teamIndex: -1,
           isHost: false,
           ip: config?.Ip || "",
           isSpectator: true,
@@ -1966,17 +1971,14 @@ async function triggerSscRematch(lobbyId: string): Promise<void> {
   const lobby = (await getLobby(lobbyId)) as CustomLobby | null;
   if (!lobby) return;
 
-  // Verify all players are still online
-  for (const team of lobby.Teams) {
-    for (const playerId of Object.keys(team.Players)) {
-      if (team.Players[playerId].BotSettingSlug !== "") continue; // skip bots
-      const isOnline = await redisClient.sIsMember("online_players", playerId);
-      if (!isOnline) {
-        logger.info(`${logPrefix} Player ${playerId} disconnected, skipping rematch for SSC lobby ${lobbyId}`);
-        return;
-      }
-    }
-  }
+  // NOTE: Do NOT gate on `online_players` here. When the game client
+  // transitions into a match it closes its WebSocket, which removes the
+  // player from `online_players` immediately (websocket.ts:610). The WS
+  // reconnect happens post-match within a 45s grace window. If the player
+  // hits accept-rematch via HTTP during that window, they are clearly alive
+  // (they just made an HTTP call), but this gate was returning false and
+  // aborting the rematch. The accept handler in handleSscRematchAccept
+  // already proves liveness for every counted human.
 
   logger.info(`${logPrefix} Triggering rematch for SSC lobby ${lobbyId}`);
   await startCustomMatch(lobbyId, lobby.LeaderID);

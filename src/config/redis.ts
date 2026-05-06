@@ -34,13 +34,6 @@ export const LOBBY_REJOIN_CHANNEL = "lobby:rejoin";
 export const PLAYER_LOADOUT_LOCKED_CHANNEL = "lobby:loadout_locked";
 export const LOBBY_RETURN_CHANNEL = "lobby:return";
 export const FRIEND_REQUEST_WS_CHANNEL = "friend:request:ws";
-export const SPECTATOR_JOIN_CHANNEL = "spectator:join";
-
-export interface RedisSpectatorJoinNotification {
-  matchId: string;
-  spectatorId: string;
-  spectatorPlayerIndex: number; // 8888 + idx
-}
 
 export interface RedisFriendRequestWSNotification {
   receiverAccountId: string;
@@ -165,11 +158,6 @@ export interface MATCH_FOUND_NOTIFICATION extends MVS_NOTIFICATION {
   customShields?: boolean;
   worldBuffs?: string[];
   playerBuffs?: Record<string, string[]>;
-  // For mid-match spectator joins: when set, the WS handlers build the full
-  // gameplay config from `players` but only send messages to players in this
-  // subset. Avoids re-sending to in-progress humans/specs whose match is
-  // already running.
-  onlyNotifyPlayerIds?: string[];
 }
 
 export interface RedisMatchEndNotification extends MVS_NOTIFICATION {
@@ -458,16 +446,6 @@ export async function redisOnGameplayConfigNotified(notification: MATCH_FOUND_NO
 export async function redisGetMatchConfig(matchId: string) {
   const res = await redisClient.get(matchId);
   return JSON.parse(res as string) as MATCH_FOUND_NOTIFICATION;
-}
-
-export async function redisSetMatchConfig(matchId: string, config: MATCH_FOUND_NOTIFICATION) {
-  const EX = 60 * 20;
-  await redisClient.set(matchId, JSON.stringify(config), { EX });
-}
-
-export async function redisPublishSpectatorJoin(notification: RedisSpectatorJoinNotification) {
-  await redisClient.publish(SPECTATOR_JOIN_CHANNEL, JSON.stringify(notification));
-  logger.info(`${logPrefix} Published spectator join: ${notification.spectatorId} → match ${notification.matchId} at PlayerIndex ${notification.spectatorPlayerIndex}`);
 }
 
 export async function redisPublisdEndOfMatch(playerIds: string[], matchId: string) {

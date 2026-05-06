@@ -1970,17 +1970,14 @@ async function triggerSscRematch(lobbyId: string): Promise<void> {
   const lobby = (await getLobby(lobbyId)) as CustomLobby | null;
   if (!lobby) return;
 
-  // Verify all players are still online
-  for (const team of lobby.Teams) {
-    for (const playerId of Object.keys(team.Players)) {
-      if (team.Players[playerId].BotSettingSlug !== "") continue; // skip bots
-      const isOnline = await redisClient.sIsMember("online_players", playerId);
-      if (!isOnline) {
-        logger.info(`${logPrefix} Player ${playerId} disconnected, skipping rematch for SSC lobby ${lobbyId}`);
-        return;
-      }
-    }
-  }
+  // NOTE: Do NOT gate on `online_players` here. When the game client
+  // transitions into a match it closes its WebSocket, which removes the
+  // player from `online_players` immediately (websocket.ts:610). The WS
+  // reconnect happens post-match within a 45s grace window. If the player
+  // hits accept-rematch via HTTP during that window, they are clearly alive
+  // (they just made an HTTP call), but this gate was returning false and
+  // aborting the rematch. The accept handler in handleSscRematchAccept
+  // already proves liveness for every counted human.
 
   logger.info(`${logPrefix} Triggering rematch for SSC lobby ${lobbyId}`);
   await startCustomMatch(lobbyId, lobby.LeaderID);

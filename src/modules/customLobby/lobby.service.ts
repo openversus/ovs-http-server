@@ -6,9 +6,12 @@ import {
   redisOnGameplayConfigNotified,
   redisMatchMakingComplete,
   redisLockPerks,
+  redisSaveLobbyState,
+  redisSavePlayerLobby,
   type RedisMatch,
   type RedisMatchTicket,
   type RedisTeamEntry,
+  type RedisLobbyState,
   type MATCH_FOUND_NOTIFICATION,
 } from "../../config/redis";
 import { logger, logwrapper } from "../../config/logger";
@@ -882,10 +885,38 @@ export async function createPartyLobby(
     ...baseLobby,
     ModeString: lobbyMode,
   };
-  // NOTE: Do NOT save to custom_lobby_ssc: namespace — this is a party lobby, not a custom lobby.
-  // The game will call create_party_lobby SSC next, which goes to the old handler and creates
-  // proper Redis state (lobby:{id}, player_lobby:{id}, etc.).
-  // We just build the response object here so the leave_player_lobby SSC can return it.
+  // Don't save to the custom_lobby_ssc: namespace — this is a party lobby,
+  // not a custom lobby. We DO need to seed the legacy party-lobby Redis state
+  // immediately though, otherwise SSC handlers that read those keys (notably
+  // set_lobby_mode and changeLobbyMode) won't find a lobby and will silently
+  // no-op, leaving the client stuck on a loading spinner. The game's "normal"
+  // flow is to call create_party_lobby SSC next, which would create these
+  // keys — but in practice the user can click "change mode" on the post-
+  // leave screen before create_party_lobby fires. The later create_party_lobby
+  // SSC will just upsert the same keys.
+  //
+  // Three keys to seed (matching what create_party_lobby SSC + createLobby do):
+  //   1. lobby:{matchId}                       — lobbyState (RedisLobbyState shape)
+  //   2. player_lobby:{accountId}              — pointer used by set_lobby_mode lookup
+  //   3. player:{accountId}:lobby:{matchId}    — hash read by changeLobbyMode
+  const conn = (await redisClient.hGetAll(`connections:${accountId}`)) as any;
+  const lobbyState: RedisLobbyState = {
+    lobbyId: partyLobby.MatchID,
+    ownerId: accountId,
+    ownerUsername: conn?.username || conn?.hydraUsername || "Unknown",
+    mode: lobbyMode.toString(),
+    playerIds: [accountId],
+    createdAt: Date.now(),
+  };
+  await redisSaveLobbyState(partyLobby.MatchID, lobbyState);
+  await redisSavePlayerLobby(accountId, partyLobby.MatchID);
+  await redisClient.hSet(`player:${accountId}:lobby:${partyLobby.MatchID}`, {
+    id: partyLobby.MatchID,
+    created_at: new Date().toISOString(),
+    mode: lobbyMode,
+    owner: accountId,
+  });
+
   logger.info(`${logPrefix} Creating party lobby for ${accountId} - matchLobbyId:${partyLobby.MatchID}`);
   return partyLobby;
 }

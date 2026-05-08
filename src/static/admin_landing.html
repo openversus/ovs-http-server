@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>OpenVersus - Home</title>
+  <title>OpenVersus - Admin</title>
   <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png?v=20260418" sizes="96x96" />
   <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg?v=20260418" />
   <link rel="shortcut icon" href="/favicon/favicon.ico?v=20260418" />
@@ -136,23 +136,6 @@
     }
     .link-card.orange h3 { color: var(--mv-orange); }
 
-    .footer-links {
-      margin-top: 4px;
-      text-align: center;
-      font-family: Arial, sans-serif;
-      font-size: 0.78rem;
-      color: #888;
-    }
-    .footer-links a {
-      color: #888;
-      text-decoration: underline;
-      text-decoration-color: rgba(0,0,0,0.18);
-      text-underline-offset: 2px;
-      margin: 0 4px;
-    }
-    .footer-links a:hover { color: var(--mv-orange); }
-    .footer-links .dot { color: #bbb; }
-
     @media (max-width: 500px) {
       .top { grid-template-columns: 100px 1fr; }
       .logo { max-width: 100px; }
@@ -168,38 +151,20 @@
         <div class="top">
           <img class="logo" src="/images/OpenVersus_logo.png" alt="OpenVersus"/>
           <div>
-            <h1 class="panelTitle">OpenVersus</h1>
-            <p class="panelSubtitle">Server tools and utilities</p>
+            <h1 class="panelTitle">OpenVersus Admin</h1>
+            <p class="panelSubtitle">Internal tools for operators</p>
           </div>
         </div>
 
         <div class="links-grid">
-          <a href="/custom" class="link-card orange">
-            <h3>Custom Lobby</h3>
-            <p>Create or join a custom match with friends using a lobby code.</p>
+          <a href="/admin/banner" class="link-card orange">
+            <h3>Banner</h3>
+            <p>Push a global in-game admin banner to all online players.</p>
           </a>
-          <a href="/party" class="link-card">
-            <h3>Party</h3>
-            <p>View your current party and manage party members.</p>
+          <a href="/admin/data-deletion-requests" class="link-card">
+            <h3>Data Deletion</h3>
+            <p>Review and process account-deletion requests from players.</p>
           </a>
-          <a href="/namechange" class="link-card">
-            <h3>Name Change</h3>
-            <p>Change your in-game display name.</p>
-          </a>
-          <a href="/leaderboard" class="link-card orange">
-            <h3>Leaderboard</h3>
-            <p>View ELO rankings for 1v1 and 2v2.</p>
-          </a>
-          <a href="/matches" class="link-card">
-            <h3>Live Matches</h3>
-            <p>Watch ranked matches in progress with live scores.</p>
-          </a>
-        </div>
-
-        <div class="footer-links">
-          <a href="/privacy">Privacy Policy</a>
-          <span class="dot">·</span>
-          <a href="/delete-account">Delete my data</a>
         </div>
       </div>
     </div>

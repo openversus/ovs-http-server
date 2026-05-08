@@ -35,6 +35,16 @@ import { redisClient,
 import { getLeaderboard, getPlayerRank, processMatchLeave, eloToTierDivision } from "./services/eloService";
 import { performGenuineLeave } from "./ssc/ssc";
 import {
+  handleSubmit as handleDataDeletionSubmit,
+  handleStatus as handleDataDeletionStatus,
+  handleCancel as handleDataDeletionCancel,
+  handleAdminList as handleDataDeletionAdminList,
+  handleAdminMatch as handleDataDeletionAdminMatch,
+  handleAdminProcess as handleDataDeletionAdminProcess,
+  handleAdminReject as handleDataDeletionAdminReject,
+  handleAdminCandidates as handleDataDeletionAdminCandidates,
+} from "./handlers/dataDeletion";
+import {
   createLobby,
   joinLobby,
   leaveLobby,
@@ -242,6 +252,35 @@ const adminBannerFilePath = path.join(__dirname, "static/admin.html");
 const adminBannerSource = fs.readFileSync(adminBannerFilePath, "utf8");
 const adminBannerTemplate = handlebars.compile(adminBannerSource);
 
+const deleteAccountFilePath = path.join(__dirname, "static/delete_account.html");
+const deleteAccountSource = fs.readFileSync(deleteAccountFilePath, "utf8");
+const deleteAccountTemplate = handlebars.compile(deleteAccountSource);
+
+const adminDataDeletionFilePath = path.join(__dirname, "static/admin_data_deletion.html");
+const adminDataDeletionSource = fs.readFileSync(adminDataDeletionFilePath, "utf8");
+const adminDataDeletionTemplate = handlebars.compile(adminDataDeletionSource);
+
+const adminLandingFilePath = path.join(__dirname, "static/admin_landing.html");
+const adminLandingSource = fs.readFileSync(adminLandingFilePath, "utf8");
+const adminLandingTemplate = handlebars.compile(adminLandingSource);
+
+// Privacy policy: rendered from PRIVACY.md (single source of truth).
+// Resolved at startup; if you edit the markdown, restart the server.
+import { marked } from "marked";
+const privacyMdPath = path.join(__dirname, "../../PRIVACY.md");
+let privacyMarkdown = "";
+try {
+  privacyMarkdown = fs.readFileSync(privacyMdPath, "utf8");
+} catch {
+  // Fallback for builds where PRIVACY.md isn't co-located with the compiled output
+  try { privacyMarkdown = fs.readFileSync(path.join(process.cwd(), "PRIVACY.md"), "utf8"); }
+  catch { privacyMarkdown = "# Privacy Policy\n\n_Document not found._"; }
+}
+const privacyHtmlContent = marked.parse(privacyMarkdown, { async: false }) as string;
+const privacyFilePath = path.join(__dirname, "static/privacy.html");
+const privacySource = fs.readFileSync(privacyFilePath, "utf8");
+const privacyTemplate = handlebars.compile(privacySource);
+
 app.get("/home", async (req, res) => {
   try {
     const html = homeTemplate({});
@@ -251,6 +290,31 @@ app.get("/home", async (req, res) => {
     res.status(500).send("Error loading home page");
   }
 });
+
+// ── Privacy policy page (rendered from PRIVACY.md) ──
+app.get(["/privacy", "/privacy-policy"], (_req, res) => {
+  try {
+    res.send(privacyTemplate({ content: privacyHtmlContent }));
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /privacy: ${e}`);
+    res.status(500).send("Error loading privacy policy");
+  }
+});
+
+// ── Data deletion request page (public) ──
+app.get("/delete-account", (_req, res) => {
+  try {
+    res.send(deleteAccountTemplate({}));
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /delete-account: ${e}`);
+    res.status(500).send("Error loading delete-account page");
+  }
+});
+
+// ── Data deletion request endpoints (public) ──
+app.post("/api/data-deletion-request", handleDataDeletionSubmit);
+app.get("/api/data-deletion-request/:id", handleDataDeletionStatus);
+app.post("/api/data-deletion-request/:id/cancel", handleDataDeletionCancel);
 
 app.get("/namechange", async (req, res) => {
   try {
@@ -1277,6 +1341,31 @@ app.use("/api/admin", (req, res, next) => {
   if (req.cookies?.admin_auth === ADMIN_PW || req.query.pw === ADMIN_PW) return next();
   res.status(401).json({ error: "Unauthorized" });
 });
+
+// ── Admin landing page (gated by /admin auth above) ──
+app.get(["/admin", "/admin/"], (_req, res) => {
+  try {
+    res.send(adminLandingTemplate({}));
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /admin: ${e}`);
+    res.status(500).send("Error loading admin landing page");
+  }
+});
+
+// ── Admin: data deletion review page + endpoints (gated by /admin auth above) ──
+app.get("/admin/data-deletion-requests", (_req, res) => {
+  try {
+    res.send(adminDataDeletionTemplate({}));
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /admin/data-deletion-requests: ${e}`);
+    res.status(500).send("Error loading admin page");
+  }
+});
+app.get("/api/admin/data-deletion-requests", handleDataDeletionAdminList);
+app.get("/api/admin/data-deletion-requests/:id/candidates", handleDataDeletionAdminCandidates);
+app.post("/api/admin/data-deletion-requests/:id/match", handleDataDeletionAdminMatch);
+app.post("/api/admin/data-deletion-requests/:id/process", handleDataDeletionAdminProcess);
+app.post("/api/admin/data-deletion-requests/:id/reject", handleDataDeletionAdminReject);
 
 // Serve the HTML admin page.
 app.get("/admin/banner", async (req, res) => {

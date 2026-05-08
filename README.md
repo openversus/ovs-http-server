@@ -3,7 +3,23 @@
 This project is a fork and based on the fantastic work of [multiversuskoth](https://github.com/multiversuskoth) and [thethiny](https://github.com/thethiny). The original repository is located [here](https://github.com/multiversuskoth/mvs-http-server).
 
 
-This is a very early proof-of-concept deployment, and rock-solid stability is not guaranteed, nor should it be expected. A more comprehensive `README` will be added in a later commit, but for now, here are the important bits:
+This is a very early proof-of-concept deployment, and rock-solid stability is not guaranteed, nor should it be expected.
+
+---
+
+## Privacy & Your Data
+
+OpenVersus collects only what's needed to run multiplayer matches and a competitive ranked ladder — no advertising, no behavioral tracking, no third-party analytics, no monetization of personal data.
+
+- **Full Privacy Policy** → [`PRIVACY.md`](./PRIVACY.md) (also rendered at <https://openversus.org/privacy>)
+- **Request data deletion** → <https://openversus.org/delete-account>
+- **Other data requests** (access, correction, portability) → DM us in [Discord](https://discord.gg/openversus)
+
+Players in the EU/EEA: see section 4 of the privacy policy for cross-border data handling. We host on US-East and EU (Manchester) infrastructure; EU-vs-EU matches stay within the EU.
+
+---
+
+A more comprehensive `README` will be added in a later commit, but for now, here are the important bits:
 
 1. The `build.sh` script in the root of this repo will build a docker image containing Mongo, Redis, and the OpenVersus HTTP servers
 2. The UDP rollback server [is available here](https://github.com/openversus/ovs-udp-server) in its own repository, along with its own Dockerfile and example `Compose` stack file. A prebuilt, statically-linked binary of this server is also included in the container image and can be configured for use via environment variables (see `.env.example` in the `examples` directory), but running it, or multiple copies of it, in its/their own container is the expected default.

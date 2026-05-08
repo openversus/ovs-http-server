@@ -880,11 +880,59 @@ export async function createPartyLobby(
   accountId: string,
   lobbyMode: MATCH_TYPES = MATCH_TYPES.ONE_V_ONE,
 ): Promise<PartyLobby> {
+  // ── Multi-player party preservation guard ──
+  //
+  // If this player already has a player_lobby pointer at a STILL-INTACT
+  // multi-player party (e.g., they entered a custom lobby with a teammate
+  // and are now leaving back to that party), do NOT overwrite the pointer
+  // and do NOT seed a new solo lobby. Doing so would orphan the teammate
+  // in the original party because:
+  //
+  //   1. We'd point player_lobby:{A} at a brand-new solo lobby ID
+  //   2. The subsequent create_party_lobby SSC would read that pointer,
+  //      find playerIds=[A] only, fail the >1 REJOIN check, and create
+  //      yet another lobby
+  //   3. B (still in the original partyAB) would be silently disconnected
+  //      from A's lobby state
+  //
+  // In this case we just return the response object (matching the pre-fix
+  // behavior for this path); the create_party_lobby SSC's REJOIN logic
+  // handles re-establishing the multi-player party.
+  const existingLobbyId = await redisClient.get(`player_lobby:${accountId}`);
+  if (existingLobbyId) {
+    try {
+      const raw = await redisClient.get(`lobby:${existingLobbyId}`);
+      if (raw) {
+        const existing = JSON.parse(raw);
+        if (Array.isArray(existing.playerIds)
+            && existing.playerIds.length > 1
+            && existing.playerIds.includes(accountId)) {
+          logger.info(
+            `${logPrefix} createPartyLobby: ${accountId} already in multi-player party ` +
+            `${existingLobbyId} (${existing.playerIds.length} players) — not seeding new ` +
+            `solo state; existing REJOIN flow will handle reconnect.`,
+          );
+          // Return a fresh response object but DON'T touch Redis. The game
+          // will call create_party_lobby SSC next, which reads player_lobby
+          // (untouched, still pointing at the multi-player party) and
+          // hits the REJOIN path returning the real lobby.
+          const baseLobbyExisting = await createBaseLobby(accountId);
+          return { ...baseLobbyExisting, ModeString: lobbyMode };
+        }
+      }
+    } catch (e) {
+      logger.warn(`${logPrefix} createPartyLobby: error checking existing party lobby for ${accountId}: ${e}`);
+      // Fall through to solo-seeding below — better to create a fresh
+      // lobby than wedge the leave flow.
+    }
+  }
+
   const baseLobby = await createBaseLobby(accountId);
   const partyLobby: PartyLobby = {
     ...baseLobby,
     ModeString: lobbyMode,
   };
+
   // Don't save to the custom_lobby_ssc: namespace — this is a party lobby,
   // not a custom lobby. We DO need to seed the legacy party-lobby Redis state
   // immediately though, otherwise SSC handlers that read those keys (notably

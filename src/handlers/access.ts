@@ -19,6 +19,7 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { NameGenerator } from "../utils/namegeneration";
 import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
 import { writeIdentityIndexes, bumpIpAccountsChangedAt } from "../services/identityService";
+import { regionFromIp } from "../services/regions";
 
 const serviceName = "Handlers.Access";
 const logPrefix = `[${serviceName}]:`;
@@ -262,6 +263,20 @@ async function generateStaticAccess(req: express.Request) {
   logger.info(`${logPrefix} Player ${account.id} - ${account.username} connected; ws: ${ws}`);
 
   await Redis.redisAddPlayerConnection(player.id, ip, token, account);
+
+  // Classify the player's geo-region from their IP and stash it on the
+  // connections hash. Used at matchmaking time to bucket the ticket and
+  // at handleMatchFound to pick which rollback host (EAST_US vs MANCHESTER)
+  // serves the match. Falls back to DEFAULT_REGION for private IPs / lookup
+  // misses (regionFromIp handles both).
+  try {
+    const region = regionFromIp(ip);
+    await Redis.redisClient.hSet(`connections:${player.id}`, { region });
+    await Redis.redisClient.hSet(`connections:${ip}`, { region });
+    logger.info(`${logPrefix} Player ${player.id} classified region=${region} from ip=${ip}`);
+  } catch (e) {
+    logger.error(`${logPrefix} Error classifying region for ${player.id}: ${e}`);
+  }
 
   // Write identity index keys so downstream lookups can resolve by steamId/epicId/hardwareId
   // instead of IP. Solves same-household collision (two accounts sharing external IP).

@@ -14,6 +14,7 @@ import { logger } from "../config/logger";
 import { MVSTime } from "../utils/date";
 import { getOrCreateRating } from "./eloService";
 import { leaveLobby } from "./customLobbyService";
+import { DEFAULT_REGION, type Region } from "./regions";
 
 export enum MATCH_TYPES {
   ONE_V_ONE = "1v1",
@@ -77,9 +78,20 @@ export async function queueMatch(
           } catch (err) {
             logger.warn(`Could not fetch ELO for player ${p}, defaulting to 0: ${err}`);
           }
+          // Pull the region the /access geo-IP classifier stored on
+          // connections:{id}. Default to DEFAULT_REGION (EAST_US) if it
+          // wasn't set — happens for accounts that haven't relogged since
+          // the region-tagging code shipped.
+          let region: Region = DEFAULT_REGION;
+          try {
+            const conn = (await redisClient.hGetAll(`connections:${p}`)) as any;
+            if (conn?.region) region = conn.region as Region;
+          } catch (err) {
+            logger.warn(`Could not fetch region for player ${p}, defaulting to ${DEFAULT_REGION}: ${err}`);
+          }
           return {
             id: p,
-            region: "MVSI",
+            region,
             skill,
             ip: playerConfig.ip,
           };

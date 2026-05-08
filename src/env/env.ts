@@ -42,6 +42,13 @@ const env = cleanEnv(process.env, {
   UDP_PORT: num(),
   UDP_SERVER_IP: str(),
   UDP_SERVER_IP2: str(),
+  // ── Multi-region rollback hosts ──
+  // One env var per DEPLOYED_REGIONS entry in src/services/regions.ts.
+  // Defaults fall back to UDP_SERVER_IP so single-region deploys still
+  // work without setting these. When EU goes live, set
+  // UDP_SERVER_IP_MANCHESTER to the EU rollback host's public IP.
+  UDP_SERVER_IP_EAST_US: str({ default: "" }),
+  UDP_SERVER_IP_MANCHESTER: str({ default: "" }),
   VERBOSE_LOGGING: num({ default: 0 }),
   ADMIN_PASSWORD: str({ default: "changeme" }),
   WEBHOOK_HMAC_SECRET: str({ default: "CHANGEME" }),
@@ -53,6 +60,8 @@ const env = cleanEnv(process.env, {
   DEPLOY_ROLLBACK_DEFAULTS_FILE: str({ default: "../data/deploy-rollback-defaults.json" }),
   WB_DOMAIN: str(),
   WEBSOCKET_PORT: num(),
+  // Discord webhook for data deletion request notifications. Empty to disable.
+  DISCORD_DATA_REQUEST_WEBHOOK_URL: str({ default: "" }),
 });
 
 export default env;

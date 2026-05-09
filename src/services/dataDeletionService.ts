@@ -14,7 +14,8 @@
 
 import { Types } from "mongoose";
 import { randomBytes } from "crypto";
-import * as zstd from "zstd-napi";
+import { Worker } from "node:worker_threads";
+import * as path from "node:path";
 import { logger } from "../config/logger";
 import { redisClient } from "../config/redis";
 import { PlayerTesterModel } from "../database/PlayerTester";
@@ -59,16 +60,84 @@ async function deleteRedisKeysByPattern(pattern: string): Promise<number> {
   return total;
 }
 
+// ── Worker pool helper ──
+//
+// Spawns a single worker_threads worker that runs the CPU-bound zstd
+// decompress/walk/recompress for one archive at a time. Main thread does
+// Mongo I/O + queueing; worker does CPU work. Net effect: total wallclock
+// for a deletion is similar to before, but the main event loop stays free
+// the entire time, so live matches and incoming HTTP requests are not
+// blocked while a deletion runs.
+//
+// Resolves the worker path with a `.ts` fallback for dev (swc-node/register
+// transpiles at runtime via execArgv) and `.js` for prod builds emitted to
+// build/. Throws if neither exists so the failure is loud at startup of
+// the deletion rather than mid-loop.
+class ArchiveAnonymizerWorker {
+  private worker: Worker;
+  private nextId = 1;
+  private pending = new Map<number, { resolve: (m: any) => void; reject: (e: any) => void }>();
+  private terminated = false;
+
+  constructor() {
+    const tsPath = path.resolve(__dirname, "../workers/anonymizeArchive.worker.ts");
+    const jsPath = path.resolve(__dirname, "../workers/anonymizeArchive.worker.js");
+    const fs = require("fs") as typeof import("fs");
+    const useTs = fs.existsSync(tsPath);
+    const workerPath = useTs ? tsPath : jsPath;
+
+    this.worker = new Worker(workerPath, {
+      // Bootstrap swc-node so the worker can require the .ts file directly
+      // (matches how `npm start` runs the main process).
+      execArgv: useTs ? ["-r", "@swc-node/register"] : [],
+    });
+
+    this.worker.on("message", (msg: any) => {
+      const slot = this.pending.get(msg?.id);
+      if (!slot) return;
+      this.pending.delete(msg.id);
+      if (msg.error) slot.reject(new Error(msg.error));
+      else slot.resolve(msg);
+    });
+
+    this.worker.on("error", (err) => {
+      // Fatal worker-level error — reject everything pending so the loop
+      // doesn't hang.
+      for (const [, slot] of this.pending) slot.reject(err);
+      this.pending.clear();
+      logger.error(`${logPrefix} archive-anonymizer worker errored: ${err}`);
+    });
+  }
+
+  call(params: {
+    compressed_data: Buffer;
+    accountId: string;
+    oldUsername: string | null;
+    anonymizedName: string;
+  }): Promise<{ changed: boolean; compressed_data?: Buffer }> {
+    if (this.terminated) return Promise.reject(new Error("worker terminated"));
+    const id = this.nextId++;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.worker.postMessage({ id, ...params });
+    });
+  }
+
+  async terminate(): Promise<void> {
+    if (this.terminated) return;
+    this.terminated = true;
+    await this.worker.terminate();
+  }
+}
+
 /**
  * Anonymize occurrences of accountId / username inside a single MatchArchive
- * entry. The blob is zstd-compressed JSON; we decompress, walk, replace,
- * recompress.
- *
- * Cost: each call decompresses + recompresses one archive. Bulk deletes for
- * very active players may chew through CPU; called serially from admin
- * processing to keep load predictable.
+ * entry. The blob is zstd-compressed JSON; the worker decompresses, walks,
+ * replaces, and recompresses. Main thread only does the Mongo save when a
+ * change actually happened.
  */
 async function anonymizeArchive(
+  worker: ArchiveAnonymizerWorker,
   doc: any,
   accountId: string,
   oldUsername: string | null,
@@ -76,66 +145,17 @@ async function anonymizeArchive(
 ): Promise<boolean> {
   if (!doc?.compressed_data || !Buffer.isBuffer(doc.compressed_data)) return false;
 
-  const raw = zstd.decompress(doc.compressed_data);
-  let json: any;
-  try {
-    json = JSON.parse(raw.toString("utf8"));
-  } catch {
-    return false;
-  }
+  const result = await worker.call({
+    compressed_data: doc.compressed_data,
+    accountId,
+    oldUsername,
+    anonymizedName,
+  });
+  if (!result.changed || !result.compressed_data) return false;
 
-  // Walk arbitrary structure; replace any string field whose value matches
-  // accountId or oldUsername. Conservative: only touches exact-string matches
-  // in known fields. Common shapes we see in archives:
-  //   - players: [{ account_id, username, character, ... }]
-  //   - winners / losers: [accountId, accountId]
-  //   - chars: { [accountId]: "character_..." }
-  //   - eloBefore / eloAfter: { [accountId]: 1234 }
-  let changed = false;
-
-  const replaceStr = (s: any): any => {
-    if (typeof s !== "string") return s;
-    if (s === accountId) {
-      changed = true;
-      return anonymizedName;
-    }
-    if (oldUsername && s === oldUsername) {
-      changed = true;
-      return anonymizedName;
-    }
-    return s;
-  };
-
-  const walk = (node: any): any => {
-    if (Array.isArray(node)) {
-      for (let i = 0; i < node.length; i++) node[i] = walk(node[i]);
-      return node;
-    }
-    if (node && typeof node === "object") {
-      // Replace keys that are accountIds (e.g. eloBefore: { [accountId]: 1234 })
-      for (const key of Object.keys(node)) {
-        if (key === accountId) {
-          node[anonymizedName] = walk(node[key]);
-          delete node[key];
-          changed = true;
-        } else {
-          node[key] = walk(node[key]);
-        }
-      }
-      return node;
-    }
-    return replaceStr(node);
-  };
-
-  walk(json);
-
-  if (!changed) return false;
-
-  const recompressed = zstd.compress(
-    Buffer.from(JSON.stringify(json), "utf8"),
-    { compressionLevel: 9 },
-  );
-  doc.compressed_data = recompressed;
+  doc.compressed_data = Buffer.isBuffer(result.compressed_data)
+    ? result.compressed_data
+    : Buffer.from(result.compressed_data as any);
   await doc.save();
   return true;
 }
@@ -204,8 +224,17 @@ export async function processDeletion(
     report.errors.push(`friendlists_pulled_from_others: ${e}`);
   }
 
-  // ── 4. Anonymize match archive references
+  // ── 4. Anonymize match archive references (off the main thread)
+  //
+  // Spin up a single worker_threads worker for the duration of this
+  // deletion. The worker handles all zstd decompress/walk/recompress; the
+  // main thread does only the Mongo find + save and the queue plumbing.
+  // This keeps the event loop responsive for live matches and HTTP traffic
+  // while a heavy deletion is running.
+  let archiveWorker: ArchiveAnonymizerWorker | null = null;
   try {
+    archiveWorker = new ArchiveAnonymizerWorker();
+
     // Find archives that mention this accountId in their compressed payload.
     // We can't query inside the compressed blob — fetch all and check, or
     // narrow by a sidecar field if one exists. The current MatchArchive only
@@ -215,7 +244,13 @@ export async function processDeletion(
     const archives = await MatchArchiveModel.find({ timestamp: { $gte: cutoff } });
     for (const doc of archives) {
       try {
-        const ok = await anonymizeArchive(doc, accountId, oldUsername, report.anonymizedDisplayName);
+        const ok = await anonymizeArchive(
+          archiveWorker,
+          doc,
+          accountId,
+          oldUsername,
+          report.anonymizedDisplayName,
+        );
         if (ok) report.archivesAnonymized++;
       } catch (e) {
         report.archiveFailures++;
@@ -224,6 +259,10 @@ export async function processDeletion(
     }
   } catch (e) {
     report.errors.push(`match_archives: ${e}`);
+  } finally {
+    if (archiveWorker) {
+      try { await archiveWorker.terminate(); } catch {}
+    }
   }
 
   // ── 5. Wipe Redis keys

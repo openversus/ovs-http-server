@@ -288,10 +288,11 @@ export function getMatchServerRegion(
  *   - Each neighbor unlocks once `elapsedMs` reaches its waitMs threshold.
  *
  * For our current 2-region setup, this means an EAST_US ticket starts
- * matching only with other EAST_US tickets, and after 25s also accepts
- * MANCHESTER. MANCHESTER tickets accept EAST_US after 15s (asymmetric
+ * matching only with other EAST_US tickets, and after 7s also accepts
+ * MANCHESTER. MANCHESTER tickets accept EAST_US after 8s (asymmetric
  * because EU pool will be smaller — surfacing them to NA matches faster
- * keeps EU queue times sane while we ramp population).
+ * keeps EU queue times sane while we ramp population). After
+ * REGION_INFINITE_AFTER_MS (15s), region is no longer a filter at all.
  */
 export function getAllowedRegions(homeRegion: Region, elapsedMs: number): Set<Region> {
   // Past the global cutoff, region is no longer a filter — return every

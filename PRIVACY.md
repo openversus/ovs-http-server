@@ -136,7 +136,7 @@ When we make material changes to this policy, we will:
 
 - Update the "Last updated" date at the top.
 - Post a notice in Discord and in an Open Collective update.
-- For substantive changes (new categories of data, new transfer destinations, new lawful bases), give 30 days notice before they take effect.
+- For substantive changes (new categories of data, new transfer destinations, new lawful bases), give 30 days' notice before they take effect.
 
 The full version history of this document lives in our public GitHub repository at <https://github.com/openversus> — every change is on the record.
 

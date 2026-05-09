@@ -229,6 +229,10 @@ export async function processDeletion(
   // ── 5. Wipe Redis keys
   try {
     let total = 0;
+    // All patterns must include `accountId` — never use a global wildcard
+    // here, doing so would clobber state for unrelated active players.
+    // (`match_to_set:*` is intentionally NOT wiped: those keys are not
+    // keyed by accountId and have a short TTL; they age out naturally.)
     for (const pattern of [
       `connections:${accountId}`,
       `connections:${accountId}:*`,
@@ -240,7 +244,6 @@ export async function processDeletion(
       `pending_join_lobby:${accountId}`,
       `fun_fact_pending:${accountId}`,
       `ssc_custom_lobby_player:${accountId}`,
-      `match_to_set:*`, // these are short-TTL; skip from per-account scan, just leave to expire
     ]) {
       if (pattern.endsWith("*")) {
         total += await deleteRedisKeysByPattern(pattern);

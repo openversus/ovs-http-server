@@ -586,6 +586,10 @@ export async function redisSetCurrentRollbackPort(port: number): Promise<void> {
   await redisClient.set("rollback:current_port", port.toString());
 }
 
+export async function redisIncrCurrentRollbackPort(): Promise<number> {
+  return await redisClient.incr("rollback:current_port");
+}
+
 export async function redisAddDeployedRollbackServer(containerMatchId: string, deployInfo: IDeployInfo): Promise<void> {
   await redisClient.set(`rollback:${containerMatchId}`, JSON.stringify(deployInfo));
 }

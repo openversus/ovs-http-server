@@ -3,7 +3,7 @@ import { readFileSync, appendFileSync } from "fs";
 import { join } from "path";
 import { randomInt, createHmac } from "crypto";
 import * as http from "http";
-import { redisGetCurrentRollbackPort, redisSetCurrentRollbackPort } from "../config/redis";
+import { redisGetCurrentRollbackPort, redisSetCurrentRollbackPort, redisIncrCurrentRollbackPort } from "../config/redis";
 import env from "../env/env";
 
 const serviceName = "Services.RollbackService";
@@ -277,11 +277,11 @@ export class DeployInfo implements IDeployInfo {
       return (await redisGetCurrentRollbackPort() || onDemandRollbackPortLow) + 1;
     }
     try {
-      let nextPort = (await DeployInfo.getCurrentRollbackPort()) + 1;
+      let nextPort = await redisIncrCurrentRollbackPort();
       if (nextPort > onDemandRollbackPortHigh) {
         nextPort = onDemandRollbackPortLow;
+        await redisSetCurrentRollbackPort(nextPort);
       }
-      await redisSetCurrentRollbackPort(nextPort);
       logwrapper.verbose(`${logPrefix} Incremented current rollback port in Redis to: ${nextPort}`);
       return nextPort;
     } catch (error) {

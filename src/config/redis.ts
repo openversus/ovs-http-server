@@ -688,6 +688,14 @@ export async function redisGetOnlinePlayers(): Promise<string[]> {
   return await redisClient.sMembers(ONLINE_PLAYERS_SET);
 }
 
+/**
+ * Returns the count of online players without fetching the member list.
+ * Use this when you only need the size — SCARD is O(1) vs SMEMBERS O(N).
+ */
+export async function redisGetOnlinePlayerCount(): Promise<number> {
+  return await redisClient.sCard(ONLINE_PLAYERS_SET);
+}
+
 // --- Party Invites ---
 
 export const PARTY_INVITE_CHANNEL = "party:invite";

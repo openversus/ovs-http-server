@@ -210,6 +210,7 @@
       <a href="/home" class="back-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back to Home</a>
       <h1>LIVE MATCHES</h1>
       <div class="subtitle"><span class="dot"></span><span id="match_count">0 matches in progress</span></div>
+      <div class="subtitle"><span class="dot"></span><span id="online_count">0 players online</span></div>
 
       <div class="match_list" id="match_list">
         <div class="empty_state">Loading...</div>
@@ -330,11 +331,17 @@
       const data = await res.json();
       const list = document.getElementById('match_list');
       const count = document.getElementById('match_count');
+      const online = document.getElementById('online_count');
       const matches = data.matches || [];
+      const onlinePlayers = typeof data.onlinePlayers === 'number' ? data.onlinePlayers : 0;
 
       count.textContent = matches.length === 1
         ? '1 match in progress'
         : matches.length + ' matches in progress';
+
+      online.textContent = onlinePlayers === 1
+        ? '1 player online'
+        : onlinePlayers + ' players online';
 
       if (matches.length === 0) {
         list.innerHTML = '<div class="empty_state">No ranked sets currently in progress.</div>';

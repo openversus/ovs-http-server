@@ -30,6 +30,7 @@ import { redisClient,
   redisPopDLLNotifications,
   redisPushDLLNotification,
   redisGetOnlinePlayers,
+  redisGetOnlinePlayerCount,
   redisGetActiveRankedSets,
   redisGetInProgressMatches } from "./config/redis";
 import { getLeaderboard, getPlayerRank, processMatchLeave, eloToTierDivision } from "./services/eloService";
@@ -915,9 +916,10 @@ app.get("/leaderboard", async (req, res) => {
 // does one Redis sweep regardless of how many tabs are polling.
 
 const MATCHES_CACHE_TICK_MS = 2000;
-let matchesCache: { matches: any[]; count: number; generatedAt: number } = {
+let matchesCache: { matches: any[]; count: number; onlinePlayers: number; generatedAt: number } = {
   matches: [],
   count: 0,
+  onlinePlayers: 0,
   generatedAt: 0,
 };
 
@@ -1014,7 +1016,17 @@ async function refreshMatchesCache(): Promise<void> {
       });
     }
 
-    matchesCache = { matches: results, count: results.length, generatedAt: Date.now() };
+    // Online player count — SCARD on the online_players set (O(1)).
+    // Defensive: tolerate Redis errors so a transient failure doesn't kill
+    // the entire matches refresh; default to the previous tick's value.
+    let onlinePlayers = matchesCache.onlinePlayers;
+    try {
+      onlinePlayers = await redisGetOnlinePlayerCount();
+    } catch (e) {
+      logger.warn(`${logPrefix} redisGetOnlinePlayerCount failed, keeping previous value: ${e}`);
+    }
+
+    matchesCache = { matches: results, count: results.length, onlinePlayers, generatedAt: Date.now() };
   } catch (e) {
     logger.error(`${logPrefix} refreshMatchesCache error: ${e}`);
   }

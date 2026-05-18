@@ -1,3 +1,8 @@
+import { getCounters } from "./playerCounters";
+
+// Legacy hardcoded constant — kept for any caller that doesn't yet have an
+// account context. New code should prefer `getToastInventoryEntry(accountId)`.
+// Note: count was 9998 forever, served to every player identically.
 export const ToastData = {
   item_slug: "match_toasts",
   count: 9998,
@@ -19,3 +24,17 @@ export const ToastData = {
   updated_at: { _hydra_unix_date: 1741927542 },
   created_at: { _hydra_unix_date: 1721975525 },
 };
+
+/**
+ * Builds the per-account match_toasts inventory entry served via
+ * /profiles/:id/inventory. Pulls the real balance from PlayerCounters
+ * (auto-created at 100 on first access).
+ */
+export async function getToastInventoryEntry(accountId: string) {
+  const counters = await getCounters(accountId);
+  return {
+    ...ToastData,
+    count: counters.match_toasts,
+    updated_at: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
+  };
+}

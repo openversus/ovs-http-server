@@ -107,15 +107,20 @@ export async function adjustMatchToasts(accountId: string, delta: number): Promi
     return cur.match_toasts;
   }
   if (delta < 0) {
-    // Guard against underflow: only decrement if we have at least |delta|.
+    // Ensure the doc exists with defaults BEFORE the conditional decrement.
+    // Without this, a brand-new account's first negative adjust silently
+    // no-ops: findOneAndUpdate doesn't match (no doc), the fallback
+    // getCounters then creates the doc at 100, and the spend is lost.
+    // Doing getCounters first means the conditional $inc has a real doc
+    // to match against.
+    await getCounters(accountId);
     const updated = await PlayerCountersModel.findOneAndUpdate(
       { accountId, match_toasts: { $gte: -delta } },
       { $inc: { match_toasts: delta } },
       { new: true },
     ).lean();
     if (updated) return (updated as any).match_toasts as number;
-    // Either the doc doesn't exist yet or there isn't enough balance.
-    // Ensure doc exists and return the (unchanged) count.
+    // Doc exists but balance is insufficient — return current count unchanged.
     const cur = await getCounters(accountId);
     logger.warn(`${logPrefix} match_toasts decrement (${delta}) skipped for ${accountId}; balance ${cur.match_toasts} insufficient`);
     return cur.match_toasts;

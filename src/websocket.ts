@@ -1693,12 +1693,17 @@ export class WebSocketService {
     // WS popup. This makes the reward real — the count persists across
     // inventory refetches because PlayerCounters is the source of truth
     // for the inventory endpoint now.
-    let newCount: number | null = null;
+    //
+    // If the grant throws (transient Mongo error etc.), we BAIL on the
+    // popup too — otherwise the client sees a "+1 Toasts" popup that
+    // doesn't reconcile against inventory on next refresh. Better to drop
+    // a rare toast event than to silently lie about the balance.
     try {
-      newCount = await adjustMatchToasts(notification.toasteeAccountId, 1);
+      const newCount = await adjustMatchToasts(notification.toasteeAccountId, 1);
       logger.info(`[${serviceName}]: Granted +1 match_toasts to ${notification.toasteeAccountId}; new count: ${newCount}`);
     } catch (e) {
-      logger.error(`[${serviceName}]: Failed to grant +1 match_toasts to ${notification.toasteeAccountId}: ${e}`);
+      logger.error(`[${serviceName}]: Failed to grant +1 match_toasts to ${notification.toasteeAccountId}, suppressing popup to avoid desync: ${e}`);
+      return;
     }
 
     // Reward payload mirrors upstream's `ToastReceivedReward` config knob

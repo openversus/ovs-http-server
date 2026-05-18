@@ -240,8 +240,20 @@ export async function processDeletion(
     // narrow by a sidecar field if one exists. The current MatchArchive only
     // has match_id/timestamp/compressed_data, so we fetch the recent N (last
     // 12 months) and inspect each.
+    //
+    // Projection limits us to the fields we actually consume (match_id for
+    // logging, timestamp for ordering, compressed_data for the decode pass).
+    // Avoids hydrating any future fields onto the cursor.
+    //
+    // TODO: add a `participantIds: string[]` sidecar field on MatchArchive
+    // at write time so this can become a selective query
+    // (`{ participantIds: accountId, timestamp: { $gte: cutoff } }`).
+    // Today this is O(N_year_of_matches) per deletion — fine at current
+    // scale, expensive if archive volume grows.
     const cutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
-    const archives = await MatchArchiveModel.find({ timestamp: { $gte: cutoff } });
+    const archives = await MatchArchiveModel
+      .find({ timestamp: { $gte: cutoff } })
+      .select("match_id timestamp compressed_data");
     for (const doc of archives) {
       try {
         const ok = await anonymizeArchive(

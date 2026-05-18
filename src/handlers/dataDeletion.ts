@@ -32,10 +32,14 @@ const logPrefix = `[${serviceName}]:`;
 
 // ── Anti-spam ──
 //
-// Per-IP rate limit: max 3 active (pending) requests per IP per 24h. We use
-// a Redis-backed count rather than a sliding window because the natural
-// signal is "has this IP already filed a bunch of requests today?" — bots
-// flooding the form should be hard-capped.
+// Per-IP rate limit: max 3 requests per IP per 24h, regardless of status.
+// Completed and rejected requests still count — this is intentional, not a
+// bug. If we filtered to status: "pending" only, a user could file → admin
+// approves & processes → file again → process → file again... unbounded
+// noise per day. Counting all requests in the window caps IP-level abuse
+// while still allowing the rare legitimate refile (the user just waits).
+// Backed by Mongo countDocuments (not Redis, despite an earlier comment
+// claim) — at this endpoint's traffic the Mongo query is microseconds.
 async function checkRateLimit(ip: string): Promise<{ ok: boolean; existingCount: number }> {
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const count = await DataDeletionRequestModel.countDocuments({
@@ -49,7 +53,10 @@ async function checkRateLimit(ip: string): Promise<{ ok: boolean; existingCount:
 async function notifyDiscord(req: any): Promise<void> {
   const url = env.DISCORD_DATA_REQUEST_WEBHOOK_URL;
   if (!url) {
-    logger.warn(`${logPrefix} DISCORD_DATA_REQUEST_WEBHOOK_URL not set; skipping notification`);
+    // info, not warn — running without a webhook is a valid configuration
+    // (some operators don't want Discord pings for deletion requests).
+    // Reserves the WARN level for actually-actionable problems.
+    logger.info(`${logPrefix} DISCORD_DATA_REQUEST_WEBHOOK_URL not set; skipping notification`);
     return;
   }
   try {

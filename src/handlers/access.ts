@@ -591,7 +591,7 @@ async function generateStaticAccess(req: express.Request) {
           let totalRingouts = 0;
           let highestDamageDealt = 0;
 
-          for (const [slug, data] of Object.entries({ ...ps1v1, ...ps2v2 }) as [string, any][]) {
+          for (const [slug, data] of [...Object.entries(ps1v1), ...Object.entries(ps2v2)] as [string, any][]) {
             // Preserve slug casing as-is — the game client looks up character_wins[slug]
             // using the exact casing it sends (e.g., character_BananaGuard, character_C030)
             charWins[slug] = (charWins[slug] || 0) + (data.wins || 0);

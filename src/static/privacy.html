@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpenVersus - Privacy Policy</title>
+  <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png?v=20260418" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg?v=20260418" />
+  <link rel="shortcut icon" href="/favicon/favicon.ico?v=20260418" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fugaz+One&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --mv-blue: #1f6feb;
+      --mv-orange: #ff7500;
+      --ink: #343434;
+      --card: rgba(255, 255, 255, 0.95);
+      --card2: rgba(255, 255, 255, 0.88);
+      --shadow: rgba(0, 0, 0, 0.28) 0px 19px 38px, rgba(0, 0, 0, 0.20) 0px 15px 12px;
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      color: var(--ink);
+      background: #000;
+      overflow-x: hidden;
+    }
+    .background {
+      position: fixed; inset: 0; z-index: -2;
+      background-image: url("/images/name_change_background.jpeg");
+      background-size: cover; background-position: center; background-repeat: no-repeat;
+      transform: scale(1.03);
+    }
+    .background::after {
+      content: ""; position: absolute; inset: 0;
+      backdrop-filter: blur(6px);
+      background: rgba(10, 12, 20, 0.30);
+    }
+    .wrap { min-height: 100%; padding: 24px 14px 60px; display: grid; place-items: start center; }
+    .container {
+      width: min(820px, 100%);
+      background: linear-gradient(180deg, var(--card), var(--card2));
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 36px 40px;
+      margin-top: 28px;
+    }
+    .topnav {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 16px; padding-bottom: 16px;
+      border-bottom: 1px solid rgba(0,0,0,0.08);
+    }
+    .brand { font-family: "Fugaz One", Arial, sans-serif; color: var(--mv-blue); font-size: 1.4rem; letter-spacing: 1px; text-transform: uppercase; text-decoration: none; }
+    .nav-link { color: #666; font-size: 0.85rem; text-decoration: none; }
+    .nav-link:hover { color: var(--mv-orange); }
+    .md { line-height: 1.65; font-size: 0.96rem; }
+    .md h1 {
+      font-family: "Fugaz One", Arial, sans-serif;
+      color: var(--mv-blue);
+      margin: 0 0 8px;
+      font-size: clamp(1.8rem, 4vw, 2.2rem);
+    }
+    .md h2 {
+      font-family: "Fugaz One", Arial, sans-serif;
+      color: var(--mv-orange);
+      margin: 32px 0 8px;
+      font-size: 1.2rem;
+      letter-spacing: 0.5px;
+    }
+    .md h3 { font-weight: bold; margin: 18px 0 6px; font-size: 1rem; }
+    .md p, .md li { margin: 8px 0; }
+    .md ul, .md ol { padding-left: 24px; }
+    .md em { color: #777; }
+    .md hr { border: none; border-top: 1px solid rgba(0,0,0,0.10); margin: 26px 0; }
+    .md code {
+      background: rgba(0,0,0,0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+    .md a { color: var(--mv-blue); }
+    .md a:hover { color: var(--mv-orange); }
+    .md strong { color: #1d1d1d; }
+  </style>
+</head>
+<body>
+  <div class="background"></div>
+  <div class="wrap">
+    <div class="container">
+      <div class="topnav">
+        <a href="/home" class="brand">OpenVersus</a>
+        <span>
+          <a href="/home" class="nav-link">← Home</a>
+          &nbsp;·&nbsp;
+          <a href="/delete-account" class="nav-link">Delete my data</a>
+        </span>
+      </div>
+      <div class="md">{{{content}}}</div>
+    </div>
+  </div>
+</body>
+</html>

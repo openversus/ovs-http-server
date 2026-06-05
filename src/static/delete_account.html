@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpenVersus - Account Data &amp; Deletion</title>
+  <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png?v=20260418" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg?v=20260418" />
+  <link rel="shortcut icon" href="/favicon/favicon.ico?v=20260418" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fugaz+One&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --mv-blue: #1f6feb;
+      --mv-orange: #ff7500;
+      --ink: #343434;
+      --card: rgba(255, 255, 255, 0.92);
+      --card2: rgba(255, 255, 255, 0.85);
+      --shadow: rgba(0, 0, 0, 0.28) 0px 19px 38px, rgba(0, 0, 0, 0.20) 0px 15px 12px;
+      --radius: 18px;
+      --danger: #d23a3a;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      color: var(--ink);
+      background: #000;
+      overflow-x: hidden;
+    }
+    .background {
+      position: fixed; inset: 0; z-index: -2;
+      background-image: url("/images/name_change_background.jpeg");
+      background-size: cover; background-position: center; background-repeat: no-repeat;
+      transform: scale(1.03);
+    }
+    .background::after {
+      content: ""; position: absolute; inset: 0;
+      backdrop-filter: blur(6px);
+      background: rgba(10, 12, 20, 0.30);
+    }
+    .wrap { min-height: 100%; display: grid; place-items: center; padding: 24px 14px; }
+    .container {
+      width: min(640px, 100%);
+      background: linear-gradient(180deg, var(--card), var(--card2));
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 28px;
+    }
+    h1 {
+      font-family: "Fugaz One", Arial, sans-serif;
+      color: var(--mv-blue);
+      margin: 0 0 6px;
+      letter-spacing: 0.5px;
+    }
+    h2 {
+      font-family: "Fugaz One", Arial, sans-serif;
+      color: var(--mv-orange);
+      margin: 24px 0 8px;
+      font-size: 1.1rem;
+      letter-spacing: 0.5px;
+    }
+    p, li { line-height: 1.5; font-size: 0.95rem; }
+    .lede { color: #555; margin-top: 0; }
+    label { display: block; font-weight: bold; margin: 14px 0 6px; }
+    input[type=text], textarea {
+      width: 100%; padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 1rem;
+      font-family: inherit;
+    }
+    textarea { min-height: 96px; resize: vertical; }
+    .honeypot { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
+    .actions { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+    button {
+      padding: 12px 20px; border: none; border-radius: 10px;
+      font-size: 1rem; font-weight: bold; cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-primary { background: var(--mv-blue); color: white; }
+    .btn-primary:hover { background: var(--mv-orange); }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-danger:hover { background: #a52a2a; }
+    .btn-secondary { background: #e0e0e0; color: #333; }
+    .btn-secondary:hover { background: #c0c0c0; }
+    button[disabled] { opacity: 0.5; cursor: not-allowed; }
+    .status {
+      margin-top: 18px; padding: 12px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .status.show { display: block; }
+    .status.success { background: #e6f5e0; color: #2a6a1f; border: 1px solid #95c47b; }
+    .status.error { background: #fbe1df; color: #7a1f1f; border: 1px solid #d97a78; }
+    .status.info { background: #e1ecfd; color: #1f3f7a; border: 1px solid #7ba1d9; }
+    code {
+      background: #f0f0f0;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+    .small { font-size: 0.85rem; color: #666; }
+    a { color: var(--mv-blue); }
+    .footer-link { display: block; margin-top: 18px; text-align: center; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="background"></div>
+  <div class="wrap">
+    <div class="container">
+      <h1>Account Data &amp; Deletion</h1>
+      <p class="lede">
+        Submit a request to permanently delete your OpenVersus account and personal data.
+        Requests are reviewed by an admin before processing — typically within a few days.
+      </p>
+
+      <h2>What gets deleted</h2>
+      <ul>
+        <li>Your account record (in-game name, identity tokens, blocklist)</li>
+        <li>Your ELO ratings, personal stats, and friend list</li>
+        <li>Your cosmetics / loadout records</li>
+        <li>Cached connection state on our servers</li>
+      </ul>
+
+      <h2>What's anonymized (kept for game integrity)</h2>
+      <ul>
+        <li>
+          Match records you participated in are <strong>kept</strong> for fairness to
+          the other players, but your name and account ID are replaced with
+          <code>deleted_user_xxxxxxxx</code> and can no longer be associated with you.
+        </li>
+        <li>
+          Historical leaderboard entries are anonymized rather than removed — gaps would
+          break rankings for everyone else.
+        </li>
+      </ul>
+
+      <h2>Submit a request</h2>
+      <form id="requestForm" autocomplete="off">
+        <!-- Honeypot: humans don't see, bots fill it. -->
+        <div class="honeypot">
+          <label>Website</label>
+          <input type="text" name="website" tabindex="-1" autocomplete="off"/>
+        </div>
+
+        <label for="requestedName">In-game name <span style="color:#888;font-weight:normal">(required)</span></label>
+        <input type="text" id="requestedName" name="requestedName" required maxlength="64"
+               placeholder="The display name shown above your character in matches"/>
+
+        <label for="reason">Reason <span style="color:#888;font-weight:normal">(optional)</span></label>
+        <textarea id="reason" name="reason" maxlength="1000"
+                  placeholder="Anything you want us to know — privacy concern, lost interest, switching accounts, etc."></textarea>
+
+        <p class="small">
+          Your IP address will be recorded with the request to help us identify the right
+          account (multiple players can share an in-game name). It is not displayed publicly
+          and is deleted along with your account.
+        </p>
+
+        <div class="actions">
+          <button type="submit" class="btn-danger" id="submitBtn">Submit Deletion Request</button>
+          <a href="/home" class="btn-secondary" style="text-decoration:none;display:inline-block;text-align:center;line-height:1.2">Back</a>
+        </div>
+      </form>
+
+      <div id="resultArea" class="status"></div>
+
+      <h2 style="margin-top:32px">Already filed a request? Cancel or check status</h2>
+      <p class="small">Paste the request ID we gave you when you submitted (looks like <code>69abc...</code>):</p>
+      <form id="lookupForm" autocomplete="off">
+        <input type="text" id="lookupId" name="lookupId" placeholder="Request ID" maxlength="48"/>
+        <div class="actions">
+          <button type="button" class="btn-secondary" id="checkBtn">Check Status</button>
+          <button type="button" class="btn-danger" id="cancelBtn">Cancel Request</button>
+        </div>
+      </form>
+      <div id="lookupResult" class="status"></div>
+
+      <p style="text-align:center;margin-top:18px;font-size:0.88rem;color:#666">
+        See our full <a href="/privacy">Privacy Policy</a> for details on what we collect, why,
+        and your rights under GDPR.
+      </p>
+      <a href="/home" class="footer-link">← Back to Home</a>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function showStatus(el, kind, msg) {
+      el.className = `status show ${kind}`;
+      el.innerHTML = msg;
+    }
+
+    $("requestForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const submitBtn = $("submitBtn");
+      const result = $("resultArea");
+      submitBtn.disabled = true;
+      try {
+        const r = await fetch("/api/data-deletion-request", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            requestedName: $("requestedName").value,
+            reason: $("reason").value,
+            website: $("requestForm").querySelector('input[name="website"]').value,
+          }),
+        });
+        const data = await r.json();
+        if (r.ok) {
+          showStatus(result, "success",
+            `<strong>Request received.</strong><br>` +
+            `Your request ID: <code>${data.requestId}</code><br>` +
+            `<small>Save this ID — you'll need it to cancel or check status.</small>`);
+          $("requestedName").value = "";
+          $("reason").value = "";
+          $("lookupId").value = data.requestId;
+        } else if (r.status === 429) {
+          showStatus(result, "error", data.message || "Too many requests. Try later.");
+        } else {
+          showStatus(result, "error", data.error || "Something went wrong. Try again.");
+        }
+      } catch (err) {
+        showStatus(result, "error", "Network error: " + err);
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    $("checkBtn").addEventListener("click", async () => {
+      const id = $("lookupId").value.trim();
+      const result = $("lookupResult");
+      if (!id) { showStatus(result, "error", "Enter a request ID first."); return; }
+      try {
+        const r = await fetch("/api/data-deletion-request/" + encodeURIComponent(id));
+        const data = await r.json();
+        if (r.ok) {
+          showStatus(result, "info",
+            `<strong>Status: ${data.status}</strong><br>` +
+            `Name: <code>${data.requestedName}</code><br>` +
+            `Submitted: ${new Date(data.createdAt).toLocaleString()}` +
+            (data.processedAt ? `<br>Processed: ${new Date(data.processedAt).toLocaleString()}` : ""));
+        } else {
+          showStatus(result, "error", data.error || "Request not found.");
+        }
+      } catch (err) {
+        showStatus(result, "error", "Network error: " + err);
+      }
+    });
+
+    $("cancelBtn").addEventListener("click", async () => {
+      const id = $("lookupId").value.trim();
+      const result = $("lookupResult");
+      if (!id) { showStatus(result, "error", "Enter a request ID first."); return; }
+      if (!confirm("Cancel deletion request " + id + "?")) return;
+      try {
+        const r = await fetch("/api/data-deletion-request/" + encodeURIComponent(id) + "/cancel", { method: "POST" });
+        const data = await r.json();
+        if (r.ok) {
+          showStatus(result, "success", "Request cancelled.");
+        } else {
+          showStatus(result, "error", data.message || data.error || "Could not cancel.");
+        }
+      } catch (err) {
+        showStatus(result, "error", "Network error: " + err);
+      }
+    });
+  </script>
+</body>
+</html>

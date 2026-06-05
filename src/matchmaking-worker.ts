@@ -23,6 +23,11 @@ import { getRandomMapByType } from "./data/maps";
 import { randomUUID, randomInt } from "crypto";
 import { IDeployInfo, DeployInfo, getDefaultDeployInfo, useOnDemandRollback } from "./services/rollbackService";
 import { resolveAccountByIdentifiers } from "./services/identityService";
+import {
+  DEFAULT_REGION,
+  getAllowedRegions,
+  type Region,
+} from "./services/regions";
 import env from "./env/env";
 
 const serviceName = "MatchmakingWorker";
@@ -168,6 +173,37 @@ function areTicketsInRange(ticketA: RedisMatchTicket, ticketB: RedisMatchTicket,
   return skillDiff <= range;
 }
 
+/**
+ * Check if two tickets pass the region-proximity gate.
+ *
+ * Each ticket's home region (taken from its first player) defines a set of
+ * allowed neighbor regions that opens up over time per REGION_PROXIMITY:
+ *
+ *   - EAST_US tickets allow MANCHESTER after 7s in queue
+ *   - MANCHESTER tickets allow EAST_US after 8s
+ *   - After REGION_INFINITE_AFTER_MS (15s), region is no longer a filter
+ *
+ * Like areTicketsInRange, BOTH sides must accept each other — we use
+ * the stricter (younger ticket's) view.
+ */
+function areTicketsRegionCompatible(
+  ticketA: RedisMatchTicket,
+  ticketB: RedisMatchTicket,
+  nowSec: number,
+): boolean {
+  const homeA = (ticketA.players[0]?.region as Region) || DEFAULT_REGION;
+  const homeB = (ticketB.players[0]?.region as Region) || DEFAULT_REGION;
+  if (homeA === homeB) return true;
+
+  const elapsedAms = (nowSec - ticketA.created_at) * 1000;
+  const elapsedBms = (nowSec - ticketB.created_at) * 1000;
+
+  // Bidirectional: A must accept B's home region AND B must accept A's
+  const allowedA = getAllowedRegions(homeA, elapsedAms);
+  const allowedB = getAllowedRegions(homeB, elapsedBms);
+  return allowedA.has(homeB) && allowedB.has(homeA);
+}
+
 export function startMatchMakingWorker(): void {
   logger.info(`${logPrefix} Starting matchmaking worker...`);
   // Run the first check immediately
@@ -216,6 +252,9 @@ async function process1v1Queue(queueKey: string = MATCH_TYPES.ONE_V_ONE): Promis
         const ticketB = sortedTickets[j];
         // Never match a player against themselves
         if (ticketsSharePlayers(ticketA, ticketB)) continue;
+        // Region-proximity gate: same region passes immediately, neighbor
+        // regions open up after their REGION_PROXIMITY waitMs.
+        if (!areTicketsRegionCompatible(ticketA, ticketB, now)) continue;
         if (areTicketsInRange(ticketA, ticketB, now)) {
           const matchedTickets = [ticketA, ticketB];
           try {
@@ -290,6 +329,11 @@ async function process2v2Queue(queueKey: string = MATCH_TYPES.TWO_V_TWO): Promis
 
       for (let j = i + 1; j < sorted.length && playerCount < 4; j++) {
         if (ticketsSharePlayers(sorted[i], sorted[j])) continue;
+
+        // Region-proximity gate against the anchor — keeps cross-region
+        // 2v2 lobbies from forming until both sides have waited long
+        // enough that their REGION_PROXIMITY thresholds open.
+        if (!areTicketsRegionCompatible(sorted[i], sorted[j], now)) continue;
 
         // Check ELO: compare candidate team avg vs existing candidates avg
         const existingAvg = candidates.reduce((sum, t) => sum + getTicketAvgSkill(t), 0) / candidates.length;

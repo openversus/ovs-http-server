@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin - Data Deletion Requests</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #1a1a1a;
+      color: #eee;
+      margin: 0;
+      padding: 18px;
+    }
+    h1 { color: #ff7500; margin: 0 0 16px; }
+    .filter-bar { margin-bottom: 16px; }
+    .filter-bar button {
+      padding: 6px 12px;
+      margin-right: 6px;
+      background: #333; color: #eee;
+      border: 1px solid #555;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .filter-bar button.active { background: #ff7500; color: #000; border-color: #ff7500; }
+    .request {
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    .request.processed { border-left: 4px solid #4caf50; opacity: 0.8; }
+    .request.cancelled { border-left: 4px solid #888; opacity: 0.65; }
+    .request.rejected  { border-left: 4px solid #c0392b; opacity: 0.8; }
+    .request.pending   { border-left: 4px solid #ff7500; }
+    .row { display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; margin-bottom: 6px; }
+    .field-label { color: #888; font-size: 0.85rem; min-width: 110px; }
+    code {
+      background: #111;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.9em;
+      color: #ffa14d;
+    }
+    .reason {
+      background: #111;
+      padding: 8px 10px;
+      border-radius: 6px;
+      margin-top: 6px;
+      white-space: pre-wrap;
+      font-size: 0.9em;
+    }
+    .admin-actions { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    input[type=text], textarea {
+      background: #111; color: #eee;
+      border: 1px solid #555;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 0.9rem;
+      font-family: inherit;
+    }
+    input[type=text] { min-width: 280px; }
+    textarea { width: 100%; min-height: 60px; margin-top: 6px; }
+    button.action {
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 0.9rem;
+    }
+    .btn-process { background: #c0392b; color: white; }
+    .btn-reject  { background: #555; color: white; }
+    .btn-match   { background: #1f6feb; color: white; }
+    .btn-find    { background: #4caf50; color: white; }
+    button.action:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .candidates {
+      margin-top: 10px;
+      display: none;
+    }
+    .candidates.show { display: block; }
+    .candidates-empty {
+      padding: 10px;
+      background: #1a1a1a;
+      border-radius: 6px;
+      color: #888;
+      font-size: 0.85rem;
+      font-style: italic;
+    }
+    .cand-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto auto auto;
+      gap: 12px;
+      align-items: center;
+      padding: 8px 12px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .cand-row:hover {
+      border-color: #4caf50;
+      background: #1f2a1f;
+    }
+    .cand-row.selected {
+      border-color: #4caf50;
+      background: #1f2a1f;
+    }
+    .cand-id { font-family: monospace; color: #ffa14d; }
+    .cand-name { color: #eee; font-weight: bold; }
+    .cand-tag {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      margin-right: 4px;
+    }
+    .cand-tag.ip-match { background: #2a6a1f; color: #d4f5c4; }
+    .cand-tag.name-match { background: #1f4a7a; color: #c4dbf5; }
+    .cand-tag.no-id { background: #5a2a2a; color: #f5c4c4; }
+    .cand-tag.has-id { background: #333; color: #aaa; }
+    .toast {
+      position: fixed; bottom: 18px; right: 18px;
+      background: #333; padding: 12px 16px; border-radius: 8px;
+      font-size: 0.9rem; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      display: none; max-width: 400px;
+    }
+    .toast.show { display: block; }
+    .toast.success { background: #2a6a1f; }
+    .toast.error { background: #7a1f1f; }
+    .empty { text-align: center; padding: 40px; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Data Deletion Requests</h1>
+
+  <div class="filter-bar">
+    <button data-status="pending" class="active">Pending</button>
+    <button data-status="processed">Processed</button>
+    <button data-status="cancelled">Cancelled</button>
+    <button data-status="rejected">Rejected</button>
+    <button data-status="">All</button>
+  </div>
+
+  <div id="list"></div>
+  <div id="toast" class="toast"></div>
+
+  <script>
+    let activeStatus = "pending";
+    const list = document.getElementById("list");
+    const toast = document.getElementById("toast");
+
+    function showToast(kind, msg) {
+      toast.className = "toast show " + kind;
+      toast.textContent = msg;
+      setTimeout(() => { toast.className = "toast"; }, 4000);
+    }
+
+    function fmt(d) { return d ? new Date(d).toLocaleString() : "—"; }
+
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+      }[c]));
+    }
+
+    async function loadList() {
+      const url = "/api/admin/data-deletion-requests" + (activeStatus ? "?status=" + activeStatus : "");
+      const r = await fetch(url);
+      if (!r.ok) {
+        list.innerHTML = `<div class="empty">Failed to load: ${r.status}</div>`;
+        return;
+      }
+      const data = await r.json();
+      if (!data.requests.length) {
+        list.innerHTML = `<div class="empty">No requests with status "${activeStatus || "any"}"</div>`;
+        return;
+      }
+      list.innerHTML = data.requests.map(renderRequest).join("");
+    }
+
+    function renderRequest(r) {
+      const isPending = r.status === "pending";
+      return `
+        <div class="request ${r.status}">
+          <div class="row">
+            <strong style="color:#ff7500">${escapeHtml(r.requestedName)}</strong>
+            <span style="color:#888;font-size:0.85rem">${r.status}</span>
+            <span style="margin-left:auto;color:#666;font-size:0.85rem">${fmt(r.createdAt)}</span>
+          </div>
+          <div class="row"><span class="field-label">Request ID</span><code>${r.requestId}</code></div>
+          <div class="row"><span class="field-label">From IP</span><code>${escapeHtml(r.requestIp)}</code></div>
+          ${r.requestUserAgent ? `<div class="row"><span class="field-label">User-Agent</span><span style="color:#aaa;font-size:0.85rem">${escapeHtml(r.requestUserAgent)}</span></div>` : ""}
+          ${r.reason ? `<div class="reason">${escapeHtml(r.reason)}</div>` : ""}
+          ${r.matchedAccountId ? `<div class="row"><span class="field-label">Matched Account</span><code>${escapeHtml(r.matchedAccountId)}</code></div>` : ""}
+          ${r.adminNotes ? `<div class="row"><span class="field-label">Admin Notes</span><span style="color:#aaa;font-size:0.85rem;white-space:pre-wrap">${escapeHtml(r.adminNotes)}</span></div>` : ""}
+          ${r.processedBy ? `<div class="row"><span class="field-label">Processed By</span><span>${escapeHtml(r.processedBy)} @ ${fmt(r.processedAt)}</span></div>` : ""}
+          ${isPending ? `
+            <div class="admin-actions">
+              <input type="text" placeholder="Matched account ID (24-hex)" id="match-${r.requestId}" value="${escapeHtml(r.matchedAccountId || "")}"/>
+              <button class="action btn-find" onclick="findCandidates('${r.requestId}')">Find candidates</button>
+              <button class="action btn-match" onclick="matchAccount('${r.requestId}')">Save match</button>
+              <input type="text" placeholder="Your name (admin)" id="who-${r.requestId}" style="min-width:140px"/>
+              <button class="action btn-process" onclick="processReq('${r.requestId}')">Process (delete!)</button>
+              <button class="action btn-reject" onclick="rejectReq('${r.requestId}')">Reject</button>
+            </div>
+            <div id="candidates-${r.requestId}" class="candidates"></div>
+            <textarea id="notes-${r.requestId}" placeholder="Admin notes (visible only to admins)"></textarea>
+          ` : ""}
+        </div>
+      `;
+    }
+
+    async function findCandidates(id) {
+      const panel = document.getElementById("candidates-" + id);
+      panel.classList.add("show");
+      panel.innerHTML = `<div class="candidates-empty">Searching…</div>`;
+      try {
+        const r = await fetch("/api/admin/data-deletion-requests/" + id + "/candidates");
+        const data = await r.json();
+        if (!r.ok) {
+          panel.innerHTML = `<div class="candidates-empty">Error: ${data.error || r.status}</div>`;
+          return;
+        }
+        if (!data.candidates.length) {
+          panel.innerHTML = `<div class="candidates-empty">No accounts found by name "${escapeHtml(data.requestedName)}" or IP <code>${escapeHtml(data.requestIp)}</code>. Account may not exist or may have been deleted already.</div>`;
+          return;
+        }
+        panel.innerHTML = data.candidates.map((c) => {
+          const idTags = [];
+          idTags.push(c.hasSteamId ? '<span class="cand-tag has-id">steam</span>' : '');
+          idTags.push(c.hasEpicId  ? '<span class="cand-tag has-id">epic</span>'  : '');
+          idTags.push(c.hasHardwareId ? '<span class="cand-tag has-id">hw</span>' : '');
+          if (!c.hasSteamId && !c.hasEpicId && !c.hasHardwareId) {
+            idTags.push('<span class="cand-tag no-id">no identity</span>');
+          }
+          const matchTags = c.matchedBy.map((m) =>
+            m === "ip" && c.ipMatchesRequest
+              ? '<span class="cand-tag ip-match">IP match</span>'
+              : `<span class="cand-tag name-match">${m} match</span>`
+          ).join("");
+          return `
+            <div class="cand-row" onclick="selectCandidate('${id}', '${c._id}', this)">
+              <span class="cand-id">${c._id}</span>
+              <span><span class="cand-name">${escapeHtml(c.name || "(no name)")}</span> ${escapeHtml(c.character || "")}</span>
+              <span style="color:#888">IP: <code>${escapeHtml(c.ip || "")}</code></span>
+              <span>${matchTags}</span>
+              <span>${idTags.join("")}</span>
+            </div>
+          `;
+        }).join("");
+      } catch (err) {
+        panel.innerHTML = `<div class="candidates-empty">Network error: ${escapeHtml(String(err))}</div>`;
+      }
+    }
+
+    function selectCandidate(requestId, accountId, rowEl) {
+      // Visual: highlight the chosen row, unhighlight siblings
+      rowEl.parentElement.querySelectorAll(".cand-row").forEach((el) => el.classList.remove("selected"));
+      rowEl.classList.add("selected");
+      // Auto-fill the matched-account input AND persist it server-side so
+      // a subsequent "Process" click works without the admin having to
+      // hit "Save match" first.
+      const input = document.getElementById("match-" + requestId);
+      if (input) {
+        input.value = accountId;
+        input.focus();
+      }
+      matchAccount(requestId).catch(() => {});
+    }
+
+    async function matchAccount(id, opts) {
+      const silent = opts && opts.silent;
+      const matchedAccountId = document.getElementById("match-" + id).value.trim();
+      const adminNotes = document.getElementById("notes-" + id).value.trim();
+      const r = await fetch("/api/admin/data-deletion-requests/" + id + "/match", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchedAccountId, adminNotes }),
+      });
+      if (r.ok) {
+        if (!silent) { showToast("success", "Saved."); loadList(); }
+        return true;
+      }
+      const d = await r.json().catch(() => ({}));
+      showToast("error", d.error || "Failed to save matched account");
+      return false;
+    }
+
+    async function processReq(id) {
+      // If the matched-account field has a value, auto-save it before
+      // processing so the admin doesn't have to hit "Save match" first.
+      // The backend's /process endpoint reads matchedAccountId from the
+      // persisted record, not the request body, so we need it saved.
+      const matchInput = document.getElementById("match-" + id);
+      if (matchInput && matchInput.value.trim()) {
+        const ok = await matchAccount(id, { silent: true });
+        if (!ok) return;
+      }
+
+      if (!confirm("This will PERMANENTLY DELETE the matched account's data. Continue?")) return;
+      const processedBy = document.getElementById("who-" + id).value.trim() || "admin";
+      const r = await fetch("/api/admin/data-deletion-requests/" + id + "/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processedBy }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        showToast("success", "Processed. Mongo: " + JSON.stringify(d.report?.mongo) + " | Redis keys: " + d.report?.redisKeysDeleted + " | Archives anonymized: " + d.report?.archivesAnonymized);
+        loadList();
+      } else {
+        showToast("error", d.message || d.error || "Failed");
+      }
+    }
+
+    async function rejectReq(id) {
+      const adminNotes = document.getElementById("notes-" + id).value.trim();
+      const processedBy = document.getElementById("who-" + id).value.trim() || "admin";
+      if (!adminNotes) { showToast("error", "Add a note explaining why before rejecting."); return; }
+      const r = await fetch("/api/admin/data-deletion-requests/" + id + "/reject", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processedBy, adminNotes }),
+      });
+      if (r.ok) { showToast("success", "Rejected."); loadList(); }
+      else { const d = await r.json().catch(() => ({})); showToast("error", d.error || "Failed"); }
+    }
+
+    document.querySelectorAll(".filter-bar button").forEach((b) => {
+      b.addEventListener("click", () => {
+        document.querySelectorAll(".filter-bar button").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        activeStatus = b.dataset.status;
+        loadList();
+      });
+    });
+
+    loadList();
+    setInterval(loadList, 30000); // auto-refresh every 30s
+  </script>
+</body>
+</html>

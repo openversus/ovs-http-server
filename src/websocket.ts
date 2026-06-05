@@ -8,6 +8,12 @@ import { decodeToken } from "./middleware/auth";
 import * as SharedTypes from "./types/shared-types";
 import * as RollbackProcess from "./utils/processes";
 import * as KitchenSink from "./utils/garbagecan";
+import {
+  DEFAULT_REGION,
+  getMatchServerRegion,
+  rollbackHostIpForRegion,
+  type Region,
+} from "./services/regions";
 //import { exec, spawn, spawnSync, SpawnOptions } from "child_process";
 
 import {
@@ -778,11 +784,34 @@ export class WebSocketService {
   }
 
   async handleMatchFound(notification: MATCH_FOUND_NOTIFICATION) {
-    const arr = [
-      env.UDP_SERVER_IP,
-      env.UDP_SERVER_IP2,
-    ];
-    const randomIndex = Math.floor(Math.random() * arr.length);
+    // Pick the rollback host based on the regions of the match's human
+    // players. Read each non-bot player's region off connections:{id}
+    // (set by /access geo-IP classifier). For matches that span regions
+    // we delegate to getMatchServerRegion which uses MATCH_SERVER_OVERRIDES
+    // to pick the most-balanced deployed region. Falls back to EAST_US
+    // (DEFAULT_REGION) if everyone's region is unknown.
+    let serverIp: string;
+    try {
+      const humanPlayers = notification.players.filter((p) => !p.isBot);
+      const regions: Region[] = [];
+      for (const p of humanPlayers) {
+        const conn = (await redisClient.hGetAll(`connections:${p.playerId}`)) as any;
+        regions.push((conn?.region as Region) || DEFAULT_REGION);
+      }
+      const serverRegion =
+        regions.length === 0
+          ? DEFAULT_REGION as any
+          : getMatchServerRegion(regions[0], ...regions.slice(1));
+      serverIp = rollbackHostIpForRegion(serverRegion);
+      logger.info(
+        `[${serviceName}]: Match ${notification.matchId} routed to region=${serverRegion} ip=${serverIp} (player regions: ${regions.join(",")})`,
+      );
+    } catch (e) {
+      logger.error(
+        `[${serviceName}]: Error picking region for match ${notification.matchId}, falling back to UDP_SERVER_IP: ${e}`,
+      );
+      serverIp = env.UDP_SERVER_IP;
+    }
     for (const matchPlayer of notification.players) {
       // Bots have no WS connection — skip notification + client lookup.
       if (matchPlayer.isBot) continue;
@@ -831,7 +860,7 @@ export class WebSocketService {
             //Port: gameServerPort || GAME_SERVER_PORT,
             Port: gameServerPort,
             template_id: "GameServerReadyNotification",
-            IPAddress: player.ip === "127.0.0.1" ? "127.0.0.1" : arr[randomIndex],
+            IPAddress: player.ip === "127.0.0.1" ? "127.0.0.1" : serverIp,
           },
           payload: {
             match: {

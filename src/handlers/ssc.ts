@@ -17,6 +17,7 @@ import {
   redisPublishToast,
 } from "../config/redis";
 import {  getCurrentCRC, MATCHMAKING_CRC } from "../data/config";
+import { adjustMatchToasts } from "../data/playerCounters";
 import { PerkPagesModel } from "../database/PerkPages";
 import { PlayerStatsModel } from "../database/PlayerStats";
 import { Cosmetics } from "../database/Cosmetics";
@@ -58020,6 +58021,19 @@ export async function handleSsc_invoke_toast_player(req: Request<{}, {}, {}, {}>
   const body = req.body as { ContainerMatchId?: string; ToasteeId?: string };
 
   if (account && body?.ContainerMatchId && body?.ToasteeId) {
+    // Toasting costs the toaster 1 match_toasts. adjustMatchToasts won't
+    // underflow — if balance is 0 it returns the current count unchanged
+    // and logs a warning. We still publish the toast either way; gating on
+    // balance would require a client-side response that the existing flow
+    // doesn't model. If we want to refuse toasts on empty balance, surface
+    // that here and don't publish.
+    try {
+      const newCount = await adjustMatchToasts(account.id, -1);
+      logger.info(`${logPrefix} Toaster ${account.id} match_toasts after spend: ${newCount}`);
+    } catch (e) {
+      logger.error(`${logPrefix} Failed to decrement match_toasts for toaster ${account.id}: ${e}`);
+    }
+
     await redisPublishToast({
       toasterAccountId: account.id,
       toasterUsername: account.username,

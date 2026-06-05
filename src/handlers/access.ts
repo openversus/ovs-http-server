@@ -19,6 +19,7 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { NameGenerator } from "../utils/namegeneration";
 import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
 import { writeIdentityIndexes, bumpIpAccountsChangedAt } from "../services/identityService";
+import { tryGrantDailyToastBonus } from "../data/playerCounters";
 
 const serviceName = "Handlers.Access";
 const logPrefix = `[${serviceName}]:`;
@@ -281,6 +282,34 @@ async function generateStaticAccess(req: express.Request) {
     await Redis.redisClient.set(`fun_fact_pending:${player.id}`, "1", { EX: 60 });
   } catch (e) {
     logger.error(`${logPrefix} Error arming fun fact pending flag: ${e}`);
+  }
+
+  // Daily toast bonus: +10 match_toasts per Chicago day, claimable once
+  // when the player logs in past 11:00 America/Chicago. The grant is
+  // atomic & idempotent (see tryGrantDailyToastBonus), so concurrent
+  // /access retries or multi-instance setups can't double-grant.
+  //
+  // The Mongo update is done immediately here so the reward can't be
+  // lost if the WS never connects. The popup is delivered separately:
+  // we stash a Redis flag with the amount + 5-min TTL, and the WS-connect
+  // handler drains it and fires an OnRewardsGranted notification. Same
+  // pattern as `fun_fact_pending` above.
+  try {
+    const { granted, newCount } = await tryGrantDailyToastBonus(player.id);
+    if (granted > 0) {
+      logger.info(`${logPrefix} Daily toast bonus: +${granted} to ${player.id} (${player.name}), new count: ${newCount}`);
+      try {
+        await Redis.redisClient.set(
+          `daily_toast_bonus_pending:${player.id}`,
+          String(granted),
+          { EX: 300 },
+        );
+      } catch (e) {
+        logger.error(`${logPrefix} Error arming daily toast bonus pending flag: ${e}`);
+      }
+    }
+  } catch (e) {
+    logger.error(`${logPrefix} Error granting daily toast bonus for ${player.id}: ${e}`);
   }
 
   // Cache party key in Redis connection hash + party_key lookup

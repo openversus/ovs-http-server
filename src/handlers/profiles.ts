@@ -2,7 +2,7 @@ import { logger } from "../config/logger";
 import express, { Request, Response } from "express";
 import { MVSQueries } from "../interfaces/queries_types";
 import { GleamiumData } from "../data/gleamium";
-import { ToastData } from "../data/toast";
+import { ToastData, getToastInventoryEntry } from "../data/toast";
 import { unlockAll, unlockAllCharacters } from "../data/characters";
 import { getProfileForMatch } from "../services/profileService";
 import { redisClient, RedisPlayerConnection, redisGetOnlinePlayers } from "../config/redis";
@@ -47,7 +47,12 @@ export async function handleProfiles_id_inventory(req: Request<{}, {}, {}, MVSQu
 
     //res.send([...unlockAll(account.id), GleamiumData]);
 
-    res.send([...unlockAll(aID), GleamiumData, ToastData]);
+    // ToastData was a hardcoded constant (count: 9998) for every player.
+    // Now backed by PlayerCounters — real per-account balance, defaulting
+    // to 100 for new accounts and incremented by the daily login bonus
+    // and on-toast-received grant.
+    const toastEntry = await getToastInventoryEntry(aID);
+    res.send([...unlockAll(aID), GleamiumData, toastEntry]);
 }
 
 export async function handleProfiles_bulk(req: Request<{}, {}, { ids: string[] }, MVSQueries.Profiles_bulk_QUERY>, res: Response) {

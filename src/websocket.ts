@@ -98,6 +98,7 @@ import { PlayerTesterModel } from "./database/PlayerTester";
 import { PlayerStatsModel } from "./database/PlayerStats";
 import { INVENTORY_DEFINITIONS } from "./data/inventoryDefs";
 import { BOT_DEFAULT_PERKS, BOT_DEFAULT_CHARACTER, BOT_DEFAULT_SKIN } from "./data/botDefaults";
+import { adjustMatchToasts } from "./data/playerCounters";
 
 const serviceName: string = "WebSocket";
 const logPrefix = `[${serviceName}]:`;
@@ -289,6 +290,15 @@ export class WebSocketService {
       logger.info(`[${serviceName}]: Player ${playerWS.account.id} RECONNECTED after lobby rejoin force-close`);
       this.pendingRejoin.delete(playerWS.account.id);
     }
+
+    // Daily toast bonus popup — drain the flag armed at /access. The Mongo
+    // grant already happened there; this is purely the visible OnRewardsGranted
+    // popup. Same payload shape we use for toast-received (which we know
+    // produces a visible native reward popup on this game build).
+    const pendingPlayerId = playerWS.account.id;
+    this.drainDailyToastBonusPending(playerWS).catch((err) =>
+      logger.error(`[${serviceName}]: Error draining daily toast bonus for ${pendingPlayerId}: ${err}`),
+    );
 
     redisAddOnlinePlayer(playerWS.account.id).catch((err) => logger.error(`${logPrefix} Error adding online player: ${err}`));
     logger.info(
@@ -1622,20 +1632,122 @@ export class WebSocketService {
     });
   }
 
+  /**
+   * Fires the OnRewardsGranted popup for a daily toast bonus that was
+   * granted at /access time. Pulls the amount from a Redis pending flag
+   * (set by access.ts after the actual Mongo $inc happened) and clears
+   * the flag on success so the popup never fires twice for the same grant.
+   *
+   * Same template_id + Context: "Default" shape we use for toast-received,
+   * which is the only path proven to render a visible native reward popup
+   * on this game build.
+   */
+  async drainDailyToastBonusPending(playerWS: WebSocketPlayer): Promise<void> {
+    if (!playerWS.account) return;
+    const playerId = playerWS.account.id;
+    const key = `daily_toast_bonus_pending:${playerId}`;
+    const raw = await redisClient.get(key);
+    if (!raw) return;
+
+    const amount = parseInt(raw, 10);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      await redisClient.del(key);
+      logger.warn(`[${serviceName}]: drainDailyToastBonusPending: invalid amount "${raw}" for ${playerId}, dropped`);
+      return;
+    }
+
+    const rewardsGranted = [{
+      RewardGuid: "OVS-DAILY-TOAST-BONUS",
+      Constraints: [],
+      RewardGrantMethod: "DirectInventoryItem",
+      InventoryHsda: "match_toasts",
+      DirectInventoryItemCount: amount,
+    }];
+
+    playerWS.send({
+      data: {
+        template_id: "OnRewardsGranted",
+        Context: "Default",
+        RewardsGranted: rewardsGranted,
+      },
+      payload: {
+        frm: { id: "internal-server", type: "server-api-key" },
+        template: "realtime",
+        account_id: playerId,
+        profile_id: playerId,
+      },
+      header: "",
+      cmd: "profile-notification",
+    });
+
+    // Delete the flag only after the send queues; if send throws we'll
+    // retry on the next WS reconnect (TTL = 5 min from access.ts).
+    await redisClient.del(key);
+    logger.info(`[${serviceName}]: Sent daily toast bonus popup (+${amount}) to ${playerId}`);
+  }
+
   async handleToastReceived(notification: RedisToastNotification) {
     logger.info(`[${serviceName}]: handleToastReceived called — toastee: ${notification?.toasteeAccountId}, toaster: ${notification?.toasterAccountId}`);
-    // Queue a DLL notification for the toastee — the DLL's NotificationPoller
-    // will pick it up on its next 2s poll and show an in-game banner via
-    // ShowBanner. This works because the Hydra WS ToastReceived template_id
-    // isn't in the game's dispatch table (see game dump investigation).
-    await redisPushDLLNotification(notification.toasteeAccountId, {
-      type: "toast_received",
-      title: "Toast received!",
-      message: `${notification.toasterUsername} toasted you!`,
-      data: {},
-      timestamp: Date.now(),
+
+    // Grant +1 match_toasts to the toastee server-side BEFORE we send the
+    // WS popup. This makes the reward real — the count persists across
+    // inventory refetches because PlayerCounters is the source of truth
+    // for the inventory endpoint now.
+    //
+    // If the grant throws (transient Mongo error etc.), we BAIL on the
+    // popup too — otherwise the client sees a "+1 Toasts" popup that
+    // doesn't reconcile against inventory on next refresh. Better to drop
+    // a rare toast event than to silently lie about the balance.
+    try {
+      const newCount = await adjustMatchToasts(notification.toasteeAccountId, 1);
+      logger.info(`[${serviceName}]: Granted +1 match_toasts to ${notification.toasteeAccountId}; new count: ${newCount}`);
+    } catch (e) {
+      logger.error(`[${serviceName}]: Failed to grant +1 match_toasts to ${notification.toasteeAccountId}, suppressing popup to avoid desync: ${e}`);
+      return;
+    }
+
+    // Reward payload mirrors upstream's `ToastReceivedReward` config knob
+    // (koth stuff3@0833e18). The WS message itself is what makes the
+    // in-game popup render; the actual count change is the adjustMatchToasts
+    // call above.
+    const rewardsGranted = [{
+      RewardGuid: "OVS-TOAST-TOAST-0001",
+      Constraints: [],
+      RewardGrantMethod: "DirectInventoryItem",
+      InventoryHsda: "match_toasts",
+      DirectInventoryItemCount: 1,
+    }];
+
+    // Send `ToastReceivedNotification` over WS to the toastee. An earlier
+    // note in this codebase claimed this template_id wasn't in the game's
+    // dispatch table — in-game testing on the current build confirms the
+    // native reward popup DOES render from this message. The DLL ShowBanner
+    // workaround we previously used is no longer needed for toasts.
+    const toastee = this.clients.get(notification.toasteeAccountId);
+    if (!toastee) {
+      logger.warn(`[${serviceName}]: Toastee ${notification.toasteeAccountId} not connected to WS — toast notification dropped`);
+      return;
+    }
+
+    toastee.send({
+      data: {
+        template_id: "ToastReceivedNotification",
+        ToasterAccountID: notification.toasterAccountId,
+        RewardsGranted: rewardsGranted,
+      },
+      payload: {
+        frm: {
+          id: "internal-server",
+          type: "server-api-key",
+        },
+        template: "realtime",
+        account_id: notification.toasteeAccountId,
+        profile_id: notification.toasteeAccountId,
+      },
+      header: "",
+      cmd: "profile-notification",
     });
-    logger.info(`[${serviceName}]: Queued toast_received DLL notification for ${notification.toasteeAccountId} from ${notification.toasterUsername} (${notification.toasterAccountId})`);
+    logger.info(`[${serviceName}]: Sent ToastReceivedNotification to ${notification.toasteeAccountId} from ${notification.toasterUsername}`);
   }
 
   handlePlayerLoadoutLocked(notification: RedisPlayerLoadoutLockedNotification) {

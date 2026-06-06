@@ -938,9 +938,9 @@ async function refreshMatchesCache(): Promise<void> {
 
     // Helper: build `teams: {"0":[...], "1":[...]}` from a players array + characters map
     const buildTeams = async (players: any[], matchChars: Record<string, string>): Promise<Record<string, any[]>> => {
-      const teams: Record<string, any[]> = { "0": [], "1": [] };
+      const teams: Record<string, any[]> = { "0": [], "1": [], "3": [], "4": [] };
       for (const p of players) {
-        if (p.isSpectator) continue;
+        //if (p.isSpectator) continue;
         const conn = await redisClient.hGetAll(`connections:${p.playerId}`) as any;
         // Fallback chain: connections.username (preferred — set on /access from
         // player.name) → connections.hydraUsername (auto-gen, always populated)
@@ -950,7 +950,7 @@ async function refreshMatchesCache(): Promise<void> {
         // hasn't been refreshed by a follow-up /access yet.
         const username = conn?.username || conn?.hydraUsername || "Unknown";
         const character = conn?.character || matchChars[p.playerId] || "unknown";
-        const team = String(p.teamIndex ?? 0);
+        const team = String(p.isSpectator ? 4 : p.teamIndex ?? 0);
         if (!teams[team]) teams[team] = [];
         teams[team].push({ playerId: p.playerId, username, character });
       }

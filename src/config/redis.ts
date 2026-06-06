@@ -118,7 +118,7 @@ export interface RedisMatch {
  *
  * Callers MUST handle the -1 case explicitly when grouping players by team.
  */
-export type TeamIndex = -1 | 0 | 1 | 2 | 3;
+export type TeamIndex = -1 | 0 | 1 | 2 | 3 | 4;
 
 export interface RedisTeamEntry {
   playerId: string;

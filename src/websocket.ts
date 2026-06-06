@@ -1722,7 +1722,7 @@ export class WebSocketService {
     // doesn't reconcile against inventory on next refresh. Better to drop
     // a rare toast event than to silently lie about the balance.
     try {
-      const newCount = await adjustMatchToasts(notification.toasteeAccountId, 1);
+      const newCount = await adjustMatchToasts(notification.toasteeAccountId, 2);
       logger.info(`[${serviceName}]: Granted +1 match_toasts to ${notification.toasteeAccountId}; new count: ${newCount}`);
     } catch (e) {
       logger.error(`[${serviceName}]: Failed to grant +1 match_toasts to ${notification.toasteeAccountId}, suppressing popup to avoid desync: ${e}`);

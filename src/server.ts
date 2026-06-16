@@ -54,6 +54,7 @@ import { GAME_SERVER_PORT } from "./game/udp";
 import { sscRouter } from "./ssc/routes";
 import { getCurrentCRC, LoadConfig, MATCHMAKING_CRC } from "./data/config";
 import { PlayerTester, PlayerTesterModel } from "./database/PlayerTester";
+import { PlayerStatsModel } from "./database/PlayerStats";
 import { Types } from "mongoose";
 import { RegExpMatcher, TextCensor, englishDataset, englishRecommendedTransformers, asteriskCensorStrategy } from "obscenity";
 import env from "./env/env";
@@ -239,6 +240,10 @@ const homeFilePath = path.join(__dirname, "static/home.html");
 const homeSource = fs.readFileSync(homeFilePath, "utf8");
 const homeTemplate = handlebars.compile(homeSource);
 
+const myStatsFilePath = path.join(__dirname, "static/my_stats.html");
+const myStatsSource = fs.readFileSync(myStatsFilePath, "utf8");
+const myStatsTemplate = handlebars.compile(myStatsSource);
+
 const adminBannerFilePath = path.join(__dirname, "static/admin.html");
 const adminBannerSource = fs.readFileSync(adminBannerFilePath, "utf8");
 const adminBannerTemplate = handlebars.compile(adminBannerSource);
@@ -250,6 +255,47 @@ app.get("/home", async (req, res) => {
   } catch (e) {
     logger.error(`${logPrefix} Error in GET /home: ${e}`);
     res.status(500).send("Error loading home page");
+  }
+});
+
+// ── /stats — career-stats page for the caller's IP-resolved account ──
+// Mirrors the /namechange flow: caller's IP → resolvePlayerForWeb → PlayerStats.
+// If multiple accounts at the IP, the account picker is shown.
+// Public, no auth.
+app.get("/stats", async (req, res) => {
+  try {
+    const { player, pickerShown } = await resolvePlayerForWeb(req, res, "/stats");
+    if (pickerShown) return;
+
+    if (!player) {
+      const html = myStatsTemplate({ hasStats: false });
+      res.send(html);
+      return;
+    }
+
+    const accountId = String((player as any)._id);
+    const stats = await PlayerStatsModel.findOne({ account_id: accountId }).lean();
+
+    if (!stats || !stats.aggregate || Object.keys(stats.aggregate).length === 0) {
+      const html = myStatsTemplate({ hasStats: false, playerName: (player as any).name || "" });
+      res.send(html);
+      return;
+    }
+
+    // Stringify the aggregate as JSON for the inline <script> block. Escape `</`
+    // so the JSON can't close the script tag if a field name ever contains it.
+    const aggregateJson = JSON.stringify(stats.aggregate).replace(/<\//g, "<\\/");
+
+    const html = myStatsTemplate({
+      hasStats: true,
+      playerName: (player as any).name || "Unknown",
+      aggregateJson,
+      updatedAt: Number(stats.updated_at) || Date.now(),
+    });
+    res.send(html);
+  } catch (e) {
+    logger.error(`${logPrefix} Error in GET /stats: ${e}`);
+    res.status(500).send("Error loading stats page");
   }
 });
 

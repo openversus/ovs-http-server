@@ -302,8 +302,29 @@
       const projBlocked    = num("totalProjectilesBlocked");
       const knockMit       = num("totalKnockbackMitigated");
 
-      const defenseGrid = document.getElementById("defense_grid");
-      const defCards = [
+      // Shared helper: render an array of [label, value] pairs as .stat_card
+      // tiles inside the given container element. Use textContent (not
+      // innerHTML) so labels/values can't accidentally inject markup if the
+      // upstream data ever changes shape.
+      function renderStatCards(containerId, cards) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        for (const [label, value] of cards) {
+          const card = document.createElement("div");
+          card.className = "stat_card";
+          const labelEl = document.createElement("div");
+          labelEl.className = "label";
+          labelEl.textContent = label;
+          const valueEl = document.createElement("div");
+          valueEl.className = "value";
+          valueEl.textContent = value;
+          card.appendChild(labelEl);
+          card.appendChild(valueEl);
+          container.appendChild(card);
+        }
+      }
+
+      renderStatCards("defense_grid", [
         ["Parries Landed",       fmt(parries)],
         ["Damage Parried",       fmt(damageParried)],
         ["Dodges Used",          fmt(totalDodges)],
@@ -313,16 +334,9 @@
         ["Armor Hits Taken",     fmt(armorHits)],
         ["Armor Breaks",         fmt(armorBreaks)],
         ["Knockback Mitigated",  fmt(knockMit)],
-      ];
-      for (const [label, value] of defCards) {
-        const c = document.createElement("div");
-        c.className = "stat_card";
-        c.innerHTML = '<div class="label">' + label + '</div><div class="value">' + value + '</div>';
-        defenseGrid.appendChild(c);
-      }
+      ]);
 
       // ─── Damage / Ringouts grid ────────────────────────────────────
-      const damageGrid = document.getElementById("damage_grid");
       const dmgDealt     = num("totalDamageDealt");
       const dmgTaken     = num("totalDamageTaken");
       const ringouts     = num("totalRingouts");
@@ -334,7 +348,7 @@
       const spikeKO      = num("totalDownspikeRingouts");
       const ringoutDiff  = ringouts - ringoutsRcv;
 
-      const dmgCards = [
+      renderStatCards("damage_grid", [
         ["Damage Dealt",            fmt(dmgDealt)],
         ["Damage Taken",            fmt(dmgTaken)],
         ["Ringouts Scored",         fmt(ringouts)],
@@ -345,16 +359,9 @@
         ["KOs vs Low-% Enemies",    fmt(koLowPct)],
         ["Projectile KOs",          fmt(projKO)],
         ["Downspike KOs",           fmt(spikeKO)],
-      ];
-      for (const [label, value] of dmgCards) {
-        const c = document.createElement("div");
-        c.className = "stat_card";
-        c.innerHTML = '<div class="label">' + label + '</div><div class="value">' + value + '</div>';
-        damageGrid.appendChild(c);
-      }
+      ]);
 
       // ─── Movement grid ─────────────────────────────────────────────
-      const movementGrid = document.getElementById("movement_grid");
       const jumps        = num("totalJumps");
       const doubleJumps  = num("totalDoubleJumps");
       const airTime      = num("totalAirTime");
@@ -363,7 +370,7 @@
       const platDrops    = num("totalPlatformDropThroughs");
       const taunts       = num("totalTauntsUsed");
 
-      const moveCards = [
+      renderStatCards("movement_grid", [
         ["Total Jumps",         fmt(jumps)],
         ["Double Jumps",        fmt(doubleJumps)],
         ["Air Time (s)",        fmt(Math.round(airTime))],
@@ -371,13 +378,7 @@
         ["Wall Hang Time (s)",  fmt(Math.round(wallHang))],
         ["Platform Drops",      fmt(platDrops)],
         ["Taunts",              fmt(taunts)],
-      ];
-      for (const [label, value] of moveCards) {
-        const c = document.createElement("div");
-        c.className = "stat_card";
-        c.innerHTML = '<div class="label">' + label + '</div><div class="value">' + value + '</div>';
-        movementGrid.appendChild(c);
-      }
+      ]);
     })();
   </script>
   {{/if}}

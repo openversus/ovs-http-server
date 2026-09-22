@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpenVersus - My Stats</title>
+  <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png?v=20260610" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg?v=20260610" />
+  <link rel="shortcut icon" href="/favicon/favicon.ico?v=20260610" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png?v=20260610" />
+  <link rel="manifest" href="/favicon/site.webmanifest?v=20260610" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fugaz+One&display=swap" rel="stylesheet">
+  <style>
+      :root {
+          --mv-blue: #1f6feb;
+          --mv-blue-dark: #0040a5;
+          --mv-orange: #ff7500;
+          --mv-orange-dark: #ff4d00;
+          --ink: #343434;
+          --card: rgba(255, 255, 255, 0.92);
+          --card2: rgba(255, 255, 255, 0.85);
+          --shadow: rgba(0, 0, 0, 0.28) 0px 19px 38px, rgba(0, 0, 0, 0.20) 0px 15px 12px;
+          --radius: 18px;
+          --row-alt: rgba(0, 0, 0, 0.025);
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+          margin: 0;
+          font-family: "Fugaz One", Arial, sans-serif;
+          overflow-x: hidden;
+          color: var(--ink);
+          background: #000;
+      }
+      .background {
+          position: fixed; inset: 0; z-index: -2;
+          background-image: url("/images/name_change_background.jpeg");
+          background-size: cover; background-position: center; background-repeat: no-repeat;
+          transform: scale(1.03);
+      }
+      .background::after {
+          content: ""; position: absolute; inset: 0;
+          backdrop-filter: blur(6px);
+          background: rgba(10, 12, 20, 0.20);
+      }
+      .main_wrapper {
+          min-height: 100%;
+          display: flex; flex-direction: column; align-items: center;
+          padding: 24px 14px;
+      }
+      .main_container {
+          width: min(960px, 100%);
+          background: linear-gradient(180deg, var(--card), var(--card2));
+          border-radius: var(--radius);
+          box-shadow: var(--shadow);
+          padding: 22px;
+      }
+      .logo_row {
+          display: flex; justify-content: center; margin-bottom: 8px;
+      }
+      .logo_row img { height: 64px; }
+      h1 {
+          margin: 4px 0 4px;
+          color: var(--mv-blue-dark);
+          text-align: center;
+          font-size: 32px;
+          letter-spacing: 1px;
+      }
+      .player_name {
+          text-align: center;
+          color: var(--mv-orange-dark);
+          font-size: 22px;
+          margin-bottom: 4px;
+      }
+      .subtitle {
+          text-align: center;
+          color: #5a6170;
+          font-family: Arial, sans-serif;
+          font-size: 13px;
+          margin-bottom: 18px;
+      }
+      .section_title {
+          color: var(--mv-blue-dark);
+          font-size: 18px;
+          margin: 20px 0 8px;
+          padding-bottom: 4px;
+          border-bottom: 2px solid var(--mv-orange);
+      }
+      table {
+          width: 100%;
+          border-collapse: collapse;
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          color: var(--ink);
+      }
+      thead th {
+          text-align: left;
+          padding: 8px 10px;
+          background: var(--mv-blue);
+          color: #fff;
+          font-family: "Fugaz One", Arial, sans-serif;
+          font-weight: normal;
+          letter-spacing: 0.5px;
+      }
+      thead th.num { text-align: right; }
+      tbody td { padding: 7px 10px; border-bottom: 1px solid rgba(0,0,0,0.06); }
+      tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+      tbody tr:nth-child(even) { background: var(--row-alt); }
+      tbody tr:hover { background: rgba(31, 111, 235, 0.08); }
+      .move_name { font-family: "Fugaz One", Arial, sans-serif; color: var(--mv-blue-dark); }
+      .star { color: #f5a623; margin-left: 4px; }
+      .warn { color: #d97706; margin-left: 4px; }
+      .stat_grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 10px;
+          margin-top: 10px;
+      }
+      .stat_card {
+          background: rgba(31, 111, 235, 0.08);
+          border-left: 4px solid var(--mv-blue);
+          padding: 10px 14px;
+          border-radius: 6px;
+      }
+      .stat_card .label {
+          font-family: Arial, sans-serif;
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          color: #5a6170;
+      }
+      .stat_card .value {
+          font-family: "Fugaz One", Arial, sans-serif;
+          font-size: 22px;
+          color: var(--mv-blue-dark);
+          margin-top: 2px;
+      }
+      .empty_state {
+          text-align: center;
+          padding: 40px 20px;
+          font-family: Arial, sans-serif;
+          color: #5a6170;
+      }
+      .empty_state h2 { color: var(--mv-blue-dark); font-family: "Fugaz One", Arial, sans-serif; }
+      .back-btn {
+          display: inline-flex; align-items: center; gap: 6px;
+          text-decoration: none; color: var(--mv-blue);
+          font-family: Helvetica, Arial, sans-serif;
+          font-weight: 800; font-size: 13px;
+          text-transform: uppercase; letter-spacing: 0.06em;
+          padding: 8px 0; margin-bottom: 8px; transition: opacity 0.15s;
+      }
+      .back-btn:hover { opacity: 0.7; }
+      .back-btn svg { width: 16px; height: 16px; }
+  </style>
+</head>
+<body>
+  <div class="background"></div>
+  <div class="main_wrapper">
+    <div class="main_container">
+      <a href="/home" class="back-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back to Home</a>
+      <div class="logo_row">
+        <img src="/images/OpenVersus_logo.png" alt="OpenVersus Logo"/>
+      </div>
+      <h1>Career Stats</h1>
+      {{#if hasStats}}
+        <div class="player_name">{{playerName}}</div>
+        <div class="subtitle">Aggregated across every match you've played. Last updated <span id="updated_at_human"></span>.</div>
+
+        <div class="section_title">Move Usage &amp; Accuracy</div>
+        <table id="moves_table">
+          <thead>
+            <tr>
+              <th>Move</th>
+              <th class="num">Used</th>
+              <th class="num">Hit</th>
+              <th class="num">Hit %</th>
+              <th class="num">% of all</th>
+            </tr>
+          </thead>
+          <tbody id="moves_tbody"></tbody>
+        </table>
+
+        <div class="section_title">Defense</div>
+        <div class="stat_grid" id="defense_grid"></div>
+
+        <div class="section_title">Damage &amp; Ringouts</div>
+        <div class="stat_grid" id="damage_grid"></div>
+
+        <div class="section_title">Movement</div>
+        <div class="stat_grid" id="movement_grid"></div>
+      {{else}}
+        <div class="empty_state">
+          <h2>No stats yet</h2>
+          <p>Play a match on OpenVersus and your career stats will appear here.</p>
+        </div>
+      {{/if}}
+    </div>
+  </div>
+
+  {{#if hasStats}}
+  <script id="agg_data" type="application/json">{{{aggregateJson}}}</script>
+  <script>
+    (function() {
+      const agg = JSON.parse(document.getElementById("agg_data").textContent || "{}");
+      const updatedAt = {{updatedAt}};
+
+      // Human-readable timestamp
+      try {
+        const d = new Date(updatedAt);
+        document.getElementById("updated_at_human").textContent = d.toLocaleString();
+      } catch (e) {
+        document.getElementById("updated_at_human").textContent = "recently";
+      }
+
+      // ─── Move table mapping ────────────────────────────────────────
+      // Each entry: [display name, used field, hit field]
+      const MOVES = [
+        // Ground normals
+        ["Jab (Neutral)",      "totalNeutralGroundNormalUsed",   "totalNeutralGroundNormalHit"],
+        ["Side Tilt",          "totalSideGroundNormalUsed",      "totalSideGroundNormalHit"],
+        ["Up Tilt",            "totalUpGroundNormalUsed",        "totalUpGroundNormalHit"],
+        ["Down Tilt",          "totalDownGroundNormalUsed",      "totalDownGroundNormalHit"],
+        ["Dash Attack",        "totalDashAttacksUsed",           "totalDashAttacksHit"],
+        ["Charge Attack",      "totalChargeAttacksUsed",         "totalChargeAttacksHit"],
+        // Aerials
+        ["Nair (Neutral Air)", "totalNeutralAirNormalUsed",      "totalNeutralAirNormalHit"],
+        ["Sair (Side Air)",    "totalSideAirNormalUsed",         "totalSideAirNormalHit"],
+        ["Uair (Up Air)",      "totalUpAirNormalUsed",           "totalUpAirNormalHit"],
+        ["Dair (Down Air)",    "totalDownAirNormalUsed",         "totalDownAirNormalHit"],
+        // Ground specials
+        ["Neutral Spec (G)",   "totalNeutralGroundSpecialsUsed", "totalNeutralGroundSpecialsHit"],
+        ["Side Spec (G)",      "totalSideGroundSpecialsUsed",    "totalSideGroundSpecialsHit"],
+        ["Up Spec (G)",        "totalUpGroundSpecialsUsed",      "totalUpGroundSpecialsHit"],
+        ["Down Spec (G)",      "totalDownGroundSpecialsUsed",    "totalDownGroundSpecialsHit"],
+        // Air specials
+        ["Neutral Spec (A)",   "totalNeutralAirSpecialsUsed",    "totalNeutralAirSpecialsHit"],
+        ["Side Spec (A)",      "totalSideAirSpecialsUsed",       "totalSideAirSpecialsHit"],
+        ["Up Spec (A)",        "totalUpAirSpecialsUsed",         "totalUpAirSpecialsHit"],
+        ["Down Spec (A)",      "totalDownAirSpecialsUsed",       "totalDownAirSpecialsHit"],
+      ];
+
+      const num = (k) => Number(agg[k] || 0);
+
+      // Build rows. excludeFromTotal = don't count toward "% of all" denominator.
+      // Charge Attack is its own action layered on top of normals, not a discrete
+      // move type — counting it skews the distribution.
+      const rows = MOVES.map(([name, usedKey, hitKey]) => {
+        const used = num(usedKey);
+        const hit  = num(hitKey);
+        const excludeFromTotal = (name === "Charge Attack");
+        return { name, used, hit, excludeFromTotal };
+      }).filter(r => r.used > 0);
+
+      const totalUsed = rows
+        .filter(r => !r.excludeFromTotal)
+        .reduce((s, r) => s + r.used, 0);
+
+      // Sort by Used desc
+      rows.sort((a, b) => b.used - a.used);
+
+      const tbody = document.getElementById("moves_tbody");
+      const fmt = (n) => n.toLocaleString();
+      const pct = (num, den) => den > 0 ? ((num / den) * 100).toFixed(1) + "%" : "—";
+
+      for (const r of rows) {
+        const hitPct = r.used > 0 ? (r.hit / r.used) : 0;
+        const ofAllPct = totalUsed > 0 ? (r.used / totalUsed) : 0;
+        let badge = "";
+        if (hitPct >= 0.75 && r.used >= 50) badge = '<span class="star" title="High accuracy">★</span>';
+        else if (hitPct < 0.15 && r.used >= 50) badge = '<span class="warn" title="Low accuracy">⚠</span>';
+        const ofAllCell = r.excludeFromTotal
+          ? '<td class="num" title="Charge Attack is not counted in the move distribution">—</td>'
+          : '<td class="num">' + (ofAllPct * 100).toFixed(1) + '%</td>';
+        const tr = document.createElement("tr");
+        tr.innerHTML =
+          '<td class="move_name">' + r.name + '</td>' +
+          '<td class="num">' + fmt(r.used) + '</td>' +
+          '<td class="num">' + fmt(r.hit) + '</td>' +
+          '<td class="num">' + (hitPct * 100).toFixed(1) + '%' + badge + '</td>' +
+          ofAllCell;
+        tbody.appendChild(tr);
+      }
+
+      if (rows.length === 0) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = '<td colspan="5" style="text-align:center; padding: 20px; color:#5a6170; font-family:Arial,sans-serif;">No move data yet.</td>';
+        tbody.appendChild(tr);
+      }
+
+      // ─── Defense grid ──────────────────────────────────────────────
+      const totalDodges    = num("totalDodgesUsed");
+      const attacksDodged  = num("totalAttacksDodged");
+      const damageDodged   = num("totalDamageDodged");
+      const dodgeAcc       = totalDodges > 0 ? pct(attacksDodged, totalDodges) : "—";
+      const parries        = num("totalAttacksParried");
+      const damageParried  = num("totalDamageParried");
+      const armorHits      = num("totalArmorHitsTaken");
+      const armorBreaks    = num("totalArmorBreaks");
+      const projBlocked    = num("totalProjectilesBlocked");
+      const knockMit       = num("totalKnockbackMitigated");
+
+      // Shared helper: render an array of [label, value] pairs as .stat_card
+      // tiles inside the given container element. Use textContent (not
+      // innerHTML) so labels/values can't accidentally inject markup if the
+      // upstream data ever changes shape.
+      function renderStatCards(containerId, cards) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        for (const [label, value] of cards) {
+          const card = document.createElement("div");
+          card.className = "stat_card";
+          const labelEl = document.createElement("div");
+          labelEl.className = "label";
+          labelEl.textContent = label;
+          const valueEl = document.createElement("div");
+          valueEl.className = "value";
+          valueEl.textContent = value;
+          card.appendChild(labelEl);
+          card.appendChild(valueEl);
+          container.appendChild(card);
+        }
+      }
+
+      renderStatCards("defense_grid", [
+        ["Parries Landed",       fmt(parries)],
+        ["Damage Parried",       fmt(damageParried)],
+        ["Dodges Used",          fmt(totalDodges)],
+        ["Attacks Dodged",       fmt(attacksDodged) + "  (" + dodgeAcc + " of dodges)"],
+        ["Damage Dodged",        fmt(damageDodged)],
+        ["Projectiles Blocked",  fmt(projBlocked)],
+        ["Armor Hits Taken",     fmt(armorHits)],
+        ["Armor Breaks",         fmt(armorBreaks)],
+        ["Knockback Mitigated",  fmt(knockMit)],
+      ]);
+
+      // ─── Damage / Ringouts grid ────────────────────────────────────
+      const dmgDealt     = num("totalDamageDealt");
+      const dmgTaken     = num("totalDamageTaken");
+      const ringouts     = num("totalRingouts");
+      const ringoutsRcv  = num("totalRingoutsReceived");
+      const koLowPct     = num("totalRingoutsEnemyLowPercent");
+      const koLessDmg    = num("totalRingoutsWithLessDamage");
+      const koMoreDmg    = num("totalRingoutsWithMoreDamage");
+      const projKO       = num("totalProjectileRingouts");
+      const spikeKO      = num("totalDownspikeRingouts");
+      const ringoutDiff  = ringouts - ringoutsRcv;
+
+      renderStatCards("damage_grid", [
+        ["Damage Dealt",            fmt(dmgDealt)],
+        ["Damage Taken",            fmt(dmgTaken)],
+        ["Ringouts Scored",         fmt(ringouts)],
+        ["Ringouts Suffered",       fmt(ringoutsRcv)],
+        ["Net Ringouts",            (ringoutDiff >= 0 ? "+" : "") + fmt(ringoutDiff)],
+        ["KOs at Lower %",          fmt(koLessDmg)],
+        ["KOs at Higher %",         fmt(koMoreDmg)],
+        ["KOs vs Low-% Enemies",    fmt(koLowPct)],
+        ["Projectile KOs",          fmt(projKO)],
+        ["Downspike KOs",           fmt(spikeKO)],
+      ]);
+
+      // ─── Movement grid ─────────────────────────────────────────────
+      const jumps        = num("totalJumps");
+      const doubleJumps  = num("totalDoubleJumps");
+      const airTime      = num("totalAirTime");
+      const walkTime     = num("totalWalkTime");
+      const wallHang     = num("totalWallHangTime");
+      const platDrops    = num("totalPlatformDropThroughs");
+      const taunts       = num("totalTauntsUsed");
+
+      renderStatCards("movement_grid", [
+        ["Total Jumps",         fmt(jumps)],
+        ["Double Jumps",        fmt(doubleJumps)],
+        ["Air Time (s)",        fmt(Math.round(airTime))],
+        ["Walk Time (s)",       fmt(Math.round(walkTime))],
+        ["Wall Hang Time (s)",  fmt(Math.round(wallHang))],
+        ["Platform Drops",      fmt(platDrops)],
+        ["Taunts",              fmt(taunts)],
+      ]);
+    })();
+  </script>
+  {{/if}}
+</body>
+</html>

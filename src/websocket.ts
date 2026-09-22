@@ -793,9 +793,29 @@ export class WebSocketService {
       env.UDP_SERVER_IP2,
     ];
     const randomIndex = Math.floor(Math.random() * arr.length);
+
+    var i = 0;
+    let notificationModified: boolean = false;
+    let safeEnumNotification: MATCH_FOUND_NOTIFICATION = notification;
+    for (const player of notification.players) {
+      if (player.isSpectator) {
+        safeEnumNotification.players[i].teamIndex = 4;
+        notificationModified = true;
+      }
+      i++;
+    }
+
+    if (notificationModified) {
+      notification = safeEnumNotification;
+      logger.info(`${logPrefix} Modified teamIndex of spectators in match ${notification.matchId} to the value of: 4`);
+    }
+    
     for (const matchPlayer of notification.players) {
       // Bots have no WS connection — skip notification + client lookup.
-      if (matchPlayer.isBot) continue;
+      if (matchPlayer.isBot)
+      {
+        continue;
+      }
 
       let tempPlayer = null;
       try {
@@ -977,6 +997,7 @@ export class WebSocketService {
         const botDiffMax = Number(botCfg.difficultyMax ?? 2);
 
         const target = player.isSpectator ? Spectators : Players;
+        const playerTeamIndex = player.isSpectator ? 4 : player.teamIndex;
         target[player.playerId] = {
           Taunts: ["", "", "", ""],
           BotBehaviorOverride: "",
@@ -990,7 +1011,7 @@ export class WebSocketService {
           RankedDivision: null,
           bUseCharacterDisplayName: true,
           StartingDamage: 0,
-          TeamIndex: player.teamIndex,
+          TeamIndex: playerTeamIndex,
           ProfileIcon: "profile_icon_default_gold",
           WinStreak: null,
           RankedTier: null,
@@ -1155,6 +1176,7 @@ export class WebSocketService {
         }
 
         const configTarget = player.isSpectator ? Spectators : Players;
+        const playerTeamIndex = player.isSpectator ? 4 : player.teamIndex;
         configTarget[player.playerId] = {
           Taunts: characterTaunts,
           BotBehaviorOverride: "",
@@ -1169,7 +1191,7 @@ export class WebSocketService {
           RankedDivision: rankedDivision,
           bUseCharacterDisplayName: false,
           StartingDamage: 0,
-          TeamIndex: player.teamIndex,
+          TeamIndex: playerTeamIndex,
           ProfileIcon: profileIcon,
           WinStreak: null,
           RankedTier: rankedTier,
@@ -1202,6 +1224,7 @@ export class WebSocketService {
 
         // Create a minimal valid config as fallback
         const fallbackTarget = player.isSpectator ? Spectators : Players;
+        const playerTeamIndex = player.isSpectator ? 4 : player.teamIndex;
         fallbackTarget[player.playerId] = {
           Taunts: [
             "",
@@ -1221,7 +1244,7 @@ export class WebSocketService {
           RankedDivision: null,
           bUseCharacterDisplayName: false,
           StartingDamage: 0,
-          TeamIndex: player.teamIndex,
+          TeamIndex: playerTeamIndex,
           ProfileIcon: "profile_icon_default_gold",
           WinStreak: null,
           RankedTier: null,

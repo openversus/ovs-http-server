@@ -684,6 +684,16 @@ export async function redisRemoveOnlinePlayer(playerId: string): Promise<void> {
   logger.info(`${logPrefix} Removed player ${playerId} from online players set`);
 }
 
+/**
+ * Empties the online players set. Only the WebSocket service may call this:
+ * it owns every connection the set describes, and the index/worker processes
+ * restart independently of it.
+ */
+export async function redisClearOnlinePlayers(): Promise<void> {
+  await redisClient.del(ONLINE_PLAYERS_SET);
+  logger.info(`${logPrefix} Cleared online players set`);
+}
+
 export async function redisGetOnlinePlayers(): Promise<string[]> {
   return await redisClient.sMembers(ONLINE_PLAYERS_SET);
 }

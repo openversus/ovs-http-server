@@ -2305,9 +2305,9 @@ export async function start() {
   await loadAssets();
   await LoadConfig();
 
-  // Flush stale online players — all WS connections died on restart,
-  // so nobody is actually online yet. They'll re-add on reconnect.
-  await redisClient.del("online_players");
+  // Don't touch online_players here: the WebSocket service owns that set and
+  // clears it on its own startup. This process restarts independently of it,
+  // and flushing here wiped every player still connected to a live WS server.
 
   if (USE_INTERNAL_ROLLBACK) {
     if (!USE_INTERNAL_ROLLBACK_CPP) {

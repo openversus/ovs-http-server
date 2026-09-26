@@ -14,7 +14,6 @@ export interface IAccountToken {
   hardwareIdVersion?: string;
   hardwareIdQuality?: string;
   installId?: string;
-  sessionId?: string;
   clientVersion?: string;
   /** "1" only when this session was bootstrapped through /api/identify. */
   identityRegistered?: string;
@@ -38,7 +37,6 @@ export class AccountToken implements IAccountToken {
   hardwareIdVersion?: string;
   hardwareIdQuality?: string;
   installId?: string;
-  sessionId?: string;
   clientVersion?: string;
   identityRegistered?: string;
   // token: AccountToken;
@@ -60,7 +58,6 @@ export class AccountToken implements IAccountToken {
     this.hardwareIdVersion = "";
     this.hardwareIdQuality = "";
     this.installId = "";
-    this.sessionId = "";
     this.clientVersion = "";
     this.identityRegistered = "";
     // this.token = this;

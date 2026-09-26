@@ -71,11 +71,15 @@ import {
   RedisLobbyTransitionNotification,
   FRIEND_REQUEST_WS_CHANNEL,
   RedisFriendRequestWSNotification,
+  CLIENT_UPDATE_MODAL_CHANNEL,
+  RedisClientUpdateModalNotification,
   DLLNotification,
   redisPushDLLNotification,
   RedisLobbyState,
   redisUpdatePartyKeyLobby,
   redisSetPendingJoinLobby,
+  redisTouchPlayerSession,
+  redisRemovePlayerSession,
   // PARTY_MEMBER_JOIN_CHANNEL — moved to AccelByteLobbyWsService
 } from "./config/redis";
 import { Server } from "https";
@@ -93,6 +97,7 @@ import env from "./env/env";
 import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./database/Cosmetics";
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 import { cancelMatchmakingForAll } from "./services/matchmakingService";
+import { UPDATE_NOTIFICATION_PROFILES } from "./services/updateNotificationProfiles";
 import { processMatchLeave, getOrCreateRating, eloToTierDivision } from "./services/eloService";
 import { PlayerTesterModel } from "./database/PlayerTester";
 import { PlayerStatsModel } from "./database/PlayerStats";
@@ -253,6 +258,7 @@ export class WebSocketService {
   private ws: WebSocketServer;
   clients: Map<string, WebSocketPlayer> = new Map();
   pendingRejoin: Set<string> = new Set(); // Players whose WS will be force-closed for rejoin — skip cleanup
+  private updateDisconnectTimers: Map<string, NodeJS.Timeout> = new Map();
   redisSub: RedisClient;
 
   constructor(server: Server | HttpServer) {
@@ -301,6 +307,8 @@ export class WebSocketService {
     );
 
     redisAddOnlinePlayer(playerWS.account.id).catch((err) => logger.error(`${logPrefix} Error adding online player: ${err}`));
+    redisTouchPlayerSession(playerWS.account.id, playerWS.ip)
+      .catch((err) => logger.error(`${logPrefix} Error touching player session: ${err}`));
     logger.info(
       `[${serviceName}]: Player ${playerWS.account.id} with IP ${playerWS.ip} and name ${playerWS.account.username} connected to websocket`,
     );
@@ -313,6 +321,10 @@ export class WebSocketService {
         playerWS,
       ] of this.clients) {
         playerWS.sendRaw(PING_BUFFER);
+        if (playerWS.account?.id) {
+          redisTouchPlayerSession(playerWS.account.id, playerWS.ip)
+            .catch((err) => logger.error(`${logPrefix} Error refreshing player session: ${err}`));
+        }
       }
     }, 20000);
   }
@@ -344,6 +356,10 @@ export class WebSocketService {
         // The game will reconnect and go through the full init flow
         return;
       }
+
+      // The session expires on its own in 90 s, so a failure here must not stop the cleanup below.
+      await redisRemovePlayerSession(playerId, playerWS.ip)
+        .catch((err) => logger.error(`${logPrefix} Error removing player session for ${playerId}: ${err}`));
 
       // Check if this player was in a multi-player lobby — if so, disband the party
       // so remaining players aren't stuck with a ghost teammate.
@@ -3046,6 +3062,72 @@ export class WebSocketService {
         }
       } catch (e) {
         logger.error(`[${serviceName}]: Error handling friend request WS notification: ${e}`);
+      }
+    });
+
+    // Temporary legacy-client experiment: when the update gate blocks a
+    // gameplay transition, send the working ToastReceivedNotification with a
+    // virtual update profile but no rewards. This should keep the toast banner
+    // while suppressing the separate reward panel.
+    this.redisSub.subscribe(CLIENT_UPDATE_MODAL_CHANNEL, (message) => {
+      try {
+        const notification = JSON.parse(message) as RedisClientUpdateModalNotification;
+        const client = this.clients.get(notification.playerId);
+        if (!client) {
+          logger.warn(
+            `[${serviceName}]: Cannot show reward-free update toast to ${notification.playerId}: Hydra WS is not connected`,
+          );
+          return;
+        }
+
+        const updateProfile = UPDATE_NOTIFICATION_PROFILES[UPDATE_NOTIFICATION_PROFILES.length - 1];
+        client.send({
+          data: {
+            template_id: "ToastReceivedNotification",
+            ToasterAccountID: updateProfile.accountId,
+            RewardsGranted: [],
+          },
+          payload: {
+            frm: {
+              id: "internal-server",
+              type: "server-api-key",
+            },
+            template: "realtime",
+            account_id: notification.playerId,
+            profile_id: notification.playerId,
+          },
+          header: "",
+          cmd: "profile-notification",
+        });
+        logger.info(
+          `[${serviceName}]: Sent reward-free required-update ToastReceivedNotification to ${notification.playerId} `
+          + `as ${updateProfile.accountId} (${updateProfile.username}); nonce=${notification.nonce}`,
+        );
+
+        if (!this.updateDisconnectTimers.has(notification.playerId)) {
+          const clientAtNotification = client;
+          const disconnectTimer = setTimeout(() => {
+            this.updateDisconnectTimers.delete(notification.playerId);
+
+            // Do not disconnect a newer socket if this player happened to
+            // reconnect during the ten-second banner display window.
+            if (this.clients.get(notification.playerId) !== clientAtNotification) {
+              logger.info(
+                `[${serviceName}]: Skipping required-update WebSocket close for ${notification.playerId}: connection changed`,
+              );
+              return;
+            }
+
+            logger.info(
+              `[${serviceName}]: Closing WebSocket for ${notification.playerId} 10 seconds after required-update banner`,
+            );
+            clientAtNotification.ws.close(1000, "update-required");
+          }, 10000);
+
+          this.updateDisconnectTimers.set(notification.playerId, disconnectTimer);
+        }
+      } catch (error) {
+        logger.error(`[${serviceName}]: Error handling reward-free update toast request: ${error}`);
       }
     });
 

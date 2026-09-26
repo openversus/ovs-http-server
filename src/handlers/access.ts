@@ -21,7 +21,6 @@ import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../servic
 import { writeIdentityIndexes, bumpIpAccountsChangedAt, normalizeHardwareSignal, normalizeIdentity } from "../services/identityService";
 import { chooseUnambiguousLegacyIpCandidate } from "../services/identityNormalization";
 import { tryGrantDailyToastBonus } from "../data/playerCounters";
-import { randomUUID } from "crypto";
 
 const serviceName = "Handlers.Access";
 const logPrefix = `[${serviceName}]:`;
@@ -419,7 +418,6 @@ async function generateStaticAccess(req: express.Request) {
     hardwareIdVersion: player.hardwareIdVersion ?? "",
     hardwareIdQuality: player.hardwareIdQuality ?? "",
     installId: player.installId ?? "",
-    sessionId: randomUUID(),
     clientVersion,
     identityRegistered: identityRegistered ? "1" : "",
   });

@@ -93,7 +93,7 @@ export async function handleSsc_invoke_get_calendar_events(req: Request<{}, {}, 
   }
   const updateEventHash = createHash("sha256")
     .update(
-      `ovs-required-update:${req.token?.sessionId || req.token?.id || "unresolved"}:${updateModalNonce}`,
+      `ovs-required-update:${req.token?.id || "unresolved"}:${updateModalNonce}`,
     )
     .digest("hex");
   const updateEntryId = updateEventHash.slice(0, 24);

@@ -395,22 +395,21 @@ export async function redisAddPlayerConnection(
   // and the active-IP set below, so a household member cannot overwrite another.
   await redisClient.hSet(`connections:${ip}`, accountTokenStringObj);
   await redisClient.expire(`connections:${ip}`, 120);
-  await redisTouchPlayerSession(playerId, ip, connectionMetadata.sessionId || "");
+  await redisTouchPlayerSession(playerId, ip);
 }
 
 const ACTIVE_SESSION_TTL_MS = 90_000;
 
-export async function redisTouchPlayerSession(playerId: string, ip: string, sessionId: string) {
+export async function redisTouchPlayerSession(playerId: string, ip: string) {
   if (!playerId || !ip) return;
   const now = Date.now();
   const activeKey = `active_ip_accounts:${ip}`;
-  await redisClient.zRemRangeByScore(activeKey, 0, now - ACTIVE_SESSION_TTL_MS);
-  await redisClient.zAdd(activeKey, { score: now, value: playerId });
-  await redisClient.expire(activeKey, 180);
-  if (sessionId) {
-    await redisClient.hSet(`session:${sessionId}`, { accountId: playerId, ip, touchedAt: String(now) });
-    await redisClient.expire(`session:${sessionId}`, 180);
-  }
+  await redisClient
+    .multi()
+    .zRemRangeByScore(activeKey, 0, now - ACTIVE_SESSION_TTL_MS)
+    .zAdd(activeKey, { score: now, value: playerId })
+    .expire(activeKey, 180)
+    .exec();
 }
 
 export async function redisGetUniqueActiveConnectionByIP(ip: string): Promise<RedisPlayerConnection | null> {
@@ -423,9 +422,8 @@ export async function redisGetUniqueActiveConnectionByIP(ip: string): Promise<Re
   return connection?.id ? connection : null;
 }
 
-export async function redisRemovePlayerSession(playerId: string, ip: string, sessionId?: string) {
+export async function redisRemovePlayerSession(playerId: string, ip: string) {
   if (ip && playerId) await redisClient.zRem(`active_ip_accounts:${ip}`, playerId);
-  if (sessionId) await redisClient.del(`session:${sessionId}`);
 }
 
 export async function redisSetPlayerConnectionCosmetics(playerId: string, cosmetics: Cosmetics) {

@@ -518,7 +518,7 @@ async function generateStaticAccess(req: express.Request) {
   // Cache party key in Redis connection hash + party_key lookup
   if (player.party_key) {
     await Redis.redisClient.hSet(`connections:${player.id}`, { party_key: player.party_key });
-    await Redis.redisClient.hSet(`connections:${ip}`, { party_key: player.party_key });
+    await Redis.redisUpdateIpMirror(ip, player.id, { party_key: player.party_key });
     await Redis.redisSavePartyKey(player.party_key, { playerId: player.id, lobbyId: "", username: player.name });
   }
 

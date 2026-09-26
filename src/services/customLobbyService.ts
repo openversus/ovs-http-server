@@ -7,6 +7,7 @@ import {
   redisOnGameplayConfigNotified,
   redisMatchMakingComplete,
   redisUpdateMatch,
+  redisUpdateIpMirror,
 } from "../config/redis";
 import { logger, logwrapper } from "../config/logger";
 import { getCustomRandomMapByType, getMapList } from "../data/maps";
@@ -574,7 +575,7 @@ export async function startMatch(
         const update: Record<string, string> = { character, skin };
         if (profileIcon) update.profileIcon = profileIcon;
         await redisClient.hSet(`connections:${p.playerId}`, update);
-        await redisClient.hSet(`connections:${p.ip}`, update);
+        await redisUpdateIpMirror(p.ip, p.playerId, update);
       }
     } catch (e) {
       logger.warn(`${logPrefix} Failed to sync character/skin for player ${p.playerId}: ${e}`);
@@ -1000,7 +1001,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
         const update: Record<string, string> = { character, skin };
         if (profileIcon) update.profileIcon = profileIcon;
         await redisClient.hSet(`connections:${p.playerId}`, update);
-        await redisClient.hSet(`connections:${p.ip}`, update);
+        await redisUpdateIpMirror(p.ip, p.playerId, update);
       }
     } catch (e) {
       logger.warn(`${logPrefix} Failed to sync character/skin for rematch player ${p.playerId}: ${e}`);

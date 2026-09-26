@@ -13,6 +13,7 @@ import {
   redisGetLobbyRedirect,
   redisGetPlayerLobby,
   redisRemoveExistingTicketsForPlayer,
+  redisUpdateIpMirror,
 } from "../config/redis";
 import { Cosmetics, CosmeticsModel, TauntSlotsClass } from "../database/Cosmetics";
 import { getEquippedCosmetics } from "../services/cosmeticsService";
@@ -907,7 +908,7 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
 
   await redisClient.hSet(`connections:${aID}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
   if (rPlayerConnectionByID.current_ip) {
-    await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+    await redisUpdateIpMirror(rPlayerConnectionByID.current_ip, aID, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
   }
 
   const data = {
@@ -1056,7 +1057,7 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
 
   await redisClient.hSet(`connections:${aID}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
   if (rPlayerConnectionByID.current_ip) {
-    await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+    await redisUpdateIpMirror(rPlayerConnectionByID.current_ip, aID, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
   }
 
   // Look up the lobby to include ALL players in matchmaking, not just the requester
@@ -1128,7 +1129,7 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
       const pConn = await redisClient.hGetAll(`connections:${pid}`) as unknown as RedisPlayerConnection;
       if (pConn?.current_ip) {
         await redisClient.hSet(`connections:${pid}`, { character: pLoadout.character, skin: pLoadout.skin, profileIcon: pLoadout.profileIcon });
-        await redisClient.hSet(`connections:${pConn.current_ip}`, { character: pLoadout.character, skin: pLoadout.skin, profileIcon: pLoadout.profileIcon });
+        await redisUpdateIpMirror(pConn.current_ip, pid, { character: pLoadout.character, skin: pLoadout.skin, profileIcon: pLoadout.profileIcon });
       }
     }
   }

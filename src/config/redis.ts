@@ -426,11 +426,8 @@ export async function redisRemovePlayerSession(playerId: string, ip: string) {
   if (ip && playerId) await redisClient.zRem(`active_ip_accounts:${ip}`, playerId);
 }
 
+// Only the account's own copy: nothing reads a per-IP one, and an IP is shared by a household.
 export async function redisSetPlayerConnectionCosmetics(playerId: string, cosmetics: Cosmetics) {
-  let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${playerId}`)) as unknown as RedisPlayerConnection;
-  let ip = rPlayerConnectionByID.current_ip;
-  let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
-
   const cosmeticStringObj: Record<string, string> = {};
   for (const [
     key,
@@ -440,7 +437,6 @@ export async function redisSetPlayerConnectionCosmetics(playerId: string, cosmet
   }
 
   await redisClient.hSet(`connections:${playerId}:cosmetics`, cosmeticStringObj);
-  await redisClient.hSet(`connections:${ip}:cosmetics`, cosmeticStringObj);
 }
 
 export async function redisSetPlayerConnectionByID(playerId: string, connection: RedisPlayerConnection) {
@@ -454,6 +450,20 @@ export async function redisSetPlayerConnectionByID(playerId: string, connection:
   await redisClient.hSet(`connections:${playerId}`, connectionStringObj);
 }
 
+/**
+ * The legacy connections:<ip> mirror (created for 120 s by redisAddPlayerConnection)
+ * is shared by everyone behind that IP. Update it only when it currently belongs to
+ * this account, so one household member's change never lands in another's record,
+ * and never create or extend it here. Returns whether it was written.
+ */
+export async function redisUpdateIpMirror(ip: string, accountId: string, fields: Record<string, string>): Promise<boolean> {
+  if (!ip || !accountId) return false;
+  const owner = await redisClient.hGet(`connections:${ip}`, "id");
+  if (owner !== accountId) return false;
+  await redisClient.hSet(`connections:${ip}`, fields);
+  return true;
+}
+
 export async function redisSetPlayerConnectionByIp(ip: string, connection: RedisPlayerConnection) {
   const connectionStringObj: Record<string, string> = {};
   for (const [
@@ -462,7 +472,7 @@ export async function redisSetPlayerConnectionByIp(ip: string, connection: Redis
   ] of Object.entries(connection)) {
     connectionStringObj[key] = value;
   }
-  await redisClient.hSet(`connections:${ip}`, connectionStringObj);
+  await redisUpdateIpMirror(ip, connectionStringObj.id, connectionStringObj);
 }
 
 export async function redisGetPlayerConnectionByPlayerIDAsync(playerId: string) {

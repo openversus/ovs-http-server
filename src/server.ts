@@ -21,7 +21,9 @@ import { redisClient,
   redisGetOnlinePlayers,
   redisGetOnlinePlayerCount,
   redisGetActiveRankedSets,
-  redisGetInProgressMatches } from "./config/redis";
+  redisGetInProgressMatches,
+  redisUpdateIpMirror,
+} from "./config/redis";
 import { getLeaderboard, getPlayerRank, processMatchLeave, eloToTierDivision } from "./services/eloService";
 import { GAME_SERVER_PORT } from "./game/udp";
 import { sscRouter } from "./ssc/routes";
@@ -379,7 +381,7 @@ app.post("/namechange", async (req, res, next) => {
           if (ip) {
             const ipHashExists = await redisClient.exists(`connections:${ip}`);
             if (ipHashExists) {
-              await redisClient.hSet(`connections:${ip}`, { username: trimmed });
+              await redisUpdateIpMirror(ip, player.id, { username: trimmed });
             }
           }
         }

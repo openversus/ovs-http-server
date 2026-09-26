@@ -10,6 +10,7 @@ import {
   type RedisMatchTicket,
   type RedisTeamEntry,
   type MATCH_FOUND_NOTIFICATION,
+  redisUpdateIpMirror,
 } from "../../config/redis";
 import { logger, logwrapper } from "../../config/logger";
 import env from "../../env/env";
@@ -1651,7 +1652,7 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
         if (character && skin) {
           await redisClient.hSet(`connections:${playerId}`, { character, skin });
           const ip = freshConn?.current_ip;
-          if (ip) await redisClient.hSet(`connections:${ip}`, { character, skin });
+          if (ip) await redisUpdateIpMirror(ip, playerId, { character, skin });
         }
 
         playerConfig = {

@@ -11,6 +11,13 @@ export interface IAccountToken {
   steamId: string;
   epicId: string;
   hardwareId: string;
+  hardwareIdVersion?: string;
+  hardwareIdQuality?: string;
+  installId?: string;
+  sessionId?: string;
+  clientVersion?: string;
+  /** "1" only when this session was bootstrapped through /api/identify. */
+  identityRegistered?: string;
   // token: AccountToken;
   // account: AccountToken;
 }
@@ -28,6 +35,12 @@ export class AccountToken implements IAccountToken {
   steamId: string;
   epicId: string;
   hardwareId: string;
+  hardwareIdVersion?: string;
+  hardwareIdQuality?: string;
+  installId?: string;
+  sessionId?: string;
+  clientVersion?: string;
+  identityRegistered?: string;
   // token: AccountToken;
   // account: AccountToken;
 
@@ -44,6 +57,12 @@ export class AccountToken implements IAccountToken {
     this.steamId = "";
     this.epicId = "";
     this.hardwareId = "";
+    this.hardwareIdVersion = "";
+    this.hardwareIdQuality = "";
+    this.installId = "";
+    this.sessionId = "";
+    this.clientVersion = "";
+    this.identityRegistered = "";
     // this.token = this;
     // this.account = this;
   }

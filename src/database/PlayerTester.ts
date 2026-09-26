@@ -74,6 +74,25 @@ export class PlayerTester {
 
   @prop({ default: "", index: true, sparse: true })
   public hardwareId!: string;
+
+  @prop({ default: "" })
+  public hardwareIdVersion!: string;
+
+  @prop({ default: "" })
+  public hardwareIdQuality!: string;
+
+  // Canonical fallback for archive/offline builds which do not expose a Steam
+  // or Epic account. Generated randomly by the DLL and persisted per install.
+  @prop({ default: "", index: true })
+  public installId!: string;
+
+  // IP is connection metadata. These timestamps make old, recycled-IP links
+  // age out of browser/account-picking compatibility flows after seven days.
+  @prop({ default: () => new Date(), index: true })
+  public lastSeenAt!: Date;
+
+  @prop({ default: () => new Date(), index: true })
+  public ipSeenAt!: Date;
 }
 
 export const PlayerTesterModel = getModelForClass(PlayerTester);

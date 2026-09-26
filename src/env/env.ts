@@ -21,6 +21,16 @@ const env = cleanEnv(process.env, {
   K_1V1: num({ default: 32 }),
   K_2V2: num({ default: 24 }),
   LOCAL_PUBLIC_IP: str(),
+  // Oldest client version allowed into matches and lobbies (a release version such as
+  // 2026.09.27.1). Empty: no minimum, but while CLIENT_VERSION_CHECK is on a client must
+  // still have registered through /api/identify, which old C++ clients never do.
+  MIN_CLIENT_VERSION: str({ default: "" }),
+  // The Steam app a login's Steam ticket must be for (MultiVersus = 1818750). 0 accepts
+  // a signed ticket for any app.
+  STEAM_APP_ID: num({ default: 1818750 }),
+  // Master switch for the client gate (version minimum + /api/identify check).
+  // false lets any client version play; set true (or remove) to enforce again.
+  CLIENT_VERSION_CHECK: bool({ default: true }),
   MATCHUPDATEKEY: str({ default: "MisconfiguredMatchUpdateKey" }),
   MONGODB_URI: str(),
   ON_DEMAND_ROLLBACK: num({ default: 0 }),

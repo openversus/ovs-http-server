@@ -18,11 +18,33 @@ import { PlayerStatsModel } from "../database/PlayerStats";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { NameGenerator } from "../utils/namegeneration";
 import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
-import { writeIdentityIndexes, bumpIpAccountsChangedAt } from "../services/identityService";
+import { writeIdentityIndexes, bumpIpAccountsChangedAt, normalizeHardwareSignal, normalizeIdentity } from "../services/identityService";
+import { chooseUnambiguousLegacyIpCandidate } from "../services/identityNormalization";
 import { tryGrantDailyToastBonus } from "../data/playerCounters";
+import { randomUUID } from "crypto";
 
 const serviceName = "Handlers.Access";
 const logPrefix = `[${serviceName}]:`;
+
+function steamIdFromSignedTicket(raw: unknown): string {
+  if (typeof raw !== "string" || raw.length < 32 || raw.length > 32768) return "";
+  const buffers: Buffer[] = [];
+  if (/^[a-f\d]+$/i.test(raw) && raw.length % 2 === 0) buffers.push(Buffer.from(raw, "hex"));
+  try {
+    const normalized = raw.replace(/-/g, "+").replace(/_/g, "/");
+    buffers.push(Buffer.from(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="), "base64"));
+  } catch { /* not base64 */ }
+
+  for (const ticket of buffers) {
+    try {
+      const parsed = parseAppTicket(ticket);
+      if (!parsed?.isValid || !parsed.hasValidSignature || parsed.isExpired) continue;
+      if (env.STEAM_APP_ID > 0 && parsed.appID !== env.STEAM_APP_ID) continue;
+      return normalizeIdentity("steam", parsed.steamID?.getSteamID64());
+    } catch { /* try the next encoding */ }
+  }
+  return "";
+}
 
 async function deleteStaticAccess(req: express.Request) {
   logger.info("In deleteStaticAccess, received request to delete access. \n");
@@ -82,17 +104,25 @@ async function generateStaticAccess(req: express.Request) {
   //      backward compat with old DLLs that don't echo the JWT.
   // If both are present, prefer the JWT. If only one, use whichever. If neither,
   // we log a warning — the resulting account will have no platform IDs (ghost).
-  let steamId = "", epicId = "", hardwareId = "";
+  let steamId = "", epicId = "", hardwareId = "", hardwareIdVersion = "", hardwareIdQuality = "", installId = "", clientVersion = "";
+  let identityRegistered = false;
   let identitySource = "none";
 
   try {
     const rawToken = req.headers["x-hydra-access-token"];
     if (typeof rawToken === "string" && rawToken.length > 0) {
       const decoded = jwt.verify(rawToken, SECRET) as SharedTypes.IAccountToken;
-      if (decoded && (decoded.steamId || decoded.epicId || decoded.hardwareId)) {
-        steamId = decoded.steamId || "";
-        epicId = decoded.epicId || "";
-        hardwareId = decoded.hardwareId || "";
+      if (decoded && (decoded.steamId || decoded.epicId || decoded.installId)) {
+        steamId = normalizeIdentity("steam", decoded.steamId);
+        epicId = normalizeIdentity("epic", decoded.epicId);
+        ({ hardwareId, hardwareIdVersion, hardwareIdQuality } = normalizeHardwareSignal(
+          decoded.hardwareId,
+          decoded.hardwareIdVersion,
+          decoded.hardwareIdQuality,
+        ));
+        installId = normalizeIdentity("install", decoded.installId);
+        clientVersion = decoded.clientVersion || "";
+        identityRegistered = decoded.identityRegistered === "1";
         identitySource = "jwt";
       }
     }
@@ -102,12 +132,66 @@ async function generateStaticAccess(req: express.Request) {
 
   if (identitySource === "none") {
     const identity = await Redis.redisGetIdentity(ip);
-    if (identity && (identity.steamId || identity.epicId || identity.hardwareId)) {
-      steamId = identity.steamId || "";
-      epicId = identity.epicId || "";
-      hardwareId = identity.hardwareId || "";
+    if (identity && (identity.steamId || identity.epicId || identity.installId)) {
+      steamId = normalizeIdentity("steam", identity.steamId);
+      epicId = normalizeIdentity("epic", identity.epicId);
+      ({ hardwareId, hardwareIdVersion, hardwareIdQuality } = normalizeHardwareSignal(
+        identity.hardwareId,
+        identity.hardwareIdVersion,
+        identity.hardwareIdQuality,
+      ));
+      installId = normalizeIdentity("install", identity.installId);
+      clientVersion = identity.clientVersion || "";
+      identityRegistered = identity.identityRegistered;
       identitySource = "redis";
     }
+  }
+
+  // The ASI registers identity on a background thread because network APIs are
+  // unsafe under the Windows loader lock. On a fast boot, /access can arrive a
+  // fraction of a second before /api/identify. Give that request up to three
+  // seconds to land before considering legacy IP recovery or account creation.
+  if (identitySource === "none") {
+    for (let attempt = 0; attempt < 15; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+      const identity = await Redis.redisGetIdentity(ip);
+      if (!identity || !(identity.steamId || identity.epicId || identity.installId)) continue;
+      steamId = normalizeIdentity("steam", identity.steamId);
+      epicId = normalizeIdentity("epic", identity.epicId);
+      ({ hardwareId, hardwareIdVersion, hardwareIdQuality } = normalizeHardwareSignal(
+        identity.hardwareId,
+        identity.hardwareIdVersion,
+        identity.hardwareIdQuality,
+      ));
+      installId = normalizeIdentity("install", identity.installId);
+      clientVersion = identity.clientVersion || "";
+      identityRegistered = identity.identityRegistered;
+      identitySource = "redis-wait";
+      logger.info(`${logPrefix} Late ASI identity arrived during /access startup grace period for ${ip}.`);
+      break;
+    }
+  }
+
+  // The game's Steam ticket is signed by Steam, so it names the Steam account that sent
+  // this login and wins over the IP cache, which any device behind the IP may have written.
+  // When the cache doesn't name this same Steam account (another one, or none: an Epic or
+  // Internet Archive client), it belongs to another device and the rest of it is dropped.
+  // The C# client registers the Steam id with its identify, so its own record matches.
+  const ticketSteamId = steamIdFromSignedTicket(req.body?.auth?.steam);
+  if (ticketSteamId) {
+    const fromIpCache = identitySource === "redis" || identitySource === "redis-wait";
+    if (fromIpCache && steamId !== ticketSteamId) {
+      logger.info(`${logPrefix} Steam ticket for ${ticketSteamId} at ${ip} overrides the IP identity cached for ${steamId || "a non-Steam client"}; ignoring the rest of that record.`);
+      epicId = "";
+      installId = "";
+      hardwareId = "";
+      hardwareIdVersion = "";
+      hardwareIdQuality = "";
+      clientVersion = "";
+      identityRegistered = false;
+    }
+    steamId = ticketSteamId;
+    identitySource = "steam-ticket";
   }
 
   if (identitySource === "jwt") {
@@ -119,8 +203,8 @@ async function generateStaticAccess(req: express.Request) {
   // If BOTH the Redis preamble AND the JWT fallback came up empty, we're flying
   // blind. The resulting account will have no steam/epic/hw — on next /access
   // from a different IP, they won't match and we'll create another ghost.
-  if (!steamId && !epicId && !hardwareId) {
-    logger.warn(`${logPrefix} /access from IP ${ip} has NO platform identity (steam/epic/hw all empty, no recoverable JWT). DLL may not be registering identity — expect a ghost account.`);
+  if (!steamId && !epicId && !installId) {
+    logger.warn(`${logPrefix} /access from IP ${ip} has no canonical identity; only an unambiguous active-IP session may be reused.`);
   }
 
   // Try to find existing player by identity fields first (prefer steamId > epicId > hardwareId)
@@ -129,24 +213,70 @@ async function generateStaticAccess(req: express.Request) {
   let player = null;
   if (steamId) player = await PlayerTesterModel.findOne({ steamId });
   if (!player && epicId) player = await PlayerTesterModel.findOne({ epicId });
-  if (!player && hardwareId) player = await PlayerTesterModel.findOne({ hardwareId });
-  if (!player) {
-    player = await PlayerTesterModel.findOne({ ip });
-    if (player && steamId && player.steamId && player.steamId !== steamId) {
-      logger.info(`${logPrefix} IP ${ip} matched player ${player.id} but steamId mismatch (${steamId} vs ${player.steamId}), creating new account`);
-      player = null;
+  if (!player && installId) {
+    const installOwner = await PlayerTesterModel.findOne({ installId });
+    const steamConflict = !!(steamId && installOwner?.steamId && installOwner.steamId !== steamId);
+    const epicConflict = !!(epicId && installOwner?.epicId && installOwner.epicId !== epicId);
+    if (!steamConflict && !epicConflict) player = installOwner;
+  }
+  if (!player && !steamId && !epicId && !installId) {
+    const activeConnection = await Redis.redisGetUniqueActiveConnectionByIP(ip);
+    if (activeConnection?.id) {
+      player = await PlayerTesterModel.findById(activeConnection.id);
+      if (player) logger.info(`${logPrefix} Recovered identity-less retry from the sole active account ${player.id} at ${ip}.`);
+    }
+
+    if (!player) {
+      // Query canonical owners separately so any number of old empty ghosts
+      // cannot hide the real account behind a result limit.
+      const canonicalCandidates = await PlayerTesterModel.find({
+        ip,
+        $or: [
+          { steamId: /^\d{15,20}$/ },
+          { epicId: /^[a-f\d]{32}$/i },
+          { installId: /^[a-f\d]{32}$/i },
+        ],
+      }).sort({ lastSeenAt: -1 }).limit(2);
+      const historicalCandidates = canonicalCandidates.length > 0
+        ? canonicalCandidates
+        : await PlayerTesterModel.find({ ip }).sort({ lastSeenAt: -1 }).limit(2);
+      player = chooseUnambiguousLegacyIpCandidate(historicalCandidates);
+      if (player) {
+        logger.warn(`${logPrefix} Recovered identity-less legacy /access as the sole unambiguous historical account ${player.id} at ${ip}.`);
+      } else if (historicalCandidates.length > 0) {
+        logger.warn(`${logPrefix} Refused legacy IP fallback for ${ip}: historical claimants make the address ambiguous.`);
+      }
     }
   }
-
   if (!player) {
+    if (installId && (steamId || epicId)) {
+      await PlayerTesterModel.updateMany(
+        { installId },
+        { $set: { installId: "" } },
+      );
+    }
     // generate a random name like OpenVersus_1247112554154
-    player = new PlayerTesterModel({ ip, name: randomName, hydraUsername: hydraUsername, GameplayPreferences: 964, steamId, epicId, hardwareId });
+    player = new PlayerTesterModel({
+      ip,
+      name: randomName,
+      hydraUsername,
+      GameplayPreferences: 964,
+      steamId,
+      epicId,
+      hardwareId,
+      hardwareIdVersion,
+      hardwareIdQuality,
+      installId,
+      lastSeenAt: new Date(),
+      ipSeenAt: new Date(),
+    });
     try {
       await player.save();
       const lookedUp = [
         `steamId=${steamId || "-"}`,
         `epicId=${epicId || "-"}`,
         `hardwareId=${hardwareId || "-"}`,
+        `installId=${installId ? "<present>" : "-"}`,
         `ip=${ip}`,
       ].join(", ");
       logger.info(`${logPrefix} No existing player matched [${lookedUp}]. Created new player with id ${player.id} and name ${randomName}.`);
@@ -163,7 +293,24 @@ async function generateStaticAccess(req: express.Request) {
     let dirty = false;
     if (steamId && isStale(player.steamId)) { player.steamId = steamId; dirty = true; }
     if (epicId && isStale(player.epicId)) { player.epicId = epicId; dirty = true; }
-    if (hardwareId && isStale(player.hardwareId)) { player.hardwareId = hardwareId; dirty = true; }
+    if (hardwareId && hardwareIdVersion === "2" && hardwareIdQuality === "strong"
+        && (player.hardwareId !== hardwareId || player.hardwareIdVersion !== "2" || player.hardwareIdQuality !== "strong")) {
+      player.hardwareId = hardwareId;
+      player.hardwareIdVersion = hardwareIdVersion;
+      player.hardwareIdQuality = hardwareIdQuality;
+      dirty = true;
+    }
+    if (installId && player.installId !== installId) {
+      // The installation binding follows the current platform account. Any
+      // previous owner remains recoverable by Steam/Epic but must not keep an
+      // ambiguous copy of this install ID.
+      await PlayerTesterModel.updateMany(
+        { _id: { $ne: player._id }, installId },
+        { $set: { installId: "" } },
+      );
+      player.installId = installId;
+      dirty = true;
+    }
     if (player.ip !== ip) {
       // Existing account moving to a new IP — bump both the old IP (this account leaving)
       // and the new IP (this account arriving) so stale cookies at either get re-verified.
@@ -173,6 +320,9 @@ async function generateStaticAccess(req: express.Request) {
       if (previousIp) await bumpIpAccountsChangedAt(previousIp);
       await bumpIpAccountsChangedAt(ip);
     }
+    player.lastSeenAt = new Date();
+    player.ipSeenAt = new Date();
+    dirty = true;
     if (dirty) {
       try {
         await player.save();
@@ -227,6 +377,9 @@ async function generateStaticAccess(req: express.Request) {
   //   ws = `ws://${env.LOCAL_PUBLIC_IP}:${env.WEBSOCKET_PORT}`;
   // }
 
+  // Keep the access token's wire shape compatible with the production client.
+  // Install/session/version fields are server metadata and are stored in Redis
+  // below rather than being embedded in the JWT parsed by the game.
   const account: SharedTypes.IAccountToken = {
     id: player.id,
     profile_id: player.profile_id.toHexString(),
@@ -262,12 +415,19 @@ async function generateStaticAccess(req: express.Request) {
   const token = jwt.sign(account, SECRET);
   logger.info(`${logPrefix} Player ${account.id} - ${account.username} connected; ws: ${ws}`);
 
-  await Redis.redisAddPlayerConnection(player.id, ip, token, account);
+  await Redis.redisAddPlayerConnection(player.id, ip, token, account, {
+    hardwareIdVersion: player.hardwareIdVersion ?? "",
+    hardwareIdQuality: player.hardwareIdQuality ?? "",
+    installId: player.installId ?? "",
+    sessionId: randomUUID(),
+    clientVersion,
+    identityRegistered: identityRegistered ? "1" : "",
+  });
 
   // Write identity index keys so downstream lookups can resolve by steamId/epicId/hardwareId
   // instead of IP. Solves same-household collision (two accounts sharing external IP).
   try {
-    await writeIdentityIndexes(player.id, player.steamId, player.epicId, player.hardwareId);
+    await writeIdentityIndexes(player.id, player.steamId, player.epicId, player.installId);
   } catch (e) {
     logger.error(`${logPrefix} Error writing identity indexes: ${e}`);
   }

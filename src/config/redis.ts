@@ -34,6 +34,46 @@ export const LOBBY_REJOIN_CHANNEL = "lobby:rejoin";
 export const PLAYER_LOADOUT_LOCKED_CHANNEL = "lobby:loadout_locked";
 export const LOBBY_RETURN_CHANNEL = "lobby:return";
 export const FRIEND_REQUEST_WS_CHANNEL = "friend:request:ws";
+export const CLIENT_UPDATE_MODAL_CHANNEL = "client_update:modal";
+
+const CLIENT_UPDATE_MODAL_NONCE_PREFIX = "client_update_modal_nonce:";
+const CLIENT_UPDATE_MODAL_COOLDOWN_PREFIX = "client_update_modal_cooldown:";
+
+export interface RedisClientUpdateModalNotification {
+  playerId: string;
+  nonce: number;
+}
+
+/**
+ * Give the player's required-update carousel entry a fresh identity, then ask
+ * the stock game client to reload calendar/global-message data over Hydra WS.
+ * A short cooldown collapses the game's rapid retries into one visible prompt.
+ */
+export async function redisRequestClientUpdateModal(playerId: string): Promise<boolean> {
+  if (!playerId) return false;
+
+  const cooldown = await redisClient.set(
+    `${CLIENT_UPDATE_MODAL_COOLDOWN_PREFIX}${playerId}`,
+    "1",
+    { EX: 15, NX: true },
+  );
+  if (cooldown !== "OK") return false;
+
+  const nonceKey = `${CLIENT_UPDATE_MODAL_NONCE_PREFIX}${playerId}`;
+  const nonce = await redisClient.incr(nonceKey);
+  await redisClient.expire(nonceKey, 24 * 60 * 60);
+  await redisClient.publish(
+    CLIENT_UPDATE_MODAL_CHANNEL,
+    JSON.stringify({ playerId, nonce } satisfies RedisClientUpdateModalNotification),
+  );
+  return true;
+}
+
+export async function redisGetClientUpdateModalNonce(playerId: string): Promise<number> {
+  if (!playerId) return 0;
+  const value = await redisClient.get(`${CLIENT_UPDATE_MODAL_NONCE_PREFIX}${playerId}`);
+  return Number.parseInt(value || "0", 10) || 0;
+}
 
 export interface RedisFriendRequestWSNotification {
   receiverAccountId: string;
@@ -326,11 +366,21 @@ export async function redisUpdatePlayerLoadout(playerId: string, redisPlayer: Re
   await redisClient.hSet(`player:${playerId}`, redisPlayerStringObj);
 }
 
-export async function redisAddPlayerConnection(playerId: string, ip: string, jwt: string, accountToken: IAccountToken) {
+export async function redisAddPlayerConnection(
+  playerId: string,
+  ip: string,
+  jwt: string,
+  accountToken: IAccountToken,
+  connectionMetadata: Partial<IAccountToken> = {},
+) {
   // Convert all values to strings for Redis
-
-  var newConnection: RedisPlayerConnection = accountToken as RedisPlayerConnection;
-  newConnection.jwt = jwt;
+  // Keep server-only connection metadata out of the game-facing JWT while
+  // retaining it in Redis for identity resolution and update enforcement.
+  const newConnection = {
+    ...accountToken,
+    ...connectionMetadata,
+    jwt,
+  } as RedisPlayerConnection;
 
   const accountTokenStringObj: Record<string, string> = {};
   for (const [
@@ -341,7 +391,41 @@ export async function redisAddPlayerConnection(playerId: string, ip: string, jwt
   }
 
   await redisClient.hSet(`connections:${playerId}`, accountTokenStringObj);
+  // Kept briefly for old clients only. New resolution uses the account/session
+  // and the active-IP set below, so a household member cannot overwrite another.
   await redisClient.hSet(`connections:${ip}`, accountTokenStringObj);
+  await redisClient.expire(`connections:${ip}`, 120);
+  await redisTouchPlayerSession(playerId, ip, connectionMetadata.sessionId || "");
+}
+
+const ACTIVE_SESSION_TTL_MS = 90_000;
+
+export async function redisTouchPlayerSession(playerId: string, ip: string, sessionId: string) {
+  if (!playerId || !ip) return;
+  const now = Date.now();
+  const activeKey = `active_ip_accounts:${ip}`;
+  await redisClient.zRemRangeByScore(activeKey, 0, now - ACTIVE_SESSION_TTL_MS);
+  await redisClient.zAdd(activeKey, { score: now, value: playerId });
+  await redisClient.expire(activeKey, 180);
+  if (sessionId) {
+    await redisClient.hSet(`session:${sessionId}`, { accountId: playerId, ip, touchedAt: String(now) });
+    await redisClient.expire(`session:${sessionId}`, 180);
+  }
+}
+
+export async function redisGetUniqueActiveConnectionByIP(ip: string): Promise<RedisPlayerConnection | null> {
+  if (!ip) return null;
+  const key = `active_ip_accounts:${ip}`;
+  await redisClient.zRemRangeByScore(key, 0, Date.now() - ACTIVE_SESSION_TTL_MS);
+  const accountIds = await redisClient.zRange(key, 0, -1);
+  if (accountIds.length !== 1) return null;
+  const connection = (await redisClient.hGetAll(`connections:${accountIds[0]}`)) as unknown as RedisPlayerConnection;
+  return connection?.id ? connection : null;
+}
+
+export async function redisRemovePlayerSession(playerId: string, ip: string, sessionId?: string) {
+  if (ip && playerId) await redisClient.zRem(`active_ip_accounts:${ip}`, playerId);
+  if (sessionId) await redisClient.del(`session:${sessionId}`);
 }
 
 export async function redisSetPlayerConnectionCosmetics(playerId: string, cosmetics: Cosmetics) {
@@ -399,15 +483,52 @@ export function redisGetPlayerConnectionByIP(ip: string) {
   return redisClient.hGetAll(`connections:${ip}`).then((connection) => connection as unknown as RedisPlayerConnection);
 }
 
-export async function redisSaveIdentity(ip: string, steamId: string, epicId: string, hardwareId: string) {
-  await redisClient.hSet(`identity:${ip}`, { steamId, epicId, hardwareId });
+export async function redisSaveIdentity(
+  ip: string,
+  steamId: string,
+  epicId: string,
+  hardwareId: string,
+  installId = "",
+  clientVersion = "",
+  hardwareIdVersion = "",
+  hardwareIdQuality = "",
+  identityRegistered = false,
+) {
+  await redisClient.hSet(`identity:${ip}`, {
+    steamId,
+    epicId,
+    hardwareId,
+    hardwareIdVersion,
+    hardwareIdQuality,
+    installId,
+    clientVersion,
+    identityRegistered: identityRegistered ? "1" : "",
+  });
   await redisClient.expire(`identity:${ip}`, 300); // 5 min TTL, enough for access handshake
 }
 
-export async function redisGetIdentity(ip: string): Promise<{ steamId: string; epicId: string; hardwareId: string } | null> {
+export async function redisGetIdentity(ip: string): Promise<{
+  steamId: string;
+  epicId: string;
+  hardwareId: string;
+  hardwareIdVersion: string;
+  hardwareIdQuality: string;
+  installId: string;
+  clientVersion: string;
+  identityRegistered: boolean;
+} | null> {
   const data = await redisClient.hGetAll(`identity:${ip}`);
   if (!data || Object.keys(data).length === 0) return null;
-  return { steamId: data.steamId ?? "", epicId: data.epicId ?? "", hardwareId: data.hardwareId ?? "" };
+  return {
+    steamId: data.steamId ?? "",
+    epicId: data.epicId ?? "",
+    hardwareId: data.hardwareId ?? "",
+    hardwareIdVersion: data.hardwareIdVersion ?? "",
+    hardwareIdQuality: data.hardwareIdQuality ?? "",
+    installId: data.installId ?? "",
+    clientVersion: data.clientVersion ?? "",
+    identityRegistered: data.identityRegistered === "1",
+  };
 }
 
 export async function redisUpdatePlayerStatus(playerId: string, status: string) {

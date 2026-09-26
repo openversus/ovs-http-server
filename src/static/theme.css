@@ -1,0 +1,59 @@
+:root { color-scheme: light dark; }
+
+:root[data-theme="dark"] {
+    --ink: #f3f4f6 !important;
+    --card: rgba(17, 24, 39, 0.96) !important;
+    --card2: rgba(8, 12, 22, 0.94) !important;
+    --mv-blue: #4c8dff !important;
+    --mv-blue-dark: #78a7ff !important;
+    --shadow: rgba(0, 0, 0, 0.58) 0 19px 38px, rgba(0, 0, 0, 0.42) 0 15px 12px !important;
+}
+
+:root[data-theme="dark"] .background::after { background: rgba(3, 6, 14, 0.68) !important; }
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] .account-card,
+:root[data-theme="dark"] .picked-card,
+:root[data-theme="dark"] .player-card,
+:root[data-theme="dark"] .match-card,
+:root[data-theme="dark"] .table-wrap,
+:root[data-theme="dark"] .settings-panel,
+:root[data-theme="dark"] .settings-section,
+:root[data-theme="dark"] .map-checkbox-item,
+:root[data-theme="dark"] .lb-table td,
+:root[data-theme="dark"] .lb-table th {
+    background-color: #141b27 !important;
+    color: #f3f4f6 !important;
+    border-color: #46536a !important;
+  }
+
+:root[data-theme="dark"] .subtitle,
+:root[data-theme="dark"] .muted,
+:root[data-theme="dark"] .hint,
+:root[data-theme="dark"] .acct-meta,
+:root[data-theme="dark"] .empty-state,
+:root[data-theme="dark"] label {
+    color: rgba(243, 244, 246, 0.76) !important;
+  }
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder { color: #9ca3af; }
+:root[data-theme="dark"] .lb-table tr:hover td,
+:root[data-theme="dark"] .map-checkbox-item:hover { background-color: #1e293b !important; }
+
+.theme-toggle {
+  position: fixed;
+  z-index: 10000;
+  right: 14px;
+  top: 14px;
+  width: 44px;
+  height: 44px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, .28);
+  cursor: pointer;
+  font-size: 20px;
+}

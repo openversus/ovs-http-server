@@ -1187,6 +1187,8 @@ const IP_ACCOUNT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const recentIpAccountQuery = (ip: string) => ({
   ip,
   ipSeenAt: { $gte: new Date(Date.now() - IP_ACCOUNT_MAX_AGE_MS) },
+  // Provisional accounts exist only to show outdated clients the update popup.
+  provisional: { $ne: true },
 });
 
 // Helper: identify player for browser/AJAX calls via IP candidates + picker cookie.

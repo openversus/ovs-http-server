@@ -93,6 +93,11 @@ export class PlayerTester {
 
   @prop({ default: () => new Date(), index: true })
   public ipSeenAt!: Date;
+  // Created for a login that carried no Steam/Epic/install id and matched no account
+  // (an outdated client that only needs to see the update popup). One per IP, reused,
+  // never used for IP recovery, and adopted (flag cleared) once that device sends an id.
+  @prop({ default: false, index: true })
+  public provisional!: boolean;
 }
 
 export const PlayerTesterModel = getModelForClass(PlayerTester);

@@ -19,7 +19,7 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { NameGenerator } from "../utils/namegeneration";
 import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
 import { writeIdentityIndexes, bumpIpAccountsChangedAt, normalizeHardwareSignal, normalizeIdentity } from "../services/identityService";
-import { chooseUnambiguousLegacyIpCandidate } from "../services/identityNormalization";
+import { chooseAdoptionCandidate, chooseUnambiguousLegacyIpCandidate, idLessAccountFilter } from "../services/identityNormalization";
 import { tryGrantDailyToastBonus } from "../data/playerCounters";
 
 const serviceName = "Handlers.Access";
@@ -238,7 +238,7 @@ async function generateStaticAccess(req: express.Request) {
       }).sort({ lastSeenAt: -1 }).limit(2);
       const historicalCandidates = canonicalCandidates.length > 0
         ? canonicalCandidates
-        : await PlayerTesterModel.find({ ip }).sort({ lastSeenAt: -1 }).limit(2);
+        : await PlayerTesterModel.find({ ip, provisional: { $ne: true } }).sort({ lastSeenAt: -1 }).limit(2);
       player = chooseUnambiguousLegacyIpCandidate(historicalCandidates);
       if (player) {
         logger.warn(`${logPrefix} Recovered identity-less legacy /access as the sole unambiguous historical account ${player.id} at ${ip}.`);
@@ -246,6 +246,31 @@ async function generateStaticAccess(req: express.Request) {
         logger.warn(`${logPrefix} Refused legacy IP fallback for ${ip}: historical claimants make the address ambiguous.`);
       }
     }
+  }
+  const hasIdentity = !!(steamId || epicId || installId);
+  if (!player && hasIdentity) {
+    // Install-id adoption: a newly identified client (e.g. the first C# launch of an
+    // Internet Archive player) takes over its pre-update account on this IP instead
+    // of starting a new one. Only id-less accounts are candidates; see
+    // chooseAdoptionCandidate. The backfill below attaches the ids and clears
+    // the provisional flag.
+    // Id-less accounts are queried directly, so accounts that already carry an id
+    // never hide a second id-less one behind a result limit.
+    const adoptionCandidates = [
+      ...await PlayerTesterModel.find(idLessAccountFilter(ip, false)).sort({ lastSeenAt: -1 }).limit(2),
+      ...await PlayerTesterModel.find(idLessAccountFilter(ip, true)).sort({ lastSeenAt: -1 }).limit(1),
+    ];
+    player = chooseAdoptionCandidate(adoptionCandidates);
+    if (player) {
+      logger.info(`${logPrefix} Adopted id-less account ${player.id}${player.provisional ? " (provisional)" : ""} at ${ip} for a newly identified client.`);
+    }
+  }
+  if (!player && !hasIdentity) {
+    // An identity-less login must never create a normal account: every retry of an
+    // outdated client would otherwise leave another ghost. Reuse this IP's
+    // provisional account, or create one below.
+    player = await PlayerTesterModel.findOne({ ip, provisional: true }).sort({ lastSeenAt: -1 });
+    if (player) logger.info(`${logPrefix} Reusing provisional account ${player.id} for an identity-less login at ${ip}.`);
   }
   if (!player) {
     if (installId && (steamId || epicId)) {
@@ -256,6 +281,7 @@ async function generateStaticAccess(req: express.Request) {
     }
     // generate a random name like OpenVersus_1247112554154
     player = new PlayerTesterModel({
+      provisional: !hasIdentity,
       ip,
       name: randomName,
       hydraUsername,
@@ -308,6 +334,10 @@ async function generateStaticAccess(req: express.Request) {
         { $set: { installId: "" } },
       );
       player.installId = installId;
+      dirty = true;
+    }
+    if (player.provisional && hasIdentity) {
+      player.provisional = false;
       dirty = true;
     }
     if (player.ip !== ip) {

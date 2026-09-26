@@ -59,6 +59,26 @@ export function idLessAccountFilter(ip: string, provisional: boolean) {
   };
 }
 
+export const STALE_IP_LINK_DAYS = 7;
+
+/**
+ * IP rule. When an identified player logs in from an IP, every OTHER account on that IP
+ * that carries a durable id and hasn't been seen for STALE_IP_LINK_DAYS loses its IP link.
+ * It stays reachable by its Steam, Epic or install id; nothing else about the account
+ * changes. Accounts with no durable id (e.g. Internet Archive players who haven't updated
+ * yet) keep their link: it's their only way back to their account. Returns the Mongo
+ * filter for the accounts to release.
+ */
+export function staleIpLinkFilter(ip: string, keepAccountId: unknown, now: Date = new Date()) {
+  return {
+    ip,
+    _id: { $ne: keepAccountId },
+    lastSeenAt: { $lt: new Date(now.getTime() - STALE_IP_LINK_DAYS * 24 * 60 * 60 * 1000) },
+    provisional: { $ne: true },
+    $or: DURABLE_ID_CLAUSES,
+  };
+}
+
 /**
  * Install-id adoption. A client that now sends a durable id
  * (typically the first launch of the C# client) but matches no account may be the

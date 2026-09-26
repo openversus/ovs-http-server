@@ -304,7 +304,7 @@ app.post("/namechange", async (req, res, next) => {
     let player = resolvedPlayer;
     if (!player) {
       logger.warn(
-        `${logPrefix} No player found for IP ${ip} during name change POST. This should not happen since the GET route creates a player if one doesn't exist.`,
+        `${logPrefix} No player found for IP ${ip} during name change POST; the player has to connect from the game first.`,
       );
       res.status(401).send(template({
         currentUsername: "Unknown",
@@ -1180,25 +1180,23 @@ app.post("/api/admin/banner", async (req, res) => {
 });
 
 // ============================================================
-// Custom Lobby — Web-based custom game lobbies
+// Website: which account a browser request acts on
 // ============================================================
 
-const IP_ACCOUNT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-const recentIpAccountQuery = (ip: string) => ({
-  ip,
-  ipSeenAt: { $gte: new Date(Date.now() - IP_ACCOUNT_MAX_AGE_MS) },
-  // Provisional accounts exist only to show outdated clients the update popup.
-  provisional: { $ne: true },
-});
+// The accounts linked to this IP. The IP rule (staleIpLinkFilter) unlinks identified
+// accounts idle for 7+ days, so these are the people currently playing from it.
+// Provisional accounts exist only to show outdated clients the update popup. Without an IP
+// nothing matches: released accounts have ip "" and must never be offered to a browser.
+const ipAccountQuery = (ip: string) => (ip ? { ip, provisional: { $ne: true } } : { _id: { $exists: false } });
 
 // Helper: identify player for browser/AJAX calls via IP candidates + picker cookie.
 // - 1 account on IP → use it.
 // - 2+ accounts on IP → require the signed `ovs_web_account` cookie (set by /account/switch).
 //   Without the cookie, returns null — AJAX caller will get a 401 and the user should visit
-//   /custom (or /party / /namechange) once in a browser to pick an account.
+//   /namechange once in a browser to pick an account.
 async function getPlayerFromReq(req: any): Promise<{ id: string; username: string; ip: string } | null> {
   const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
-  const accounts = await PlayerTesterModel.find(recentIpAccountQuery(ip)).lean();
+  const accounts = await PlayerTesterModel.find(ipAccountQuery(ip)).lean();
   if (accounts.length === 0) return null;
 
   let picked: any | null = null;
@@ -1215,7 +1213,7 @@ async function getPlayerFromReq(req: any): Promise<{ id: string; username: strin
       }
     }
     if (!picked) {
-      logger.info(`${logPrefix} getPlayerFromReq: ${accounts.length} accounts on IP ${ip}, no valid picker cookie — returning null (user should visit /custom to pick)`);
+      logger.info(`${logPrefix} getPlayerFromReq: ${accounts.length} accounts on IP ${ip}, no valid picker cookie — returning null (user should visit /namechange to pick)`);
       return null;
     }
   }
@@ -1225,7 +1223,7 @@ async function getPlayerFromReq(req: any): Promise<{ id: string; username: strin
 // ============================================================
 // Admin web auth — cookie-based "which account are you" picker
 // ============================================================
-// Browser-facing admin pages (/namechange, /party, /custom) have no JWT. In the
+// Browser-facing pages (/namechange, /stats) have no JWT. In the
 // single-user-per-IP case the identity resolver's IP fallback picks the right
 // account. But in a household, two accounts share an IP — without a picker the
 // server would arbitrarily pick one and let the user mutate the wrong player.
@@ -1285,7 +1283,7 @@ async function resolvePlayerForWeb(
   const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
 
   // Candidate accounts at this IP
-  const accounts = await PlayerTesterModel.find(recentIpAccountQuery(ip)).lean();
+  const accounts = await PlayerTesterModel.find(ipAccountQuery(ip)).lean();
 
   if (accounts.length === 0) {
     return { player: null, pickerShown: false };
@@ -1363,7 +1361,7 @@ app.post("/account/switch", async (req, res) => {
 
     // Helper: re-render the picker page with an error banner (keeps user in-flow).
     const renderPickerWithError = async (errMsg: string) => {
-      const candidates = await PlayerTesterModel.find(recentIpAccountQuery(ip)).lean();
+      const candidates = await PlayerTesterModel.find(ipAccountQuery(ip)).lean();
       const html = accountPickerTemplate({
         returnTo,
         error: errMsg,
@@ -1384,7 +1382,7 @@ app.post("/account/switch", async (req, res) => {
     // 1. Verify the accountId has ip === req.ip (cheap gate against random accountIds)
     const match = await PlayerTesterModel.findOne({
       _id: new Types.ObjectId(accountId),
-      ...recentIpAccountQuery(ip),
+      ...ipAccountQuery(ip),
     });
     if (!match) {
       await renderPickerWithError("That account isn't recognized on this network. Pick one from the list below.");

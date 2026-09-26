@@ -19,7 +19,7 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { NameGenerator } from "../utils/namegeneration";
 import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../services/banService";
 import { writeIdentityIndexes, bumpIpAccountsChangedAt, normalizeHardwareSignal, normalizeIdentity } from "../services/identityService";
-import { chooseAdoptionCandidate, chooseUnambiguousLegacyIpCandidate, idLessAccountFilter } from "../services/identityNormalization";
+import { chooseAdoptionCandidate, chooseUnambiguousLegacyIpCandidate, idLessAccountFilter, STALE_IP_LINK_DAYS, staleIpLinkFilter } from "../services/identityNormalization";
 import { tryGrantDailyToastBonus } from "../data/playerCounters";
 
 const serviceName = "Handlers.Access";
@@ -218,7 +218,8 @@ async function generateStaticAccess(req: express.Request) {
     const epicConflict = !!(epicId && installOwner?.epicId && installOwner.epicId !== epicId);
     if (!steamConflict && !epicConflict) player = installOwner;
   }
-  if (!player && !steamId && !epicId && !installId) {
+  // IP-based steps need a real IP: released accounts have ip "" (see staleIpLinkFilter).
+  if (!player && !steamId && !epicId && !installId && ip) {
     const activeConnection = await Redis.redisGetUniqueActiveConnectionByIP(ip);
     if (activeConnection?.id) {
       player = await PlayerTesterModel.findById(activeConnection.id);
@@ -248,7 +249,7 @@ async function generateStaticAccess(req: express.Request) {
     }
   }
   const hasIdentity = !!(steamId || epicId || installId);
-  if (!player && hasIdentity) {
+  if (!player && hasIdentity && ip) {
     // Install-id adoption: a newly identified client (e.g. the first C# launch of an
     // Internet Archive player) takes over its pre-update account on this IP instead
     // of starting a new one. Only id-less accounts are candidates; see
@@ -265,7 +266,7 @@ async function generateStaticAccess(req: express.Request) {
       logger.info(`${logPrefix} Adopted id-less account ${player.id}${player.provisional ? " (provisional)" : ""} at ${ip} for a newly identified client.`);
     }
   }
-  if (!player && !hasIdentity) {
+  if (!player && !hasIdentity && ip) {
     // An identity-less login must never create a normal account: every retry of an
     // outdated client would otherwise leave another ghost. Reuse this IP's
     // provisional account, or create one below.
@@ -359,6 +360,20 @@ async function generateStaticAccess(req: express.Request) {
       } catch (error) {
         logger.error(`${logPrefix} Error updating identity for player ${player.id}: ${error}`);
       }
+    }
+  }
+
+  if (hasIdentity && player?._id && ip) {
+    // IP rule: this identified login releases stale IP links held by other accounts
+    // that can already be found by their own durable id (see staleIpLinkFilter).
+    try {
+      const released = await PlayerTesterModel.updateMany(staleIpLinkFilter(ip, player._id), { $set: { ip: "" } });
+      if (released.modifiedCount > 0) {
+        logger.info(`${logPrefix} Released ${released.modifiedCount} stale IP link(s) at ${ip} (inactive ${STALE_IP_LINK_DAYS}+ days, reachable by their own id).`);
+        await bumpIpAccountsChangedAt(ip);
+      }
+    } catch (error) {
+      logger.error(`${logPrefix} Releasing stale IP links at ${ip} failed: ${error}`);
     }
   }
 

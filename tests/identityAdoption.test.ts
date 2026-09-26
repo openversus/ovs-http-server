@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chooseAdoptionCandidate, chooseUnambiguousLegacyIpCandidate } from "../src/services/identityNormalization";
+import { chooseAdoptionCandidate, chooseUnambiguousLegacyIpCandidate, STALE_IP_LINK_DAYS, staleIpLinkFilter } from "../src/services/identityNormalization";
 
 const STEAM = "76561198000000001";
 const INSTALL = "0123456789abcdef0123456789abcdef";
@@ -36,4 +36,24 @@ test("IP recovery for identity-less logins never counts provisional accounts", (
   assert.equal(chooseUnambiguousLegacyIpCandidate([provisional("p1"), provisional("p2"), idLess("real")])?.id, "real");
   assert.equal(chooseUnambiguousLegacyIpCandidate([provisional("p1"), provisional("p2")]), null);
   assert.equal(chooseUnambiguousLegacyIpCandidate([provisional("p"), steamOwner("owner")])?.id, "owner");
+});
+
+test("IP rule: releases only other, durable-id, 7+-day-inactive accounts on that IP", () => {
+  const now = new Date("2026-09-26T12:00:00Z");
+  const filter = staleIpLinkFilter("203.0.113.9", "me", now) as any;
+  assert.equal(filter.ip, "203.0.113.9");
+  assert.deepEqual(filter._id, { $ne: "me" });
+  assert.equal(filter.lastSeenAt.$lt.toISOString(), "2026-09-19T12:00:00.000Z");
+  assert.deepEqual(filter.provisional, { $ne: true });
+  // Only accounts with a real Steam, Epic or install id match: an account with no
+  // durable id (e.g. an Internet Archive player who hasn't updated) is never released.
+  const matchesDurable = (field: string, value: string) =>
+    filter.$or.some((clause: any) => field in clause && clause[field].test(value));
+  assert.ok(matchesDurable("steamId", STEAM));
+  assert.ok(matchesDurable("epicId", INSTALL));
+  assert.ok(matchesDurable("installId", INSTALL));
+  assert.ok(!matchesDurable("steamId", ""));
+  assert.ok(!matchesDurable("installId", ""));
+  assert.ok(!matchesDurable("steamId", "Unknown"));
+  assert.equal(STALE_IP_LINK_DAYS, 7);
 });

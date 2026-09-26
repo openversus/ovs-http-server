@@ -15,7 +15,6 @@ import ObjectID from "bson-objectid";
 import { randomBytes, randomInt } from "crypto";
 import { IDeployInfo, DeployInfo, getDefaultDeployInfo } from "./rollbackService";
 import env from "../env/env";
-import { getPlayersRequiringClientUpdate, requestClientUpdateModalsForPlayers } from "./clientUpdateGate";
 
 const logPrefix = "[CustomLobby]:";
 const useOnDemandRollback: boolean = env.ON_DEMAND_ROLLBACK === 1;
@@ -518,17 +517,6 @@ export async function startMatch(
   const playersPerTeam = lobby.mode === "1v1" ? 1 : 2;
   const gamePlayers = lobby.players.filter((p) => !p.isSpectator);
   const spectators = lobby.players.filter((p) => p.isSpectator);
-  const outdatedPlayers = await getPlayersRequiringClientUpdate(
-    lobby.players.map((player) => player.playerId),
-  );
-  if (outdatedPlayers.length > 0) {
-    await requestClientUpdateModalsForPlayers(outdatedPlayers.map((player) => player.accountId));
-    logger.warn(
-      `${logPrefix} Blocked custom match start because update is required for: `
-      + outdatedPlayers.map((p) => `${p.accountId}:${p.clientVersion || "legacy"}`).join(", "),
-    );
-    return { error: "Every player must install the required OpenVersus update before this match can start." };
-  }
   const team0 = gamePlayers.filter((p) => p.teamIndex === 0);
   const team1 = gamePlayers.filter((p) => p.teamIndex === 1);
 

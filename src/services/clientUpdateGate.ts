@@ -86,15 +86,6 @@ export function hydraClientUpdateFailure() {
   };
 }
 
-export function jsonClientUpdateFailure() {
-  return {
-    error: "client_update_required",
-    message: CLIENT_UPDATE_MESSAGE,
-    minimumVersion: env.MIN_CLIENT_VERSION,
-    updateUrl: CLIENT_UPDATE_URL,
-  };
-}
-
 /**
  * Gate a gameplay transition while keeping login and non-gameplay navigation
  * available. Hydra actions use HTTP 200 + return_code=1 so the old game does

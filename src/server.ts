@@ -13,18 +13,8 @@ import { generate_hiss } from "./handlers/hiss_amalgation_get";
 import { redisClient,
   redisGetMatchConfig,
   redisPublisdEndOfMatch,
-  redisGetLobbyState,
-  redisSaveLobbyState,
   RedisPlayerConnection,
-  redisSavePlayerLobby,
-  redisPublishLobbyRejoin,
-  RedisLobbyRejoinNotification,
-  redisSavePartyKey,
-  redisGetPartyKey,
-  redisDeletePartyKey,
-  redisGetPlayerLobby,
   redisGameServerInstanceReady,
-  redisSetPendingJoinLobby,
   redisSaveIdentity,
   redisPopDLLNotifications,
   redisPushDLLNotification,
@@ -33,22 +23,6 @@ import { redisClient,
   redisGetActiveRankedSets,
   redisGetInProgressMatches } from "./config/redis";
 import { getLeaderboard, getPlayerRank, processMatchLeave, eloToTierDivision } from "./services/eloService";
-import { performGenuineLeave } from "./ssc/ssc";
-import {
-  createLobby,
-  joinLobby,
-  leaveLobby,
-  switchTeam,
-  toggleReady,
-  setMapPool,
-  selectMode,
-  startMatch,
-  getLobbyWithStatus,
-  moveToSpectator,
-  moveToPlayer,
-  kickPlayer,
-} from "./services/customLobbyService";
-import { getMapList } from "./data/maps";
 import { GAME_SERVER_PORT } from "./game/udp";
 import { sscRouter } from "./ssc/routes";
 import { getCurrentCRC, LoadConfig, MATCHMAKING_CRC } from "./data/config";
@@ -67,25 +41,16 @@ import * as KitchenSink from "./utils/garbagecan";
 import * as AuthUtils from "./utils/auth";
 import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
-import { NameGenerator } from "./utils/namegeneration";
 import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
 import { handleMatchStatusUpdate } from "./handlers/match_status";
-import { normalizeHardwareSignal, normalizeIdentity, resolveAccountFromRequest, resolveAccountWithSource } from "./services/identityService";
+import { normalizeHardwareSignal, normalizeIdentity, resolveAccountWithSource } from "./services/identityService";
 import {
   compareClientVersions,
   isClientGameplayAccessRequiredForMinimum,
   isClientUpdateRequired,
 } from "./services/clientVersion";
 import { buildClientReleaseManifest, flattenClientReleaseManifest } from "./services/clientReleaseManifest";
-import {
-  CLIENT_UPDATE_MESSAGE,
-  CLIENT_UPDATE_URL,
-  getPlayerClientUpdateState,
-  getPlayersRequiringClientUpdate,
-  jsonClientUpdateFailure,
-  requireCurrentClientForGameplay,
-  requestClientUpdateModalsForPlayers,
-} from "./services/clientUpdateGate";
+import { requireCurrentClientForGameplay } from "./services/clientUpdateGate";
 import { initAccelByteLobbyWs, accelByteLobbyWs } from "./accelByteLobbyWs";
 import { IMatchStatus } from "./interfaces/IMatchStatus";
 import { REAL_IP_HEADER, getRealIP, tryGetRealIP } from "./middleware/auth";
@@ -669,103 +634,6 @@ app.post("/mvsi_end_match", async (req, res, next) => {
 // ============================================================
 // Party Web Page — Join parties via shareable key
 // ============================================================
-
-// ============================================================
-// DLL invite accept — IP-based (no JWT), called by the DLL
-// when the player clicks "Accept" on the party invite dialog. (Kept when the website
-// party page was retired; neither the current C++ nor the C# client calls it.)
-// ============================================================
-
-app.put("/ovs/accept-invite/:lobbyId", async (req, res) => {
-  try {
-    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
-    const lobbyId = req.params.lobbyId;
-
-    // Resolve via JWT/Steam/Epic/HW/IP (household-safe); then load by account id.
-    const conn = await resolveAccountFromRequest(req);
-    const player = conn?.id
-      ? await PlayerTesterModel.findOne({ _id: new Types.ObjectId(conn.id) })
-      : null;
-    if (!player) {
-      res.status(401).json({ error: "not_connected" });
-      return;
-    }
-
-    const lobby = await redisGetLobbyState(lobbyId);
-    if (!lobby) {
-      res.status(404).json({ error: "lobby_not_found" });
-      return;
-    }
-
-    const outdatedInviteMembers = await getPlayersRequiringClientUpdate([
-      player.id,
-      ...(lobby.playerIds || []),
-    ]);
-    if (outdatedInviteMembers.length > 0) {
-      await requestClientUpdateModalsForPlayers(outdatedInviteMembers.map((member) => member.accountId));
-      logger.warn(
-        `${logPrefix} Blocked invite acceptance because update is required for: `
-        + outdatedInviteMembers.map((p) => `${p.accountId}:${p.clientVersion || "legacy"}`).join(", "),
-      );
-      res.status(426).json(jsonClientUpdateFailure());
-      return;
-    }
-
-    if (lobby.playerIds.includes(player.id)) {
-      res.json({ success: true, lobbyId }); // idempotent
-      return;
-    }
-
-    if (lobby.playerIds.length >= 2) {
-      res.status(409).json({ error: "lobby_full" });
-      return;
-    }
-
-    // Block if lobby owner is queued or in a match
-    const ownerStatus = await redisClient.hGet(`player:${lobby.ownerId}`, "status");
-    if (ownerStatus === "queued") {
-      res.status(409).json({ error: "owner_queued" });
-      return;
-    }
-    if (ownerStatus === "in_match") {
-      res.status(409).json({ error: "owner_in_match" });
-      return;
-    }
-
-    // If joining player is already in a party, auto-leave it first.
-    // The old partner goes solo, then this player joins the new lobby.
-    const joinerLobbyId = await redisGetPlayerLobby(player.id);
-    if (joinerLobbyId) {
-      const joinerLobby = await redisGetLobbyState(joinerLobbyId);
-      if (joinerLobby && joinerLobby.playerIds.length >= 2) {
-        logger.info(`${logPrefix} Player ${player.id} is in party ${joinerLobbyId} — auto-leaving before accepting invite`);
-        await performGenuineLeave(player.id, joinerLobbyId, joinerLobby);
-      }
-    }
-
-    // Add player to lobby and force 2v2
-    lobby.playerIds.push(player.id);
-    if (lobby.playerIds.length >= 2) {
-      lobby.mode = "2v2";
-    }
-    await redisSaveLobbyState(lobbyId, lobby);
-    // DON'T change player_lobby here — it still points to the invitee's old solo lobby.
-    // The game's JoinLobby will call leave_player_lobby first (to leave the old solo lobby),
-    // and if player_lobby pointed at the shared lobby, leave_player_lobby would destroy it.
-    // Instead, store the target in pending_join_lobby — join_party_lobby reads it.
-    await redisSetPendingJoinLobby(player.id, lobbyId);
-
-    logger.info(`${logPrefix} Player ${player.name} (${ip}) accepted invite to lobby ${lobbyId}. Players: ${lobby.playerIds.join(", ")}`);
-    res.json({ success: true, lobbyId });
-
-    // Inviter notification happens LATER — when the invitee's game calls
-    // join_party_lobby SSC and completes loading. The SSC handler sends
-    // a single party_joined DLL notification at the right time.
-  } catch (e) {
-    logger.error(`${logPrefix} Error in PUT /ovs/accept-invite: ${e}`);
-    res.status(500).json({ error: "internal_error" });
-  }
-});
 
 // ============================================================
 // Leaderboard — Top 100 rankings for 1v1 and 2v2

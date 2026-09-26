@@ -28,6 +28,7 @@ import { MVSTime } from "../utils/date";
 import { generate_hiss } from "./hiss_amalgation_get";
 import * as SharedTypes from "../types/shared-types";
 import * as AuthUtils from "../utils/auth";
+import env from "../env/env";
 import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import * as KitchenSink from "../utils/garbagecan";
@@ -3917,6 +3918,19 @@ export async function handleSsc_invoke_get_milestone_reward_tracks(req: Request<
   });
 }
 
+/**
+ * Missions are switched off unless MISSIONS_ENABLED=true: the player's mission
+ * object then carries no active missions, so none populate in game. The full
+ * mission set in the handler is kept so it can be switched back on.
+ */
+export function applyMissionsSwitch<T extends { body: { server_data: { MissionControllerContainers: unknown } } }>(
+  missionObject: T,
+  enabled: boolean = env.MISSIONS_ENABLED,
+): T {
+  if (!enabled) missionObject.body.server_data.MissionControllerContainers = {};
+  return missionObject;
+}
+
 export async function handleSsc_invoke_get_or_create_mission_object(req: Request<{}, {}, {}, {}>, res: Response) {
   //const account = req.token;
 
@@ -3927,7 +3941,7 @@ export async function handleSsc_invoke_get_or_create_mission_object(req: Request
   const wb_network_id = account.wb_network_id || req.token.wb_network_id;
   const profile_id = account.profile_id || req.token.profile_id;
 
-  res.send({
+  const missionObject = {
     body: {
       updated_at: { _hydra_unix_date: 1742223633 },
       //owner_id: account.id,
@@ -4662,7 +4676,8 @@ export async function handleSsc_invoke_get_or_create_mission_object(req: Request
     },
     metadata: null,
     return_code: 0,
-  });
+  };
+  res.send(applyMissionsSwitch(missionObject));
 }
 
 export async function handleSsc_invoke_hiss_amalgamation(req: Request<{}, {}, { Crc: number }, {}>, res: Response) {

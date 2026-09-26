@@ -32,6 +32,10 @@ const env = cleanEnv(process.env, {
   // false lets any client version play; set true (or remove) to enforce again.
   CLIENT_VERSION_CHECK: bool({ default: true }),
   MATCHUPDATEKEY: str({ default: "MisconfiguredMatchUpdateKey" }),
+  // true: hand players their daily/weekly/FTUE missions. Off = no missions at all.
+  MISSIONS_ENABLED: bool({ default: false }),
+  // true: serve the retail client's test/unfinished characters (see data/testCharacters.ts).
+  ENABLE_TEST_CHARACTERS: bool({ default: false }),
   MONGODB_URI: str(),
   ON_DEMAND_ROLLBACK: num({ default: 0 }),
   ON_DEMAND_ROLLBACK_PORT_LOW: num({ default: 60000 }),

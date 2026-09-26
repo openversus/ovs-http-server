@@ -51,7 +51,7 @@ import {
   isClientGameplayAccessRequiredForMinimum,
   isClientUpdateRequired,
 } from "./services/clientVersion";
-import { buildClientReleaseManifest, flattenClientReleaseManifest } from "./services/clientReleaseManifest";
+import { buildClientReleaseManifest, DEFAULT_RELEASE_REPO, flattenClientReleaseManifest, isReleaseRepo } from "./services/clientReleaseManifest";
 import { requireCurrentClientForGameplay } from "./services/clientUpdateGate";
 import { initAccelByteLobbyWs, accelByteLobbyWs } from "./accelByteLobbyWs";
 import { IMatchStatus } from "./interfaces/IMatchStatus";
@@ -976,12 +976,17 @@ app.get("/api/leaderboard/:mode/me", async (req, res) => {
 let cachedGitHubRelease: { data: any; fetchedAt: number } | null = null;
 const GITHUB_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+/** CLIENT_RELEASE_REPO when it is a plain "owner/repo", else the org's client repo. */
+function clientReleaseRepo(): string {
+  return isReleaseRepo(env.CLIENT_RELEASE_REPO) ? env.CLIENT_RELEASE_REPO : DEFAULT_RELEASE_REPO;
+}
+
 async function getLatestClientRelease(): Promise<any> {
   if (cachedGitHubRelease && Date.now() - cachedGitHubRelease.fetchedAt <= GITHUB_CACHE_TTL) {
     return cachedGitHubRelease.data;
   }
 
-  const ghRes = await fetch("https://api.github.com/repos/openversus/ovs-client/releases/latest", {
+  const ghRes = await fetch(`https://api.github.com/repos/${clientReleaseRepo()}/releases/latest`, {
     headers: { "User-Agent": "OpenVersus-Server", "Accept": "application/vnd.github+json" },
   });
   if (!ghRes.ok) {
@@ -990,7 +995,7 @@ async function getLatestClientRelease(): Promise<any> {
 
   const data = await ghRes.json();
   cachedGitHubRelease = { data, fetchedAt: Date.now() };
-  logger.info(`${logPrefix} Cached GitHub release: ${data.tag_name || data.name}`);
+  logger.info(`${logPrefix} Cached GitHub release: ${data.tag_name || data.name} (${clientReleaseRepo()})`);
   return data;
 }
 
@@ -1005,7 +1010,7 @@ app.get("/ovs/client-version", async (req, res) => {
     // The updater only consumes individually published, SHA-256-addressed
     // assets. ZIP releases remain available for manual installation but are
     // intentionally never passed to the in-game updater.
-    const updateFiles = buildClientReleaseManifest(assets, latestVersion);
+    const updateFiles = buildClientReleaseManifest(assets, latestVersion, clientReleaseRepo());
     const asiAsset = updateFiles.find((file) => file.kind === "plugin");
     const downloadUrl = asiAsset?.download_url || "";
 

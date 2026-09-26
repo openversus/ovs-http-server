@@ -31,6 +31,9 @@ const env = cleanEnv(process.env, {
   // Master switch for the client gate (version minimum + /api/identify check).
   // false lets any client version play; set true (or remove) to enforce again.
   CLIENT_VERSION_CHECK: bool({ default: true }),
+  // The GitHub "owner/repo" whose latest release /ovs/client-version offers. Local testing
+  // only: point it at a fork's release to test the client's .asi and pak updates.
+  CLIENT_RELEASE_REPO: str({ default: "openversus/ovs-client" }),
   MATCHUPDATEKEY: str({ default: "MisconfiguredMatchUpdateKey" }),
   // true: hand players their daily/weekly/FTUE missions. Off = no missions at all.
   MISSIONS_ENABLED: bool({ default: false }),

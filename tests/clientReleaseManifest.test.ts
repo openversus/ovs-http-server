@@ -70,3 +70,15 @@ test("a versioned plugin must match the release version; the legacy name is stil
     /exactly one verified/,
   );
 });
+
+test("a fork's release is offered only when its repo is the configured one", () => {
+  const fork = (name: string) => ({
+    ...asset(name),
+    browser_download_url: `https://github.com/tuggernuts1123/ovs-client/releases/download/v1/${name}`,
+  });
+  const files = buildClientReleaseManifest([fork("OpenVersus.asi"), fork("OVS_P.pak")], undefined, "tuggernuts1123/ovs-client");
+  assert.deepEqual(files.map((file) => file.name), ["OVS_P.pak", "OpenVersus.asi"]);
+  // The default repo refuses the fork's URLs, and a malformed repo is refused outright.
+  assert.throws(() => buildClientReleaseManifest([fork("OpenVersus.asi")]), /exactly one verified/);
+  assert.throws(() => buildClientReleaseManifest([fork("OpenVersus.asi")], undefined, "https://evil/x"), /owner\/repo/);
+});

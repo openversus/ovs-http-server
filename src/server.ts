@@ -128,95 +128,58 @@ app.use(cookieParser());
 
 // Leaderboard endpoint — BEFORE Hydra middleware, manual encoding
 import { HydraEncoder } from "mvs-dump";
+import { buildLeaderboardShowBody, LeaderboardShowQuery, parseLeaderboardSlug } from "./services/leaderboardShow";
 app.get("/leaderboards/:slug/show", async (req, res) => {
   const slug = req.params.slug;
-  const mode = slug.includes("1v1") ? "1v1" : slug.includes("2v2") ? "2v2" : "1v1";
-  logger.info(`${logPrefix} [PRE-HYDRA] GET /leaderboards/${slug}/show`);
+  const { mode, characterSlug } = parseLeaderboardSlug(slug);
+  logger.info(`${logPrefix} [PRE-HYDRA] GET ${req.originalUrl} -> mode=${mode} character=${characterSlug ?? "all"}`);
 
   try {
-    const leaderboard = await getLeaderboard(mode as "1v1" | "2v2", 100);
-    // Each entry = full Hydra account profile (same as accounts/wb_network/bulk) + rank/score
-    const entries = leaderboard.map((entry) => ({
-      updated_at: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
-      created_at: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
-      deleted: false,
-      orphaned: false,
-      orphaned_reason: null,
-      public_id: entry.account_id,
-      "identity.avatar": "",
-      "identity.default_username": true,
-      "identity.alternate.wb_network": [{ id: entry.account_id, username: entry.username, avatar: null }],
-      "identity.alternate.steam": [{ id: entry.account_id, username: entry.username, avatar: null }],
-      "wb_account.completed": true,
-      "wb_account.email_verified": true,
-      points: 0,
-      state: "normal",
-      wbplay_data_synced: false,
-      wbplay_identity: null,
-      locale: "en-US",
-      "data.LastLoginPlatform": "EPlatform::PC",
-      "data.__unused": null,
-      "server_data.ProfileIcon.Slug": "profile_icon_default",
-      "server_data.ProfileIcon.AssetPath": "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_Default.ProfileIcon_Default",
-      "server_data.CurrentXP": 100,
-      "server_data.Level": 5,
-      id: entry.account_id,
-      "identity.username": entry.username,
-      connections: [],
-      presence_state: 1,
-      presence: "offline",
-      rank: entry.rank,
-      score: entry.elo,
-    }));
+    const count = Math.min(parseInt(req.query.count as string) || 100, 100);
+    const leaderboard = await getLeaderboard(mode, count, characterSlug);
+    const body = buildLeaderboardShowBody(leaderboard, req.query as LeaderboardShowQuery);
 
     // Manually Hydra-encode and send
     const encoder = new HydraEncoder();
-    encoder.encodeValue(entries);
+    encoder.encodeValue(body);
     const encoded = encoder.returnValue();
 
-    logger.info(`${logPrefix} [PRE-HYDRA] Sending ${entries.length} entries, ${encoded.length} bytes`);
+    logger.info(`${logPrefix} [PRE-HYDRA] Sending ${leaderboard.length} entries, ${encoded.length} bytes`);
     res.setHeader("Content-Type", "application/x-ag-binary");
     res.setHeader("X-Hydra-Server-Time", (Date.now() / 1000).toString());
     res.end(encoded);
   } catch (e) {
     logger.error(`${logPrefix} [PRE-HYDRA] Error: ${e}`);
     const encoder = new HydraEncoder();
-    encoder.encodeValue([]);
+    encoder.encodeValue({ leaders: [] });
     res.setHeader("Content-Type", "application/x-ag-binary");
     res.end(encoder.returnValue());
   }
 });
+// "Around me" (the ranked screen's CURRENT PLACEMENT panel). The client calls
+// /leaderboards/<slug>/around/<accountId> with no query and renders the rows
+// around the player (AROUND_ME_WINDOW above and below) in the /show format.
+const AROUND_ME_WINDOW = 5;
 app.get("/leaderboards/:slug/around/:playerId", async (req, res) => {
-  const slug = req.params.slug;
-  const playerId = req.params.playerId;
-  const mode = slug.includes("1v1") ? "1v1" : slug.includes("2v2") ? "2v2" : "1v1";
-  logger.info(`${logPrefix} [PRE-HYDRA] GET /leaderboards/${slug}/around/${playerId}`);
-
+  const { slug, playerId } = req.params;
+  const { mode, characterSlug } = parseLeaderboardSlug(slug);
+  logger.info(`${logPrefix} [PRE-HYDRA] GET ${req.originalUrl} -> mode=${mode} character=${characterSlug ?? "all"}`);
+  const encoder = new HydraEncoder();
   try {
-    const playerRank = await getPlayerRank(playerId, mode as "1v1" | "2v2");
-    const encoder = new HydraEncoder();
-
+    const playerRank = await getPlayerRank(playerId, mode, characterSlug);
+    let rows: Awaited<ReturnType<typeof getLeaderboard>> = [];
     if (playerRank) {
-      // Return the player's own entry
-      encoder.encodeValue([{
-        identity: playerId,
-        rank: playerRank.rank,
-        score: playerRank.elo,
-      }]);
-    } else {
-      encoder.encodeValue([]);
+      const skip = Math.max(0, playerRank.rank - 1 - AROUND_ME_WINDOW);
+      rows = await getLeaderboard(mode, AROUND_ME_WINDOW * 2 + 1, characterSlug, skip);
     }
-
-    res.setHeader("Content-Type", "application/x-ag-binary");
-    res.setHeader("X-Hydra-Server-Time", (Date.now() / 1000).toString());
-    res.end(encoder.returnValue());
+    encoder.encodeValue(buildLeaderboardShowBody(rows, req.query as LeaderboardShowQuery));
   } catch (e) {
     logger.error(`${logPrefix} [PRE-HYDRA] around error: ${e}`);
-    const encoder = new HydraEncoder();
-    encoder.encodeValue([]);
-    res.setHeader("Content-Type", "application/x-ag-binary");
-    res.end(encoder.returnValue());
+    encoder.encodeValue({ leaders: [] });
   }
+  res.setHeader("Content-Type", "application/x-ag-binary");
+  res.setHeader("X-Hydra-Server-Time", (Date.now() / 1000).toString());
+  res.end(encoder.returnValue());
 });
 app.get("/global_configuration_types/eula/global_configurations/*", (req, res, next) => {
   res.json(200);
@@ -2343,115 +2306,6 @@ app.put("/matches/:id/leave", async (req, res) => {
   res.send({ body: {}, metadata: null, return_code: 200 });
 });
 
-// Leaderboard show endpoint — game fetches top 100 for ranked display
-app.get("/leaderboards/:slug/show", async (req, res) => {
-  const slug = req.params.slug;
-  const count = parseInt(req.query.count as string) || 100;
-  logger.info(`${logPrefix} GET /leaderboards/${slug}/show (count=${count})`);
-  logger.info(`${logPrefix} Leaderboard show query: ${JSON.stringify(req.query)}`);
-  logger.info(`${logPrefix} Leaderboard show headers: content-type=${req.headers["content-type"]}, accept=${req.headers["accept"]}`);
-
-  try {
-    // Parse mode from slug: "ranked_season5_1v1_all" → "1v1"
-    const mode = slug.includes("1v1") ? "1v1" : slug.includes("2v2") ? "2v2" : "1v1";
-    const leaderboard = await getLeaderboard(mode as "1v1" | "2v2", count);
-
-    // Resolve each player's character from Redis
-    const entries = await Promise.all(leaderboard.map(async (entry) => {
-      let character = "character_wonder_woman";
-      try {
-        const conn = await redisClient.hGetAll(`connections:${entry.account_id}`);
-        if (conn?.character) character = conn.character;
-      } catch {}
-
-      return {
-        Identity: entry.account_id,
-        Rank: entry.rank,
-        Value: { _hydra_double: entry.elo },
-        CharacterSlug: character,
-      };
-    }));
-
-    logger.info(`${logPrefix} Leaderboard show response: ${entries.length} entries`);
-    // DIAGNOSTIC: send garbage to see if game crashes/errors
-    res.send("THIS IS NOT VALID DATA");
-  } catch (e) {
-    logger.error(`${logPrefix} Error in leaderboard show: ${e}`);
-    res.json([]);
-  }
-});
-
-// Leaderboard "around me" — shows the player's position with nearby players
-app.get("/leaderboards/:slug/around/:playerId", async (req, res) => {
-  const slug = req.params.slug;
-  const playerId = req.params.playerId;
-  const count = parseInt(req.query.count as string) || 4;
-  logger.info(`${logPrefix} GET /leaderboards/${slug}/around/${playerId} (count=${count})`);
-
-  try {
-    const mode = slug.includes("1v1") ? "1v1" : slug.includes("2v2") ? "2v2" : "1v1";
-    const playerRank = await getPlayerRank(playerId, mode as "1v1" | "2v2");
-
-    if (!playerRank) {
-      res.json([]);
-      return;
-    }
-
-    // Get a window of players around this player's rank
-    const leaderboard = await getLeaderboard(mode as "1v1" | "2v2", 200);
-    const playerIndex = leaderboard.findIndex((e) => e.account_id === playerId);
-    const half = Math.floor(count / 2);
-    const start = Math.max(0, playerIndex - half);
-    const end = Math.min(leaderboard.length, start + count + 1);
-    const window = leaderboard.slice(start, end);
-
-    const entries = await Promise.all(window.map(async (entry) => {
-      let character = "character_wonder_woman";
-      try {
-        const conn = await redisClient.hGetAll(`connections:${entry.account_id}`);
-        if (conn?.character) character = conn.character;
-      } catch {}
-
-      return {
-        updated_at: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
-        created_at: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
-        deleted: false,
-        orphaned: false,
-        orphaned_reason: null,
-        public_id: entry.account_id,
-        "identity.avatar": "",
-        "identity.default_username": true,
-        "identity.alternate.wb_network": [{ id: entry.account_id, username: entry.username, avatar: null }],
-        "identity.alternate.steam": [{ id: entry.account_id, username: entry.username, avatar: null }],
-        "wb_account.completed": true,
-        "wb_account.email_verified": true,
-        points: 0,
-        state: "normal",
-        wbplay_data_synced: false,
-        wbplay_identity: null,
-        locale: "en-US",
-        "data.LastLoginPlatform": "EPlatform::PC",
-        "data.__unused": null,
-        [`server_data.SeasonalData.Season:SeasonFive.Ranked.DataByMode.${mode}.BestCharacter.CharacterSlug`]: character,
-        [`server_data.SeasonalData.Season:SeasonFive.Ranked.DataByMode.${mode}.BestCharacter.CurrentPoints`]: entry.elo,
-        [`server_data.SeasonalData.Season:SeasonFive.Ranked.DataByMode.${mode}.BestCharacter.MaxPoints`]: entry.elo,
-        [`server_data.SeasonalData.Season:SeasonFive.Ranked.DataByMode.${mode}.BestCharacter.GamesPlayed`]: entry.wins + entry.losses,
-        [`server_data.SeasonalData.Season:SeasonFive.Ranked.DataByMode.${mode}.BestCharacter.SetsPlayed`]: entry.wins + entry.losses,
-        id: entry.account_id,
-        "identity.username": entry.username,
-        connections: [],
-        rank: entry.rank,
-        score: entry.elo,
-        value: entry.elo,
-      };
-    }));
-
-    res.json(entries);
-  } catch (e) {
-    logger.error(`${logPrefix} Error in leaderboard around: ${e}`);
-    res.json([]);
-  }
-});
 
 // Game submits/fetches player rank scores for leaderboard display during ranked matches
 app.put("/leaderboards/bulk/score-and-rank/:playerId", async (req, res) => {

@@ -16,7 +16,6 @@ import { redisClient,
   redisGetLobbyState,
   redisSaveLobbyState,
   RedisPlayerConnection,
-  redisGetPlayerConnectionByIP,
   redisSavePlayerLobby,
   redisPublishLobbyRejoin,
   RedisLobbyRejoinNotification,
@@ -71,7 +70,22 @@ import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContai
 import { NameGenerator } from "./utils/namegeneration";
 import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
 import { handleMatchStatusUpdate } from "./handlers/match_status";
-import { resolveAccountFromRequest, resolveAccountWithSource } from "./services/identityService";
+import { normalizeHardwareSignal, normalizeIdentity, resolveAccountFromRequest, resolveAccountWithSource } from "./services/identityService";
+import {
+  compareClientVersions,
+  isClientGameplayAccessRequiredForMinimum,
+  isClientUpdateRequired,
+} from "./services/clientVersion";
+import { buildClientReleaseManifest, flattenClientReleaseManifest } from "./services/clientReleaseManifest";
+import {
+  CLIENT_UPDATE_MESSAGE,
+  CLIENT_UPDATE_URL,
+  getPlayerClientUpdateState,
+  getPlayersRequiringClientUpdate,
+  jsonClientUpdateFailure,
+  requireCurrentClientForGameplay,
+  requestClientUpdateModalsForPlayers,
+} from "./services/clientUpdateGate";
 import { initAccelByteLobbyWs, accelByteLobbyWs } from "./accelByteLobbyWs";
 import { IMatchStatus } from "./interfaces/IMatchStatus";
 import { REAL_IP_HEADER, getRealIP, tryGetRealIP } from "./middleware/auth";
@@ -211,6 +225,21 @@ app.get("/global_configuration_types/eula/global_configurations/*", (req, res, n
 app.use(syncRouter);
 
 // HTML File Setup
+app.get("/theme.css", (_req, res) => {
+  res.type("text/css").sendFile(path.join(__dirname, "static/theme.css"));
+});
+app.get("/theme.js", (_req, res) => {
+  res.type("text/javascript").sendFile(path.join(__dirname, "static/theme.js"));
+});
+app.get("/assets/openversus-update-required-keyart.png", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=300");
+  res.type("image/png").sendFile(path.join(__dirname, "static/openversus-update-required-keyart.png"));
+});
+app.get("/assets/openversus-update-required-thumbnail.png", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=300");
+  res.type("image/png").sendFile(path.join(__dirname, "static/openversus-update-required-thumbnail.png"));
+});
+
 const filePath = path.join(__dirname, "static/name_change.html");
 const source = fs.readFileSync(filePath, "utf8");
 const template = handlebars.compile(source);
@@ -312,12 +341,15 @@ app.get("/namechange", async (req, res) => {
     const { player: resolvedPlayer, pickerShown } = await resolvePlayerForWeb(req, res, "/namechange");
     if (pickerShown) return;
     let player = resolvedPlayer;
-    // If no player exists, create a new document with empty name
+    // A browser request cannot prove account ownership from an IP alone. Account
+    // creation belongs to /access, where platform/install identity is available.
     if (!player) {
-      var randomName = NameGenerator.NewName();
-      player = new PlayerTesterModel({ ip, name: randomName });
-      logger.info(`${logPrefix} No player found for IP ${ip}. Creating new player with name "${randomName}" for IP ${ip}.`);
-      await player.save();
+      res.status(401).send(template({
+        currentUsername: "Unknown",
+        error: "Connect to the game before changing your name.",
+        success: null,
+      }));
+      return;
     }
 
     logger.info(`${logPrefix} Name change requested for IP ${ip} with current name "${player.name}"`);
@@ -354,6 +386,12 @@ app.post("/namechange", async (req, res, next) => {
       logger.warn(
         `${logPrefix} No player found for IP ${ip} during name change POST. This should not happen since the GET route creates a player if one doesn't exist.`,
       );
+      res.status(401).send(template({
+        currentUsername: "Unknown",
+        error: "Connect to the game before changing your name.",
+        success: null,
+      }));
+      return;
     }
     logwrapper.verbose(`${logPrefix} ${JSON.stringify(req.body)}`);
     let { name } = req.body;
@@ -390,7 +428,7 @@ app.post("/namechange", async (req, res, next) => {
       const existing = await PlayerTesterModel.findOne({
         name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
       });
-      if (existing && existing.ip !== ip) {
+      if (existing && String(existing._id) !== String(player._id)) {
         error = `The name "${name}" is already taken by another player. Please choose a different name.`;
       }
     }
@@ -403,15 +441,11 @@ app.post("/namechange", async (req, res, next) => {
       const matches = matcher.getAllMatches(name);
       filtered = censor.applyTo(name, matches);
       const trimmed = filtered.substring(0, 24).trim();
-      if (player?.id) {
-        await PlayerTesterModel.findOneAndUpdate(
-          { _id: new Types.ObjectId(player.id) },
-          { name: trimmed },
-          { new: true },
-        );
-      } else {
-        await PlayerTesterModel.findOneAndUpdate({ ip }, { name: trimmed }, { upsert: true, new: true });
-      }
+      await PlayerTesterModel.findOneAndUpdate(
+        { _id: player._id },
+        { name: trimmed },
+        { new: true },
+      );
 
       // Also update the live Redis connection hash so the live matches page,
       // notification routing, and any in-flight handlers see the new name
@@ -493,13 +527,11 @@ app.post("/ovs_register", async (req, res, next) => {
   // separately-delivered gameplay config; the rollback only orchestrates real UDP clients.
   const realPlayers = config.players.filter((p) => !p.isBot);
   const players = await Promise.all(realPlayers.map(async (p) => {
-    // Prefer ID-keyed connection (stable across NAT/VPN); fall back to IP-keyed for legacy records
+    // Match config already carries the canonical player id. Never substitute a
+    // household member merely because their public IP matches.
     let conn: any = p.playerId
       ? await redisClient.hGetAll(`connections:${p.playerId}`).catch(() => null)
       : null;
-    if (!conn || !conn.id) {
-      conn = await redisGetPlayerConnectionByIP(p.ip).catch(() => null);
-    }
     return {
       player_index: p.playerIndex,
       player_id: p.playerId,
@@ -790,6 +822,22 @@ app.post("/party/join", async (req, res) => {
       return;
     }
 
+    const outdatedPartyMembers = await getPlayersRequiringClientUpdate([player.id, keyData.playerId]);
+    if (outdatedPartyMembers.length > 0) {
+      await requestClientUpdateModalsForPlayers(outdatedPartyMembers.map((member) => member.accountId));
+      logger.warn(
+        `${logPrefix} Blocked party-key join because update is required for: `
+        + outdatedPartyMembers.map((p) => `${p.accountId}:${p.clientVersion || "legacy"}`).join(", "),
+      );
+      res.status(426).send(partyTemplate({
+        username: player.name,
+        currentKey: player.party_key || "",
+        error: `${CLIENT_UPDATE_MESSAGE} ${CLIENT_UPDATE_URL}`,
+        success: null,
+      }));
+      return;
+    }
+
     // Can't join your own party
     if (keyData.playerId === player.id) {
       res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "That's your own party key!", success: null }));
@@ -893,6 +941,20 @@ app.put("/ovs/accept-invite/:lobbyId", async (req, res) => {
     const lobby = await redisGetLobbyState(lobbyId);
     if (!lobby) {
       res.status(404).json({ error: "lobby_not_found" });
+      return;
+    }
+
+    const outdatedInviteMembers = await getPlayersRequiringClientUpdate([
+      player.id,
+      ...(lobby.playerIds || []),
+    ]);
+    if (outdatedInviteMembers.length > 0) {
+      await requestClientUpdateModalsForPlayers(outdatedInviteMembers.map((member) => member.accountId));
+      logger.warn(
+        `${logPrefix} Blocked invite acceptance because update is required for: `
+        + outdatedInviteMembers.map((p) => `${p.accountId}:${p.clientVersion || "legacy"}`).join(", "),
+      );
+      res.status(426).json(jsonClientUpdateFailure());
       return;
     }
 
@@ -1113,15 +1175,41 @@ app.get("/api/matches", async (req, res) => {
 app.post("/api/identify", async (req, res) => {
   try {
     const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
-    const clean = (v: any) => (typeof v === "string" && v !== "Unknown" ? v : "");
-    const { steamId: _s = "", epicId: _e = "", hardwareId: _h = "" } = req.body ?? {};
-    const steamId = clean(_s), epicId = clean(_e), hardwareId = clean(_h);
+    const {
+      steamId: _s = "",
+      epicId: _e = "",
+      hardwareId: _h = "",
+      hardwareIdVersion: _hv = "",
+      hardwareIdQuality: _hq = "",
+      installId: _i = "",
+      clientVersion: _v = "",
+    } = req.body ?? {};
+    const steamId = normalizeIdentity("steam", _s);
+    const epicId = normalizeIdentity("epic", _e);
+    const { hardwareId, hardwareIdVersion, hardwareIdQuality } = normalizeHardwareSignal(_h, _hv, _hq);
+    const installId = normalizeIdentity("install", _i);
+    const clientVersion = typeof _v === "string" ? _v.trim().slice(0, 32) : "";
+    const identityRegistered = !!(steamId || epicId || installId);
     if (!ip) {
       res.status(400).json({ error: "Could not determine IP" });
       return;
     }
-    await redisSaveIdentity(ip, steamId, epicId, hardwareId);
-    logger.info(`${logPrefix} Identity registered for IP ${ip} — steam:${steamId} epic:${epicId} hw:${hardwareId.slice(0, 8)}...`);
+    await redisSaveIdentity(
+      ip,
+      steamId,
+      epicId,
+      hardwareId,
+      installId,
+      clientVersion,
+      hardwareIdVersion,
+      hardwareIdQuality,
+      identityRegistered,
+    );
+    logger.info(
+      `${logPrefix} Identity registered for IP ${ip} — steam:${steamId || "-"} epic:${epicId || "-"} `
+      + `install:${installId ? "yes" : "no"} hardware:${hardwareId ? `v${hardwareIdVersion}/${hardwareIdQuality}` : "none"} `
+      + `version:${clientVersion || "legacy"} identity:${identityRegistered ? "registered" : "missing"}`,
+    );
 
     // Construct an OVS-side JWT and return it so the DLL can attach it to
     // un-authenticated polling routes (NotificationPoller, etc.). This avoids
@@ -1145,8 +1233,8 @@ app.post("/api/identify", async (req, res) => {
         const byId = await redisClient.get(`identity:epic:${epicId}`);
         if (byId) resolvedId = byId;
       }
-      if (!resolvedId && hardwareId) {
-        const byId = await redisClient.get(`identity:hw:${hardwareId}`);
+      if (!resolvedId && installId) {
+        const byId = await redisClient.get(`identity:install:${installId}`);
         if (byId) resolvedId = byId;
       }
     } catch (lookupErr) {
@@ -1160,6 +1248,11 @@ app.post("/api/identify", async (req, res) => {
       steamId,
       epicId,
       hardwareId,
+      hardwareIdVersion,
+      hardwareIdQuality,
+      installId,
+      clientVersion,
+      identityRegistered: identityRegistered ? "1" : "",
       current_ip: ip,
       // Leave unrelated fields empty — resolver only consults id/steamId/epicId/hardwareId
       profile_id: "",
@@ -1173,6 +1266,32 @@ app.post("/api/identify", async (req, res) => {
     // 30 days so the DLL doesn't need to refresh during a session. Short-lived
     // mid-session re-keying would break NotifPoller's long-running background thread.
     const token = jwtLib.sign(claims, SECRET, { expiresIn: "30d" });
+
+    // If /access won the startup race, unlock that live session as soon as a
+    // valid late /api/identify request resolves back to its account.
+    if (resolvedId && identityRegistered) {
+      const connectionKey = `connections:${resolvedId}`;
+      if (await redisClient.exists(connectionKey)) {
+        await redisClient.hSet(connectionKey, {
+          clientVersion,
+          identityRegistered: "1",
+        });
+      }
+    }
+
+    if (isClientGameplayAccessRequiredForMinimum(
+      clientVersion,
+      env.MIN_CLIENT_VERSION,
+      identityRegistered,
+    )) {
+      res.status(426).json({
+        ok: false,
+        error: "client_update_required",
+        minimumVersion: env.MIN_CLIENT_VERSION,
+        identityRequired: !identityRegistered,
+      });
+      return;
+    }
 
     res.json({ ok: true, token, accountId: resolvedId || null });
   } catch (e) {
@@ -1234,37 +1353,46 @@ app.get("/api/leaderboard/:mode/me", async (req, res) => {
 let cachedGitHubRelease: { data: any; fetchedAt: number } | null = null;
 const GITHUB_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+async function getLatestClientRelease(): Promise<any> {
+  if (cachedGitHubRelease && Date.now() - cachedGitHubRelease.fetchedAt <= GITHUB_CACHE_TTL) {
+    return cachedGitHubRelease.data;
+  }
+
+  const ghRes = await fetch("https://api.github.com/repos/openversus/ovs-client/releases/latest", {
+    headers: { "User-Agent": "OpenVersus-Server", "Accept": "application/vnd.github+json" },
+  });
+  if (!ghRes.ok) {
+    throw new Error(`GitHub API returned ${ghRes.status}`);
+  }
+
+  const data = await ghRes.json();
+  cachedGitHubRelease = { data, fetchedAt: Date.now() };
+  logger.info(`${logPrefix} Cached GitHub release: ${data.tag_name || data.name}`);
+  return data;
+}
+
 app.get("/ovs/client-version", async (req, res) => {
   try {
     const clientVersion = (req.query.v as string) || "";
 
-    // Fetch latest release from GitHub (cached)
-    if (!cachedGitHubRelease || Date.now() - cachedGitHubRelease.fetchedAt > GITHUB_CACHE_TTL) {
-      const ghRes = await fetch("https://api.github.com/repos/openversus/ovs-client/releases/latest", {
-        headers: { "User-Agent": "OpenVersus-Server", "Accept": "application/vnd.github+json" },
-      });
-      if (!ghRes.ok) {
-        logger.warn(`${logPrefix} GitHub API returned ${ghRes.status}`);
-        res.json({ latest_version: clientVersion, download_url: "", is_latest: true, release_name: "" });
-        return;
-      }
-      const data = await ghRes.json();
-      cachedGitHubRelease = { data, fetchedAt: Date.now() };
-      logger.info(`${logPrefix} Cached GitHub release: ${data.tag_name || data.name}`);
-    }
-
-    const release = cachedGitHubRelease.data;
+    const release = await getLatestClientRelease();
     const latestVersion = (release.tag_name || release.name || "").replace(/^v/i, "");
     const assets: any[] = release.assets || [];
 
-    // Find the .asi asset (or .zip fallback)
-    const asiAsset = assets.find((a: any) => a.name.endsWith(".asi"))
-      || assets.find((a: any) => a.name.endsWith(".zip"));
-    const downloadUrl = asiAsset?.browser_download_url || "";
+    // The updater only consumes individually published, SHA-256-addressed
+    // assets. ZIP releases remain available for manual installation but are
+    // intentionally never passed to the in-game updater.
+    const updateFiles = buildClientReleaseManifest(assets, latestVersion);
+    const asiAsset = updateFiles.find((file) => file.kind === "plugin");
+    const downloadUrl = asiAsset?.download_url || "";
 
-    const isLatest = clientVersion === latestVersion;
+    // A prerelease/test client may be newer than the latest published GitHub
+    // release. Never offer that client an older asset as an "update".
+    const isLatest = Boolean(clientVersion && latestVersion)
+      && compareClientVersions(clientVersion, latestVersion) >= 0;
+    const updateRequired = isClientUpdateRequired(clientVersion);
 
-    if (!isLatest && clientVersion) {
+    if (!isLatest && clientVersion && compareClientVersions(clientVersion, latestVersion) < 0) {
       logger.info(`${logPrefix} Client version ${clientVersion} is outdated (latest: ${latestVersion})`);
     }
 
@@ -1272,7 +1400,11 @@ app.get("/ovs/client-version", async (req, res) => {
       latest_version: latestVersion,
       download_url: downloadUrl,
       is_latest: isLatest,
+      minimum_version: env.MIN_CLIENT_VERSION,
+      update_required: updateRequired,
       release_name: release.name || "",
+      files: updateFiles,
+      ...flattenClientReleaseManifest(updateFiles),
     });
   } catch (e) {
     logger.error(`${logPrefix} Error in /ovs/client-version: ${e}`);
@@ -1430,6 +1562,12 @@ app.post("/api/admin/banner", async (req, res) => {
 // Custom Lobby — Web-based custom game lobbies
 // ============================================================
 
+const IP_ACCOUNT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const recentIpAccountQuery = (ip: string) => ({
+  ip,
+  ipSeenAt: { $gte: new Date(Date.now() - IP_ACCOUNT_MAX_AGE_MS) },
+});
+
 // Helper: identify player for browser/AJAX calls via IP candidates + picker cookie.
 // - 1 account on IP → use it.
 // - 2+ accounts on IP → require the signed `ovs_web_account` cookie (set by /account/switch).
@@ -1437,7 +1575,7 @@ app.post("/api/admin/banner", async (req, res) => {
 //   /custom (or /party / /namechange) once in a browser to pick an account.
 async function getPlayerFromReq(req: any): Promise<{ id: string; username: string; ip: string } | null> {
   const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
-  const accounts = await PlayerTesterModel.find({ ip }).lean();
+  const accounts = await PlayerTesterModel.find(recentIpAccountQuery(ip)).lean();
   if (accounts.length === 0) return null;
 
   let picked: any | null = null;
@@ -1524,7 +1662,7 @@ async function resolvePlayerForWeb(
   const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
 
   // Candidate accounts at this IP
-  const accounts = await PlayerTesterModel.find({ ip }).lean();
+  const accounts = await PlayerTesterModel.find(recentIpAccountQuery(ip)).lean();
 
   if (accounts.length === 0) {
     return { player: null, pickerShown: false };
@@ -1602,7 +1740,7 @@ app.post("/account/switch", async (req, res) => {
 
     // Helper: re-render the picker page with an error banner (keeps user in-flow).
     const renderPickerWithError = async (errMsg: string) => {
-      const candidates = await PlayerTesterModel.find({ ip }).lean();
+      const candidates = await PlayerTesterModel.find(recentIpAccountQuery(ip)).lean();
       const html = accountPickerTemplate({
         returnTo,
         error: errMsg,
@@ -1621,7 +1759,10 @@ app.post("/account/switch", async (req, res) => {
     };
 
     // 1. Verify the accountId has ip === req.ip (cheap gate against random accountIds)
-    const match = await PlayerTesterModel.findOne({ _id: new Types.ObjectId(accountId), ip });
+    const match = await PlayerTesterModel.findOne({
+      _id: new Types.ObjectId(accountId),
+      ...recentIpAccountQuery(ip),
+    });
     if (!match) {
       await renderPickerWithError("That account isn't recognized on this network. Pick one from the list below.");
       return;
@@ -1779,6 +1920,44 @@ app.get("/api/custom/whoami", async (req, res) => {
     if (!player) { res.json({ error: "Not connected to game" }); return; }
     res.json({ playerId: player.id, username: player.username });
   } catch (e) { logger.error(`${logPrefix} Error in /api/custom/whoami: ${e}`); res.status(500).json({ error: "Internal error" }); }
+});
+
+// Browser custom-lobby controls do not carry the Hydra JWT, so resolve the
+// selected web account first and apply the same client-version gate. Leaving a
+// lobby and read-only status calls deliberately remain available.
+app.use([
+  "/api/custom/create",
+  "/api/custom/join",
+  "/api/custom/switch-team",
+  "/api/custom/spectate",
+  "/api/custom/unspectate",
+  "/api/custom/ready",
+  "/api/custom/kick",
+  "/api/custom/select-map",
+  "/api/custom/select-mode",
+  "/api/custom/start",
+], async (req, res, next) => {
+  try {
+    const player = await getPlayerFromReq(req);
+    if (!player) {
+      next();
+      return;
+    }
+    const state = await getPlayerClientUpdateState(player.id);
+    if (!state.required) {
+      next();
+      return;
+    }
+    await requestClientUpdateModalsForPlayers([player.id]);
+    logger.warn(
+      `${logPrefix} Blocked web custom-lobby action ${req.path} for ${player.id} `
+      + `(version=${state.clientVersion || "legacy"})`,
+    );
+    res.status(426).json(jsonClientUpdateFailure());
+  } catch (error) {
+    logger.error(`${logPrefix} Error enforcing web custom-lobby update gate: ${error}`);
+    res.status(503).json({ error: "Unable to validate client version." });
+  }
 });
 
 app.post("/api/custom/create", async (req, res) => {
@@ -2068,6 +2247,22 @@ app.get("/agreement/public/policies/namespaces/:namespace", (req, res) => {
 app.use(hydraDecoderMiddleware);
 app.use(hydraTokenMiddleware);
 
+// Legacy/outdated clients may log in so they can see the native update modal,
+// but they cannot cross a multiplayer transition. These exact paths also apply
+// to subrequests dispatched through /batch.
+app.use([
+  "/matches/matchmaking/1v1-retail/request",
+  "/matches/matchmaking/ranked-1v1-retail/request",
+  "/matches/matchmaking/2v2-retail/request",
+  "/ssc/invoke/create_custom_game_lobby",
+  "/ssc/invoke/join_custom_game_lobby",
+  "/ssc/invoke/start_custom_match",
+  "/ssc/invoke/join_party_lobby",
+  "/ssc/invoke/autoparty_join",
+  "/ssc/invoke/set_ready_for_lobby",
+  "/ssc/invoke/rematch_accept",
+], requireCurrentClientForGameplay);
+
 // New friends/search/accounts routes — BEFORE old router for priority
 import { friendsRouter } from "./modules/friends/friends.routes";
 import { fromBase64 } from "bytebuffer";
@@ -2113,6 +2308,13 @@ app.get("/accounts/me/notifications", async (req, res) => {
 app.get("/accounts/me/notifications/bulk", async (req, res) => {
   logger.info(`${logPrefix} GET /accounts/me/notifications/bulk requested`);
   res.send({ notifications: [], total: 0 });
+});
+
+// Persistent Hydra WebSocket notifications are acknowledged through this
+// endpoint after the stock client has parsed and dispatched them.
+app.delete("/accounts/me/notifications/bulk/:notificationId", (req, res) => {
+  logwrapper.verbose(`${logPrefix} Client acknowledged Hydra notification ${req.params.notificationId}`);
+  res.status(204).send();
 });
 
 // Game requests gameplay config via HTTP as a fallback — already delivered via WebSocket

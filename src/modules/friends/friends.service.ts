@@ -5,6 +5,7 @@ import { FriendRequestModel } from "../../database/FriendRequest";
 import { redisClient, redisSetBlockedPlayers } from "../../config/redis";
 import { logger } from "../../config/logger";
 import { getUpdateNotificationProfile } from "../../services/updateNotificationProfiles";
+import { profileIconAssetPath } from "../../services/profileIcons";
 
 const logPrefix = "[Friends.Service]:";
 
@@ -305,9 +306,11 @@ export async function getProfileBulk(userIds: string[]) {
         data: { LastLoginPlatform: "EPlatform::PC" },
         id: playerId,
         server_data: {
+          // The game loads the icon by AssetPath; an empty one shows its WB fallback icon
+          // on in-match nameplates.
           ProfileIcon: {
             Slug: profile.profile_icon || "profile_icon_default",
-            AssetPath: "",
+            AssetPath: profileIconAssetPath(profile.profile_icon),
           },
         },
       },

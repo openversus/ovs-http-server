@@ -7,7 +7,8 @@ import { isClientGameplayAccessRequiredForMinimum } from "./clientVersion";
 
 const logPrefix = "[Services.ClientUpdateGate]:";
 
-export const CLIENT_UPDATE_URL = "https://prod.openversus.org/update";
+// Players update from the GitHub releases page.
+export const CLIENT_UPDATE_URL = "https://github.com/openversus/ovs-client/releases";
 export const CLIENT_UPDATE_MESSAGE =
   "A required OpenVersus update is available. Download and install it before playing online.";
 

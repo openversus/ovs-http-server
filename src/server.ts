@@ -16,6 +16,7 @@ import { redisClient,
   RedisPlayerConnection,
   redisGameServerInstanceReady,
   redisSaveIdentity,
+  redisGetIdentity,
   redisPopDLLNotifications,
   redisPushDLLNotification,
   redisGetOnlinePlayers,
@@ -45,7 +46,8 @@ import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
 import { handleMatchStatusUpdate } from "./handlers/match_status";
-import { normalizeHardwareSignal, normalizeIdentity, resolveAccountWithSource } from "./services/identityService";
+import { normalizeHardwareSignal, normalizeIdentity, refreshIpIdentityFromToken, resolveAccountWithSource } from "./services/identityService";
+import { mergeIpIdentity } from "./services/identityNormalization";
 import {
   compareClientVersions,
   isClientGameplayAccessRequiredForMinimum,
@@ -807,16 +809,21 @@ app.post("/api/identify", async (req, res) => {
       installId: _i = "",
       clientVersion: _v = "",
     } = req.body ?? {};
-    const steamId = normalizeIdentity("steam", _s);
-    const epicId = normalizeIdentity("epic", _e);
-    const { hardwareId, hardwareIdVersion, hardwareIdQuality } = normalizeHardwareSignal(_h, _hv, _hq);
-    const installId = normalizeIdentity("install", _i);
-    const clientVersion = typeof _v === "string" ? _v.trim().slice(0, 32) : "";
-    const identityRegistered = !!(steamId || epicId || installId);
     if (!ip) {
       res.status(400).json({ error: "Could not determine IP" });
       return;
     }
+    const { steamId, epicId, hardwareId, hardwareIdVersion, hardwareIdQuality, installId, clientVersion } = mergeIpIdentity(
+      await redisGetIdentity(ip),
+      {
+        steamId: normalizeIdentity("steam", _s),
+        epicId: normalizeIdentity("epic", _e),
+        ...normalizeHardwareSignal(_h, _hv, _hq),
+        installId: normalizeIdentity("install", _i),
+        clientVersion: typeof _v === "string" ? _v.trim().slice(0, 32) : "",
+      },
+    );
+    const identityRegistered = !!(steamId || epicId || installId);
     await redisSaveIdentity(
       ip,
       steamId,
@@ -1054,6 +1061,11 @@ app.get("/ovs/notifications", async (req, res) => {
       return;
     }
 
+    // A running, registered client keeps its IP identity alive from the token /api/identify
+    // signed, so a reconnect or server restart after the 5-minute record expired does not
+    // treat an up-to-date player as an outdated one.
+    const refreshed = await refreshIpIdentityFromToken(req, ip).catch(() => null);
+
     // Look up the player — tries JWT, SteamID, EpicID, HardwareID, then IP fallback.
     // Use the with-source variant so the delivery log can show which path resolved.
     const { conn, source } = await resolveAccountWithSource(req);
@@ -1061,6 +1073,19 @@ app.get("/ovs/notifications", async (req, res) => {
     if (!playerId) {
       res.json([]);
       return;
+    }
+
+    if (refreshed) {
+      logwrapper.verbose(`${logPrefix} Refreshed the IP identity for ${playerId} (IP ${ip}, version ${refreshed.clientVersion}) from its client token`);
+      // A session that logged in while the record was missing was gated as a legacy client;
+      // the verified token says otherwise, so unlock it as /api/identify would have.
+      if (conn.identityRegistered !== "1") {
+        await redisClient.hSet(`connections:${playerId}`, {
+          clientVersion: refreshed.clientVersion || "",
+          identityRegistered: "1",
+        });
+        logger.info(`${logPrefix} Unlocked the live session of ${playerId}: its client is registered (version ${refreshed.clientVersion})`);
+      }
     }
 
     // Pop all queued DLL notifications for this player

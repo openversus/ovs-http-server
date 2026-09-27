@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chooseAdoptionCandidate, chooseUnambiguousLegacyIpCandidate, STALE_IP_LINK_DAYS, staleIpLinkFilter } from "../src/services/identityNormalization";
+import { chooseAdoptionCandidate, chooseUnambiguousLegacyIpCandidate, idLessAccountFilter, IpIdentity, mergeIpIdentity, STALE_IP_LINK_DAYS, staleIpLinkFilter } from "../src/services/identityNormalization";
 
 const STEAM = "76561198000000001";
 const INSTALL = "0123456789abcdef0123456789abcdef";
@@ -56,4 +56,47 @@ test("IP rule: releases only other, durable-id, 7+-day-inactive accounts on that
   assert.ok(!matchesDurable("installId", ""));
   assert.ok(!matchesDurable("steamId", "Unknown"));
   assert.equal(STALE_IP_LINK_DAYS, 7);
+});
+
+test("adoption queries only accounts without a durable id, so id-carrying ones can't hide them", () => {
+  const legacy = idLessAccountFilter("203.0.113.9", false) as any;
+  assert.equal(legacy.ip, "203.0.113.9");
+  assert.deepEqual(legacy.provisional, { $ne: true });
+  assert.equal((idLessAccountFilter("203.0.113.9", true) as any).provisional, true);
+  const excluded = (field: string, value: string) =>
+    legacy.$nor.some((clause: any) => field in clause && clause[field].test(value));
+  assert.ok(excluded("steamId", STEAM));
+  assert.ok(excluded("installId", INSTALL));
+  assert.ok(!excluded("steamId", ""));
+});
+
+const ipIdentity = (overrides: Partial<IpIdentity> = {}): IpIdentity => ({
+  steamId: "",
+  epicId: "",
+  installId: INSTALL,
+  clientVersion: "2026.09.27.2",
+  hardwareId: "",
+  hardwareIdVersion: "",
+  hardwareIdQuality: "",
+  ...overrides,
+});
+
+test("a second identify from the same install adds to the IP record instead of blanking it", () => {
+  const first = ipIdentity({ steamId: STEAM });
+  // The second call arrives without the Steam id (e.g. the Steam API wasn't ready).
+  assert.equal(mergeIpIdentity(first, ipIdentity()).steamId, STEAM);
+  // New values still win.
+  const other = "76561198000000002";
+  assert.equal(mergeIpIdentity(first, ipIdentity({ steamId: other })).steamId, other);
+  assert.equal(mergeIpIdentity(first, ipIdentity({ clientVersion: "2026.09.28.1" })).clientVersion, "2026.09.28.1");
+});
+
+test("an identify from another install replaces the IP record", () => {
+  const first = ipIdentity({ steamId: STEAM });
+  const otherDevice = ipIdentity({ installId: "f".repeat(32) });
+  assert.deepEqual(mergeIpIdentity(first, otherDevice), otherDevice);
+  // Without an install id nothing ties the two calls together.
+  const noInstall = ipIdentity({ installId: "" });
+  assert.deepEqual(mergeIpIdentity(first, noInstall), noInstall);
+  assert.deepEqual(mergeIpIdentity(null, first), first);
 });

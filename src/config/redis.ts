@@ -412,11 +412,16 @@ export async function redisTouchPlayerSession(playerId: string, ip: string) {
     .exec();
 }
 
-export async function redisGetUniqueActiveConnectionByIP(ip: string): Promise<RedisPlayerConnection | null> {
-  if (!ip) return null;
+/** The accounts with a live session from this IP (seen in the last 90 s). */
+export async function redisGetActiveAccountIdsByIP(ip: string): Promise<string[]> {
+  if (!ip) return [];
   const key = `active_ip_accounts:${ip}`;
   await redisClient.zRemRangeByScore(key, 0, Date.now() - ACTIVE_SESSION_TTL_MS);
-  const accountIds = await redisClient.zRange(key, 0, -1);
+  return redisClient.zRange(key, 0, -1);
+}
+
+export async function redisGetUniqueActiveConnectionByIP(ip: string): Promise<RedisPlayerConnection | null> {
+  const accountIds = await redisGetActiveAccountIdsByIP(ip);
   if (accountIds.length !== 1) return null;
   const connection = (await redisClient.hGetAll(`connections:${accountIds[0]}`)) as unknown as RedisPlayerConnection;
   return connection?.id ? connection : null;
@@ -513,6 +518,21 @@ export async function redisSaveIdentity(
     identityRegistered: identityRegistered ? "1" : "",
   });
   await redisClient.expire(`identity:${ip}`, 300); // 5 min TTL, enough for access handshake
+}
+
+/**
+ * Writes identity:<ip> only if it doesn't exist, in one step: the record is built under a
+ * temporary key and renamed into place with RENAMENX, so an /api/identify that lands in
+ * between is never overwritten. Returns whether it was written.
+ */
+export async function redisSaveIdentityIfAbsent(ip: string, record: Record<string, string>): Promise<boolean> {
+  const key = `identity:${ip}`;
+  const pending = `${key}:pending:${new ObjectID().toHexString()}`;
+  await redisClient.hSet(pending, record);
+  await redisClient.expire(pending, 300);
+  const written = await redisClient.renameNX(pending, key);
+  if (!written) await redisClient.del(pending);
+  return written;
 }
 
 export async function redisGetIdentity(ip: string): Promise<{

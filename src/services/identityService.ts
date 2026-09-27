@@ -1,13 +1,15 @@
 import { Request } from "express";
 import {
   redisClient,
+  redisGetActiveAccountIdsByIP,
   redisGetUniqueActiveConnectionByIP,
+  redisSaveIdentityIfAbsent,
   RedisPlayerConnection as FullRedisPlayerConnection,
 } from "../config/redis";
 import { logger } from "../config/logger";
 import * as AuthUtils from "../utils/auth";
 import { IAccountToken } from "../types/AccountToken";
-import { normalizeIdentity } from "./identityNormalization";
+import { normalizeHardwareSignal, normalizeIdentity } from "./identityNormalization";
 
 export { normalizeHardwareSignal, normalizeIdentity } from "./identityNormalization";
 
@@ -37,6 +39,71 @@ const SILENT_ROUTES = [
 function isSilentRoute(routeTag: string | null | undefined): boolean {
   if (!routeTag || typeof routeTag !== "string") return false;
   return SILENT_ROUTES.some(r => routeTag === r || routeTag.startsWith(r));
+}
+
+/**
+ * Keeps identity:<ip> alive while a registered client runs. /api/identify writes it once at
+ * launch and it lives 5 minutes (the login handshake), but the game's own /access comes again
+ * after a reconnect or a server restart, and without the record an up-to-date player counts as
+ * an unregistered "legacy" client and gets the update popup. The client polls /ovs/notifications
+ * every 2 s with the token /api/identify signed, so the record is rewritten from those verified
+ * claims whenever it is gone. The token's account id may be empty (first launch), so this reads
+ * the claims directly rather than through safeDecodeToken. Returns what was written, or null.
+ */
+export async function refreshIpIdentityFromToken(req: Request, ip: string): Promise<IAccountToken | null> {
+  if (!ip) return null;
+  let claims: IAccountToken;
+  try {
+    claims = AuthUtils.DecodeClientToken(req as any);
+  } catch {
+    return null;
+  }
+  if (!claims || claims.identityRegistered !== "1" || !claims.clientVersion) return null;
+
+  const key = `identity:${ip}`;
+  if (await redisClient.exists(key)) return null;
+
+  // Another device behind the same IP that logs in reads this record as its own identity,
+  // so it is only kept alive while this client's account is the only one playing from the IP.
+  // Still open until the game's login carries the client's own identity: while this player
+  // plays alone, a second device that logs in with neither a Steam ticket nor its own
+  // /api/identify (an outdated or Internet Archive client) is taken for this player, as the
+  // sole-active-account IP fallback in /access already does for identity-less logins.
+  const accountId = claims.id || await accountIdFromIdentityIndexes(claims);
+  const activeIds = await redisGetActiveAccountIdsByIP(ip);
+  if (activeIds.some((id) => id !== accountId)) return null;
+
+  const { hardwareId, hardwareIdVersion, hardwareIdQuality } = normalizeHardwareSignal(
+    claims.hardwareId,
+    claims.hardwareIdVersion,
+    claims.hardwareIdQuality,
+  );
+  const written = await redisSaveIdentityIfAbsent(ip, {
+    steamId: normalizeIdentity("steam", claims.steamId),
+    epicId: normalizeIdentity("epic", claims.epicId),
+    hardwareId,
+    hardwareIdVersion,
+    hardwareIdQuality,
+    installId: normalizeIdentity("install", claims.installId),
+    clientVersion: claims.clientVersion,
+    identityRegistered: "1",
+  });
+  return written ? claims : null;
+}
+
+/** The account a token's Steam, Epic or install id is indexed to, or "". */
+async function accountIdFromIdentityIndexes(claims: IAccountToken): Promise<string> {
+  const keys = [
+    ["steam", claims.steamId],
+    ["epic", claims.epicId],
+    ["install", claims.installId],
+  ] as const;
+  for (const [kind, value] of keys) {
+    const id = normalizeIdentity(kind, value);
+    const accountId = id ? await redisClient.get(`identity:${kind}:${id}`) : null;
+    if (accountId) return accountId;
+  }
+  return "";
 }
 
 /** Safely attempt to decode the JWT on a request. Returns null if missing/invalid. */

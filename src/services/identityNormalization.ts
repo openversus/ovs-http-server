@@ -29,6 +29,34 @@ export function normalizeHardwareSignal(id: unknown, version: unknown, quality: 
   return { hardwareId, hardwareIdVersion, hardwareIdQuality };
 }
 
+/** What /api/identify stores in identity:<ip> (see redisSaveIdentity). */
+export interface IpIdentity extends HardwareSignal {
+  steamId: string;
+  epicId: string;
+  installId: string;
+  clientVersion: string;
+}
+
+/**
+ * The identity:<ip> record a new /api/identify leaves behind. A second call from the same
+ * install (e.g. once the Steam API has answered) only adds to what the first one stored,
+ * so a field it leaves empty keeps its value. A different install id is another device,
+ * whose call replaces the record.
+ */
+export function mergeIpIdentity(stored: IpIdentity | null, incoming: IpIdentity): IpIdentity {
+  if (!stored || !incoming.installId || stored.installId !== incoming.installId) return incoming;
+  const hardware = incoming.hardwareId ? incoming : stored;
+  return {
+    steamId: incoming.steamId || stored.steamId,
+    epicId: incoming.epicId || stored.epicId,
+    installId: incoming.installId,
+    clientVersion: incoming.clientVersion || stored.clientVersion,
+    hardwareId: hardware.hardwareId,
+    hardwareIdVersion: hardware.hardwareIdVersion,
+    hardwareIdQuality: hardware.hardwareIdQuality,
+  };
+}
+
 export interface LegacyIpCandidate {
   steamId?: unknown;
   epicId?: unknown;

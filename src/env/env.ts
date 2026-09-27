@@ -1,7 +1,20 @@
 import { configDotenv } from "dotenv";
-import { cleanEnv, str, num, bool } from "envalid";
+import { cleanEnv, str, num, bool, makeValidator, EnvError } from "envalid";
 
 configDotenv({ path: ".env" });
+
+/** Why a JWT_SECRET value must not be used, or null: at least 32 characters, and never the value once hardcoded in the public repo. */
+export function jwtSecretProblem(value: string): string | null {
+  if (value === "SHHHH!!") return "JWT_SECRET is the old public value; set a new random one";
+  if (value.length < 32) return "JWT_SECRET must be at least 32 characters (use a long random value)";
+  return null;
+}
+
+const jwtSecret = makeValidator<string>((value) => {
+  const problem = jwtSecretProblem(value);
+  if (problem) throw new EnvError(problem);
+  return value;
+});
 
 const env = cleanEnv(process.env, {
   BANNED_NAMES_FILE: str({ default: "../data/banned_names.txt" }),
@@ -34,6 +47,10 @@ const env = cleanEnv(process.env, {
   // The GitHub "owner/repo" whose latest release /ovs/client-version offers. Local testing
   // only: point it at a fork's release to test the client's .asi and pak updates.
   CLIENT_RELEASE_REPO: str({ default: "openversus/ovs-client" }),
+  // Signs every token (game sessions, websocket handshake, /api/identify, account-picker
+  // cookie). Required, no default: a long random value, the same on index, mm and ws, never
+  // committed. Changing it logs everyone out once.
+  JWT_SECRET: jwtSecret(),
   MATCHUPDATEKEY: str({ default: "MisconfiguredMatchUpdateKey" }),
   // true: hand players their daily/weekly/FTUE missions. Off = no missions at all.
   MISSIONS_ENABLED: bool({ default: false }),

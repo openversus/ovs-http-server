@@ -666,7 +666,15 @@ export class WebSocketService {
       ws.on("message", (message) => {
         if (!playerWS.init) {
           if (Buffer.isBuffer(message)) {
-            this.handleHandshake(playerWS, message);
+            try {
+              this.handleHandshake(playerWS, message);
+            } catch (e) {
+              // A token the server can't verify (e.g. signed before JWT_SECRET changed): close
+              // the socket rather than keep a connection with no account behind it.
+              logger.warn(`${logPrefix} Rejected the websocket handshake from ${ip}: ${e}`);
+              ws.close();
+              return;
+            }
             // Need to send ping to client or client will disconnect
             playerWS.sendRaw(PING_BUFFER);
           }

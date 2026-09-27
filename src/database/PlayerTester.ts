@@ -102,3 +102,11 @@ export class PlayerTester {
 }
 
 export const PlayerTesterModel = getModelForClass(PlayerTester);
+
+/**
+ * A player by account id (_id), or null. Players have no `id` field, so findOne({ id }) matches
+ * nothing; and findById throws on a malformed id, so that is checked first.
+ */
+export function findPlayerById(accountId: string | undefined | null) {
+  return accountId && mongoose.Types.ObjectId.isValid(accountId) ? PlayerTesterModel.findById(accountId) : Promise.resolve(null);
+}

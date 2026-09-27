@@ -5,25 +5,16 @@ export interface UpdateNotificationProfile {
 }
 
 /**
- * Virtual accounts used only by the legacy required-update notification test.
- * They are valid ObjectId-shaped identifiers so the game's normal profile
- * resolution path treats them exactly like live player accounts.
+ * The virtual sender of the required-update toast an outdated client gets (see
+ * CLIENT_UPDATE_MODAL_CHANNEL in websocket.ts). Its ids are ObjectId-shaped, so the game
+ * looks its profile up like any player's, and the profile lookups answer for it.
  */
 export const UPDATE_NOTIFICATION_PROFILES: readonly UpdateNotificationProfile[] = [
   {
-    accountId: "00000000000000000000a001",
-    profileId: "00000000000000000000b001",
-    username: "OPENVERSUS UPDATE",
-  },
-  {
-    accountId: "00000000000000000000a002",
-    profileId: "00000000000000000000b002",
-    username: "REQUIRED TO PLAY ONLINE",
-  },
-  {
     accountId: "00000000000000000000a003",
     profileId: "00000000000000000000b003",
-    username: "Update required - https://prod.openversus.org/update",
+    // The toast shows this name; keep it in step with CLIENT_UPDATE_URL (clientUpdateGate.ts).
+    username: "Update: github.com/openversus/ovs-client/releases",
   },
 ];
 

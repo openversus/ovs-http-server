@@ -3065,10 +3065,9 @@ export class WebSocketService {
       }
     });
 
-    // Temporary legacy-client experiment: when the update gate blocks a
-    // gameplay transition, send the working ToastReceivedNotification with a
-    // virtual update profile but no rewards. This should keep the toast banner
-    // while suppressing the separate reward panel.
+    // When the update gate blocks a gameplay transition, an outdated client gets a toast
+    // (ToastReceivedNotification) from the virtual update profile, with no rewards, so only
+    // the banner shows. Its session is closed ten seconds later.
     this.redisSub.subscribe(CLIENT_UPDATE_MODAL_CHANNEL, (message) => {
       try {
         const notification = JSON.parse(message) as RedisClientUpdateModalNotification;
@@ -3080,7 +3079,7 @@ export class WebSocketService {
           return;
         }
 
-        const updateProfile = UPDATE_NOTIFICATION_PROFILES[UPDATE_NOTIFICATION_PROFILES.length - 1];
+        const updateProfile = UPDATE_NOTIFICATION_PROFILES[0];
         client.send({
           data: {
             template_id: "ToastReceivedNotification",

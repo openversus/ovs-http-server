@@ -90,7 +90,7 @@ export async function getUserFriendDetails(publicIds: readonly string[]) {
       locale: "en-US",
       "data.LastLoginPlatform": "EPlatform::PC",
       "server_data.ProfileIcon.Slug": p.profile_icon || "profile_icon_default",
-      "server_data.ProfileIcon.AssetPath": "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_Default.ProfileIcon_Default",
+      "server_data.ProfileIcon.AssetPath": profileIconAssetPath(p.profile_icon),
       "server_data.CurrentXP": 100,
       "server_data.Level": 5,
       id: playerId,
@@ -253,7 +253,7 @@ export async function searchProfiles(query: string) {
           server_data: {
             ProfileIcon: {
               Slug: account.profile_icon || "profile_icon_default",
-              AssetPath: "",
+              AssetPath: profileIconAssetPath(account.profile_icon),
             },
           },
         },

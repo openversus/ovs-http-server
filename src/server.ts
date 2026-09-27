@@ -60,7 +60,7 @@ import { RegExpMatcher, TextCensor, englishDataset, englishRecommendedTransforme
 import env from "./env/env";
 import { syncRouter } from "./dataAssetSync";
 import { loadAssets } from "./loadAssets";
-import { randomInt, createHmac, randomBytes } from "crypto";
+import { randomInt, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import * as SharedTypes from "./types/shared-types";
 import { isParameter } from "typescript";
 import * as nodeutil from "node:util";
@@ -99,6 +99,9 @@ const port = env.HTTP_PORT || 8000;
 const USE_INTERNAL_ROLLBACK = env.USE_INTERNAL_ROLLBACK === 1 ? true : false;
 const USE_INTERNAL_ROLLBACK_CPP = env.USE_INTERNAL_ROLLBACK_CPP === 1 ? true : false;
 const MATCH_UPDATE_KEY = env.MATCHUPDATEKEY || "MisconfiguredMatchUpdateKey";
+if (MATCH_UPDATE_KEY === "MisconfiguredMatchUpdateKey") {
+  logger.error(`${logPrefix} MATCHUPDATEKEY is unset; /ovs_match_status is only protected by the public placeholder key`);
+}
 const stringIsOnlyWhitespace = (string: string): boolean => string.trim().length === 0;
 
 process.on("warning", (e) => {
@@ -591,11 +594,22 @@ app.post("/ovs_end_match", async (req, res, next) => {
 // ── Rollback Server Match Status Events ──
 // Receives status updates from the UDP rollback server (heartbeat, player connect/disconnect,
 // match start/end, errors, etc.).
+function isValidMatchUpdateKey(provided: string): boolean {
+  if (!provided) return false;
+  const a = Buffer.from(provided.toLowerCase());
+  const b = Buffer.from(MATCH_UPDATE_KEY.toLowerCase());
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 app.post(["/ovs_match_status", "/api/ovs_match_status"], async (req, res) => {
-  // Validate MatchUpdateKey header (auth from rollback server)
+  // Validate MatchUpdateKey header (auth from rollback server). The header is required:
+  // these events drive ELO (dodges, auto-concede, crash voids), and every deployed
+  // rollback server sends it. Never log either key value.
   const matchUpdateKey = req.header("MatchUpdateKey") || "";
-  if (matchUpdateKey && matchUpdateKey.toLowerCase() !== MATCH_UPDATE_KEY.toLowerCase()) {
-    logger.warn(`${logPrefix} POST /api/ovs_match_status invalid MatchUpdateKey — got "${matchUpdateKey}" expected "${MATCH_UPDATE_KEY}"`);
+  if (!isValidMatchUpdateKey(matchUpdateKey)) {
+    logger.warn(
+      `${logPrefix} POST /api/ovs_match_status rejected: ${matchUpdateKey ? "invalid" : "missing"} MatchUpdateKey from ${tryGetRealIP(req)}`,
+    );
     res.status(403).json({ error: "Invalid signature" });
     return;
   }

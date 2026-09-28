@@ -105,6 +105,13 @@ import { INVENTORY_DEFINITIONS } from "./data/inventoryDefs";
 import { BOT_DEFAULT_PERKS, BOT_DEFAULT_CHARACTER, BOT_DEFAULT_SKIN } from "./data/botDefaults";
 import { adjustMatchToasts } from "./data/playerCounters";
 
+/**
+ * Toasts a player gets for each toast they receive: granted to their balance and shown in the
+ * in-game popup, from this one value so the two cannot disagree. Two, not one: a little more
+ * incentive to toast (Christopher, 71b5196).
+ */
+const TOAST_RECEIVED_REWARD = 2;
+
 const serviceName: string = "WebSocket";
 const logPrefix = `[${serviceName}]:`;
 
@@ -1736,20 +1743,20 @@ export class WebSocketService {
   async handleToastReceived(notification: RedisToastNotification) {
     logger.info(`[${serviceName}]: handleToastReceived called — toastee: ${notification?.toasteeAccountId}, toaster: ${notification?.toasterAccountId}`);
 
-    // Grant +1 match_toasts to the toastee server-side BEFORE we send the
-    // WS popup. This makes the reward real — the count persists across
+    // Grant TOAST_RECEIVED_REWARD match_toasts to the toastee server-side
+    // BEFORE we send the WS popup. This makes the reward real — the count persists across
     // inventory refetches because PlayerCounters is the source of truth
     // for the inventory endpoint now.
     //
     // If the grant throws (transient Mongo error etc.), we BAIL on the
-    // popup too — otherwise the client sees a "+1 Toasts" popup that
+    // popup too — otherwise the client sees a "+N Toasts" popup that
     // doesn't reconcile against inventory on next refresh. Better to drop
     // a rare toast event than to silently lie about the balance.
     try {
-      const newCount = await adjustMatchToasts(notification.toasteeAccountId, 1);
-      logger.info(`[${serviceName}]: Granted +1 match_toasts to ${notification.toasteeAccountId}; new count: ${newCount}`);
+      const newCount = await adjustMatchToasts(notification.toasteeAccountId, TOAST_RECEIVED_REWARD);
+      logger.info(`[${serviceName}]: Granted +${TOAST_RECEIVED_REWARD} match_toasts to ${notification.toasteeAccountId}; new count: ${newCount}`);
     } catch (e) {
-      logger.error(`[${serviceName}]: Failed to grant +1 match_toasts to ${notification.toasteeAccountId}, suppressing popup to avoid desync: ${e}`);
+      logger.error(`[${serviceName}]: Failed to grant +${TOAST_RECEIVED_REWARD} match_toasts to ${notification.toasteeAccountId}, suppressing popup to avoid desync: ${e}`);
       return;
     }
 
@@ -1762,7 +1769,7 @@ export class WebSocketService {
       Constraints: [],
       RewardGrantMethod: "DirectInventoryItem",
       InventoryHsda: "match_toasts",
-      DirectInventoryItemCount: 1,
+      DirectInventoryItemCount: TOAST_RECEIVED_REWARD,
     }];
 
     // Send `ToastReceivedNotification` over WS to the toastee. An earlier

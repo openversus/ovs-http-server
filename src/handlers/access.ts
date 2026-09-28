@@ -7,7 +7,7 @@ import { SECRET, tryGetRealIP, getRealIP } from "../middleware/auth";
 import ky from "ky";
 import { HydraDecoder } from "mvs-dump";
 import { parseAppTicket, parseEncryptedAppTicket } from "steam-appticket";
-import env from "../env/env";
+import env, { accessTokenExpiresIn } from "../env/env";
 import { logger, logwrapper, BE_VERBOSE } from "../config/logger";
 import { PlayerTesterModel } from "../database/PlayerTester";
 import { getAssetsByType } from "../loadAssets";
@@ -456,7 +456,10 @@ async function generateStaticAccess(req: express.Request) {
     logger.error(`${logPrefix} Error saving player after token/account creation: ${error}`);
   }
 
-  const token = jwt.sign(account, SECRET);
+  const signOptions: jwt.SignOptions = {};
+  const expiresIn = accessTokenExpiresIn(env.ACCESS_TOKEN_TTL);
+  if (expiresIn !== undefined) signOptions.expiresIn = expiresIn as jwt.SignOptions["expiresIn"];
+  const token = jwt.sign(account, SECRET, signOptions);
   logger.info(`${logPrefix} Player ${account.id} - ${account.username} connected; ws: ${ws}`);
 
   await Redis.redisAddPlayerConnection(player.id, ip, token, account, {

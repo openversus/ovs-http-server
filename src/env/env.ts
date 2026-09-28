@@ -10,6 +10,31 @@ export function jwtSecretProblem(value: string): string | null {
   return null;
 }
 
+/**
+ * Why an ACCESS_TOKEN_TTL value must not be used, or null. A whole number of seconds, or one followed
+ * by s, m, h or d (2m, 24h, 7d); empty means game session tokens never expire (the default is 24h). Checked at startup because jwt.sign throws on a value it cannot read,
+ * and that would fail every login.
+ */
+export function accessTokenTtlProblem(value: string): string | null {
+  if (value === "" || /^[1-9][0-9]*[smhd]?$/.test(value)) return null;
+  return `ACCESS_TOKEN_TTL "${value}" is not a lifetime: use seconds (86400) or a number with s, m, h or d (24h, 7d), or leave it empty`;
+}
+
+/**
+ * The jwt.sign expiresIn for ACCESS_TOKEN_TTL: undefined when empty (no expiry), seconds as a number
+ * for a bare number (jsonwebtoken would read the string "120" as 120 milliseconds), else the string.
+ */
+export function accessTokenExpiresIn(value: string): number | string | undefined {
+  if (value === "") return undefined;
+  return /^[0-9]+$/.test(value) ? Number(value) : value;
+}
+
+const accessTokenTtl = makeValidator<string>((value) => {
+  const problem = accessTokenTtlProblem(value);
+  if (problem) throw new EnvError(problem);
+  return value;
+});
+
 const jwtSecret = makeValidator<string>((value) => {
   const problem = jwtSecretProblem(value);
   if (problem) throw new EnvError(problem);
@@ -17,6 +42,7 @@ const jwtSecret = makeValidator<string>((value) => {
 });
 
 const env = cleanEnv(process.env, {
+  ACCESS_TOKEN_TTL: accessTokenTtl({ default: "24h" }),
   BANNED_NAMES_FILE: str({ default: "../data/banned_names.txt" }),
   CIDR_BANS_FILE: str({ default: "../data/cidr_bans.txt" }),
   DATA_ASSET_TOKEN: str(),

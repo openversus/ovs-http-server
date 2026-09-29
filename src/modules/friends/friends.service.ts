@@ -4,6 +4,7 @@ import { FriendListModel } from "../../database/FriendList";
 import { FriendRequestModel } from "../../database/FriendRequest";
 import { redisClient, redisSetBlockedPlayers } from "../../config/redis";
 import { logger } from "../../config/logger";
+import { profileIconAssetPath } from "../../services/profileIcons";
 
 const logPrefix = "[Friends.Service]:";
 
@@ -88,7 +89,7 @@ export async function getUserFriendDetails(publicIds: readonly string[]) {
       locale: "en-US",
       "data.LastLoginPlatform": "EPlatform::PC",
       "server_data.ProfileIcon.Slug": p.profile_icon || "profile_icon_default",
-      "server_data.ProfileIcon.AssetPath": "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_Default.ProfileIcon_Default",
+      "server_data.ProfileIcon.AssetPath": profileIconAssetPath(p.profile_icon),
       "server_data.CurrentXP": 100,
       "server_data.Level": 5,
       id: playerId,
@@ -251,7 +252,7 @@ export async function searchProfiles(query: string) {
           server_data: {
             ProfileIcon: {
               Slug: account.profile_icon || "profile_icon_default",
-              AssetPath: "",
+              AssetPath: profileIconAssetPath(account.profile_icon),
             },
           },
         },
@@ -302,9 +303,11 @@ export async function getProfileBulk(userIds: string[]) {
         data: { LastLoginPlatform: "EPlatform::PC" },
         id: playerId,
         server_data: {
+          // The game loads the icon by AssetPath; an empty one shows its WB fallback icon
+          // on in-match nameplates.
           ProfileIcon: {
             Slug: profile.profile_icon || "profile_icon_default",
-            AssetPath: "",
+            AssetPath: profileIconAssetPath(profile.profile_icon),
           },
         },
       },

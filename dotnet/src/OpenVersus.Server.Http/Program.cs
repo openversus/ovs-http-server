@@ -11,6 +11,7 @@ using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Profiles;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Settings;
+using OpenVersus.Server.Http.Batch;
 using OpenVersus.Server.Http.Hosting;
 using OpenVersus.Server.Http.Stubs;
 
@@ -29,10 +30,13 @@ builder.AddInventory();
 builder.AddMatchHistory();
 builder.AddClientUpdateGate();
 builder.AddPartyLobbies();
+builder.AddBatch();
 builder.Services.AddFastEndpoints();
 
 var app = builder.Build();
 
+// First: /batch runs its sub-requests through everything below.
+app.UseBatchPipeline();
 // Before routing: the Hydra SDK sends some GETs as PUT with the real method in a header.
 app.UseHydraMethodOverride();
 // The game's Hydra binary bodies become JSON for the endpoints, and their JSON answers go back as Hydra.
@@ -70,6 +74,8 @@ app.UseFastEndpoints(c =>
 app.UseOpenVersus();
 // The TS server checks the token before it knows whether a path exists.
 app.MapFallback(Stub.FallbackAsync).WithMetadata(RequiresHydraToken.Instance);
+app.Logger.LogWarning("MIGRATION BRIDGE: /batch sends the sub-requests C# has not ported to the TS server ({TsUrl}); see dotnet/docs/MIGRATION-BRIDGES.md (3)",
+    app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<BatchSettings>>().CurrentValue.TsUrl);
 
 app.Run();
 

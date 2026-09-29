@@ -32,18 +32,23 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 - **Delete when:** no TS service reads or writes that key, collection or channel any more. Then the C# side may change
   the shape, drop the mongoose quirks, and the contract comment goes.
 
-## Planned
-
-### 3. `/batch` forwarding unported sub-requests to TS
+### 3. `/batch` sends the sub-requests C# has not ported to TS (`src/OpenVersus.Server.Http/Batch/BatchRunner.cs`)
 
 - **Decided:** 2026-09-29 (option 1, on the condition that it is recorded here and never becomes permanent).
-- **What:** once `/batch` is ported, the C# `/batch` answers the sub-requests it has ported itself and forwards the rest
-  to the TS server. Each forwarded sub-request must carry the batch's `x-hydra-access-token`, `X-OVS-Identity` and client
-  IP (`X-Real-IP`), as the TS `/batch` gives its sub-requests today (see `src/middleware/auth.ts` and
-  `batchMiddleware.ts`). A sub-request that fails must never take the host down.
-- **Why:** the login's two batches hold about 15 SSC/HISS calls; this lets each one move to C# on its own.
+- **What:** the C# `/batch` runs every sub-request through its own pipeline. Those that reach a stub (not ported), and
+  those whose route is listed in `Batch:ForwardRoutes`, go to the TS server (`Batch:TsUrl`) together, as one TS `/batch`
+  carrying the game's batch headers as they came (plus `X-Real-IP`), so the TS server runs them exactly as it runs its
+  own batches. Its answers are put into the response byte for byte, in the game's order.
+- **Headers, as in TS:** a sub-request answered in C# gets its own headers, the batch's `x-hydra-access-token`, the Hydra
+  content type and the batch's client address. The TS `/batch` gives its sub-requests the same (the token is copied, the
+  client address is inherited); the batch's other headers (`x-steam-id`, `x-install-id`, `X-OVS-Identity`, ...) reach
+  neither server's sub-requests.
+- **Rolling a route back:** taking a route out of `Proxy:PortedRoutes` does not reach into batches; listing it in
+  `Batch:ForwardRoutes` (same `METHOD /path` form) does. Both are live settings.
+- **Why:** the login's two batches hold about 15 SSC and config reads; this lets each one move to C# on its own.
 - **Delete when:** every route a batch can contain is ported (the SSC catch-all `SscUnlisted` included). Then the
-  forwarding code, its settings and this entry go.
+  forwarding code, `Batch:TsUrl`, `Batch:ForwardRoutes`, `Batch:ForwardTimeoutSeconds`, the startup warning and this
+  entry go; `/batch` keeps running its sub-requests in C#.
 
 ## Not bridges (kept after the migration)
 

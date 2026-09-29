@@ -133,6 +133,9 @@ public sealed class HydraEncoder
             case float or double or decimal:
                 Number(Convert.ToDouble(raw));
                 break;
+            case HydraRaw encoded:
+                _out.Write(encoded.Bytes);
+                break;
             default:
                 throw new HydraFormatException($"cannot encode a {raw?.GetType().Name ?? "null"}");
         }
@@ -415,6 +418,24 @@ public sealed class HydraEncoder
                 break;
         }
     }
+}
+
+/// <summary>
+/// A value that is already Hydra, which <see cref="HydraEncoder"/> writes as it is. /batch passes on answers it did not
+/// make itself (the TS server's, its own endpoints') this way: decoding and encoding them again would keep their meaning
+/// but not their bytes, as compressed data comes out of zlib differently.
+/// </summary>
+public sealed class HydraRaw
+{
+    private HydraRaw(byte[] bytes)
+    {
+        Bytes = bytes;
+    }
+
+    public byte[] Bytes { get; }
+
+    /// <summary>A node holding <paramref name="bytes"/>, one encoded value. For encoding only: it has no JSON form.</summary>
+    public static JsonNode Node(byte[] bytes) => JsonValue.Create(new HydraRaw(bytes))!;
 }
 
 /// <summary>Bytes that are not valid Hydra, or a value that cannot be written as Hydra.</summary>

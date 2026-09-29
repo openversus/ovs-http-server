@@ -15,11 +15,14 @@ public static class HydraMethodOverride
         HttpMethods.Get, HttpMethods.Put, HttpMethods.Post, HttpMethods.Delete, HttpMethods.Patch,
     };
 
+    /// <summary>Whether <paramref name="method"/> is one this override takes.</summary>
+    public static bool IsMethod([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? method) => method is not null && s_methods.Contains(method);
+
     public static IApplicationBuilder UseHydraMethodOverride(this IApplicationBuilder app) =>
         app.Use((context, next) =>
         {
             string? method = context.Request.Headers[Header];
-            if (method is not null && s_methods.Contains(method))
+            if (IsMethod(method))
             {
                 context.Request.Method = method.ToUpperInvariant();
             }

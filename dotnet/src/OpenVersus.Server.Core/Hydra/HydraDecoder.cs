@@ -41,6 +41,131 @@ public ref struct HydraDecoder
         return value;
     }
 
+    /// <summary>
+    /// Where each item of the array under <paramref name="key"/> lies in a message that is a map (the TS server's
+    /// /batch answer and its <c>responses</c>), so the items can be passed on byte for byte; null when the message is
+    /// not a map or holds no array under that key.
+    /// </summary>
+    public static List<Range>? ArrayItems(ReadOnlySpan<byte> buffer, string key)
+    {
+        var decoder = new HydraDecoder(buffer);
+        int entries = decoder.Header(HydraCode.Map8);
+        for (int i = 0; i < entries; i++)
+        {
+            if (Key(decoder.Value()) != key)
+            {
+                decoder.Skip();
+                continue;
+            }
+
+            int count = decoder.Header(HydraCode.Array8);
+            if (count < 0)
+            {
+                return null;
+            }
+
+            var items = new List<Range>(count);
+            for (int j = 0; j < count; j++)
+            {
+                int start = decoder._position;
+                decoder.Skip();
+                items.Add(start..decoder._position);
+            }
+
+            return items;
+        }
+
+        return null;
+    }
+
+    // Steps over one value without building it (nor inflating compressed data): ArrayItems only needs where it ends.
+    // Follows Value() case for case.
+    private void Skip()
+    {
+        int at = _position;
+        byte code = Byte();
+        switch (code)
+        {
+            case HydraCode.Zero or HydraCode.Null or HydraCode.True or HydraCode.False:
+                return;
+            case HydraCode.WebSocket:
+                Take(2);
+                Skip();
+                return;
+            case HydraCode.Int8 or HydraCode.UInt8:
+                Take(1);
+                return;
+            case HydraCode.Int16 or HydraCode.UInt16:
+                Take(2);
+                return;
+            case HydraCode.Int32 or HydraCode.UInt32 or HydraCode.Float or HydraCode.Date:
+                Take(4);
+                return;
+            case HydraCode.Int64 or HydraCode.UInt64 or HydraCode.BigInt or HydraCode.Double:
+                Take(8);
+                return;
+            case HydraCode.Char8 or HydraCode.Bytes8:
+                Take(Count(1));
+                return;
+            case HydraCode.Char16 or HydraCode.Bytes16:
+                Take(Count(2));
+                return;
+            case HydraCode.Char32 or HydraCode.Bytes32:
+                Take(Count(4));
+                return;
+            case HydraCode.Array8 or HydraCode.Array16 or HydraCode.Array32 or HydraCode.Array64:
+                for (int i = Count(1 << (code - HydraCode.Array8)); i > 0; i--)
+                {
+                    Skip();
+                }
+
+                return;
+            case HydraCode.Map8 or HydraCode.Map16 or HydraCode.Map32 or HydraCode.Map64:
+                for (int i = Count(1 << (code - HydraCode.Map8)); i > 0; i--)
+                {
+                    Skip();
+                    Skip();
+                }
+
+                return;
+            case HydraCode.Compressed:
+                Byte();
+                Skip();
+                return;
+            case HydraCode.Localization:
+                Skip();
+                Skip();
+                Skip();
+                Skip();
+                return;
+            case HydraCode.FileReference or HydraCode.StoreEnabled:
+                Skip();
+                Skip();
+                Skip();
+                return;
+            case HydraCode.Calendar:
+                Skip();
+                Skip();
+                return;
+            default:
+                throw new HydraFormatException($"unknown type code 0x{code:X2} at {at}");
+        }
+    }
+
+    // The count after a map's (Map8 as first) or an array's (Array8) code of any width, or -1 for another code.
+    private int Header(byte first)
+    {
+        int width = (Byte() - first) switch
+        {
+            0 => 1,
+            1 => 2,
+            2 => 4,
+            3 => 8,
+            _ => 0,
+        };
+        return width == 0 ? -1 : Count(width);
+    }
+
     private ReadOnlySpan<byte> Take(int count)
     {
         if (count < 0 || _position + count > _buffer.Length)

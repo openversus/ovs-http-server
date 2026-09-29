@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Options;
+using OpenVersus.Server.Core.Hosting;
 using Yarp.ReverseProxy.Configuration;
 
 namespace OpenVersus.Server.Proxy;
@@ -17,7 +18,7 @@ public sealed class ProxySettings : IValidatableObject
     public string TsUrl { get; set; } = "http://127.0.0.1:18000";
 
     [Description("The routes that go to C#, as METHOD /path, separated by commas: the game's method (a GET the game sends as PUT with x-hydra-http-method matches too) and the route template as the C# endpoint declares it. Empty: everything goes to the TS server.")]
-    public string PortedRoutes { get; set; } = "POST /access, DELETE /access, POST /sessions/auth/token, GET /commerce/products, GET /commerce/purchases/me, GET /commerce/steam/mtx_user_info/me, GET /friends/me, GET /friends/me/invitations/incoming, GET /friends/me/invitations/outgoing, GET /social/me/blocked, GET /accounts/wb_network/bulk, GET /profiles/bulk, GET /layout/dokken-layout-type/personalized/account-cosmetics-variant/{id}, GET /layout/dokken-layout-type/personalized/battlepass-variant/{id}, GET /layout/dokken-layout-type/personalized/currency-variant/{id}, GET /layout/dokken-layout-type/personalized/fighter-road-layout/{id}, GET /layout/dokken-layout-type/personalized/fighter-variant/{id}, GET /layout/dokken-layout-type/personalized/main-variant/{id}, GET /layout/dokken-layout-type/personalized/prestige-variant/{id}, GET /layout/dokken-layout-type/personalized/rift-variant/{id}, GET /layout/dokken-layout-type/personalized/skin-variant/{id}, GET /file_storage, GET /file_storage/openversus-update-required-keyart, GET /file_storage/openversus-update-required-thumbnail, GET /file_storage/beginnermode-carousel-keyart, GET /file_storage/beginnermode-carousel-thumbnail, GET /file_storage/harley-rift-s5-keyart, GET /file_storage/harley-rift-s5-thumbnail, GET /file_storage/s5-bp-carousel-keyart, GET /file_storage/s5-bp-carousel-thumbnail, GET /file_storage/t-discord-qa-carousel-keyart, GET /file_storage/t-discord-qa-carousel-thumbnail, GET /file_storage/wonderwoman-arena-keyart, GET /file_storage/wonderwoman-arena-thumbnail, PUT /drives/multiversus/sync, GET /leaderboards/bulk/score-and-rank/{id}, GET /profiles/{id}/inventory, GET /leaderboards/{id}/show, GET /leaderboards/{id}/around/{account}, GET /leaderboards/{id}/around/me, GET /matches/all/{id}, PUT /matches/{id}, GET /profiles/search_queries/get-by-username/run";
+    public string PortedRoutes { get; set; } = "POST /access, DELETE /access, POST /sessions/auth/token, GET /commerce/products, GET /commerce/purchases/me, GET /commerce/steam/mtx_user_info/me, GET /friends/me, GET /friends/me/invitations/incoming, GET /friends/me/invitations/outgoing, GET /social/me/blocked, GET /accounts/wb_network/bulk, GET /profiles/bulk, GET /layout/dokken-layout-type/personalized/account-cosmetics-variant/{id}, GET /layout/dokken-layout-type/personalized/battlepass-variant/{id}, GET /layout/dokken-layout-type/personalized/currency-variant/{id}, GET /layout/dokken-layout-type/personalized/fighter-road-layout/{id}, GET /layout/dokken-layout-type/personalized/fighter-variant/{id}, GET /layout/dokken-layout-type/personalized/main-variant/{id}, GET /layout/dokken-layout-type/personalized/prestige-variant/{id}, GET /layout/dokken-layout-type/personalized/rift-variant/{id}, GET /layout/dokken-layout-type/personalized/skin-variant/{id}, GET /file_storage, GET /file_storage/openversus-update-required-keyart, GET /file_storage/openversus-update-required-thumbnail, GET /file_storage/beginnermode-carousel-keyart, GET /file_storage/beginnermode-carousel-thumbnail, GET /file_storage/harley-rift-s5-keyart, GET /file_storage/harley-rift-s5-thumbnail, GET /file_storage/s5-bp-carousel-keyart, GET /file_storage/s5-bp-carousel-thumbnail, GET /file_storage/t-discord-qa-carousel-keyart, GET /file_storage/t-discord-qa-carousel-thumbnail, GET /file_storage/wonderwoman-arena-keyart, GET /file_storage/wonderwoman-arena-thumbnail, PUT /drives/multiversus/sync, GET /leaderboards/bulk/score-and-rank/{id}, GET /profiles/{id}/inventory, GET /leaderboards/{id}/show, GET /leaderboards/{id}/around/{account}, GET /leaderboards/{id}/around/me, GET /matches/all/{id}, PUT /matches/{id}, GET /profiles/search_queries/get-by-username/run, PUT /batch";
 
     // Refused when set, so the value shown is always the one in use.
     public IEnumerable<ValidationResult> Validate(ValidationContext context)
@@ -78,22 +79,7 @@ public static class ProxyRoutes
     }
 
     /// <summary>"POST /access, GET /profiles/{id}" as (method, path) pairs; anything else is refused.</summary>
-    public static IReadOnlyList<(string Method, string Path)> Parse(string? routes)
-    {
-        var parsed = new List<(string, string)>();
-        foreach (string entry in (routes ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            string[] parts = entry.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length != 2 || parts[0].ToUpperInvariant() is not ("GET" or "PUT" or "POST" or "DELETE") || !parts[1].StartsWith('/'))
-            {
-                throw new FormatException($"\"{entry}\" is not METHOD /path");
-            }
-
-            parsed.Add((parts[0].ToUpperInvariant(), parts[1]));
-        }
-
-        return parsed;
-    }
+    public static IReadOnlyList<(string Method, string Path)> Parse(string? routes) => RouteList.Parse(routes);
 
     private static RouteHeader Override(string method) =>
         new() { Name = MethodOverrideHeader, Values = [method], Mode = HeaderMatchMode.ExactHeader, IsCaseSensitive = false };

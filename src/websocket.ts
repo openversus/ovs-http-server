@@ -80,6 +80,9 @@ import {
   redisSetPendingJoinLobby,
   redisTouchPlayerSession,
   redisRemovePlayerSession,
+  redisRecordPlayerHeartbeat,
+  redisRemovePlayerHeartbeat,
+  DISCONNECT_HEARTBEAT_TIMEOUT_MS,
   // PARTY_MEMBER_JOIN_CHANNEL — moved to AccelByteLobbyWsService
 } from "./config/redis";
 import { Server } from "https";
@@ -121,7 +124,8 @@ export class WebSocketPlayer {
   deleted?: boolean;
   account: SharedTypes.IAccountToken | undefined;
   matchTick: NodeJS.Timeout | undefined;
-  matchTimeout: NodeJS.Timeout | undefined;
+  /** When the game last answered the ping (ms since the epoch); set at the handshake. */
+  lastPong: number = 0;
   matchConfig?: GameNotification;
   ticket?: ON_MATCH_MAKER_STARTED_NOTIFICATION;
   ip: string;
@@ -260,6 +264,8 @@ export interface PlayerConfig {
 }
 
 const PING_BUFFER = Buffer.from([0x0c]);
+/** The game's answer to PING_BUFFER, about 60 ms later on loopback (captured 2026-09-28). */
+const PONG_BYTE = 0x0a;
 
 export class WebSocketService {
   private ws: WebSocketServer;
@@ -294,9 +300,17 @@ export class WebSocketService {
         `[${serviceName}]: ZOMBIE-DIAG: Player ${playerWS.account.id} connecting with NEW WebSocket — replacing existing connection. ` +
         `Old WS readyState=${existingClient.ws.readyState}, deleted=${existingClient.deleted}`,
       );
+      // The old connection's close is ignored as stale, so its matchmaking ticket would stay in the queue
+      // with nobody behind it and could be matched as a ghost opponent. Drop it now.
+      this.dropReplacedTicket(existingClient).catch((err) =>
+        logger.error(`${logPrefix} Error dropping the replaced connection's ticket for ${existingClient.account?.id}: ${err}`),
+      );
     }
 
     this.clients.set(playerWS.account.id, playerWS);
+    playerWS.lastPong = Date.now();
+    redisRecordPlayerHeartbeat(playerWS.account.id)
+      .catch((err) => logger.error(`${logPrefix} Error recording heartbeat: ${err}`));
 
     // Clear pending rejoin flag if this is a reconnect after force-close
     if (this.pendingRejoin.has(playerWS.account.id)) {
@@ -321,19 +335,59 @@ export class WebSocketService {
     );
   }
 
+  // Pings every connection every 20 s. A game that has not answered for DISCONNECT_HEARTBEAT_TIMEOUT_MS (three
+  // missed answers; checked on this tick, so the close comes about 80 s after the last answer) is gone even if its
+  // socket never closed: the socket is terminated, and the close runs the usual disconnect cleanup (its matchmaking
+  // ticket, lobby and session). The session is refreshed by the answer, not by the ping.
   handleHeartBeats() {
     setInterval(() => {
+      const now = Date.now();
       for (const [
         _,
         playerWS,
       ] of this.clients) {
-        playerWS.sendRaw(PING_BUFFER);
-        if (playerWS.account?.id) {
-          redisTouchPlayerSession(playerWS.account.id, playerWS.ip)
-            .catch((err) => logger.error(`${logPrefix} Error refreshing player session: ${err}`));
+        const silentMs = now - playerWS.lastPong;
+        if (silentMs >= DISCONNECT_HEARTBEAT_TIMEOUT_MS) {
+          logger.warn(
+            `[${serviceName}]: Player ${playerWS.account?.id ?? "unknown"} with IP ${playerWS.ip} has not answered for ${Math.round(silentMs / 1000)} s; closing the connection`,
+          );
+          playerWS.ws.terminate();
+          continue;
         }
+        playerWS.sendRaw(PING_BUFFER);
       }
     }, 20000);
+  }
+
+  // The game answered the ping on its current connection: it is still there.
+  handlePong(playerWS: WebSocketPlayer) {
+    const playerId = playerWS.account?.id;
+    if (!playerId || this.clients.get(playerId) !== playerWS) {
+      return;
+    }
+    playerWS.lastPong = Date.now();
+    redisRecordPlayerHeartbeat(playerId)
+      .catch((err) => logger.error(`${logPrefix} Error recording heartbeat: ${err}`));
+    redisTouchPlayerSession(playerId, playerWS.ip)
+      .catch((err) => logger.error(`${logPrefix} Error refreshing player session: ${err}`));
+  }
+
+  // A newer connection replaced this one: stop its ticks and take its ticket out of the queue.
+  async dropReplacedTicket(oldClient: WebSocketPlayer) {
+    if (oldClient.matchTick) {
+      clearInterval(oldClient.matchTick);
+      oldClient.matchTick = undefined;
+    }
+    if (oldClient.ticket) {
+      logger.info(
+        `[${serviceName}]: Dropping ticket ${oldClient.ticket.matchmakingRequestId} of the replaced connection for player ${oldClient.account?.id ?? "unknown"}`,
+      );
+      await this.attemptRemoveMatchTicket(oldClient);
+      oldClient.ticket = undefined;
+      if (oldClient.account?.id) {
+        await redisUpdatePlayerStatus(oldClient.account.id, "idle");
+      }
+    }
   }
 
   async handleDisconnect(playerWS: WebSocketPlayer) {
@@ -367,6 +421,8 @@ export class WebSocketService {
       // The session expires on its own in 90 s, so a failure here must not stop the cleanup below.
       await redisRemovePlayerSession(playerId, playerWS.ip)
         .catch((err) => logger.error(`${logPrefix} Error removing player session for ${playerId}: ${err}`));
+      await redisRemovePlayerHeartbeat(playerId)
+        .catch((err) => logger.error(`${logPrefix} Error removing heartbeat for ${playerId}: ${err}`));
 
       // Check if this player was in a multi-player lobby — if so, disband the party
       // so remaining players aren't stuck with a ghost teammate.
@@ -685,6 +741,8 @@ export class WebSocketService {
             // Need to send ping to client or client will disconnect
             playerWS.sendRaw(PING_BUFFER);
           }
+        } else if (Buffer.isBuffer(message) && message.length === 1 && message[0] === PONG_BYTE) {
+          this.handlePong(playerWS);
         }
       });
 
@@ -701,12 +759,6 @@ export class WebSocketService {
   }
 
   async stopMatchTick(player: WebSocketPlayer) {
-    // Clear the 100s auto-cancel timeout — match was found, no need to auto-cancel
-    if (player.matchTimeout) {
-      clearTimeout(player.matchTimeout);
-      player.matchTimeout = undefined;
-    }
-
     if (player.matchTick) {
       logger.info(
         `[${serviceName}]: Stopping matchtick for player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"}`,
@@ -764,12 +816,9 @@ export class WebSocketService {
     await redisPushTicketToQueue(notification.matchType, notification);
   }
 
+  // There is no queue timeout: a ticket waits until a match is found, the player cancels or they disconnect.
+  // The game's own switch to a bot match after about two minutes is patched out by the OpenVersus client.
   handleMatchTick(client: WebSocketPlayer, notification: ON_MATCH_MAKER_STARTED_NOTIFICATION) {
-    // Clear any existing zombie timeout from a previous queue cycle
-    if (client.matchTimeout) {
-      clearTimeout(client.matchTimeout);
-    }
-
     client.matchTick = setInterval(() => {
       client.send({
         data: {},
@@ -781,19 +830,9 @@ export class WebSocketService {
         cmd: "matchmaking-tick",
       });
     }, 1000);
-
-    client.matchTimeout = setTimeout(async () => {
-      await this.cancelMatchMaking(client, notification.matchmakingRequestId);
-    }, 100_000);
   }
 
   async cancelMatchMaking(client: WebSocketPlayer, matchmakingRequestId: string) {
-    // Always clear the 100s timeout to prevent zombie timeouts from canceling future queues
-    if (client.matchTimeout) {
-      clearTimeout(client.matchTimeout);
-      client.matchTimeout = undefined;
-    }
-
     if (client.matchTick) {
       const message = {
         data: {},

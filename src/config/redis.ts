@@ -431,6 +431,41 @@ export async function redisRemovePlayerSession(playerId: string, ip: string) {
   if (ip && playerId) await redisClient.zRem(`active_ip_accounts:${ip}`, playerId);
 }
 
+// When each connected player's game last answered the websocket ping (every 20 s): the handshake and every
+// answer write it, a clean disconnect removes it. The matchmaking worker reads it, so a ticket whose player has
+// gone silent is dropped even when the websocket server that held their connection is gone.
+const PLAYER_HEARTBEATS_KEY = "player_heartbeats";
+
+// The game answers every 20 s. One missed answer is a hiccup; two take the player out of matchmaking; three
+// disconnect them.
+/** Silent this long (two missed answers): the matchmaking worker drops the player's tickets. */
+export const MATCHMAKING_HEARTBEAT_TIMEOUT_MS = 41_000;
+/** Silent this long (three missed answers): the websocket server closes the connection. */
+export const DISCONNECT_HEARTBEAT_TIMEOUT_MS = 61_000;
+
+export async function redisRecordPlayerHeartbeat(playerId: string) {
+  if (!playerId) return;
+  await redisClient.zAdd(PLAYER_HEARTBEATS_KEY, { score: Date.now(), value: playerId });
+}
+
+export async function redisRemovePlayerHeartbeat(playerId: string) {
+  if (playerId) await redisClient.zRem(PLAYER_HEARTBEATS_KEY, playerId);
+}
+
+/**
+ * When each of these players' games last answered (ms since the epoch), or undefined for a player with no
+ * record. Null when nothing has ever been recorded, i.e. the websocket server does not record heartbeats yet.
+ */
+export async function redisGetPlayerHeartbeats(playerIds: string[]): Promise<Map<string, number | undefined> | null> {
+  if (!(await redisClient.exists(PLAYER_HEARTBEATS_KEY))) return null;
+  const multi = redisClient.multi();
+  for (const id of playerIds) {
+    multi.zScore(PLAYER_HEARTBEATS_KEY, id);
+  }
+  const scores = (await multi.exec()) as unknown as (number | null)[];
+  return new Map(playerIds.map((id, i) => [id, scores[i] ?? undefined]));
+}
+
 // Only the account's own copy: nothing reads a per-IP one, and an IP is shared by a household.
 export async function redisSetPlayerConnectionCosmetics(playerId: string, cosmetics: Cosmetics) {
   const cosmeticStringObj: Record<string, string> = {};

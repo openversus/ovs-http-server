@@ -20,6 +20,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="Hydra\encoder-fixtures.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\OpenVersus.Server.Core\OpenVersus.Server.Core.csproj" />
   </ItemGroup>
 

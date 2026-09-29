@@ -49,11 +49,25 @@ internal sealed class RankService(IServiceProvider services, ILogger<RankService
     /// <summary>getPlayerRank: the player's rating and place among the players with games in that mode.</summary>
     private static async Task<JsonObject> ScoreAsync(IMongoCollection<BsonDocument> ratings, string playerId, string mode, CancellationToken ct)
     {
+        if (await PlaceAsync(ratings, playerId, mode, ct) is not { } place)
+        {
+            return new JsonObject { ["score"] = 1000, ["rank"] = 0 };
+        }
+
+        return new JsonObject { ["score"] = Json(place.Rating), ["rank"] = place.Rank };
+    }
+
+    /// <summary>
+    /// The player's rating and place in <paramref name="mode"/> (TS getPlayerRank without a character): null when they
+    /// have no rating or no games in it.
+    /// </summary>
+    internal static async Task<(BsonValue Rating, long Rank)?> PlaceAsync(IMongoCollection<BsonDocument> ratings, string playerId, string mode, CancellationToken ct)
+    {
         string elo = $"elo_{mode}", wins = $"wins_{mode}", losses = $"losses_{mode}";
         var player = await ratings.Find(new BsonDocument("account_id", playerId)).FirstOrDefaultAsync(ct);
         if (player is null || Number(player, wins) + Number(player, losses) == 0)
         {
-            return new JsonObject { ["score"] = 1000, ["rank"] = 0 };
+            return null;
         }
 
         // Players listed above: a higher rating, or the same rating and an earlier _id (the leaderboard's tie order).
@@ -68,14 +82,14 @@ internal sealed class RankService(IServiceProvider services, ILogger<RankService
             },
             { "$expr", new BsonDocument("$gt", new BsonArray { new BsonDocument("$add", new BsonArray { $"${wins}", $"${losses}" }), 0 }) },
         }, cancellationToken: ct);
-        return new JsonObject { ["score"] = Json(rating), ["rank"] = above + 1 };
+        return (rating, above + 1);
     }
 
     // player[field] || 0
-    private static double Number(BsonDocument doc, string field) =>
+    internal static double Number(BsonDocument doc, string field) =>
         doc.GetValue(field, BsonNull.Value) is { IsNumeric: true } v ? v.ToDouble() : 0;
 
-    private static JsonNode? Json(BsonValue value) => value.BsonType switch
+    internal static JsonNode? Json(BsonValue value) => value.BsonType switch
     {
         BsonType.Int32 => value.AsInt32,
         BsonType.Int64 => value.AsInt64,

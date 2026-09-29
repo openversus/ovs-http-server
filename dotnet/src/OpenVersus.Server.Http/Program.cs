@@ -21,6 +21,7 @@ builder.AddProfiles();
 builder.AddLayouts();
 builder.AddFileStorage();
 builder.AddRanks();
+builder.AddLeaderboards();
 builder.AddAccountResolver();
 builder.AddInventory();
 builder.Services.AddFastEndpoints();

@@ -27,6 +27,67 @@ public static class Js
         return s[start..end];
     }
 
+    /// <summary>
+    /// parseInt(text) with no radix: leading white space, a sign, then decimal digits (or hex after 0x); NaN when there
+    /// are none (null reads as NaN, as parseInt(undefined) does).
+    /// </summary>
+    public static double ParseInt(string? text)
+    {
+        if (text is null)
+        {
+            return double.NaN;
+        }
+
+        int i = 0;
+        while (i < text.Length && IsSpace(text[i]))
+        {
+            i++;
+        }
+
+        double sign = 1;
+        if (i < text.Length && text[i] is '+' or '-')
+        {
+            sign = text[i] == '-' ? -1 : 1;
+            i++;
+        }
+
+        bool hex = i + 1 < text.Length && text[i] == '0' && text[i + 1] is 'x' or 'X';
+        if (hex)
+        {
+            i += 2;
+        }
+
+        int start = i;
+        while (i < text.Length && (hex ? char.IsAsciiHexDigit(text[i]) : char.IsAsciiDigit(text[i])))
+        {
+            i++;
+        }
+
+        if (i == start)
+        {
+            return double.NaN;
+        }
+
+        string digits = text[start..i];
+        double value = hex
+            ? digits.Aggregate(0.0, (n, d) => n * 16 + Convert.ToInt32(d.ToString(), 16))
+            : double.Parse(digits, NumberStyles.None, CultureInfo.InvariantCulture);
+        return sign * value;
+    }
+
+    /// <summary>The index range Array.prototype.slice(start, end) takes from a list of <paramref name="length"/>.</summary>
+    public static (int From, int To) SliceBounds(int length, double start, double end)
+    {
+        int Relative(double n)
+        {
+            double integer = double.IsNaN(n) ? 0 : Math.Truncate(n);
+            return integer < 0 ? (int)Math.Max(length + integer, 0) : (int)Math.Min(integer, length);
+        }
+
+        int from = Relative(start), to = Relative(end);
+        return (from, Math.Max(from, to));
+    }
+
     private static bool IsSpace(char c) =>
         c is '\t' or '\n' or '\v' or '\f' or '\r' or ' ' or '\u00A0' or '\uFEFF' or '\u2028' or '\u2029'
         || char.GetUnicodeCategory(c) == UnicodeCategory.SpaceSeparator;

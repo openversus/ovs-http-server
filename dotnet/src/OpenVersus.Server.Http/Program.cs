@@ -6,6 +6,7 @@ using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Core.Inventory;
 using OpenVersus.Server.Core.Layouts;
 using OpenVersus.Server.Core.Leaderboards;
+using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Profiles;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Settings;
@@ -24,6 +25,7 @@ builder.AddRanks();
 builder.AddLeaderboards();
 builder.AddAccountResolver();
 builder.AddInventory();
+builder.AddMatchHistory();
 builder.Services.AddFastEndpoints();
 
 var app = builder.Build();

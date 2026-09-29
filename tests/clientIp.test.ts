@@ -35,3 +35,12 @@ test("without an address in the headers, the connection's own", () => {
   assert.equal(ip({ "x-forwarded-for": "198.51.100.7, garbage" }), SOCKET);
   assert.equal(clientIpFromHeaders({}, undefined).ip, "");
 });
+
+test("the connection's address is asked for only when no header names the client", () => {
+  let asked = 0;
+  const own = () => { asked++; return SOCKET; };
+  assert.equal(clientIpFromHeaders({ "x-real-ip": "198.51.100.7" }, own).ip, "198.51.100.7");
+  assert.equal(asked, 0);
+  assert.equal(clientIpFromHeaders({}, own).ip, SOCKET);
+  assert.equal(asked, 1);
+});

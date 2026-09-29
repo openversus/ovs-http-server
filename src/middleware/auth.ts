@@ -49,9 +49,14 @@ export const hydraTokenMiddleware = (req: Request, res: Response, next: NextFunc
     return next();
   }
 
-  const resolvedIP = getRealIP(req);
-  req.realIp = resolvedIP.ip;
-  req.requestForwarded = resolvedIP.isForwarded;
+  // A /batch sub-request is a copy of the batch's request (Object.create) with the game's own per-call headers, which
+  // carry no proxy headers: it keeps the address resolved for the batch, which it inherits.
+  //@ts-ignore
+  if (!req.batch) {
+    const resolvedIP = getRealIP(req);
+    req.realIp = resolvedIP.ip;
+    req.requestForwarded = resolvedIP.isForwarded;
+  }
   const token = req.headers[HYDRA_ACCESS_TOKEN];
 
   if (typeof token === "string") {
@@ -69,9 +74,19 @@ export const hydraTokenMiddleware = (req: Request, res: Response, next: NextFunc
   }
 };
 
-/** The client's address behind the reverse proxy (see clientIpFromHeaders); req.ip is the connection's own. */
+/**
+ * The client's address behind the reverse proxy (see clientIpFromHeaders). req.ip, the connection's own, is read only
+ * when no header names the client, and never throws: on a /batch sub-request (a copy of the batch's request) Express's
+ * ip getter finds no socket and throws.
+ */
 export function getRealIP(req: Request): { ip: string; isForwarded: boolean } {
-  return clientIpFromHeaders(req.headers, req.ip);
+  return clientIpFromHeaders(req.headers, () => {
+    try {
+      return req.ip;
+    } catch {
+      return req.socket?.remoteAddress;
+    }
+  });
 }
 
 export function tryGetRealIP(req: Request): string {

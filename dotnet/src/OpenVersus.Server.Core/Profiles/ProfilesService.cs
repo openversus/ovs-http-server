@@ -18,6 +18,12 @@ namespace OpenVersus.Server.Core.Profiles;
 // Redis, read     online_players (set of player ids)
 // Nothing written.
 //
+// Search (get-by-username): the TS server passes the player's text to Mongo as a regular expression, so a name with
+// . [ ( + ? * and the like matches the wrong players or fails (and the failure answers no results); here it is matched
+// as the text it is, still anywhere in the name and in any case. The TS server returns the first 25 matches in storage
+// order; here exact matches come first, then names that start with the text, then the rest (each in account order),
+// so a short name typed exactly is not pushed out by 25 longer ones.
+//
 // Differences from the TS server, none in what the game gets: the icons are read per request, not from the TS
 // server's startup cache (which misses icons added since it started, until a data sync); presence is one SMISMEMBER,
 // not one SISMEMBER per player; an id that is a number (never sent) is not looked up.
@@ -32,6 +38,13 @@ public interface IProfilesService
     /// where the TS server's <c>new Date()</c> becomes an empty map (JSON gets the time).
     /// </summary>
     Task<JsonArray> ProfilesAsync(JsonNode? body, bool hydra, CancellationToken ct = default);
+
+    /// <summary>
+    /// GET /profiles/search_queries/get-by-username/run: the players whose name contains <paramref name="username"/>
+    /// (any case), at most 25, exact matches first, then names starting with it, then the rest:
+    /// <c>{cursor, start, count, total, results: [{score, result: profile}]}</c>.
+    /// </summary>
+    Task<JsonObject> SearchAsync(string? username, bool hydra, CancellationToken ct = default);
 }
 
 internal sealed class ProfilesService(IServiceProvider services, TimeProvider time, ILogger<ProfilesService> log) : IProfilesService
@@ -141,6 +154,79 @@ internal sealed class ProfilesService(IServiceProvider services, TimeProvider ti
 
             return results;
         }, ct);
+    }
+
+    public async Task<JsonObject> SearchAsync(string? username, bool hydra, CancellationToken ct)
+    {
+        static JsonObject Page(JsonArray results) =>
+            new() { ["cursor"] = null, ["start"] = 0, ["count"] = results.Count, ["total"] = results.Count, ["results"] = results };
+        if (string.IsNullOrEmpty(username))
+        {
+            return Page([]);
+        }
+
+        var found = await Guarded("GET /profiles/search_queries/get-by-username/run", async (mongo, redis) =>
+        {
+            log.LogInformation("Search for username: \"{Username}\"", username);
+            string literal = PcreEscape(username);
+            BsonDocument Matches(string pattern) => new("$regexMatch", new BsonDocument { { "input", "$name" }, { "regex", pattern }, { "options", "i" } });
+            var players = await mongo.GetCollection<BsonDocument>(PlayerRecord.Collection).Aggregate<BsonDocument>(new BsonDocument[]
+            {
+                new("$match", new BsonDocument("name", new BsonDocument { { "$regex", literal }, { "$options", "i" } })),
+                new("$addFields", new BsonDocument("_rank", new BsonDocument("$cond", new BsonArray
+                {
+                    Matches($"^{literal}$"), 0, new BsonDocument("$cond", new BsonArray { Matches($"^{literal}"), 1, 2 }),
+                }))),
+                new("$sort", new BsonDocument { { "_rank", 1 }, { "_id", 1 } }),
+                new("$limit", SearchLimit),
+                new("$project", new BsonDocument { { "name", 1 }, { "hydraUsername", 1 }, { "profile_icon", 1 } }),
+            }, cancellationToken: ct).ToListAsync(ct);
+            var online = await OnlineAsync(redis, players);
+            var icons = players.Count > 0 ? await ProfileIconsAsync(mongo, ct) : _ => "";
+            var results = new JsonArray();
+            for (int i = 0; i < players.Count; i++)
+            {
+                var p = players[i];
+                string id = p["_id"].AsObjectId.ToString(), name = Username(p);
+                var profile = Profile(id, name, IconSlug(p), icons(p.GetValue("profile_icon", BsonNull.Value)), hydra);
+                var account = profile["account"]!.AsObject();
+                account["identity"]!["alternate"] = new JsonObject
+                {
+                    ["wb_network"] = new JsonArray(new JsonObject { ["id"] = id, ["username"] = name, ["avatar"] = null }),
+                };
+                // presence goes between id and server_data, as there.
+                var serverData = account["server_data"];
+                account.Remove("server_data");
+                account["presence"] = online[i] ? "online" : "offline";
+                account["server_data"] = serverData;
+                results.Add(new JsonObject { ["score"] = null, ["result"] = profile });
+            }
+
+            return results;
+        }, ct);
+        return Page(found);
+    }
+
+    private const int SearchLimit = 25;
+
+    /// <summary>
+    /// The text as a PCRE literal: every ASCII character that means something in a pattern is escaped (a backslash before
+    /// any other punctuation is also just that character). The TS server used the player's text as the pattern itself.
+    /// </summary>
+    internal static string PcreEscape(string text)
+    {
+        var sb = new System.Text.StringBuilder(text.Length * 2);
+        foreach (char c in text)
+        {
+            if (c < 128 && !char.IsAsciiLetterOrDigit(c) && c != '_')
+            {
+                sb.Append('\\');
+            }
+
+            sb.Append(c);
+        }
+
+        return sb.ToString();
     }
 
     private JsonObject Profile(string id, string username, string slug, string assetPath, bool hydra) => new()

@@ -1,0 +1,3943 @@
+[
+  {
+    "method": "POST",
+    "path": "/.*/access",
+    "area": ".*",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /.*/access"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "DELETE",
+    "path": "/access",
+    "area": "access",
+    "binary": "0x144fab980",
+    "capture": 9,
+    "server": [
+      "DELETE /access"
+    ],
+    "notes": [
+      "method from capture (no enum call)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/access",
+    "area": "access",
+    "binary": "0x144f9f5b0",
+    "capture": 11,
+    "server": [
+      "POST /access"
+    ],
+    "notes": [
+      "method from capture (no enum call)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/account/switch",
+    "area": "account",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /account/switch"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/account/verify",
+    "area": "account",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /account/verify"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/accounts/bulk",
+    "area": "accounts",
+    "binary": "0x144fd7550",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "method inferred: sibling of the {network} variant; sent as PUT + override"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/accounts/me",
+    "area": "accounts",
+    "binary": "0x140f9b8d0",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "social layer; method from unknown"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/accounts/me/age_information",
+    "area": "accounts",
+    "binary": "0x140fa1bd0",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "social layer; method from unknown"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/accounts/me/identity",
+    "area": "accounts",
+    "binary": "fragment",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "binary fragment; no builder found yet"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/accounts/me/link",
+    "area": "accounts",
+    "binary": "fragment",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "binary fragment; no builder found yet"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/accounts/me/notifications",
+    "area": "accounts",
+    "binary": "0x145060180",
+    "capture": 0,
+    "server": [
+      "GET /accounts/me/notifications"
+    ],
+    "notes": [
+      "method not read yet"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/accounts/me/notifications/bulk/{id}",
+    "area": "accounts",
+    "binary": "fragment",
+    "capture": 0,
+    "server": [
+      "DELETE /accounts/me/notifications/bulk/{notificationId}"
+    ],
+    "notes": [
+      "binary fragment; no builder found yet"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/accounts/me/notifications/{id}",
+    "area": "accounts",
+    "binary": "0x145060de0",
+    "capture": 0,
+    "server": [
+      "GET /accounts/me/notifications/bulk"
+    ],
+    "notes": [
+      "method not read yet"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/accounts/me/relationships",
+    "area": "accounts",
+    "binary": "fragment",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "binary fragment; no builder found yet"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/accounts/me/relationships/{id}/block",
+    "area": "accounts",
+    "binary": "0x144fe81e0",
+    "capture": 0,
+    "server": [
+      "PUT /accounts/me/relationships/{blockid}/block"
+    ],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/accounts/me/relationships/{id}/unblock",
+    "area": "accounts",
+    "binary": "0x144ff4890",
+    "capture": 0,
+    "server": [
+      "PUT /accounts/me/relationships/{blockid}/unblock"
+    ],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/accounts/me/relationships/{id}/unfollow",
+    "area": "accounts",
+    "binary": "0x144ff4a20",
+    "capture": 0,
+    "server": [],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/accounts/{id}",
+    "area": "accounts",
+    "binary": "0x144fda420",
+    "capture": 0,
+    "server": [
+      "GET /accounts/{id}"
+    ],
+    "notes": [
+      "also 0x144fda5f0"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/accounts/{id}",
+    "area": "accounts",
+    "binary": "0x144fddd00",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "also 0x144fddeb0"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/accounts/{id}/relationships/followers",
+    "area": "accounts",
+    "binary": "0x144fed800",
+    "capture": 0,
+    "server": [],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/accounts/{id}/{sub}",
+    "area": "accounts",
+    "binary": "0x144fda790",
+    "capture": 0,
+    "server": [
+      "GET /accounts/wb_network/{id}"
+    ],
+    "notes": [
+      "second segment's name not read yet"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/accounts/{network}/bulk",
+    "area": "accounts",
+    "binary": "0x144fd76d0",
+    "capture": 9,
+    "server": [
+      "PUT /accounts/wb_network/bulk"
+    ],
+    "notes": [
+      "sent as PUT + x-hydra-http-method: GET (capture: wb_network)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/admin/banner",
+    "area": "admin",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /admin/banner"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-admin",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/agreement/public/policies/namespaces/{namespace}",
+    "area": "agreement",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /agreement/public/policies/namespaces/{namespace}"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/banner",
+    "area": "api",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /api/admin/banner"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-admin",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/banner/online-count",
+    "area": "api",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /api/admin/banner/online-count"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-admin",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/api/identify",
+    "area": "api",
+    "binary": null,
+    "capture": 10,
+    "server": [
+      "POST /api/identify"
+    ],
+    "notes": [
+      "capture only",
+      "server only"
+    ],
+    "kind": "ovs-client",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/api/leaderboard/{mode}",
+    "area": "api",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /api/leaderboard/{mode}"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/api/leaderboard/{mode}/me",
+    "area": "api",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /api/leaderboard/{mode}/me"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/api/matches",
+    "area": "api",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /api/matches"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/api/ovs_match_status",
+    "area": "api",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /api/ovs_match_status"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-rollback",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/api/testing/deploy-rollback-server",
+    "area": "api",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /api/testing/deploy-rollback-server"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-admin",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/api/testing/destroy-rollback-server",
+    "area": "api",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /api/testing/destroy-rollback-server"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-admin",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/arenas/{id}/groups/{group}/participants",
+    "area": "arenas",
+    "binary": "0x145053b10",
+    "capture": 0,
+    "server": [],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/arenas/{id}/instances",
+    "area": "arenas",
+    "binary": "0x145053920",
+    "capture": 0,
+    "server": [],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/arenas/{id}/instances/{instance}/participants/{participant}",
+    "area": "arenas",
+    "binary": "0x1450535f0",
+    "capture": 0,
+    "server": [],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/assets/openversus-update-required-keyart.png",
+    "area": "assets",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /assets/openversus-update-required-keyart.png"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/assets/openversus-update-required-thumbnail.png",
+    "area": "assets",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /assets/openversus-update-required-thumbnail.png"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "ALL",
+    "path": "/basic/*",
+    "area": "basic",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "ALL /basic/*"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/basic/v1/public/namespaces/{namespace}/misc/input/validation",
+    "area": "basic",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /basic/v1/public/namespaces/{namespace}/misc/input/validation"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/batch",
+    "area": "batch",
+    "binary": "0x145054730",
+    "capture": 26,
+    "server": [
+      "PUT /batch"
+    ],
+    "notes": [
+      "runs sub-requests"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/clans/{id}/{sub}",
+    "area": "clans",
+    "binary": "0x145059f00",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "second segment's name not read yet"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/commerce/catalog/{id}/products",
+    "area": "commerce",
+    "binary": "0x144fdb040",
+    "capture": 0,
+    "server": [],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/commerce/catalog/{id}/products/{product}/purchase",
+    "area": "commerce",
+    "binary": "0x144fdbda0",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "method not read yet; body has price_slug"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/commerce/products",
+    "area": "commerce",
+    "binary": null,
+    "capture": 22,
+    "server": [
+      "GET /commerce/products"
+    ],
+    "notes": [
+      "capture only",
+      "server only"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/commerce/purchases/{id}",
+    "area": "commerce",
+    "binary": "0x144fdb4d0",
+    "capture": 22,
+    "server": [
+      "GET /commerce/purchases/me"
+    ],
+    "notes": [
+      "id is 'me' in captures"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/commerce/purchases/{id}/finalize",
+    "area": "commerce",
+    "binary": "0x144fd91b0",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "method not read yet; a bare '/' piece may mean one more segment"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/commerce/sales",
+    "area": "commerce",
+    "binary": "fragment",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "binary fragment; no builder found yet"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/commerce/steam/mtx_user_info/{id}",
+    "area": "commerce",
+    "binary": "0x144fd98d0",
+    "capture": 11,
+    "server": [
+      "GET /commerce/steam/mtx_user_info/me"
+    ],
+    "notes": [
+      "id is 'me' in captures"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/configuration/sdk",
+    "area": "configuration",
+    "binary": "fragment",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "binary fragment; no builder found yet"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "POST",
+    "path": "/datarouter/api/v1/public/data/clients",
+    "area": "datarouter",
+    "binary": "string",
+    "capture": 0,
+    "server": [
+      "POST /datarouter/api/v1/public/data/clients"
+    ],
+    "notes": [
+      "Unreal DataRouter (engine telemetry); exe holds 'datarouter/api/v1/public/data?SessionID='"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/drives/{id}/sync",
+    "area": "drives",
+    "binary": "0x144fdd810",
+    "capture": 11,
+    "server": [
+      "PUT /drives/multiversus/sync"
+    ],
+    "notes": [
+      "method from capture (id: multiversus)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/favicon/{image}",
+    "area": "favicon",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /favicon/{image}"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/favicon.ico",
+    "area": "favicon.ico",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /favicon.ico"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/file_storage",
+    "area": "file_storage",
+    "binary": "0x14505b5d0",
+    "capture": 11,
+    "server": [
+      "GET /file_storage"
+    ],
+    "notes": [
+      "method from capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/file_storage/{slug}",
+    "area": "file_storage",
+    "binary": "0x14505b5d0",
+    "capture": 44,
+    "server": [
+      "GET /file_storage/beginnermode-carousel-keyart",
+      "GET /file_storage/beginnermode-carousel-thumbnail",
+      "GET /file_storage/harley-rift-s5-keyart",
+      "GET /file_storage/harley-rift-s5-thumbnail",
+      "GET /file_storage/openversus-update-required-keyart",
+      "GET /file_storage/openversus-update-required-thumbnail",
+      "GET /file_storage/s5-bp-carousel-keyart",
+      "GET /file_storage/s5-bp-carousel-thumbnail",
+      "GET /file_storage/t-discord-qa-carousel-keyart",
+      "GET /file_storage/t-discord-qa-carousel-thumbnail",
+      "GET /file_storage/wonderwoman-arena-keyart",
+      "GET /file_storage/wonderwoman-arena-thumbnail"
+    ],
+    "notes": [
+      "method from capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/friends/me",
+    "area": "friends",
+    "binary": "0x140f9a310",
+    "capture": 14,
+    "server": [
+      "GET /friends/me"
+    ],
+    "notes": [
+      "social layer; method from capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/friends/me/invitations",
+    "area": "friends",
+    "binary": "0x140f9b5e0",
+    "capture": 0,
+    "server": [
+      "POST /friends/me/invitations"
+    ],
+    "notes": [
+      "social layer; method from server"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/friends/me/invitations/incoming",
+    "area": "friends",
+    "binary": "0x140f99fb0",
+    "capture": 14,
+    "server": [
+      "GET /friends/me/invitations/incoming"
+    ],
+    "notes": [
+      "social layer; method from capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/friends/me/invitations/outgoing",
+    "area": "friends",
+    "binary": "0x140f9a160",
+    "capture": 14,
+    "server": [
+      "GET /friends/me/invitations/outgoing"
+    ],
+    "notes": [
+      "social layer; method from capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/friends/me/invitations/{id}/accept",
+    "area": "friends",
+    "binary": "0x140f932a0",
+    "capture": 0,
+    "server": [
+      "PUT /friends/me/invitations/{id}/accept"
+    ],
+    "notes": [
+      "social layer; method from server"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/friends/me/invitations/{id}/cancel",
+    "area": "friends",
+    "binary": "0x140f943c0",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "social layer; method from unknown"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/friends/me/invitations/{id}/decline",
+    "area": "friends",
+    "binary": "0x140f97d00",
+    "capture": 0,
+    "server": [
+      "PUT /friends/me/invitations/{id}/decline"
+    ],
+    "notes": [
+      "social layer; method from server"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/friends/me/unfriend/{id}",
+    "area": "friends",
+    "binary": "0x140fa3780",
+    "capture": 0,
+    "server": [
+      "PUT /friends/me/unfriend/{id}"
+    ],
+    "notes": [
+      "social layer; method from server"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/global_configuration_types/{type}/global_configurations",
+    "area": "global_configuration_types",
+    "binary": "0x14505caf0",
+    "capture": 0,
+    "server": [
+      "GET /global_configuration_types/calendarflags/global_configurations",
+      "GET /global_configuration_types/wwshopconfiguration/global_configurations"
+    ],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/global_configuration_types/{type}/global_configurations/{id}",
+    "area": "global_configuration_types",
+    "binary": "0x14505c830",
+    "capture": 0,
+    "server": [
+      "GET /global_configuration_types/eula/global_configurations/*"
+    ],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/home",
+    "area": "home",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /home"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "ALL",
+    "path": "/iam/*",
+    "area": "iam",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "ALL /iam/*"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/iam/v3/oauth/platforms/{platform}/token",
+    "area": "iam",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /iam/v3/oauth/platforms/{platform}/token"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/iam/v3/oauth/revoke",
+    "area": "iam",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /iam/v3/oauth/revoke"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/iam/v3/oauth/token",
+    "area": "iam",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /iam/v3/oauth/token"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/iam/v3/oauth/verify",
+    "area": "iam",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /iam/v3/oauth/verify"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/iam/v3/public/namespaces/{namespace}",
+    "area": "iam",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /iam/v3/public/namespaces/{namespace}"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/iam/v3/public/users/me",
+    "area": "iam",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /iam/v3/public/users/me"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/images/{image}",
+    "area": "images",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /images/{image}"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/layout/{layout_type}/personalized/{variant}/{id}",
+    "area": "layout",
+    "binary": "0x144fd9620",
+    "capture": 96,
+    "server": [
+      "GET /layout/dokken-layout-type/personalized/account-cosmetics-variant/{id}",
+      "GET /layout/dokken-layout-type/personalized/battlepass-variant/{id}",
+      "GET /layout/dokken-layout-type/personalized/currency-variant/{id}",
+      "GET /layout/dokken-layout-type/personalized/fighter-road-layout/{id}",
+      "GET /layout/dokken-layout-type/personalized/fighter-variant/{id}",
+      "GET /layout/dokken-layout-type/personalized/main-variant/{id}",
+      "GET /layout/dokken-layout-type/personalized/prestige-variant/{id}",
+      "GET /layout/dokken-layout-type/personalized/rift-variant/{id}",
+      "GET /layout/dokken-layout-type/personalized/skin-variant/{id}"
+    ],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/leaderboard",
+    "area": "leaderboard",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /leaderboard"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/leaderboards/bulk/score-and-rank/{id}",
+    "area": "leaderboards",
+    "binary": "0x145065780",
+    "capture": 84,
+    "server": [
+      "PUT /leaderboards/bulk/score-and-rank/{playerId}"
+    ],
+    "notes": [
+      "sent as PUT + x-hydra-http-method: GET"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/leaderboards/{id}",
+    "area": "leaderboards",
+    "binary": "0x145065df0",
+    "capture": 0,
+    "server": [],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/leaderboards/{id}/around/me",
+    "area": "leaderboards",
+    "binary": "0x145066ac0",
+    "capture": 0,
+    "server": [],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/leaderboards/{id}/around/{account}",
+    "area": "leaderboards",
+    "binary": "0x1450668b0",
+    "capture": 4,
+    "server": [
+      "GET /leaderboards/{slug}/around/{playerId}"
+    ],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/leaderboards/{id}/friends",
+    "area": "leaderboards",
+    "binary": "0x145066cb0",
+    "capture": 0,
+    "server": [],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/leaderboards/{id}/score-and-rank/{account}",
+    "area": "leaderboards",
+    "binary": "0x1450654c0",
+    "capture": 0,
+    "server": [],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/leaderboards/{id}/show",
+    "area": "leaderboards",
+    "binary": "0x1450666c0",
+    "capture": 2,
+    "server": [
+      "GET /leaderboards/{slug}/show"
+    ],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "ALL",
+    "path": "/lobby/*",
+    "area": "lobby",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "ALL /lobby/*"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/matches",
+    "area": "matches",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /matches"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/matches/all/{id}",
+    "area": "matches",
+    "binary": "0x144fdab70",
+    "capture": 8,
+    "server": [
+      "GET /matches/all/{id}"
+    ],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/matches/matchmaking/request/{id}/cancel",
+    "area": "matches",
+    "binary": "0x144fd78f0",
+    "capture": 5,
+    "server": [
+      "POST /matches/matchmaking/request/{id}/cancel"
+    ],
+    "notes": [
+      "method from capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/matches/matchmaking/{criteria}/request",
+    "area": "matches",
+    "binary": "0x144fdd630",
+    "capture": 10,
+    "server": [
+      "POST /matches/matchmaking/1v1-retail/request",
+      "POST /matches/matchmaking/2v2-retail/request",
+      "POST /matches/matchmaking/ranked-1v1-retail/request"
+    ],
+    "notes": [
+      "criteria e.g. 1v1-retail"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/matches/{id}",
+    "area": "matches",
+    "binary": "0x144fda970",
+    "capture": 0,
+    "server": [
+      "GET /matches/{id}"
+    ],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/matches/{id}",
+    "area": "matches",
+    "binary": "0x144fde060",
+    "capture": 11,
+    "server": [
+      "PUT /matches/{id}"
+    ],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/matches/{id}/leave",
+    "area": "matches",
+    "binary": "0x144fd9f20",
+    "capture": 0,
+    "server": [
+      "PUT /matches/{id}/leave"
+    ],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/mvsi_end_match",
+    "area": "mvsi_end_match",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /mvsi_end_match"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-rollback",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/mvsi_register",
+    "area": "mvsi_register",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /mvsi_register"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-rollback",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/namechange",
+    "area": "namechange",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /namechange"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/namechange",
+    "area": "namechange",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /namechange"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/objects/{type}/unique/{id}/upsert",
+    "area": "objects",
+    "binary": "0x145061a20",
+    "capture": 0,
+    "server": [],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/objects/{type}/unique/{id}/{key}",
+    "area": "objects",
+    "binary": "0x1450615d0",
+    "capture": 0,
+    "server": [
+      "GET /objects/preferences/unique/{id}/{id1}"
+    ],
+    "notes": [
+      "pieces include a bare '/': one more segment"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/objects/{type}/unique/{id}/{key}/upsert",
+    "area": "objects",
+    "binary": "0x1450617e0",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "pieces include a bare '/': one more segment"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/ovs/all-players",
+    "area": "ovs",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /ovs/all-players"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-client",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/ovs/client-version",
+    "area": "ovs",
+    "binary": null,
+    "capture": 10,
+    "server": [
+      "GET /ovs/client-version"
+    ],
+    "notes": [
+      "capture only",
+      "server only"
+    ],
+    "kind": "ovs-client",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/ovs/friends/accept",
+    "area": "ovs",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /ovs/friends/accept"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-client",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/ovs/friends/block",
+    "area": "ovs",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /ovs/friends/block"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-client",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/ovs/friends/decline",
+    "area": "ovs",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /ovs/friends/decline"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-client",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/ovs/friends/request",
+    "area": "ovs",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /ovs/friends/request"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-client",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ovs/friends/send-request/{targetId}",
+    "area": "ovs",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "PUT /ovs/friends/send-request/{targetId}"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-client",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "DELETE",
+    "path": "/ovs/friends/{friendId}",
+    "area": "ovs",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "DELETE /ovs/friends/{friendId}"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-client",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/ovs/notifications",
+    "area": "ovs",
+    "binary": null,
+    "capture": 2299,
+    "server": [
+      "GET /ovs/notifications"
+    ],
+    "notes": [
+      "capture only",
+      "server only"
+    ],
+    "kind": "ovs-client",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/ovs_end_match",
+    "area": "ovs_end_match",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /ovs_end_match"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-rollback",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/ovs_match_started",
+    "area": "ovs_match_started",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /ovs_match_started"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-rollback",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/ovs_match_status",
+    "area": "ovs_match_status",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /ovs_match_status"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-rollback",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/ovs_register",
+    "area": "ovs_register",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /ovs_register"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-rollback",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "ALL",
+    "path": "/platform/*",
+    "area": "platform",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "ALL /platform/*"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/profiles/bulk",
+    "area": "profiles",
+    "binary": "0x145065060",
+    "capture": 48,
+    "server": [
+      "PUT /profiles/bulk"
+    ],
+    "notes": [
+      "sent as PUT + x-hydra-http-method: GET"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/profiles/search_queries/{id}/run",
+    "area": "profiles",
+    "binary": "0x145066420",
+    "capture": 0,
+    "server": [
+      "GET /profiles/search_queries/get-by-username/run"
+    ],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/profiles/{id}",
+    "area": "profiles",
+    "binary": "0x145065a80",
+    "capture": 0,
+    "server": [
+      "GET /profiles/{id}"
+    ],
+    "notes": [
+      "also 0x145065c50"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/profiles/{id}",
+    "area": "profiles",
+    "binary": "0x145066ea0",
+    "capture": 0,
+    "server": [],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/profiles/{id}/inventory",
+    "area": "profiles",
+    "binary": "0x14505dbe0",
+    "capture": 11,
+    "server": [
+      "PUT /profiles/{id}/inventory"
+    ],
+    "notes": [
+      "sent as PUT + x-hydra-http-method: GET"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/profiles/{id}/inventory",
+    "area": "profiles",
+    "binary": "0x14505dd70",
+    "capture": 11,
+    "server": [
+      "PUT /profiles/{id}/inventory"
+    ],
+    "notes": [
+      "body: modifications. Same wire request as GET /profiles/{id}/inventory (a PUT with x-hydra-http-method: GET); only that header tells them apart"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/realtime/config",
+    "area": "realtime",
+    "binary": "0x140f9abc0",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "social layer; method from unknown"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/relationships/followers",
+    "area": "relationships",
+    "binary": "fragment",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "binary fragment; no builder found yet"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/seasons/types/{type}/participant_leaderboards/{id}/score-and-rank/{account}",
+    "area": "seasons",
+    "binary": "0x1450679d0",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "segment order inferred"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/seasons/{id}/instances/{instance}/participants/{participant}",
+    "area": "seasons",
+    "binary": "0x145067d00",
+    "capture": 0,
+    "server": [],
+    "notes": [],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/sessions/auth/password",
+    "area": "sessions",
+    "binary": "0x140f9baf0",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "social layer; method from unknown"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "POST",
+    "path": "/sessions/auth/token",
+    "area": "sessions",
+    "binary": "0x140f9be40",
+    "capture": 11,
+    "server": [
+      "POST /sessions/auth/token"
+    ],
+    "notes": [
+      "social layer; method from capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/sessions/device",
+    "area": "sessions",
+    "binary": "0x140f99970",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "social layer; method from unknown"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "ALL",
+    "path": "/social/*",
+    "area": "social",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "ALL /social/*"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/social/me/block/{id}",
+    "area": "social",
+    "binary": "0x140f93530",
+    "capture": 0,
+    "server": [
+      "PUT /social/me/block/{blockid}"
+    ],
+    "notes": [
+      "social layer; method from server"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/social/me/blocked",
+    "area": "social",
+    "binary": "0x140f99e00",
+    "capture": 14,
+    "server": [
+      "GET /social/me/blocked"
+    ],
+    "notes": [
+      "social layer; method from capture"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/social/me/unblock/{id}",
+    "area": "social",
+    "binary": "0x140fa3540",
+    "capture": 0,
+    "server": [
+      "PUT /social/me/unblock/{blockid}"
+    ],
+    "notes": [
+      "social layer; method from server"
+    ],
+    "kind": "accelbyte",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/activate_timed_boost",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/add_custom_game_bot",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/add_custom_game_bot"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/ssc/invoke/attempt_daily_refresh",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 11,
+    "server": [
+      "POST /ssc/invoke/attempt_daily_refresh"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/autoparty_join",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/autoparty_join"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/bot_queue",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 1,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/cancel_party_invite",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/cancel_party_invite"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/casual_queue",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/check_leaver_punishment",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/check_server_grants",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/check_training_server_ready",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/claim_all_milestone_reward_track_tiers",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 1,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/claim_cauldron",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/claim_competition_points",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/claim_milestone_reward_track_tiers",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "POST",
+    "path": "/ssc/invoke/claim_mission_rewards",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 3,
+    "server": [
+      "POST /ssc/invoke/claim_mission_rewards"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/claim_server_grants",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/claim_voting_competition_rewards",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/consumable_event",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/consume_character_xp_boost",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/convert_candy_to_gold",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/create_custom_game_lobby",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/create_custom_game_lobby"
+    ],
+    "notes": [
+      "ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/create_party",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/create_party"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/create_party_lobby",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 11,
+    "server": [
+      "PUT /ssc/invoke/create_party_lobby"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/debug_lock_inventory_item",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/debug_unlock_inventory_item",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/decline_party_invite",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/decline_party_invite"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/deduct_guild_dungeon_ticket",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/dlc_event",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/equip_announcer_pack",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/equip_announcer_pack"
+    ],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/equip_banner",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 2,
+    "server": [
+      "PUT /ssc/invoke/equip_banner"
+    ],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/equip_gems",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/equip_profile_icon",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/equip_ringout_vfx",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/equip_ringout_vfx"
+    ],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/equip_stat_tracker",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/equip_stat_tracker"
+    ],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/equip_taunt",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/equip_taunt"
+    ],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/faceoff_timeout",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/faceoff_timeout"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/finish_rift_chapter",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/follow_account",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/game_install",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/game_install"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/game_launch_event",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 11,
+    "server": [
+      "PUT /ssc/invoke/game_launch_event"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/get_active_ranked_seasons",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/ssc/invoke/get_calendar_events",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "GET /ssc/invoke/get_calendar_events"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/ssc/invoke/get_country_code",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "GET /ssc/invoke/get_country_code"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/get_current_ftue_step",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/ssc/invoke/get_equipped_cosmetics",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "GET /ssc/invoke/get_equipped_cosmetics"
+    ],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/ssc/invoke/get_gm_leaderboards",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "GET /ssc/invoke/get_gm_leaderboards"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/ssc/invoke/get_hiss_calendar_events",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "GET /ssc/invoke/get_hiss_calendar_events"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/ssc/invoke/get_milestone_reward_tracks",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "GET /ssc/invoke/get_milestone_reward_tracks"
+    ],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/ssc/invoke/get_or_create_mission_object",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 11,
+    "server": [
+      "POST /ssc/invoke/get_or_create_mission_object"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/get_or_create_my_match_config",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/get_preferred_currency",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/grant_character_gift",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/grant_currency",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/grant_gold",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/ssc/invoke/hiss_amalgamation",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "GET /ssc/invoke/hiss_amalgamation"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/hiss_amalgamation",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/hiss_amalgamation"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/ingame_purchase_event",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/invite_to_party",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/invite_to_player_lobby",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/invite_to_player_lobby"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/join_custom_game_lobby",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/join_custom_game_lobby"
+    ],
+    "notes": [
+      "ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/join_party",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/join_party_lobby",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/join_party_lobby"
+    ],
+    "notes": [
+      "ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/join_voting_competition",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/kick_from_lobby",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/kick_from_lobby"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/leave_party",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/leave_player_lobby",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/leave_player_lobby"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/ssc/invoke/load_gameplay_config",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "GET /ssc/invoke/load_gameplay_config"
+    ],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/ssc/invoke/load_rifts",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "GET /ssc/invoke/load_rifts"
+    ],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/lobby_code",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/lobby_code"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/local_leaderboard_claim_rewards",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/local_leaderboard_has_unclaimed_rewards",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/lock_lobby_loadout",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 18,
+    "server": [
+      "PUT /ssc/invoke/lock_lobby_loadout"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/match_set_absent",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 2,
+    "server": [
+      "PUT /ssc/invoke/match_set_absent"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/match_set_checkin",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 6,
+    "server": [
+      "PUT /ssc/invoke/match_set_checkin"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/match_set_concede",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/match_set_concede"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/notify_changing_modes",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/perks_absent",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 3,
+    "server": [
+      "PUT /ssc/invoke/perks_absent"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/ssc/invoke/perks_get_all_pages",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "GET /ssc/invoke/perks_get_all_pages"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/perks_lock",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 9,
+    "server": [
+      "PUT /ssc/invoke/perks_lock"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/perks_set_character_page",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/perks_set_character_page"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/post_login_bonuses",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/promote_to_lobby_leader",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/promote_to_lobby_leader"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/purchase_stocks",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/ssc/invoke/ranked_data",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "GET /ssc/invoke/ranked_data"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/read_cached_configs",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/rematch_accept",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/rematch_accept"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/rematch_decline",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/rematch_decline"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/reset_custom_lobby_to_defaults",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/reset_custom_lobby_to_defaults"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/reset_inventory",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/rift_reset_all_chapters",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/rift_reset_all_player_data",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/rift_unlock_chapter_cauldron_tiers",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/save_current_ftue_step",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/select_rift_loadout",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/send_frontend_mission_updates",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/send_profile_notification",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/send_profile_notification"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/set_chapter_difficulty",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/set_enabled_maps_for_custom_game",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/set_enabled_maps_for_custom_game"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/set_game_mode_for_custom_game",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/set_game_mode_for_custom_game"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/set_joinable",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/set_lobby_joinable",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 5,
+    "server": [
+      "PUT /ssc/invoke/set_lobby_joinable"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/set_lobby_not_joinable",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 1,
+    "server": [
+      "PUT /ssc/invoke/set_lobby_not_joinable"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/set_mode_for_lobby",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/set_mode_for_lobby"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/set_player_handicap_for_custom_game",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/set_player_handicap_for_custom_game"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/set_profile_icon",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/set_profile_icon"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/set_ready_for_lobby",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 10,
+    "server": [
+      "PUT /ssc/invoke/set_ready_for_lobby"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/set_world_buffs_for_custom_game",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/set_world_buffs_for_custom_game"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/skip_rift_node",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/start_custom_match",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/start_custom_match"
+    ],
+    "notes": [
+      "ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/start_rift_node",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/submit_end_of_match_stats",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 9,
+    "server": [
+      "PUT /ssc/invoke/submit_end_of_match_stats"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/switch_custom_game_lobby_team",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/switch_custom_game_lobby_team"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/sync_match_config",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/toast_player",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 4,
+    "server": [
+      "PUT /ssc/invoke/toast_player"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/unlock_ftue_character",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/update_custom_game_bot_fighter",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/update_custom_game_bot_fighter"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/update_int_setting_for_custom_game",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/update_int_setting_for_custom_game"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/update_member_data",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/update_party_game_modes",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/update_party_game_modes"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/update_player_preferences",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/update_player_preferences"
+    ],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/update_team_style_for_custom_game",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [
+      "PUT /ssc/invoke/update_team_style_for_custom_game"
+    ],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/upgrade_track_to_premium",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "?",
+    "path": "/ssc/invoke/zd_ticket_submit",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/stats",
+    "area": "stats",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /stats"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/store/store_products/{id}/my_products",
+    "area": "store",
+    "binary": "0x144feb090",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "segment order inferred"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "POST",
+    "path": "/syncAsset",
+    "area": "syncAsset",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /syncAsset"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-admin",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/theme.css",
+    "area": "theme.css",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /theme.css"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "GET",
+    "path": "/theme.js",
+    "area": "theme.js",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /theme.js"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-web",
+    "in_game": false,
+    "in_server": true
+  },
+  {
+    "method": "POST",
+    "path": "/virtual_commerce/purchases/{id}/{item}",
+    "area": "virtual_commerce",
+    "binary": "0x145069300",
+    "capture": 0,
+    "server": [
+      "POST /virtual_commerce/purchases/697fa194ce48c5be8a71abf4/toasts_gleamium",
+      "POST /virtual_commerce/purchases/{id}/toasts_gleamium"
+    ],
+    "notes": [
+      "item e.g. toasts_gleamium"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": true
+  }
+]

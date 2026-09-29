@@ -1,0 +1,18 @@
+using FastEndpoints;
+using OpenVersus.Server.Http.Stubs;
+
+namespace OpenVersus.Server.Http.Endpoints.OpenVersus.Rollback;
+
+/// <summary>
+/// POST /api/ovs_match_status.
+/// Seen in: TS server: POST /api/ovs_match_status.
+/// Server only.
+/// </summary>
+public sealed class PostApiOvsMatchStatus : StubEndpoint
+{
+    public override void Configure()
+    {
+        Verbs(FastEndpoints.Http.POST);
+        Routes("/api/ovs_match_status");
+    }
+}

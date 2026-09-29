@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/OpenVersus.Server.Core/OpenVersus.Server.Core.csproj" />
+  <Project Path="src/OpenVersus.Server.Http/OpenVersus.Server.Http.csproj" />
+  <Project Path="tests/OpenVersus.Server.Core.Tests/OpenVersus.Server.Core.Tests.csproj" />
+  <Project Path="tests/OpenVersus.Server.Http.Tests/OpenVersus.Server.Http.Tests.csproj" />
+</Solution>

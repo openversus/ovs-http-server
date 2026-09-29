@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- What every OpenVersus service shares: settings (changeable while running, cluster-wide through Redis),
+       logging, the control API the CLI talks to, and the host setup. Each service is its own host project that
+       references this and adds what only it does. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="StackExchange.Redis" Version="3.3.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenVersus.Server.Core.Tests" />
+  </ItemGroup>
+
+</Project>

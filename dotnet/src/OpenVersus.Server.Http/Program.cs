@@ -5,7 +5,7 @@ using OpenVersus.Server.Http.Hosting;
 using OpenVersus.Server.Http.Stubs;
 
 // The game's HTTP API (the TS server's index service). The public port is HTTP_PORT, as in the TS server's .env.
-var builder = OpenVersusHost.CreateBuilder(new ServiceDefinition("http", "HTTP_PORT", DefaultPublicPort: 8000, DefaultControlPort: 17801), args);
+var builder = OpenVersusHost.CreateBuilder(KnownServices.Http, args);
 builder.AddSetting<StubSettings>("Stubs");
 builder.Services.AddFastEndpoints();
 

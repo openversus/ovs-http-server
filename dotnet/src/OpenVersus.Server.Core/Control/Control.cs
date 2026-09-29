@@ -2,14 +2,15 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Net.Sockets;
-using System.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using OpenVersus.Server.Core.Hosting;
+using OpenVersus.Server.Core.Ops;
 using OpenVersus.Server.Core.Settings;
 
 namespace OpenVersus.Server.Core.Control;
@@ -25,10 +26,13 @@ public sealed class ControlSettings
     [Range(0, 65535)]
     public int? Port { get; set; }
 
+    /// <summary>Where a service's control socket is when <see cref="Socket"/> is empty; the CLI looks there by default.</summary>
+    public static string DefaultSocketPath(string serviceName) => Path.Combine(Path.GetTempPath(), "openversus", $"{serviceName}.sock");
+
     internal string SocketPath(ServiceDefinition service) => Socket switch
     {
         "off" => "",
-        "" => Path.Combine(Path.GetTempPath(), "openversus", $"{service.Name}.sock"),
+        "" => DefaultSocketPath(service.Name),
         _ => Socket,
     };
 }
@@ -87,59 +91,53 @@ public static class ControlListeners
         context.Features.Get<IConnectionItemsFeature>()?.Items.ContainsKey(Mark) == true;
 }
 
-/// <summary>The control API the CLI talks to: status, and reading and changing settings while the service runs.</summary>
+/// <summary>
+/// The control API over HTTP: a thin mapping of <see cref="IControlService"/>, open to whoever the registered
+/// <see cref="IControlAccessPolicy"/> allows (everyone else gets 404, as if it were not there).
+/// </summary>
 public static class ControlApi
 {
     public static IEndpointRouteBuilder MapOpenVersusControl(this IEndpointRouteBuilder routes)
     {
         var control = routes.MapGroup("/control").AddEndpointFilter(async (context, next) =>
-            ControlListeners.IsControl(context.HttpContext) ? await next(context) : Results.NotFound());
+            context.HttpContext.RequestServices.GetRequiredService<IControlAccessPolicy>().Allows(context.HttpContext) ? await next(context) : Results.NotFound());
 
-        control.MapGet("/status", (ServiceDefinition service, RuntimeSettings settings, ServiceInstance instance) => Results.Ok(new
-        {
-            service = service.Name,
-            instance = instance.Id,
-            version = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion,
-            started = instance.Started,
-            uptimeSeconds = (long)(DateTimeOffset.UtcNow - instance.Started).TotalSeconds,
-            sharedSettings = settings.ClusterShared,
-        }));
-
-        control.MapGet("/settings", (RuntimeSettings settings) => Results.Ok(settings.List()));
-
-        control.MapGet("/settings/{key}", (string key, RuntimeSettings settings) =>
-            settings.Get(key) is { } view ? Results.Ok(view) : Results.NotFound(new { error = $"unknown setting '{key}'" }));
+        control.MapGet("/status", (IControlService service) => Results.Ok(service.Status()));
+        control.MapGet("/settings", (IControlService service) => Results.Ok(service.ListSettings()));
+        control.MapGet("/settings/{key}", (string key, IControlService service) => ToResult(service.GetSetting(key)));
 
         // The value is the request body, as plain text, so the CLI can send any string without escaping it into JSON.
-        control.MapPut("/settings/{key}", async (string key, string? scope, HttpRequest request, RuntimeSettings settings) =>
+        control.MapPut("/settings/{key}", async (string key, string? scope, HttpRequest request, IControlService service) =>
         {
             if (!TryScope(scope, out var parsed))
             {
-                return Results.BadRequest(new { error = $"scope must be cluster or instance, not '{scope}'" });
+                return BadScope(scope);
             }
 
             string value = await new StreamReader(request.Body).ReadToEndAsync();
-            string? error = await settings.SetAsync(key, value, parsed);
-            return error is null ? Results.Ok(settings.Get(key)) : Results.BadRequest(new { error });
+            return ToResult(await service.SetSettingAsync(key, value, parsed));
         });
 
-        control.MapDelete("/settings/{key}", async (string key, string? scope, RuntimeSettings settings) =>
-        {
-            if (!TryScope(scope, out var parsed))
-            {
-                return Results.BadRequest(new { error = $"scope must be cluster or instance, not '{scope}'" });
-            }
+        control.MapDelete("/settings/{key}", async (string key, string? scope, IControlService service) =>
+            TryScope(scope, out var parsed) ? ToResult(await service.RemoveSettingAsync(key, parsed)) : BadScope(scope));
 
-            if (parsed == SettingScope.Cluster && !settings.ClusterShared)
-            {
-                return Results.BadRequest(new { error = "no shared settings store (Redis) is configured; use the instance scope" });
-            }
-
-            return await settings.RemoveAsync(key, parsed) ? Results.Ok(settings.Get(key)) : Results.NotFound(new { error = $"no {parsed} override for '{key}'" });
-        });
+        // The live game's state: queues, who is connected, matches in progress, player records.
+        control.MapGet("/ops/queues", async (IOpsService ops) => ToResult(await ops.QueuesAsync()));
+        control.MapGet("/ops/online", async (bool? players, IOpsService ops) => ToResult(await ops.OnlineAsync(players == true)));
+        control.MapGet("/ops/matches", async (IOpsService ops) => ToResult(await ops.MatchesAsync()));
+        control.MapGet("/ops/players/{who}", async (string who, IOpsService ops) => ToResult(await ops.FindPlayerAsync(who)));
+        control.MapPut("/ops/players/{who}/name", async (string who, HttpRequest request, IOpsService ops) =>
+            ToResult(await ops.RenamePlayerAsync(who, await new StreamReader(request.Body).ReadToEndAsync())));
 
         return routes;
     }
+
+    private static IResult ToResult<T>(ControlResult<T> result) =>
+        result.Error is null ? Results.Ok(result.Value)
+        : result.NotFound ? Results.NotFound(new { error = result.Error })
+        : Results.BadRequest(new { error = result.Error });
+
+    private static IResult BadScope(string? scope) => Results.BadRequest(new { error = $"scope must be cluster or instance, not '{scope}'" });
 
     private static bool TryScope(string? scope, out SettingScope parsed)
     {

@@ -203,8 +203,6 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | GET | `/admin/banner` | — | yes | server only |
 | POST | `/api/admin/banner` | — | yes | server only |
 | GET | `/api/admin/banner/online-count` | — | yes | server only |
-| POST | `/api/testing/deploy-rollback-server` | — | yes | server only |
-| POST | `/api/testing/destroy-rollback-server` | — | yes | server only |
 | POST | `/syncAsset` | — | yes | server only |
 
 ## All game routes (not SSC)

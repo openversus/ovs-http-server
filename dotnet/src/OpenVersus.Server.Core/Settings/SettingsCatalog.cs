@@ -16,9 +16,15 @@ public sealed class SecretAttribute : Attribute;
 /// <summary>One setting: its configuration key, type, description, and whether it can change while running.</summary>
 public sealed record SettingInfo(string Key, Type OptionsType, PropertyInfo Property, string Description, bool RestartRequired, bool Secret)
 {
-    public string TypeName => Property.PropertyType.IsEnum
-        ? string.Join("|", Enum.GetNames(Property.PropertyType))
-        : Property.PropertyType.Name;
+    public string TypeName
+    {
+        get
+        {
+            var type = Nullable.GetUnderlyingType(Property.PropertyType) ?? Property.PropertyType;
+            string name = type.IsEnum ? string.Join("|", Enum.GetNames(type)) : type.Name;
+            return type == Property.PropertyType ? name : name + "?";
+        }
+    }
 }
 
 /// <summary>

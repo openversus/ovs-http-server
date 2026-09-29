@@ -3,7 +3,9 @@ using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using OpenVersus.Server.Core.Control;
 using OpenVersus.Server.Core.Hosting;
 using Serilog.Core;
 using Serilog.Events;
@@ -53,13 +55,16 @@ public sealed class ControlTests
 
     // Everything goes in as command-line arguments: those sit below the override layers, as the environment does in a
     // real deployment, so the layers win over them the same way.
-    private static async Task<Host> StartAsync(params string[] extra)
+    private static Task<Host> StartAsync(params string[] extra) => StartAsync(null, extra);
+
+    private static async Task<Host> StartAsync(Action<WebApplicationBuilder>? configure, params string[] extra)
     {
         int publicPort = FreePort(), controlPort = FreePort();
         string socket = Path.Combine(Path.GetTempPath(), "ovs-tests", $"{Guid.NewGuid():N}.sock");
         // REDIS is empty unless a test sets it, whatever the environment says: arguments win over the environment.
         string[] args = [$"--TEST_PORT={publicPort}", $"--Control:Port={controlPort}", $"--Control:Socket={socket}", "--REDIS=", .. extra];
         var builder = OpenVersusHost.CreateBuilder(new ServiceDefinition("test", "TEST_PORT", DefaultPublicPort: 1, DefaultControlPort: 1), args);
+        configure?.Invoke(builder);
         var app = builder.Build();
         app.UseOpenVersus();
         app.MapGet("/hello", () => "hello");
@@ -104,6 +109,38 @@ public sealed class ControlTests
 
         Assert.Equal(HttpStatusCode.OK, (await client.DeleteAsync("/control/settings/Log:Level?scope=instance")).StatusCode);
         Assert.Equal(LogEventLevel.Information, levels.MinimumLevel);
+    }
+
+    [Fact]
+    public async Task HealthAnswersOnEveryListener()
+    {
+        await using var host = await StartAsync();
+        foreach (var client in new[] { host.Public, host.ControlPortClient })
+        {
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/live")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/ready")).StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task WithRedisUnreachableTheReplicaIsAliveButNotReady()
+    {
+        // Nothing listens on port 1: the multiplexer keeps trying in the background, and the replica stays up.
+        await using var host = await StartAsync("--REDIS=127.0.0.1", "--REDIS_PORT=1");
+        Assert.Equal(HttpStatusCode.OK, (await host.Public.GetAsync("/health/live")).StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await host.Public.GetAsync("/health/ready")).StatusCode);
+    }
+
+    private sealed class AllowEveryone : IControlAccessPolicy
+    {
+        public bool Allows(HttpContext context) => true;
+    }
+
+    [Fact]
+    public async Task TheAccessPolicyIsWhatDecidesWhoReachesTheControlApi()
+    {
+        await using var host = await StartAsync(b => b.Services.AddSingleton<IControlAccessPolicy, AllowEveryone>());
+        Assert.Equal(HttpStatusCode.OK, (await host.Public.GetAsync("/control/status")).StatusCode);
     }
 
     [Fact]

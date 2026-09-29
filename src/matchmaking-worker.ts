@@ -14,6 +14,8 @@ import {
   redisUpdateMatch,
   redisOnGameplayConfigNotified,
   redisGetMatchTickets,
+  redisGetPlayerHeartbeats,
+  MATCHMAKING_HEARTBEAT_TIMEOUT_MS,
 } from "./config/redis";
 import { logger } from "./config/logger";
 import ObjectID from "bson-objectid";
@@ -156,6 +158,33 @@ async function deduplicateQueue(queueKey: string, tickets: RedisMatchTicket[]): 
 }
 
 /**
+ * Remove tickets that have a player whose game has stopped answering the websocket ping (or has no heartbeat
+ * at all), so nobody is matched against an opponent who is no longer there. Queues wait until a match is
+ * found, so without this a ticket orphaned by a lost connection or a websocket server restart would stay
+ * forever. Skipped while no heartbeat has ever been recorded (a websocket server that predates them).
+ */
+async function dropSilentTickets(queueKey: string, tickets: RedisMatchTicket[]): Promise<RedisMatchTicket[]> {
+  const playerIds = [...new Set(tickets.flatMap((t) => t.players.map((p) => p.id)))];
+  const lastSeen = await redisGetPlayerHeartbeats(playerIds);
+  if (!lastSeen) {
+    return tickets;
+  }
+
+  const cutoff = Date.now() - MATCHMAKING_HEARTBEAT_TIMEOUT_MS;
+  const silent = tickets.filter((t) => t.players.some((p) => (lastSeen.get(p.id) ?? 0) < cutoff));
+  if (silent.length === 0) {
+    return tickets;
+  }
+
+  logger.warn(
+    `${logPrefix} Removing ${silent.length} ticket(s) from ${queueKey} whose players stopped answering: ` +
+    silent.flatMap((t) => t.players.filter((p) => (lastSeen.get(p.id) ?? 0) < cutoff).map((p) => p.id)).join(", "),
+  );
+  await redisPopMatchTicketsFromQueue(queueKey, silent);
+  return tickets.filter((t) => !silent.includes(t));
+}
+
+/**
  * Check if two tickets are within ELO range of each other.
  * Uses the wider range of the two (the one that's been waiting longer).
  */
@@ -191,6 +220,7 @@ async function process1v1Queue(queueKey: string = MATCH_TYPES.ONE_V_ONE): Promis
 
     // Remove duplicate tickets (same player in queue twice from stale data)
     tickets = await deduplicateQueue(queueKey, tickets);
+    tickets = await dropSilentTickets(queueKey, tickets);
 
     if (tickets.length < MATCH_RULES["1v1"].teamsRequired) {
       return false;
@@ -266,6 +296,7 @@ async function process2v2Queue(queueKey: string = MATCH_TYPES.TWO_V_TWO): Promis
 
     // Remove duplicate tickets (same player in queue twice from stale data)
     tickets = await deduplicateQueue(queueKey, tickets);
+    tickets = await dropSilentTickets(queueKey, tickets);
 
     // Count total players across all tickets (a party of 2 is 1 ticket with 2 players)
     const totalPlayersInQueue = tickets.reduce((sum, t) => sum + t.players.length, 0);

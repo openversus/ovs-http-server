@@ -20,7 +20,8 @@ export class PlayerTester {
   // NOTE: `ip` is NOT unique — multiple accounts can share an IP (household NAT,
   // VPN, corporate network). Identity is disambiguated by steamId/epicId/hardwareId.
   // Indexed (non-unique) for IP-based fallback lookups in admin/HTML routes.
-  @prop({ required: true, index: true })
+  // Empty when the IP link was released (see staleIpLinkFilter).
+  @prop({ default: "", index: true })
   public ip!: string;
 
   // @prop({ required: false, unique: true })
@@ -74,6 +75,38 @@ export class PlayerTester {
 
   @prop({ default: "", index: true, sparse: true })
   public hardwareId!: string;
+
+  @prop({ default: "" })
+  public hardwareIdVersion!: string;
+
+  @prop({ default: "" })
+  public hardwareIdQuality!: string;
+
+  // Canonical fallback for archive/offline builds which do not expose a Steam
+  // or Epic account. Generated randomly by the DLL and persisted per install.
+  @prop({ default: "", index: true })
+  public installId!: string;
+
+  // IP is connection metadata. These timestamps make old, recycled-IP links
+  // age out of browser/account-picking compatibility flows after seven days.
+  @prop({ default: () => new Date(), index: true })
+  public lastSeenAt!: Date;
+
+  @prop({ default: () => new Date(), index: true })
+  public ipSeenAt!: Date;
+  // Created for a login that carried no Steam/Epic/install id and matched no account
+  // (an outdated client that only needs to see the update popup). One per IP, reused,
+  // never used for IP recovery, and adopted (flag cleared) once that device sends an id.
+  @prop({ default: false, index: true })
+  public provisional!: boolean;
 }
 
 export const PlayerTesterModel = getModelForClass(PlayerTester);
+
+/**
+ * A player by account id (_id), or null. Players have no `id` field, so findOne({ id }) matches
+ * nothing; and findById throws on a malformed id, so that is checked first.
+ */
+export function findPlayerById(accountId: string | undefined | null) {
+  return accountId && mongoose.Types.ObjectId.isValid(accountId) ? PlayerTesterModel.findById(accountId) : Promise.resolve(null);
+}

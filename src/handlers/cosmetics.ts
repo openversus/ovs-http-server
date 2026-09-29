@@ -1,4 +1,4 @@
-import { logger, logwrapper } from "../config/logger";
+import { logger } from "../config/logger";
 import { Request, Response } from "express";
 import { Types } from "mongoose";
 import { CosmeticsModel } from "../database/Cosmetics";
@@ -12,6 +12,7 @@ import {
 } from "../services/cosmeticsService";
 import * as SharedTypes from "../types/shared-types";
 import * as AuthUtils from "../utils/auth";
+import { getAssetsByType } from "../loadAssets";
 
 const serviceName = "Handlers.Cosmetics";
 const logPrefix: string = `[${serviceName}]:`;
@@ -212,49 +213,35 @@ export async function equip_banner(req: Request, res: Response) {
 
 export async function set_profile_icon(req: Request, res: Response) {
   let account = AuthUtils.DecodeClientToken(req);
-  //const account = req.token;
   const body = req.body as Profile_Icon_REQ;
-  //logger.info(body.Slug)
-  let mongoPlayer = await SharedTypes.PlayerTesterModel.findOne({ id: account.id });
 
-  if (mongoPlayer) {
-    mongoPlayer.profile_icon = body.Slug;
-    try {
-      await mongoPlayer.save();
-      logwrapper.verbose(`${logPrefix} Updated profile icon for player ${account.id} to ${body.Slug}`);
-    }
-    catch (err) {
-      logger.error(`${logPrefix} Error saving profile icon ${body.Slug} for ${account.id}: ${err}`);
-    }
+  // The player record is what /access, profiles and friends read the icon from. It is keyed by
+  // _id: the old findOne({ id }) matched nothing (players have no `id` field), so the icon was
+  // never saved and every relaunch showed the default. Only icons the game defines are stored,
+  // on the player record and in the equipped cosmetics.
+  const slug = typeof body?.Slug === "string" ? body.Slug : "";
+  if (!getAssetsByType("ProfileIconData").some((p) => p.slug === slug)) {
+    logger.warn(`${logPrefix} Ignoring unknown profile icon "${slug}" for ${account.id}`);
+    res.send({});
+    return;
   }
 
-  // TODO: SAVE ON PLAYERTESTER MODEL INSTEAD
   try {
-    await updateProfileIcon(account.id, body.Slug);
-    res.send({
-      body: {
-        EquippedProfileIcon: body.Slug,
-      },
-      metadata: null,
-      return_code: 0,
-    });
+    const result = await SharedTypes.PlayerTesterModel.updateOne({ _id: account.id }, { $set: { profile_icon: slug } });
+    await updateProfileIcon(account.id, slug);
+    logger.info(`${logPrefix} Profile icon for ${account.id} set to ${slug}${result.matchedCount === 0 ? " (no such player)" : ""}`);
   }
   catch (err) {
-    try {
-      logger.error(`${logPrefix} Error saving profile icon ${body.Slug} for ${account.id}: ${err}`);
-    }
-    catch (error) {
-      try {
-        logger.error(`${logPrefix} Error saving profile icon for ${account.id}: ${err}`);
-        logger.error(`${logPrefix} Additional inner error info: ${error}`);
-      }
-      catch (finalerror) {
-        logger.error(`${logPrefix} Error saving profile icon: ${err}`);
-        logger.error(`${logPrefix} Additional inner error info: ${error}`);
-        logger.error(`${logPrefix} Additional nested inner error info: ${finalerror}`);
-      }
-    }
-
+    logger.error(`${logPrefix} Error saving profile icon ${slug} for ${account.id}: ${err}`);
     res.send({});
+    return;
   }
+
+  res.send({
+    body: {
+      EquippedProfileIcon: slug,
+    },
+    metadata: null,
+    return_code: 0,
+  });
 }

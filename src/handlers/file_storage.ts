@@ -1,8 +1,59 @@
 import express, { Request, Response } from "express";
 import { MVSQueries } from "../interfaces/queries_types";
+import env from "../env/env";
+
+const UPDATE_KEYART_FILENAME = "openversus-update-required-keyart.png";
+const UPDATE_THUMBNAIL_FILENAME = "openversus-update-required-thumbnail.png";
+
+function getAssetDownloadUrl(req: Request, filename: string): string {
+  const forwardedProtocol = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const protocol = forwardedProtocol || req.protocol;
+  const host = req.get("host") || env.GAME_DOMAIN;
+  return `${protocol}://${host}/assets/${filename}`;
+}
+
+function getUpdateKeyartRecord(req: Request) {
+  return {
+    slug: "openversus-update-required-keyart",
+    name: "openversus_update_required_keyart",
+    created_at: { _hydra_unix_date: 1789190400 },
+    updated_at: { _hydra_unix_date: 1789190400 },
+    s3_object_id: `openversus/${UPDATE_KEYART_FILENAME}`,
+    auto_sync: true,
+    file_size: 1938140,
+    file_type: "image/png",
+    filename: UPDATE_KEYART_FILENAME,
+    md5_checksum: "3396aac1cbf19d744d834a1fcf1f0c9c",
+    auth_exempt: true,
+    data: {},
+    id: "68c3f0000000000000000001",
+    download_url: getAssetDownloadUrl(req, UPDATE_KEYART_FILENAME),
+  };
+}
+
+function getUpdateThumbnailRecord(req: Request) {
+  return {
+    slug: "openversus-update-required-thumbnail",
+    name: "openversus_update_required_thumbnail",
+    created_at: { _hydra_unix_date: 1789190400 },
+    updated_at: { _hydra_unix_date: 1789190400 },
+    s3_object_id: `openversus/${UPDATE_THUMBNAIL_FILENAME}`,
+    auto_sync: true,
+    file_size: 264814,
+    file_type: "image/png",
+    filename: UPDATE_THUMBNAIL_FILENAME,
+    md5_checksum: "4ed0753aca41527f33a828e632ae6fd3",
+    auth_exempt: true,
+    data: {},
+    id: "68c3f0000000000000000002",
+    download_url: getAssetDownloadUrl(req, UPDATE_THUMBNAIL_FILENAME),
+  };
+}
 
 export async function handleFile_storage(req: Request<{}, {}, {}, {}>, res: Response) {
   res.send([
+    getUpdateKeyartRecord(req),
+    getUpdateThumbnailRecord(req),
     {
       slug: "ftue-carousel-keyart-compressed",
       name: "ftue_carousel_keyart_compressed",
@@ -1262,6 +1313,20 @@ export async function handleFile_storage(req: Request<{}, {}, {}, {}>, res: Resp
         "https://wb-agora-hydra-file-storage-dokken.s3.amazonaws.com/dokken/production/b97b29af-Jason_arena_thumbnail.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5J6YDD2RMJ4AQTRN%2F20250318%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250318T023404Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=9e4d16c014f498ea176cbee8a57f39855fa9fdd56432c692ec9900fdb7765c48",
     },
   ]);
+}
+
+export async function handleFile_storage_openversus_update_required_keyart(
+  req: Request<{}, {}, {}, {}>,
+  res: Response,
+) {
+  res.send(getUpdateKeyartRecord(req));
+}
+
+export async function handleFile_storage_openversus_update_required_thumbnail(
+  req: Request<{}, {}, {}, {}>,
+  res: Response,
+) {
+  res.send(getUpdateThumbnailRecord(req));
 }
 
 export async function handleFile_storage_beginnermode_carousel_keyart(req: Request<{}, {}, {}, {}>, res: Response) {

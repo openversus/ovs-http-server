@@ -1,4 +1,4 @@
-import { logger, logwrapper } from "../config/logger";
+import { logwrapper } from "../config/logger";
 import { NextFunction, Request, Response } from "express";
 import * as jwt from "jsonwebtoken";
 import env from "../env/env";
@@ -24,7 +24,10 @@ export const HYDRA_ACCESS_TOKEN = "x-hydra-access-token";
 export const REAL_IP_HEADER = "x-real-ip";
 export const FORWARDED_FOR_HEADER = "x-forwarded-for";
 export const FORWARDED_FOR_HOST_HEADER = "x-forwarded-host";
-export const SECRET = "SHHHH!!";
+// Signs and checks every token: game sessions, the websocket handshake, /api/identify and the
+// account-picker cookie. It comes from the environment (JWT_SECRET, see env.ts): a signing
+// secret must not live in the public source.
+export const SECRET = env.JWT_SECRET;
 
 export function decodeToken(token: string) {
   return jwt.verify(token, SECRET) as SharedTypes.IAccountToken;
@@ -75,19 +78,25 @@ export const hydraTokenMiddleware = (req: Request, res: Response, next: NextFunc
   }
   const token = req.headers[HYDRA_ACCESS_TOKEN];
 
-  if (typeof token === "string") {
-    try {
-      req.rawToken = token;
-      req.token = decodeToken(token);
-    }
-    catch(e) {
-      logger.error(e)
-    }
-    return next();
-  } else {
-    // If the token is missing or invalid (null or undefined), send an unauthorized response
-    res.status(401);
+  if (typeof token !== "string") {
+    // No token: answer 401 and end the request. Setting the status alone sent nothing, so the
+    // request hung until the proxy timed out.
+    res.status(401).json({ error: "Missing access token" });
+    return;
   }
+
+  try {
+    req.rawToken = token;
+    req.token = decodeToken(token);
+  }
+  catch (e) {
+    // A token this server didn't sign, or one signed before JWT_SECRET changed. Handlers
+    // decode it again and would throw or hang, so it gets the same 401 as a missing token.
+    logwrapper.verbose(`${logPrefix} Rejected an invalid access token on ${req.method} ${req.url}: ${e}`);
+    res.status(401).json({ error: "Invalid access token" });
+    return;
+  }
+  next();
 };
 
 export function getRealIP(req: Request): { ip: string; isForwarded: boolean } {

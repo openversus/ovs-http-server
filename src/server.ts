@@ -13,43 +13,19 @@ import { generate_hiss } from "./handlers/hiss_amalgation_get";
 import { redisClient,
   redisGetMatchConfig,
   redisPublisdEndOfMatch,
-  redisGetLobbyState,
-  redisSaveLobbyState,
   RedisPlayerConnection,
-  redisGetPlayerConnectionByIP,
-  redisSavePlayerLobby,
-  redisPublishLobbyRejoin,
-  RedisLobbyRejoinNotification,
-  redisSavePartyKey,
-  redisGetPartyKey,
-  redisDeletePartyKey,
-  redisGetPlayerLobby,
   redisGameServerInstanceReady,
-  redisSetPendingJoinLobby,
   redisSaveIdentity,
+  redisGetIdentity,
   redisPopDLLNotifications,
   redisPushDLLNotification,
   redisGetOnlinePlayers,
   redisGetOnlinePlayerCount,
   redisGetActiveRankedSets,
-  redisGetInProgressMatches } from "./config/redis";
+  redisGetInProgressMatches,
+  redisUpdateIpMirror,
+} from "./config/redis";
 import { getLeaderboard, getPlayerRank, processMatchLeave, eloToTierDivision } from "./services/eloService";
-import { performGenuineLeave } from "./ssc/ssc";
-import {
-  createLobby,
-  joinLobby,
-  leaveLobby,
-  switchTeam,
-  toggleReady,
-  setMapPool,
-  selectMode,
-  startMatch,
-  getLobbyWithStatus,
-  moveToSpectator,
-  moveToPlayer,
-  kickPlayer,
-} from "./services/customLobbyService";
-import { getMapList } from "./data/maps";
 import { GAME_SERVER_PORT } from "./game/udp";
 import { sscRouter } from "./ssc/routes";
 import { getCurrentCRC, LoadConfig, MATCHMAKING_CRC } from "./data/config";
@@ -68,10 +44,17 @@ import * as KitchenSink from "./utils/garbagecan";
 import * as AuthUtils from "./utils/auth";
 import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
-import { NameGenerator } from "./utils/namegeneration";
 import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
 import { handleMatchStatusUpdate } from "./handlers/match_status";
-import { resolveAccountFromRequest, resolveAccountWithSource } from "./services/identityService";
+import { normalizeHardwareSignal, normalizeIdentity, refreshIpIdentityFromToken, resolveAccountWithSource } from "./services/identityService";
+import { mergeIpIdentity } from "./services/identityNormalization";
+import {
+  compareClientVersions,
+  isClientGameplayAccessRequiredForMinimum,
+  isClientUpdateRequired,
+} from "./services/clientVersion";
+import { buildClientReleaseManifest, DEFAULT_RELEASE_REPO, flattenClientReleaseManifest, isReleaseRepo } from "./services/clientReleaseManifest";
+import { requireCurrentClientForGameplay } from "./services/clientUpdateGate";
 import { initAccelByteLobbyWs, accelByteLobbyWs } from "./accelByteLobbyWs";
 import { IMatchStatus } from "./interfaces/IMatchStatus";
 import { REAL_IP_HEADER, getRealIP, tryGetRealIP } from "./middleware/auth";
@@ -114,95 +97,58 @@ app.use(cookieParser());
 
 // Leaderboard endpoint — BEFORE Hydra middleware, manual encoding
 import { HydraEncoder } from "mvs-dump";
+import { buildLeaderboardShowBody, LeaderboardShowQuery, parseLeaderboardSlug } from "./services/leaderboardShow";
 app.get("/leaderboards/:slug/show", async (req, res) => {
   const slug = req.params.slug;
-  const mode = slug.includes("1v1") ? "1v1" : slug.includes("2v2") ? "2v2" : "1v1";
-  logger.info(`${logPrefix} [PRE-HYDRA] GET /leaderboards/${slug}/show`);
+  const { mode, characterSlug } = parseLeaderboardSlug(slug);
+  logger.info(`${logPrefix} [PRE-HYDRA] GET ${req.originalUrl} -> mode=${mode} character=${characterSlug ?? "all"}`);
 
   try {
-    const leaderboard = await getLeaderboard(mode as "1v1" | "2v2", 100);
-    // Each entry = full Hydra account profile (same as accounts/wb_network/bulk) + rank/score
-    const entries = leaderboard.map((entry) => ({
-      updated_at: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
-      created_at: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
-      deleted: false,
-      orphaned: false,
-      orphaned_reason: null,
-      public_id: entry.account_id,
-      "identity.avatar": "",
-      "identity.default_username": true,
-      "identity.alternate.wb_network": [{ id: entry.account_id, username: entry.username, avatar: null }],
-      "identity.alternate.steam": [{ id: entry.account_id, username: entry.username, avatar: null }],
-      "wb_account.completed": true,
-      "wb_account.email_verified": true,
-      points: 0,
-      state: "normal",
-      wbplay_data_synced: false,
-      wbplay_identity: null,
-      locale: "en-US",
-      "data.LastLoginPlatform": "EPlatform::PC",
-      "data.__unused": null,
-      "server_data.ProfileIcon.Slug": "profile_icon_default",
-      "server_data.ProfileIcon.AssetPath": "/Game/Panda_Main/Blueprints/Rewards/ProfileIcons/ProfileIcon_Default.ProfileIcon_Default",
-      "server_data.CurrentXP": 100,
-      "server_data.Level": 5,
-      id: entry.account_id,
-      "identity.username": entry.username,
-      connections: [],
-      presence_state: 1,
-      presence: "offline",
-      rank: entry.rank,
-      score: entry.elo,
-    }));
+    const count = Math.min(parseInt(req.query.count as string) || 100, 100);
+    const leaderboard = await getLeaderboard(mode, count, characterSlug);
+    const body = buildLeaderboardShowBody(leaderboard, req.query as LeaderboardShowQuery);
 
     // Manually Hydra-encode and send
     const encoder = new HydraEncoder();
-    encoder.encodeValue(entries);
+    encoder.encodeValue(body);
     const encoded = encoder.returnValue();
 
-    logger.info(`${logPrefix} [PRE-HYDRA] Sending ${entries.length} entries, ${encoded.length} bytes`);
+    logger.info(`${logPrefix} [PRE-HYDRA] Sending ${leaderboard.length} entries, ${encoded.length} bytes`);
     res.setHeader("Content-Type", "application/x-ag-binary");
     res.setHeader("X-Hydra-Server-Time", (Date.now() / 1000).toString());
     res.end(encoded);
   } catch (e) {
     logger.error(`${logPrefix} [PRE-HYDRA] Error: ${e}`);
     const encoder = new HydraEncoder();
-    encoder.encodeValue([]);
+    encoder.encodeValue({ leaders: [] });
     res.setHeader("Content-Type", "application/x-ag-binary");
     res.end(encoder.returnValue());
   }
 });
+// "Around me" (the ranked screen's CURRENT PLACEMENT panel). The client calls
+// /leaderboards/<slug>/around/<accountId> with no query and renders the rows
+// around the player (AROUND_ME_WINDOW above and below) in the /show format.
+const AROUND_ME_WINDOW = 5;
 app.get("/leaderboards/:slug/around/:playerId", async (req, res) => {
-  const slug = req.params.slug;
-  const playerId = req.params.playerId;
-  const mode = slug.includes("1v1") ? "1v1" : slug.includes("2v2") ? "2v2" : "1v1";
-  logger.info(`${logPrefix} [PRE-HYDRA] GET /leaderboards/${slug}/around/${playerId}`);
-
+  const { slug, playerId } = req.params;
+  const { mode, characterSlug } = parseLeaderboardSlug(slug);
+  logger.info(`${logPrefix} [PRE-HYDRA] GET ${req.originalUrl} -> mode=${mode} character=${characterSlug ?? "all"}`);
+  const encoder = new HydraEncoder();
   try {
-    const playerRank = await getPlayerRank(playerId, mode as "1v1" | "2v2");
-    const encoder = new HydraEncoder();
-
+    const playerRank = await getPlayerRank(playerId, mode, characterSlug);
+    let rows: Awaited<ReturnType<typeof getLeaderboard>> = [];
     if (playerRank) {
-      // Return the player's own entry
-      encoder.encodeValue([{
-        identity: playerId,
-        rank: playerRank.rank,
-        score: playerRank.elo,
-      }]);
-    } else {
-      encoder.encodeValue([]);
+      const skip = Math.max(0, playerRank.rank - 1 - AROUND_ME_WINDOW);
+      rows = await getLeaderboard(mode, AROUND_ME_WINDOW * 2 + 1, characterSlug, skip);
     }
-
-    res.setHeader("Content-Type", "application/x-ag-binary");
-    res.setHeader("X-Hydra-Server-Time", (Date.now() / 1000).toString());
-    res.end(encoder.returnValue());
+    encoder.encodeValue(buildLeaderboardShowBody(rows, req.query as LeaderboardShowQuery));
   } catch (e) {
     logger.error(`${logPrefix} [PRE-HYDRA] around error: ${e}`);
-    const encoder = new HydraEncoder();
-    encoder.encodeValue([]);
-    res.setHeader("Content-Type", "application/x-ag-binary");
-    res.end(encoder.returnValue());
+    encoder.encodeValue({ leaders: [] });
   }
+  res.setHeader("Content-Type", "application/x-ag-binary");
+  res.setHeader("X-Hydra-Server-Time", (Date.now() / 1000).toString());
+  res.end(encoder.returnValue());
 });
 app.get("/global_configuration_types/eula/global_configurations/*", (req, res, next) => {
   res.json(200);
@@ -211,13 +157,24 @@ app.get("/global_configuration_types/eula/global_configurations/*", (req, res, n
 app.use(syncRouter);
 
 // HTML File Setup
+app.get("/theme.css", (_req, res) => {
+  res.type("text/css").sendFile(path.join(__dirname, "static/theme.css"));
+});
+app.get("/theme.js", (_req, res) => {
+  res.type("text/javascript").sendFile(path.join(__dirname, "static/theme.js"));
+});
+app.get("/assets/openversus-update-required-keyart.png", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=300");
+  res.type("image/png").sendFile(path.join(__dirname, "static/openversus-update-required-keyart.png"));
+});
+app.get("/assets/openversus-update-required-thumbnail.png", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=300");
+  res.type("image/png").sendFile(path.join(__dirname, "static/openversus-update-required-thumbnail.png"));
+});
+
 const filePath = path.join(__dirname, "static/name_change.html");
 const source = fs.readFileSync(filePath, "utf8");
 const template = handlebars.compile(source);
-
-const partyFilePath = path.join(__dirname, "static/party.html");
-const partySource = fs.readFileSync(partyFilePath, "utf8");
-const partyTemplate = handlebars.compile(partySource);
 
 const leaderboardFilePath = path.join(__dirname, "static/leaderboard.html");
 const leaderboardSource = fs.readFileSync(leaderboardFilePath, "utf8");
@@ -226,10 +183,6 @@ const leaderboardTemplate = handlebars.compile(leaderboardSource);
 const matchesFilePath = path.join(__dirname, "static/matches.html");
 const matchesSource = fs.readFileSync(matchesFilePath, "utf8");
 const matchesTemplate = handlebars.compile(matchesSource);
-
-const customLobbyFilePath = path.join(__dirname, "static/custom_lobby.html");
-const customLobbySource = fs.readFileSync(customLobbyFilePath, "utf8");
-const customLobbyTemplate = handlebars.compile(customLobbySource);
 
 const accountPickerFilePath = path.join(__dirname, "static/account_picker.html");
 const accountPickerSource = fs.readFileSync(accountPickerFilePath, "utf8");
@@ -312,12 +265,15 @@ app.get("/namechange", async (req, res) => {
     const { player: resolvedPlayer, pickerShown } = await resolvePlayerForWeb(req, res, "/namechange");
     if (pickerShown) return;
     let player = resolvedPlayer;
-    // If no player exists, create a new document with empty name
+    // A browser request cannot prove account ownership from an IP alone. Account
+    // creation belongs to /access, where platform/install identity is available.
     if (!player) {
-      var randomName = NameGenerator.NewName();
-      player = new PlayerTesterModel({ ip, name: randomName });
-      logger.info(`${logPrefix} No player found for IP ${ip}. Creating new player with name "${randomName}" for IP ${ip}.`);
-      await player.save();
+      res.status(401).send(template({
+        currentUsername: "Unknown",
+        error: "Connect to the game before changing your name.",
+        success: null,
+      }));
+      return;
     }
 
     logger.info(`${logPrefix} Name change requested for IP ${ip} with current name "${player.name}"`);
@@ -352,8 +308,14 @@ app.post("/namechange", async (req, res, next) => {
     let player = resolvedPlayer;
     if (!player) {
       logger.warn(
-        `${logPrefix} No player found for IP ${ip} during name change POST. This should not happen since the GET route creates a player if one doesn't exist.`,
+        `${logPrefix} No player found for IP ${ip} during name change POST; the player has to connect from the game first.`,
       );
+      res.status(401).send(template({
+        currentUsername: "Unknown",
+        error: "Connect to the game before changing your name.",
+        success: null,
+      }));
+      return;
     }
     logwrapper.verbose(`${logPrefix} ${JSON.stringify(req.body)}`);
     let { name } = req.body;
@@ -390,7 +352,7 @@ app.post("/namechange", async (req, res, next) => {
       const existing = await PlayerTesterModel.findOne({
         name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
       });
-      if (existing && existing.ip !== ip) {
+      if (existing && String(existing._id) !== String(player._id)) {
         error = `The name "${name}" is already taken by another player. Please choose a different name.`;
       }
     }
@@ -403,15 +365,11 @@ app.post("/namechange", async (req, res, next) => {
       const matches = matcher.getAllMatches(name);
       filtered = censor.applyTo(name, matches);
       const trimmed = filtered.substring(0, 24).trim();
-      if (player?.id) {
-        await PlayerTesterModel.findOneAndUpdate(
-          { _id: new Types.ObjectId(player.id) },
-          { name: trimmed },
-          { new: true },
-        );
-      } else {
-        await PlayerTesterModel.findOneAndUpdate({ ip }, { name: trimmed }, { upsert: true, new: true });
-      }
+      await PlayerTesterModel.findOneAndUpdate(
+        { _id: player._id },
+        { name: trimmed },
+        { new: true },
+      );
 
       // Also update the live Redis connection hash so the live matches page,
       // notification routing, and any in-flight handlers see the new name
@@ -425,7 +383,7 @@ app.post("/namechange", async (req, res, next) => {
           if (ip) {
             const ipHashExists = await redisClient.exists(`connections:${ip}`);
             if (ipHashExists) {
-              await redisClient.hSet(`connections:${ip}`, { username: trimmed });
+              await redisUpdateIpMirror(ip, player.id, { username: trimmed });
             }
           }
         }
@@ -493,13 +451,11 @@ app.post("/ovs_register", async (req, res, next) => {
   // separately-delivered gameplay config; the rollback only orchestrates real UDP clients.
   const realPlayers = config.players.filter((p) => !p.isBot);
   const players = await Promise.all(realPlayers.map(async (p) => {
-    // Prefer ID-keyed connection (stable across NAT/VPN); fall back to IP-keyed for legacy records
+    // Match config already carries the canonical player id. Never substitute a
+    // household member merely because their public IP matches.
     let conn: any = p.playerId
       ? await redisClient.hGetAll(`connections:${p.playerId}`).catch(() => null)
       : null;
-    if (!conn || !conn.id) {
-      conn = await redisGetPlayerConnectionByIP(p.ip).catch(() => null);
-    }
     return {
       player_index: p.playerIndex,
       player_id: p.playerId,
@@ -683,275 +639,6 @@ app.post("/mvsi_end_match", async (req, res, next) => {
 // Party Web Page — Join parties via shareable key
 // ============================================================
 
-app.get("/party", async (req, res) => {
-  try {
-    const ip = tryGetRealIP(req).replace(/^::ffff:/, "");
-    const { player: resolvedPlayer, pickerShown } = await resolvePlayerForWeb(req, res, "/party");
-    if (pickerShown) return;
-    let player = resolvedPlayer;
-    const username = player?.name || "Unknown";
-    const currentKey = player?.party_key || "";
-
-    const html = partyTemplate({
-      username,
-      currentKey,
-      error: null,
-      success: null,
-    });
-    res.send(html);
-  } catch (e) {
-    logger.error(`${logPrefix} Error in GET /party: ${e}`);
-    res.status(500).send("Error loading party page");
-  }
-});
-
-app.post("/party/set-key", async (req, res) => {
-  try {
-    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
-    const { player: resolvedPlayer, pickerShown } = await resolvePlayerForWeb(req, res, "/party");
-    if (pickerShown) return;
-    let player = resolvedPlayer;
-    if (!player) {
-      res.send(partyTemplate({ username: "Unknown", currentKey: "", error: "You must be connected to the game first.", success: null }));
-      return;
-    }
-
-    const newKey = (req.body.key || "").trim();
-
-    // Validate key
-    if (!newKey || newKey.length < 3) {
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "Key must be at least 3 characters.", success: null }));
-      return;
-    }
-    if (newKey.length > 20) {
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "Key must be 20 characters or less.", success: null }));
-      return;
-    }
-    if (!/^[a-zA-Z0-9_\-]+$/.test(newKey)) {
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "Key can only contain letters, numbers, underscores, and dashes.", success: null }));
-      return;
-    }
-
-    // Check if key is already taken by another player
-    const existingKeyData = await redisGetPartyKey(newKey);
-    if (existingKeyData && existingKeyData.playerId !== player.id) {
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "That key is already taken by another player.", success: null }));
-      return;
-    }
-
-    // Delete old key from Redis if changing
-    const oldKey = player.party_key;
-    if (oldKey && oldKey.toLowerCase() !== newKey.toLowerCase()) {
-      await redisDeletePartyKey(oldKey);
-    }
-
-    // Save new key to MongoDB
-    player.party_key = newKey;
-    await player.save();
-
-    // Update Redis connection hashes
-    await redisClient.hSet(`connections:${player.id}`, { party_key: newKey });
-    await redisClient.hSet(`connections:${ip}`, { party_key: newKey });
-
-    // Save party key lookup in Redis (lobbyId from current lobby or empty)
-    const conn = (await redisClient.hGetAll(`connections:${player.id}`)) as any;
-    const currentLobbyId = conn?.lobby_id || "";
-    await redisSavePartyKey(newKey, { playerId: player.id, lobbyId: currentLobbyId, username: player.name });
-
-    logger.info(`${logPrefix} Player ${player.name} (${ip}) set party key to "${newKey}"`);
-    res.send(partyTemplate({ username: player.name, currentKey: newKey, error: null, success: `Party key set to "${newKey}"!` }));
-  } catch (e) {
-    logger.error(`${logPrefix} Error in POST /party/set-key: ${e}`);
-    res.status(500).send("Error setting party key");
-  }
-});
-
-app.post("/party/join", async (req, res) => {
-  try {
-    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
-    const { player: resolvedPlayer, pickerShown } = await resolvePlayerForWeb(req, res, "/party");
-    if (pickerShown) return;
-    let player = resolvedPlayer;
-    if (!player) {
-      res.send(partyTemplate({ username: "Unknown", currentKey: "", error: "You must be connected to the game first.", success: null }));
-      return;
-    }
-
-    const joinKey = (req.body.key || "").trim();
-    if (!joinKey) {
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "Please enter a party key.", success: null }));
-      return;
-    }
-
-    // Look up the party key in Redis
-    const keyData = await redisGetPartyKey(joinKey);
-    if (!keyData) {
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `No player found with party key "${joinKey}". They must be in-game.`, success: null }));
-      return;
-    }
-
-    // Can't join your own party
-    if (keyData.playerId === player.id) {
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "That's your own party key!", success: null }));
-      return;
-    }
-
-    const lobbyId = keyData.lobbyId;
-    if (!lobbyId) {
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `${keyData.username} doesn't have an active lobby yet. They need to be in-game.`, success: null }));
-      return;
-    }
-
-    // Get the lobby state
-    const lobby = await redisGetLobbyState(lobbyId);
-    if (!lobby) {
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `${keyData.username}'s lobby is no longer active. They may need to restart their game.`, success: null }));
-      return;
-    }
-
-    // Check if already in this lobby
-    if (lobby.playerIds.includes(player.id)) {
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `You're already in ${keyData.username}'s lobby!`, success: null }));
-      return;
-    }
-
-    // Block if target player is already in a party (lobby has 2+ players)
-    if (lobby.playerIds.length >= 2) {
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `${keyData.username} is already in a party with someone else.`, success: null }));
-      return;
-    }
-
-    // Block if target player is in a match or searching for one
-    const targetStatus = await redisClient.hGet(`player:${keyData.playerId}`, "status");
-    if (targetStatus === "queued") {
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `${keyData.username} is currently searching for a match. They need to cancel first.`, success: null }));
-      return;
-    }
-    if (targetStatus === "in_match") {
-      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `${keyData.username} is currently in a match. Wait for them to finish.`, success: null }));
-      return;
-    }
-
-    // Block if the JOINING player is already in a party with someone else
-    const joinerLobbyId = await redisGetPlayerLobby(player.id);
-    if (joinerLobbyId) {
-      const joinerLobby = await redisGetLobbyState(joinerLobbyId);
-      if (joinerLobby && joinerLobby.playerIds.length >= 2) {
-        res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "You're already in a party. Leave your current party first.", success: null }));
-        return;
-      }
-    }
-
-    // Add the joining player to the lobby and force 2v2 mode
-    lobby.playerIds.push(player.id);
-    if (lobby.playerIds.length >= 2) {
-      lobby.mode = "2v2";
-    }
-    await redisSaveLobbyState(lobbyId, lobby);
-    await redisSavePlayerLobby(player.id, lobbyId);
-
-    // Trigger lobby rejoin for ALL players (force-closes WebSocket, game reconnects with updated roster)
-    for (const pid of lobby.playerIds) {
-      const rejoinNotification: RedisLobbyRejoinNotification = {
-        playerId: pid,
-        lobbyId,
-      };
-      await redisPublishLobbyRejoin(rejoinNotification);
-    }
-
-    logger.info(`${logPrefix} Player ${player.name} (${ip}) joined ${keyData.username}'s lobby ${lobbyId} via party key "${joinKey}". Players: ${lobby.playerIds.join(", ")}`);
-    res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: null, success: `Joined ${keyData.username}'s party! Check your game.` }));
-  } catch (e) {
-    logger.error(`${logPrefix} Error in POST /party/join: ${e}`);
-    res.status(500).send("Error joining party");
-  }
-});
-
-// Password matchmaking removed — use /custom for custom lobbies instead
-
-// ============================================================
-// DLL invite accept — IP-based (no JWT), called by the DLL
-// when the player clicks "Accept" on the party invite dialog.
-// Follows the same pattern as POST /party/join above.
-// ============================================================
-
-app.put("/ovs/accept-invite/:lobbyId", async (req, res) => {
-  try {
-    const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
-    const lobbyId = req.params.lobbyId;
-
-    // Resolve via JWT/Steam/Epic/HW/IP (household-safe); then load by account id.
-    const conn = await resolveAccountFromRequest(req);
-    const player = conn?.id
-      ? await PlayerTesterModel.findOne({ _id: new Types.ObjectId(conn.id) })
-      : null;
-    if (!player) {
-      res.status(401).json({ error: "not_connected" });
-      return;
-    }
-
-    const lobby = await redisGetLobbyState(lobbyId);
-    if (!lobby) {
-      res.status(404).json({ error: "lobby_not_found" });
-      return;
-    }
-
-    if (lobby.playerIds.includes(player.id)) {
-      res.json({ success: true, lobbyId }); // idempotent
-      return;
-    }
-
-    if (lobby.playerIds.length >= 2) {
-      res.status(409).json({ error: "lobby_full" });
-      return;
-    }
-
-    // Block if lobby owner is queued or in a match
-    const ownerStatus = await redisClient.hGet(`player:${lobby.ownerId}`, "status");
-    if (ownerStatus === "queued") {
-      res.status(409).json({ error: "owner_queued" });
-      return;
-    }
-    if (ownerStatus === "in_match") {
-      res.status(409).json({ error: "owner_in_match" });
-      return;
-    }
-
-    // If joining player is already in a party, auto-leave it first.
-    // The old partner goes solo, then this player joins the new lobby.
-    const joinerLobbyId = await redisGetPlayerLobby(player.id);
-    if (joinerLobbyId) {
-      const joinerLobby = await redisGetLobbyState(joinerLobbyId);
-      if (joinerLobby && joinerLobby.playerIds.length >= 2) {
-        logger.info(`${logPrefix} Player ${player.id} is in party ${joinerLobbyId} — auto-leaving before accepting invite`);
-        await performGenuineLeave(player.id, joinerLobbyId, joinerLobby);
-      }
-    }
-
-    // Add player to lobby and force 2v2
-    lobby.playerIds.push(player.id);
-    if (lobby.playerIds.length >= 2) {
-      lobby.mode = "2v2";
-    }
-    await redisSaveLobbyState(lobbyId, lobby);
-    // DON'T change player_lobby here — it still points to the invitee's old solo lobby.
-    // The game's JoinLobby will call leave_player_lobby first (to leave the old solo lobby),
-    // and if player_lobby pointed at the shared lobby, leave_player_lobby would destroy it.
-    // Instead, store the target in pending_join_lobby — join_party_lobby reads it.
-    await redisSetPendingJoinLobby(player.id, lobbyId);
-
-    logger.info(`${logPrefix} Player ${player.name} (${ip}) accepted invite to lobby ${lobbyId}. Players: ${lobby.playerIds.join(", ")}`);
-    res.json({ success: true, lobbyId });
-
-    // Inviter notification happens LATER — when the invitee's game calls
-    // join_party_lobby SSC and completes loading. The SSC handler sends
-    // a single party_joined DLL notification at the right time.
-  } catch (e) {
-    logger.error(`${logPrefix} Error in PUT /ovs/accept-invite: ${e}`);
-    res.status(500).json({ error: "internal_error" });
-  }
-});
-
 // ============================================================
 // Leaderboard — Top 100 rankings for 1v1 and 2v2
 // ============================================================
@@ -1113,15 +800,46 @@ app.get("/api/matches", async (req, res) => {
 app.post("/api/identify", async (req, res) => {
   try {
     const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
-    const clean = (v: any) => (typeof v === "string" && v !== "Unknown" ? v : "");
-    const { steamId: _s = "", epicId: _e = "", hardwareId: _h = "" } = req.body ?? {};
-    const steamId = clean(_s), epicId = clean(_e), hardwareId = clean(_h);
+    const {
+      steamId: _s = "",
+      epicId: _e = "",
+      hardwareId: _h = "",
+      hardwareIdVersion: _hv = "",
+      hardwareIdQuality: _hq = "",
+      installId: _i = "",
+      clientVersion: _v = "",
+    } = req.body ?? {};
     if (!ip) {
       res.status(400).json({ error: "Could not determine IP" });
       return;
     }
-    await redisSaveIdentity(ip, steamId, epicId, hardwareId);
-    logger.info(`${logPrefix} Identity registered for IP ${ip} — steam:${steamId} epic:${epicId} hw:${hardwareId.slice(0, 8)}...`);
+    const { steamId, epicId, hardwareId, hardwareIdVersion, hardwareIdQuality, installId, clientVersion } = mergeIpIdentity(
+      await redisGetIdentity(ip),
+      {
+        steamId: normalizeIdentity("steam", _s),
+        epicId: normalizeIdentity("epic", _e),
+        ...normalizeHardwareSignal(_h, _hv, _hq),
+        installId: normalizeIdentity("install", _i),
+        clientVersion: typeof _v === "string" ? _v.trim().slice(0, 32) : "",
+      },
+    );
+    const identityRegistered = !!(steamId || epicId || installId);
+    await redisSaveIdentity(
+      ip,
+      steamId,
+      epicId,
+      hardwareId,
+      installId,
+      clientVersion,
+      hardwareIdVersion,
+      hardwareIdQuality,
+      identityRegistered,
+    );
+    logger.info(
+      `${logPrefix} Identity registered for IP ${ip} — steam:${steamId || "-"} epic:${epicId || "-"} `
+      + `install:${installId ? "yes" : "no"} hardware:${hardwareId ? `v${hardwareIdVersion}/${hardwareIdQuality}` : "none"} `
+      + `version:${clientVersion || "legacy"} identity:${identityRegistered ? "registered" : "missing"}`,
+    );
 
     // Construct an OVS-side JWT and return it so the DLL can attach it to
     // un-authenticated polling routes (NotificationPoller, etc.). This avoids
@@ -1145,8 +863,8 @@ app.post("/api/identify", async (req, res) => {
         const byId = await redisClient.get(`identity:epic:${epicId}`);
         if (byId) resolvedId = byId;
       }
-      if (!resolvedId && hardwareId) {
-        const byId = await redisClient.get(`identity:hw:${hardwareId}`);
+      if (!resolvedId && installId) {
+        const byId = await redisClient.get(`identity:install:${installId}`);
         if (byId) resolvedId = byId;
       }
     } catch (lookupErr) {
@@ -1160,6 +878,11 @@ app.post("/api/identify", async (req, res) => {
       steamId,
       epicId,
       hardwareId,
+      hardwareIdVersion,
+      hardwareIdQuality,
+      installId,
+      clientVersion,
+      identityRegistered: identityRegistered ? "1" : "",
       current_ip: ip,
       // Leave unrelated fields empty — resolver only consults id/steamId/epicId/hardwareId
       profile_id: "",
@@ -1173,6 +896,32 @@ app.post("/api/identify", async (req, res) => {
     // 30 days so the DLL doesn't need to refresh during a session. Short-lived
     // mid-session re-keying would break NotifPoller's long-running background thread.
     const token = jwtLib.sign(claims, SECRET, { expiresIn: "30d" });
+
+    // If /access won the startup race, unlock that live session as soon as a
+    // valid late /api/identify request resolves back to its account.
+    if (resolvedId && identityRegistered) {
+      const connectionKey = `connections:${resolvedId}`;
+      if (await redisClient.exists(connectionKey)) {
+        await redisClient.hSet(connectionKey, {
+          clientVersion,
+          identityRegistered: "1",
+        });
+      }
+    }
+
+    if (isClientGameplayAccessRequiredForMinimum(
+      clientVersion,
+      env.MIN_CLIENT_VERSION,
+      identityRegistered,
+    )) {
+      res.status(426).json({
+        ok: false,
+        error: "client_update_required",
+        minimumVersion: env.MIN_CLIENT_VERSION,
+        identityRequired: !identityRegistered,
+      });
+      return;
+    }
 
     res.json({ ok: true, token, accountId: resolvedId || null });
   } catch (e) {
@@ -1234,37 +983,51 @@ app.get("/api/leaderboard/:mode/me", async (req, res) => {
 let cachedGitHubRelease: { data: any; fetchedAt: number } | null = null;
 const GITHUB_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+/** CLIENT_RELEASE_REPO when it is a plain "owner/repo", else the org's client repo. */
+function clientReleaseRepo(): string {
+  return isReleaseRepo(env.CLIENT_RELEASE_REPO) ? env.CLIENT_RELEASE_REPO : DEFAULT_RELEASE_REPO;
+}
+
+async function getLatestClientRelease(): Promise<any> {
+  if (cachedGitHubRelease && Date.now() - cachedGitHubRelease.fetchedAt <= GITHUB_CACHE_TTL) {
+    return cachedGitHubRelease.data;
+  }
+
+  const ghRes = await fetch(`https://api.github.com/repos/${clientReleaseRepo()}/releases/latest`, {
+    headers: { "User-Agent": "OpenVersus-Server", "Accept": "application/vnd.github+json" },
+  });
+  if (!ghRes.ok) {
+    throw new Error(`GitHub API returned ${ghRes.status}`);
+  }
+
+  const data = await ghRes.json();
+  cachedGitHubRelease = { data, fetchedAt: Date.now() };
+  logger.info(`${logPrefix} Cached GitHub release: ${data.tag_name || data.name} (${clientReleaseRepo()})`);
+  return data;
+}
+
 app.get("/ovs/client-version", async (req, res) => {
   try {
     const clientVersion = (req.query.v as string) || "";
 
-    // Fetch latest release from GitHub (cached)
-    if (!cachedGitHubRelease || Date.now() - cachedGitHubRelease.fetchedAt > GITHUB_CACHE_TTL) {
-      const ghRes = await fetch("https://api.github.com/repos/openversus/ovs-client/releases/latest", {
-        headers: { "User-Agent": "OpenVersus-Server", "Accept": "application/vnd.github+json" },
-      });
-      if (!ghRes.ok) {
-        logger.warn(`${logPrefix} GitHub API returned ${ghRes.status}`);
-        res.json({ latest_version: clientVersion, download_url: "", is_latest: true, release_name: "" });
-        return;
-      }
-      const data = await ghRes.json();
-      cachedGitHubRelease = { data, fetchedAt: Date.now() };
-      logger.info(`${logPrefix} Cached GitHub release: ${data.tag_name || data.name}`);
-    }
-
-    const release = cachedGitHubRelease.data;
+    const release = await getLatestClientRelease();
     const latestVersion = (release.tag_name || release.name || "").replace(/^v/i, "");
     const assets: any[] = release.assets || [];
 
-    // Find the .asi asset (or .zip fallback)
-    const asiAsset = assets.find((a: any) => a.name.endsWith(".asi"))
-      || assets.find((a: any) => a.name.endsWith(".zip"));
-    const downloadUrl = asiAsset?.browser_download_url || "";
+    // The updater only consumes individually published, SHA-256-addressed
+    // assets. ZIP releases remain available for manual installation but are
+    // intentionally never passed to the in-game updater.
+    const updateFiles = buildClientReleaseManifest(assets, latestVersion, clientReleaseRepo());
+    const asiAsset = updateFiles.find((file) => file.kind === "plugin");
+    const downloadUrl = asiAsset?.download_url || "";
 
-    const isLatest = clientVersion === latestVersion;
+    // A prerelease/test client may be newer than the latest published GitHub
+    // release. Never offer that client an older asset as an "update".
+    const isLatest = Boolean(clientVersion && latestVersion)
+      && compareClientVersions(clientVersion, latestVersion) >= 0;
+    const updateRequired = isClientUpdateRequired(clientVersion);
 
-    if (!isLatest && clientVersion) {
+    if (!isLatest && clientVersion && compareClientVersions(clientVersion, latestVersion) < 0) {
       logger.info(`${logPrefix} Client version ${clientVersion} is outdated (latest: ${latestVersion})`);
     }
 
@@ -1272,7 +1035,11 @@ app.get("/ovs/client-version", async (req, res) => {
       latest_version: latestVersion,
       download_url: downloadUrl,
       is_latest: isLatest,
+      minimum_version: env.MIN_CLIENT_VERSION,
+      update_required: updateRequired,
       release_name: release.name || "",
+      files: updateFiles,
+      ...flattenClientReleaseManifest(updateFiles),
     });
   } catch (e) {
     logger.error(`${logPrefix} Error in /ovs/client-version: ${e}`);
@@ -1294,6 +1061,11 @@ app.get("/ovs/notifications", async (req, res) => {
       return;
     }
 
+    // A running, registered client keeps its IP identity alive from the token /api/identify
+    // signed, so a reconnect or server restart after the 5-minute record expired does not
+    // treat an up-to-date player as an outdated one.
+    const refreshed = await refreshIpIdentityFromToken(req, ip).catch(() => null);
+
     // Look up the player — tries JWT, SteamID, EpicID, HardwareID, then IP fallback.
     // Use the with-source variant so the delivery log can show which path resolved.
     const { conn, source } = await resolveAccountWithSource(req);
@@ -1301,6 +1073,19 @@ app.get("/ovs/notifications", async (req, res) => {
     if (!playerId) {
       res.json([]);
       return;
+    }
+
+    if (refreshed) {
+      logwrapper.verbose(`${logPrefix} Refreshed the IP identity for ${playerId} (IP ${ip}, version ${refreshed.clientVersion}) from its client token`);
+      // A session that logged in while the record was missing was gated as a legacy client;
+      // the verified token says otherwise, so unlock it as /api/identify would have.
+      if (conn.identityRegistered !== "1") {
+        await redisClient.hSet(`connections:${playerId}`, {
+          clientVersion: refreshed.clientVersion || "",
+          identityRegistered: "1",
+        });
+        logger.info(`${logPrefix} Unlocked the live session of ${playerId}: its client is registered (version ${refreshed.clientVersion})`);
+      }
     }
 
     // Pop all queued DLL notifications for this player
@@ -1427,17 +1212,23 @@ app.post("/api/admin/banner", async (req, res) => {
 });
 
 // ============================================================
-// Custom Lobby — Web-based custom game lobbies
+// Website: which account a browser request acts on
 // ============================================================
+
+// The accounts linked to this IP. The IP rule (staleIpLinkFilter) unlinks identified
+// accounts idle for 7+ days, so these are the people currently playing from it.
+// Provisional accounts exist only to show outdated clients the update popup. Without an IP
+// nothing matches: released accounts have ip "" and must never be offered to a browser.
+const ipAccountQuery = (ip: string) => (ip ? { ip, provisional: { $ne: true } } : { _id: { $exists: false } });
 
 // Helper: identify player for browser/AJAX calls via IP candidates + picker cookie.
 // - 1 account on IP → use it.
 // - 2+ accounts on IP → require the signed `ovs_web_account` cookie (set by /account/switch).
 //   Without the cookie, returns null — AJAX caller will get a 401 and the user should visit
-//   /custom (or /party / /namechange) once in a browser to pick an account.
+//   /namechange once in a browser to pick an account.
 async function getPlayerFromReq(req: any): Promise<{ id: string; username: string; ip: string } | null> {
   const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
-  const accounts = await PlayerTesterModel.find({ ip }).lean();
+  const accounts = await PlayerTesterModel.find(ipAccountQuery(ip)).lean();
   if (accounts.length === 0) return null;
 
   let picked: any | null = null;
@@ -1454,7 +1245,7 @@ async function getPlayerFromReq(req: any): Promise<{ id: string; username: strin
       }
     }
     if (!picked) {
-      logger.info(`${logPrefix} getPlayerFromReq: ${accounts.length} accounts on IP ${ip}, no valid picker cookie — returning null (user should visit /custom to pick)`);
+      logger.info(`${logPrefix} getPlayerFromReq: ${accounts.length} accounts on IP ${ip}, no valid picker cookie — returning null (user should visit /namechange to pick)`);
       return null;
     }
   }
@@ -1464,7 +1255,7 @@ async function getPlayerFromReq(req: any): Promise<{ id: string; username: strin
 // ============================================================
 // Admin web auth — cookie-based "which account are you" picker
 // ============================================================
-// Browser-facing admin pages (/namechange, /party, /custom) have no JWT. In the
+// Browser-facing pages (/namechange, /stats) have no JWT. In the
 // single-user-per-IP case the identity resolver's IP fallback picks the right
 // account. But in a household, two accounts share an IP — without a picker the
 // server would arbitrarily pick one and let the user mutate the wrong player.
@@ -1524,7 +1315,7 @@ async function resolvePlayerForWeb(
   const ip = tryGetRealIP(req).replace(/^::ffff:/, ""); // Ensure we get the real IP for name changes, not just the direct connection IP
 
   // Candidate accounts at this IP
-  const accounts = await PlayerTesterModel.find({ ip }).lean();
+  const accounts = await PlayerTesterModel.find(ipAccountQuery(ip)).lean();
 
   if (accounts.length === 0) {
     return { player: null, pickerShown: false };
@@ -1602,7 +1393,7 @@ app.post("/account/switch", async (req, res) => {
 
     // Helper: re-render the picker page with an error banner (keeps user in-flow).
     const renderPickerWithError = async (errMsg: string) => {
-      const candidates = await PlayerTesterModel.find({ ip }).lean();
+      const candidates = await PlayerTesterModel.find(ipAccountQuery(ip)).lean();
       const html = accountPickerTemplate({
         returnTo,
         error: errMsg,
@@ -1621,7 +1412,10 @@ app.post("/account/switch", async (req, res) => {
     };
 
     // 1. Verify the accountId has ip === req.ip (cheap gate against random accountIds)
-    const match = await PlayerTesterModel.findOne({ _id: new Types.ObjectId(accountId), ip });
+    const match = await PlayerTesterModel.findOne({
+      _id: new Types.ObjectId(accountId),
+      ...ipAccountQuery(ip),
+    });
     if (!match) {
       await renderPickerWithError("That account isn't recognized on this network. Pick one from the list below.");
       return;
@@ -1763,203 +1557,6 @@ app.post("/account/verify", async (req, res) => {
   }
 });
 
-app.get("/custom", async (req, res) => {
-  try {
-    const html = customLobbyTemplate({});
-    res.send(html);
-  } catch (e) {
-    logger.error(`${logPrefix} Error in GET /custom: ${e}`);
-    res.status(500).send("Error loading custom lobby page");
-  }
-});
-
-app.get("/api/custom/whoami", async (req, res) => {
-  try {
-    const player = await getPlayerFromReq(req);
-    if (!player) { res.json({ error: "Not connected to game" }); return; }
-    res.json({ playerId: player.id, username: player.username });
-  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/whoami: ${e}`); res.status(500).json({ error: "Internal error" }); }
-});
-
-app.post("/api/custom/create", async (req, res) => {
-  try {
-    const player = await getPlayerFromReq(req);
-    if (!player) { res.status(401).json({ error: "Not connected to game. Launch the game first." }); return; }
-    const result = await createLobby(player.id, player.username, player.ip);
-    res.json(result);
-  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/create: ${e}`); res.status(500).json({ error: "Internal error" }); }
-});
-
-app.post("/api/custom/join", async (req, res) => {
-  try {
-    const player = await getPlayerFromReq(req);
-    if (!player) { res.status(401).json({ error: "Not connected to game. Launch the game first." }); return; }
-    const lobbyCode = req.body?.lobbyCode;
-    if (!lobbyCode) { res.status(400).json({ error: "Lobby code is required." }); return; }
-    const result = await joinLobby(lobbyCode, player.id, player.username, player.ip);
-    res.json(result);
-  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/join: ${e}`); res.status(500).json({ error: "Internal error" }); }
-});
-
-app.post("/api/custom/leave", async (req, res) => {
-  try {
-    const player = await getPlayerFromReq(req);
-    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
-    const result = await leaveLobby(player.id);
-    res.json(result);
-  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/leave: ${e}`); res.status(500).json({ error: "Internal error" }); }
-});
-
-app.post("/api/custom/switch-team", async (req, res) => {
-  try {
-    const player = await getPlayerFromReq(req);
-    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
-    const result = await switchTeam(player.id);
-    res.json(result);
-  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/switch-team: ${e}`); res.status(500).json({ error: "Internal error" }); }
-});
-
-app.post("/api/custom/spectate", async (req, res) => {
-  try {
-    const player = await getPlayerFromReq(req);
-    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
-    const result = await moveToSpectator(player.id);
-    res.json(result);
-  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/spectate: ${e}`); res.status(500).json({ error: "Internal error" }); }
-});
-
-app.post("/api/custom/unspectate", async (req, res) => {
-  try {
-    const player = await getPlayerFromReq(req);
-    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
-    const result = await moveToPlayer(player.id);
-    res.json(result);
-  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/unspectate: ${e}`); res.status(500).json({ error: "Internal error" }); }
-});
-
-app.post("/api/custom/ready", async (req, res) => {
-  try {
-    const player = await getPlayerFromReq(req);
-    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
-    const result = await toggleReady(player.id);
-    res.json(result);
-  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/ready: ${e}`); res.status(500).json({ error: "Internal error" }); }
-});
-
-app.post("/api/custom/kick", async (req, res) => {
-  try {
-    const player = await getPlayerFromReq(req);
-    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
-    const targetId = req.body?.targetId;
-    if (!targetId) { res.status(400).json({ error: "targetId required." }); return; }
-    const result = await kickPlayer(player.id, targetId);
-    res.json(result);
-  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/kick: ${e}`); res.status(500).json({ error: "Internal error" }); }
-});
-
-app.post("/api/custom/select-map", async (req, res) => {
-  try {
-    const player = await getPlayerFromReq(req);
-    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
-    const maps = Array.isArray(req.body?.maps) ? req.body.maps : [];
-    const result = await setMapPool(player.id, maps);
-    res.json(result);
-  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/select-map: ${e}`); res.status(500).json({ error: "Internal error" }); }
-});
-
-app.post("/api/custom/select-mode", async (req, res) => {
-  try {
-    const player = await getPlayerFromReq(req);
-    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
-    const mode = req.body?.mode;
-    if (mode !== "1v1" && mode !== "2v2") { res.status(400).json({ error: "Invalid mode. Must be '1v1' or '2v2'." }); return; }
-    const result = await selectMode(player.id, mode);
-    res.json(result);
-  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/select-mode: ${e}`); res.status(500).json({ error: "Internal error" }); }
-});
-
-app.post("/api/custom/start", async (req, res) => {
-  try {
-    const player = await getPlayerFromReq(req);
-    if (!player) { res.status(401).json({ error: "Not connected to game." }); return; }
-    const result = await startMatch(player.id);
-    res.json(result);
-  } catch (e) { logger.error(`${logPrefix} Error in /api/custom/start: ${e}`); res.status(500).json({ error: "Internal error" }); }
-});
-
-app.get("/api/custom/status/:lobbyCode", async (req, res) => {
-  try {
-    const lobbyCode = req.params.lobbyCode.toUpperCase();
-    const status = await getLobbyWithStatus(lobbyCode);
-    if (!status) {
-      res.status(404).json({ error: "Lobby not found." });
-      return;
-    }
-    res.json(status);
-  } catch (e) {
-    logger.error(`${logPrefix} Error in GET /api/custom/status: ${e}`);
-    res.status(500).json({ error: "Error fetching lobby status" });
-  }
-});
-
-app.get("/api/custom/maps/:mode", async (req, res) => {
-  const mode = req.params.mode;
-  const maps = getMapList(mode);
-  res.json({ maps });
-});
-
-// SSE endpoint for live lobby updates
-app.get("/api/custom/events/:lobbyCode", async (req, res) => {
-  const lobbyCode = req.params.lobbyCode.toUpperCase();
-
-  // Set SSE headers
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    "Connection": "keep-alive",
-  });
-
-  // Create a dedicated Redis subscriber for this connection
-  const sub = redisClient.duplicate();
-  await sub.connect();
-
-  const channelName = `custom_lobby_update:${lobbyCode}`;
-  await sub.subscribe(channelName, (message: string) => {
-    res.write(`event: lobby-update\ndata: ${message}\n\n`);
-  });
-
-  // Send initial state
-  const initialState = await getLobbyWithStatus(lobbyCode);
-  if (initialState) {
-    res.write(`event: lobby-update\ndata: ${JSON.stringify(initialState)}\n\n`);
-  }
-
-  // Heartbeat to keep connection alive
-  const heartbeat = setInterval(() => {
-    res.write(`:heartbeat\n\n`);
-  }, 15000);
-
-  // Periodic connection status refresh (every 5 seconds)
-  const statusRefresh = setInterval(async () => {
-    try {
-      const status = await getLobbyWithStatus(lobbyCode);
-      if (status) {
-        res.write(`event: lobby-update\ndata: ${JSON.stringify(status)}\n\n`);
-      }
-    } catch {
-      // ignore
-    }
-  }, 5000);
-
-  // Cleanup on disconnect
-  req.on("close", () => {
-    clearInterval(heartbeat);
-    clearInterval(statusRefresh);
-    sub.unsubscribe(channelName);
-    sub.quit();
-  });
-});
-
 app.post("/api/testing/deploy-rollback-server", async (req, res) => {
   await handleDeployRollbackServer(req, res);
 });
@@ -2068,6 +1665,22 @@ app.get("/agreement/public/policies/namespaces/:namespace", (req, res) => {
 app.use(hydraDecoderMiddleware);
 app.use(hydraTokenMiddleware);
 
+// Legacy/outdated clients may log in so they can see the native update modal,
+// but they cannot cross a multiplayer transition. These exact paths also apply
+// to subrequests dispatched through /batch.
+app.use([
+  "/matches/matchmaking/1v1-retail/request",
+  "/matches/matchmaking/ranked-1v1-retail/request",
+  "/matches/matchmaking/2v2-retail/request",
+  "/ssc/invoke/create_custom_game_lobby",
+  "/ssc/invoke/join_custom_game_lobby",
+  "/ssc/invoke/start_custom_match",
+  "/ssc/invoke/join_party_lobby",
+  "/ssc/invoke/autoparty_join",
+  "/ssc/invoke/set_ready_for_lobby",
+  "/ssc/invoke/rematch_accept",
+], requireCurrentClientForGameplay);
+
 // New friends/search/accounts routes — BEFORE old router for priority
 import { friendsRouter } from "./modules/friends/friends.routes";
 import { fromBase64 } from "bytebuffer";
@@ -2115,6 +1728,13 @@ app.get("/accounts/me/notifications/bulk", async (req, res) => {
   res.send({ notifications: [], total: 0 });
 });
 
+// Persistent Hydra WebSocket notifications are acknowledged through this
+// endpoint after the stock client has parsed and dispatched them.
+app.delete("/accounts/me/notifications/bulk/:notificationId", (req, res) => {
+  logwrapper.verbose(`${logPrefix} Client acknowledged Hydra notification ${req.params.notificationId}`);
+  res.status(204).send();
+});
+
 // Game requests gameplay config via HTTP as a fallback — already delivered via WebSocket
 app.get("/ssc/invoke/load_gameplay_config", async (req, res) => {
   const matchId = req.query.MatchId as string;
@@ -2141,115 +1761,6 @@ app.put("/matches/:id/leave", async (req, res) => {
   res.send({ body: {}, metadata: null, return_code: 200 });
 });
 
-// Leaderboard show endpoint — game fetches top 100 for ranked display
-app.get("/leaderboards/:slug/show", async (req, res) => {
-  const slug = req.params.slug;
-  const count = parseInt(req.query.count as string) || 100;
-  logger.info(`${logPrefix} GET /leaderboards/${slug}/show (count=${count})`);
-  logger.info(`${logPrefix} Leaderboard show query: ${JSON.stringify(req.query)}`);
-  logger.info(`${logPrefix} Leaderboard show headers: content-type=${req.headers["content-type"]}, accept=${req.headers["accept"]}`);
-
-  try {
-    // Parse mode from slug: "ranked_season5_1v1_all" → "1v1"
-    const mode = slug.includes("1v1") ? "1v1" : slug.includes("2v2") ? "2v2" : "1v1";
-    const leaderboard = await getLeaderboard(mode as "1v1" | "2v2", count);
-
-    // Resolve each player's character from Redis
-    const entries = await Promise.all(leaderboard.map(async (entry) => {
-      let character = "character_wonder_woman";
-      try {
-        const conn = await redisClient.hGetAll(`connections:${entry.account_id}`);
-        if (conn?.character) character = conn.character;
-      } catch {}
-
-      return {
-        Identity: entry.account_id,
-        Rank: entry.rank,
-        Value: { _hydra_double: entry.elo },
-        CharacterSlug: character,
-      };
-    }));
-
-    logger.info(`${logPrefix} Leaderboard show response: ${entries.length} entries`);
-    // DIAGNOSTIC: send garbage to see if game crashes/errors
-    res.send("THIS IS NOT VALID DATA");
-  } catch (e) {
-    logger.error(`${logPrefix} Error in leaderboard show: ${e}`);
-    res.json([]);
-  }
-});
-
-// Leaderboard "around me" — shows the player's position with nearby players
-app.get("/leaderboards/:slug/around/:playerId", async (req, res) => {
-  const slug = req.params.slug;
-  const playerId = req.params.playerId;
-  const count = parseInt(req.query.count as string) || 4;
-  logger.info(`${logPrefix} GET /leaderboards/${slug}/around/${playerId} (count=${count})`);
-
-  try {
-    const mode = slug.includes("1v1") ? "1v1" : slug.includes("2v2") ? "2v2" : "1v1";
-    const playerRank = await getPlayerRank(playerId, mode as "1v1" | "2v2");
-
-    if (!playerRank) {
-      res.json([]);
-      return;
-    }
-
-    // Get a window of players around this player's rank
-    const leaderboard = await getLeaderboard(mode as "1v1" | "2v2", 200);
-    const playerIndex = leaderboard.findIndex((e) => e.account_id === playerId);
-    const half = Math.floor(count / 2);
-    const start = Math.max(0, playerIndex - half);
-    const end = Math.min(leaderboard.length, start + count + 1);
-    const window = leaderboard.slice(start, end);
-
-    const entries = await Promise.all(window.map(async (entry) => {
-      let character = "character_wonder_woman";
-      try {
-        const conn = await redisClient.hGetAll(`connections:${entry.account_id}`);
-        if (conn?.character) character = conn.character;
-      } catch {}
-
-      return {
-        updated_at: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
-        created_at: { _hydra_unix_date: Math.floor(Date.now() / 1000) },
-        deleted: false,
-        orphaned: false,
-        orphaned_reason: null,
-        public_id: entry.account_id,
-        "identity.avatar": "",
-        "identity.default_username": true,
-        "identity.alternate.wb_network": [{ id: entry.account_id, username: entry.username, avatar: null }],
-        "identity.alternate.steam": [{ id: entry.account_id, username: entry.username, avatar: null }],
-        "wb_account.completed": true,
-        "wb_account.email_verified": true,
-        points: 0,
-        state: "normal",
-        wbplay_data_synced: false,
-        wbplay_identity: null,
-        locale: "en-US",
-        "data.LastLoginPlatform": "EPlatform::PC",
-        "data.__unused": null,
-        [`server_data.SeasonalData.Season:SeasonFive.Ranked.DataByMode.${mode}.BestCharacter.CharacterSlug`]: character,
-        [`server_data.SeasonalData.Season:SeasonFive.Ranked.DataByMode.${mode}.BestCharacter.CurrentPoints`]: entry.elo,
-        [`server_data.SeasonalData.Season:SeasonFive.Ranked.DataByMode.${mode}.BestCharacter.MaxPoints`]: entry.elo,
-        [`server_data.SeasonalData.Season:SeasonFive.Ranked.DataByMode.${mode}.BestCharacter.GamesPlayed`]: entry.wins + entry.losses,
-        [`server_data.SeasonalData.Season:SeasonFive.Ranked.DataByMode.${mode}.BestCharacter.SetsPlayed`]: entry.wins + entry.losses,
-        id: entry.account_id,
-        "identity.username": entry.username,
-        connections: [],
-        rank: entry.rank,
-        score: entry.elo,
-        value: entry.elo,
-      };
-    }));
-
-    res.json(entries);
-  } catch (e) {
-    logger.error(`${logPrefix} Error in leaderboard around: ${e}`);
-    res.json([]);
-  }
-});
 
 // Game submits/fetches player rank scores for leaderboard display during ranked matches
 app.put("/leaderboards/bulk/score-and-rank/:playerId", async (req, res) => {

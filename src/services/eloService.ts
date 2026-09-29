@@ -567,9 +567,13 @@ export async function getPlayerRank(
   const totalGames = (player[winsField] || 0) + (player[lossesField] || 0);
   if (totalGames === 0) return null;
 
-  // Count how many players have a higher ELO (rank = that count + 1)
+  // Count the players listed above this one (rank = that count + 1): a higher ELO, or the
+  // same ELO and an earlier _id, the order getLeaderboard sorts ties in.
   const playersAbove = await EloRatingModel.countDocuments({
-    [eloField]: { $gt: player[eloField] },
+    $or: [
+      { [eloField]: { $gt: player[eloField] } },
+      { [eloField]: player[eloField], _id: { $lt: player._id } },
+    ],
     $expr: { $gt: [{ $add: [`$${winsField}`, `$${lossesField}`] }, 0] },
   });
 
@@ -629,7 +633,7 @@ async function getPlayerCharacterRank(
       charLosses: { $ifNull: ["$_charEntry.v.losses", 0] },
     } },
     { $match: { $expr: { $gt: [{ $add: ["$charWins", "$charLosses"] }, 0] } } },
-    { $sort: { charElo: -1 as -1 } },
+    { $sort: { charElo: -1 as -1, _id: 1 as 1 } },
     { $project: { account_id: 1, username: 1, charElo: 1, charWins: 1, charLosses: 1 } },
   ];
 
@@ -662,9 +666,10 @@ export async function getLeaderboard(
   mode: "1v1" | "2v2",
   limit: number = 100,
   characterSlug?: string,
+  skip: number = 0,
 ) {
   if (characterSlug) {
-    return getCharacterLeaderboard(mode, characterSlug, limit);
+    return getCharacterLeaderboard(mode, characterSlug, limit, skip);
   }
   const eloField = mode === "1v1" ? "elo_1v1" : "elo_2v2";
   const winsField = mode === "1v1" ? "wins_1v1" : "wins_2v2";
@@ -674,7 +679,8 @@ export async function getLeaderboard(
   const players = await EloRatingModel.find({
     $expr: { $gt: [{ $add: [`$${winsField}`, `$${lossesField}`] }, 0] },
   })
-    .sort({ [eloField]: -1 })
+    .sort({ [eloField]: -1, _id: 1 })
+    .skip(skip)
     .limit(limit)
     .lean();
 
@@ -716,7 +722,7 @@ export async function getLeaderboard(
       }
 
       return {
-        rank: index + 1,
+        rank: skip + index + 1,
         account_id: p.account_id,
         username: username || "Unknown",
         elo: p[eloField],
@@ -740,6 +746,7 @@ async function getCharacterLeaderboard(
   mode: "1v1" | "2v2",
   characterSlug: string,
   limit: number,
+  skip: number = 0,
 ) {
   const charsField = mode === "1v1" ? "characters_1v1" : "characters_2v2";
   const slugLower = characterSlug.toLowerCase();
@@ -764,7 +771,8 @@ async function getCharacterLeaderboard(
       charLosses: { $ifNull: ["$_charEntry.v.losses", 0] },
     } },
     { $match: { $expr: { $gt: [{ $add: ["$charWins", "$charLosses"] }, 0] } } },
-    { $sort: { charElo: -1 as -1 } },
+    { $sort: { charElo: -1 as -1, _id: 1 as 1 } },
+    { $skip: skip },
     { $limit: limit },
     { $project: { account_id: 1, username: 1, charElo: 1, charWins: 1, charLosses: 1 } },
   ];
@@ -783,7 +791,7 @@ async function getCharacterLeaderboard(
       }
     }
     return {
-      rank: index + 1,
+      rank: skip + index + 1,
       account_id: p.account_id,
       username: username || "Unknown",
       elo: p.charElo,

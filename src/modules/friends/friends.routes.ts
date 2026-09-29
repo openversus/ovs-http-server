@@ -2,7 +2,7 @@ import express, { Request, Response } from "express";
 import { logger } from "../../config/logger";
 import { redisClient, FRIEND_REQUEST_WS_CHANNEL, redisPushDLLNotification, DLLNotification, redisSetBlockedPlayers } from "../../config/redis";
 import { blockPlayer, ensureNoAssholes, getFriends, removeFriend } from "../../services/friendService";
-import { PlayerTester, PlayerTesterModel } from "../../database/PlayerTester";
+import { PlayerTester, PlayerTesterModel, findPlayerById } from "../../database/PlayerTester";
 import { HydraEncoder } from "mvs-dump";
 import * as AuthUtils from "../../utils/auth";
 import {
@@ -27,7 +27,7 @@ friendsRouter.get("/friends/me", async (req: Request, res: Response) => {
     const fContentType = req.headers["content-type"] || "none";
     const friends = await getUserFriendsList(account.id, "active");
 
-    const mongoPlayer = await PlayerTesterModel.findOne({ id: account.id });
+    const mongoPlayer = await findPlayerById(account.id);
     const blocked = await getFriends(account.id, "blocked");
 
     if (mongoPlayer) {
@@ -223,7 +223,7 @@ friendsRouter.put("/social/me/block/:blockid", async (req: Request<{ blockid: st
   try {
     const account = AuthUtils.DecodeClientToken(req);
     const aID = account.id;
-    const blockedPlayerUsername = (await PlayerTesterModel.findOne({ id: req.params.blockid }))?.name || "Unknown";
+    const blockedPlayerUsername = (await findPlayerById(req.params.blockid))?.name || "Unknown";
     const blockResult = await blockPlayer(aID, req.params.blockid, blockedPlayerUsername);
     if (!blockResult.success) {
       logger.error(`${logPrefix} Failed to block player ${req.params.blockid} for account ${aID}: ${blockResult.error}`);
@@ -268,7 +268,7 @@ friendsRouter.put("/accounts/me/relationships/:blockid/block", async (req: Reque
   try {
     const account = AuthUtils.DecodeClientToken(req);
     const aID = account.id;
-    const blockedPlayerUsername = (await PlayerTesterModel.findOne({ id: req.params.blockid }))?.name || "Unknown";
+    const blockedPlayerUsername = (await findPlayerById(req.params.blockid))?.name || "Unknown";
     const blockResult = await blockPlayer(aID, req.params.blockid, blockedPlayerUsername);
     if (!blockResult.success) {
       logger.error(`${logPrefix} Failed to block player ${req.params.blockid} for account ${aID}: ${blockResult.error}`);

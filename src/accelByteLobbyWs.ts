@@ -131,8 +131,8 @@ export class AccelByteLobbyWsService {
       try {
         const steamId = (request.headers["x-steam-id"] as string) || null;
         const epicId = (request.headers["x-epic-id"] as string) || null;
-        const hardwareId = (request.headers["x-hw-id"] as string) || null;
-        const conn = await resolveAccountByIdentifiers({ steamId, epicId, hardwareId, ip });
+        const installId = (request.headers["x-install-id"] as string) || null;
+        const conn = await resolveAccountByIdentifiers({ steamId, epicId, installId, ip });
         if (conn && conn.id) {
           playerId = conn.id;
           username = conn.username || conn.hydraUsername || "";

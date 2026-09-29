@@ -13,7 +13,10 @@ namespace OpenVersus.Server.Http.Tests;
 /// </summary>
 public sealed class SettingsTests : IDisposable
 {
-    private readonly WebApplicationFactory<Program> _factory = new();
+    // Any route still answered by a stub (GetClansByIdBySub).
+    private const string StubPath = "/clans/x/members";
+
+    private readonly GameAppFactory _factory = new();
 
     public void Dispose() => _factory.Dispose();
 
@@ -22,15 +25,15 @@ public sealed class SettingsTests : IDisposable
     [Fact]
     public async Task ChangingTheStubStatusAppliesAtOnce()
     {
-        var client = _factory.CreateClient();
-        Assert.Equal(501, (int)(await client.GetAsync("/friends/me")).StatusCode);
+        var client = _factory.CreateGameClient();
+        Assert.Equal(501, (int)(await client.GetAsync(StubPath)).StatusCode);
 
         Assert.Null(await Settings.SetAsync("Stubs:StatusCode", "503", SettingScope.Instance));
-        Assert.Equal(503, (int)(await client.GetAsync("/friends/me")).StatusCode);
+        Assert.Equal(503, (int)(await client.GetAsync(StubPath)).StatusCode);
         Assert.Equal(503, (int)(await client.GetAsync("/not/a/route")).StatusCode);
 
         Assert.True(await Settings.RemoveAsync("Stubs:StatusCode", SettingScope.Instance));
-        Assert.Equal(501, (int)(await client.GetAsync("/friends/me")).StatusCode);
+        Assert.Equal(501, (int)(await client.GetAsync(StubPath)).StatusCode);
     }
 
     [Theory]
@@ -40,7 +43,7 @@ public sealed class SettingsTests : IDisposable
     public async Task AStatusTheSettingCannotTakeIsRefused(string value)
     {
         Assert.NotNull(await Settings.SetAsync("Stubs:StatusCode", value, SettingScope.Instance));
-        Assert.Equal(501, (int)(await _factory.CreateClient().GetAsync("/friends/me")).StatusCode);
+        Assert.Equal(501, (int)(await _factory.CreateGameClient().GetAsync(StubPath)).StatusCode);
     }
 
     [Fact]
@@ -58,9 +61,9 @@ public sealed class SettingsTests : IDisposable
     [Fact]
     public async Task TheControlApiIsNotOnThePublicListener()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateGameClient();
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/control/status")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.PutAsync("/control/settings/Stubs:StatusCode", new StringContent("200"))).StatusCode);
-        Assert.Equal(501, (int)(await client.GetAsync("/friends/me")).StatusCode);
+        Assert.Equal(501, (int)(await client.GetAsync(StubPath)).StatusCode);
     }
 }

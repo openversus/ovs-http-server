@@ -1955,7 +1955,7 @@
     "notes": [
       "social layer; method from server"
     ],
-    "kind": "accelbyte",
+    "kind": "game",
     "in_game": true,
     "in_server": true
   },
@@ -1971,7 +1971,7 @@
     "notes": [
       "social layer; method from capture"
     ],
-    "kind": "accelbyte",
+    "kind": "game",
     "in_game": true,
     "in_server": true
   },
@@ -1987,7 +1987,7 @@
     "notes": [
       "social layer; method from server"
     ],
-    "kind": "accelbyte",
+    "kind": "game",
     "in_game": true,
     "in_server": true
   },

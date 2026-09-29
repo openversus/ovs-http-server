@@ -18,9 +18,9 @@ override header, not on the wire method. `?` means the method is not known yet.
 server pings `0x0c` every 20 s and the game answers `0x0a`), and the AccelByte lobby socket at `/lobby/`
 (text `type: …` messages; Custom Lobbies).
 
-**Totals.** 259 routes. The game can call 202 Hydra/engine/social routes and SSC functions; the TS
-server answers 112. Not answered: 33 routes and 57 SSC functions.
-AccelByte: 16. OpenVersus's own, not the game: openversus client mod 10, rollback server 7, website (browser) 18, admin, testing and data sync 6.
+**Totals.** 259 routes. The game can call 205 Hydra/engine/social routes and SSC functions; the TS
+server answers 115. Not answered: 33 routes and 57 SSC functions.
+AccelByte: 13. OpenVersus's own, not the game: openversus client mod 10, rollback server 7, website (browser) 18, admin, testing and data sync 6.
 
 Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVersus's own (`ovs-client`,
 `ovs-rollback`, `ovs-web`, `ovs-admin`). The skeleton's endpoint folders follow the same split.
@@ -142,9 +142,6 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | ALL | `/lobby/*` | — | yes | server only |
 | ALL | `/platform/*` | — | yes | server only |
 | ALL | `/social/*` | — | yes | server only |
-| PUT | `/social/me/block/{id}` | binary `0x140f93530` | yes | social layer; method from server |
-| GET | `/social/me/blocked` | binary `0x140f99e00`, capture ×14 | yes | social layer; method from capture |
-| PUT | `/social/me/unblock/{id}` | binary `0x140fa3540` | yes | social layer; method from server |
 
 ## OpenVersus's own: OpenVersus client mod
 
@@ -203,6 +200,8 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | GET | `/admin/banner` | — | yes | server only |
 | POST | `/api/admin/banner` | — | yes | server only |
 | GET | `/api/admin/banner/online-count` | — | yes | server only |
+| POST | `/api/testing/deploy-rollback-server` | — | yes | server only |
+| POST | `/api/testing/destroy-rollback-server` | — | yes | server only |
 | POST | `/syncAsset` | — | yes | server only |
 
 ## All game routes (not SSC)
@@ -286,6 +285,9 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | ? | `/sessions/auth/password` | binary `0x140f9baf0` | **no** | social layer; method from unknown |
 | POST | `/sessions/auth/token` | binary `0x140f9be40`, capture ×11 | yes | social layer; method from capture |
 | ? | `/sessions/device` | binary `0x140f99970` | **no** | social layer; method from unknown |
+| PUT | `/social/me/block/{id}` | binary `0x140f93530` | yes | social layer; method from server |
+| GET | `/social/me/blocked` | binary `0x140f99e00`, capture ×14 | yes | social layer; method from capture |
+| PUT | `/social/me/unblock/{id}` | binary `0x140fa3540` | yes | social layer; method from server |
 | GET | `/store/store_products/{id}/my_products` | binary `0x144feb090` | **no** | segment order inferred |
 | POST | `/virtual_commerce/purchases/{id}/{item}` | binary `0x145069300` | yes | item e.g. toasts_gleamium |
 

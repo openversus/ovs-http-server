@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <None Include="Hydra\encoder-fixtures.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Access\jwt-fixtures.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Access\sessions-auth-token.captured.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

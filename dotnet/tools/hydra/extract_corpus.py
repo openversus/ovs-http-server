@@ -7,7 +7,7 @@ repository (dotnet/local/ is gitignored). Decrypts TLS with the keylog in OVS_TL
 """
 import binascii, os, pathlib, re, subprocess, sys, tempfile
 
-KEYLOG = os.environ.get("OVS_TLS_KEYLOG", str(pathlib.Path.home() / "packet_captures/tlskeys/wireshark_preferences_tlskey.log"))
+KEYLOG = os.environ.get("OVS_TLS_KEYLOG", str(pathlib.Path.home() / "packet_captures/tlskeys/tls_keylog_dialog_launch_2026-09-01.log"))
 
 
 def extract(capture, out, tag):

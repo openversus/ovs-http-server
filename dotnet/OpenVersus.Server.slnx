@@ -1,5 +1,11 @@
 <Solution>
   <Project Path="src/OpenVersus.Server.Core/OpenVersus.Server.Core.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/OpenVersus.Server.Proxy/OpenVersus.Server.Proxy.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OpenVersus.Server.Proxy.Tests/OpenVersus.Server.Proxy.Tests.csproj" />
+  </Folder>
   <Project Path="src/OpenVersus.Server.Cli/OpenVersus.Server.Cli.csproj" />
   <Project Path="src/OpenVersus.Server.Http/OpenVersus.Server.Http.csproj" />
   <Project Path="tests/OpenVersus.Server.Cli.Tests/OpenVersus.Server.Cli.Tests.csproj" />

@@ -29,7 +29,10 @@ public static class KnownServices
     public static readonly ServiceDefinition Realtime = new("ws", "WEBSOCKET_PORT", DefaultPublicPort: 3000, DefaultControlPort: 17802);
     public static readonly ServiceDefinition Matchmaking = new("matchmaking", PublicPortKey: null, DefaultPublicPort: 0, DefaultControlPort: 17803);
 
-    public static IReadOnlyList<ServiceDefinition> All { get; } = [Http, Realtime, Matchmaking];
+    /// <summary>The migration's reverse proxy: ported routes to the C# services, the rest to the TS server.</summary>
+    public static readonly ServiceDefinition Proxy = new("proxy", "PROXY_PORT", DefaultPublicPort: 8080, DefaultControlPort: 17804);
+
+    public static IReadOnlyList<ServiceDefinition> All { get; } = [Http, Realtime, Matchmaking, Proxy];
 
     public static ServiceDefinition? Find(string name) => All.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
 }
@@ -48,7 +51,8 @@ public sealed class ServiceInstance
 /// and its own services, then calls <see cref="UseOpenVersus"/> after building.
 /// <para>
 /// Configuration, lowest to highest: appsettings, the environment and the command line (all three from
-/// <c>WebApplication.CreateBuilder</c>), then the cluster layer (Redis) and the instance layer. The two override layers
+/// <c>WebApplication.CreateBuilder</c>), the TS server's variable names for keys not set otherwise (<see cref="TsEnvironment"/>),
+/// then the cluster layer (Redis) and the instance layer. The two override layers
 /// are added after the builder has added the others, which is what makes a change through the control API win over
 /// everything the service was started with; a source added after them would win over them instead.
 /// </para>
@@ -60,6 +64,7 @@ public static class OpenVersusHost
         var builder = WebApplication.CreateBuilder(args);
         var layers = new SettingsLayers(new OverrideLayer("cluster"), new OverrideLayer("instance"));
         IConfigurationBuilder config = builder.Configuration;
+        TsEnvironment.AddAliases(config, builder.Configuration);
         config.Add(layers.Cluster);
         config.Add(layers.Instance);
 
@@ -100,6 +105,7 @@ public static class OpenVersusHost
     public static WebApplication UseOpenVersus(this WebApplication app)
     {
         OpenVersusLogging.FollowLevelSetting(app.Services);
+        app.LogFrozenAccountData();
         app.MapOpenVersusControl();
         app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
         app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });

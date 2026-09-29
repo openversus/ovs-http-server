@@ -1,7 +1,7 @@
 using FastEndpoints;
 using OpenVersus.Server.Http.Stubs;
 
-namespace OpenVersus.Server.Http.Endpoints.AccelByte;
+namespace OpenVersus.Server.Http.Endpoints.Game.Social;
 
 /// <summary>
 /// PUT /social/me/unblock/{id}.

@@ -23,6 +23,9 @@ public static class Stub
     /// <summary>The response header naming the stub that answered, so a capture or a test can tell which one it was.</summary>
     public const string Header = "X-OVS-Stub";
 
+    /// <summary>The response header naming the endpoint that answered, ported or not.</summary>
+    public const string EndpointHeader = "X-OVS-Endpoint";
+
     /// <summary>The fallback's name in <see cref="Header"/>: no endpoint claimed the request.</summary>
     public const string FallbackName = "Fallback";
 

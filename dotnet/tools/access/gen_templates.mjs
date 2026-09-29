@@ -1,0 +1,91 @@
+// Writes the response templates in src/OpenVersus.Server.Core/Access/ from the TS server's own object literals, so
+// nothing in them is copied by hand. Run from the repository root:
+//   node dotnet/tools/access/gen_templates.mjs
+// Each literal is evaluated with markers ("{{name}}") for the values that come from the request or the player; the C#
+// side fills them. Rerun when a TS literal changes; the byte tests against captured responses say whether the result
+// still matches.
+import fs from "node:fs";
+import path from "node:path";
+import { stripTypeScriptTypes } from "node:module";
+
+const root = process.cwd();
+const marker = (name) => `{{${name}}}`;
+
+/** Evaluates the object literal that starts with `start` and ends at the first `end` after it. */
+async function literal(file, start, end, skip, scope) {
+  const source = fs.readFileSync(path.join(root, file), "utf8");
+  const from = source.indexOf(start);
+  const to = source.indexOf(end, from);
+  if (from < 0 || to < 0) throw new Error(`the literal in ${file} was not found; update this script`);
+  // `end` holds the literal's closing bracket (} or ]) first.
+  const close = [end.indexOf("}"), end.indexOf("]")].filter((i) => i >= 0).sort((a, b) => a - b)[0];
+  const text = source.slice(from + skip, to + 1 + close);
+  // Node strips the literal's TypeScript annotations.
+  const js = stripTypeScriptTypes(`(async () => (${text}))()`);
+  return new Function(...Object.keys(scope), `return ${js}`)(...Object.values(scope));
+}
+
+function write(name, value, dir = "Access") {
+  const out = path.join(root, "dotnet/src/OpenVersus.Server.Core", dir, name);
+  fs.writeFileSync(out, JSON.stringify(value, null, 2) + "\n");
+  console.log(`wrote ${path.relative(root, out)}`);
+}
+
+// POST /access (handlers/access.ts generateStaticAccess). The stat trackers are evaluated with no match data: their
+// computed fields are filled from the player's stats. Addresses (the realtime block, the avatar URLs) are settings
+// (Realtime:*, Access:*AvatarUrl) whose defaults are the TS values.
+const login = await literal("src/handlers/access.ts", "  return {\n    token: token,", "\n  };\n}", "  return ".length, {
+  token: marker("token"),
+  ws: marker("ws"),
+  account: {
+    id: marker("account.id"),
+    profile_id: marker("account.profile_id"),
+    public_id: marker("account.public_id"),
+    wb_network_id: marker("account.wb_network_id"),
+    username: marker("account.username"),
+    hydraUsername: marker("account.hydraUsername"),
+  },
+  player: { profile_icon: marker("player.profile_icon") },
+  getAssetsByType: () => [{ slug: marker("player.profile_icon"), assetPath: marker("profile_icon.assetPath") }],
+  EloRatingModel: { findOne: () => ({ lean: async () => null }) },
+  PlayerStatsModel: { findOne: () => ({ lean: async () => null }) },
+});
+login.configuration.realtime = marker("realtime");
+login.account.identity.avatar = marker("identity.avatar");
+login.account.identity.alternate.steam[0].avatar = marker("steam.avatar");
+write("login-response.json", login);
+
+// POST /sessions/auth/token (handlers/sessions.ts): access_token echoes the request's code. The WB network's realtime
+// block and the avatar image are settings (WbNetwork:*) whose defaults are the TS values.
+const session = await literal("src/handlers/sessions.ts", "  res.send({", "\n  });\n}", "  res.send(".length, {
+  req: { body: { code: marker("code") } },
+});
+if (process.argv[2] === "--defaults") {
+  // What the settings' defaults were copied from.
+  console.log(JSON.stringify({ cluster: session.sdk.realtime["default-cluster"], servers: session.sdk.realtime.servers, avatar: session.account.avatar.image_url }));
+}
+session.sdk.realtime = marker("realtime");
+session.account.avatar.image_url = marker("avatar.image_url");
+write("sessions-auth-token.json", session);
+
+// Static answers (src/OpenVersus.Server.Core/Static): literals with nothing to fill.
+const commerce = "src/handlers/commerce.ts";
+write("commerce-products-partial.json", await literal(commerce, "  if (req.query.partial_response) {\n    res.send([", "\n    ]);", "  if (req.query.partial_response) {\n    res.send(".length, {}), "Static");
+write("commerce-products.json", await literal(commerce, "  }\n  res.send([\n", "\n  ]);", "  }\n  res.send(".length, {}), "Static");
+write("commerce-purchases-me.json", await literal(commerce, "  res.send({ purchases:", " });", "  res.send(".length, {}), "Static");
+write("commerce-steam-mtx-user-info-me.json", await literal(commerce, "  res.send({ currency:", " });", "  res.send(".length, {}), "Static");
+
+// GET /layout/dokken-layout-type/personalized/{variant}/{id} (handlers/layout.ts): one literal per variant, the same
+// for every id.
+const layouts = "src/handlers/layout.ts";
+const layoutSource = fs.readFileSync(path.join(root, layouts), "utf8");
+for (const variant of ["account-cosmetics-variant", "battlepass-variant", "currency-variant", "fighter-road-layout", "fighter-variant", "main-variant", "prestige-variant", "rift-variant", "skin-variant"]) {
+  const fn = `handleLayout_dokken_layout_type_personalized_${variant.replaceAll("-", "_")}_id(`;
+  const at = layoutSource.indexOf(`function ${fn}`);
+  if (at < 0) throw new Error(`${fn} not found in ${layouts}; update this script`);
+  const start = layoutSource.indexOf("  res.send(", at);
+  // literal() finds the first match of its start string, so hand it this handler's own opening line and position.
+  const opening = layoutSource.slice(start, layoutSource.indexOf("\n", start) + 1);
+  const value = await literal(layouts, layoutSource.slice(at, start) + opening, "\n  });\n}", (layoutSource.slice(at, start) + "  res.send(").length, {});
+  write(`layout-${variant}.json`, value, "Static");
+}

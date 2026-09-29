@@ -10,19 +10,20 @@ using OpenVersus.Server.Http.Stubs;
 namespace OpenVersus.Server.Http.Tests;
 
 /// <summary>
-/// Every route in docs/routes.json reaches an endpoint of its own: not the fallback, not the SSC catch-all, and not
+/// Every route in docs/routes.json reaches an endpoint of its own (named by the X-OVS-Endpoint header, or X-OVS-Stub for
+/// the fallback): not the fallback, not the SSC catch-all, and not
 /// an endpoint another route also lands on (which would mean one of the two is shadowed). Plus the routing rules the
 /// game depends on: the Hydra method override, the SSC catch-all and the fallback.
 /// </summary>
-public sealed class RouteMapTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class RouteMapTests : IClassFixture<GameAppFactory>
 {
     private static readonly string[] s_allVerbs = ["GET", "PUT", "POST", "DELETE"];
     private static readonly int s_stubStatus = new StubSettings().StatusCode;
     private readonly HttpClient _client;
 
-    public RouteMapTests(WebApplicationFactory<Program> factory)
+    public RouteMapTests(GameAppFactory factory)
     {
-        _client = factory.CreateClient();
+        _client = factory.CreateGameClient();
     }
 
     public sealed record Route(string Method, string Path, string Kind, string Area);
@@ -47,7 +48,7 @@ public sealed class RouteMapTests : IClassFixture<WebApplicationFactory<Program>
     private static string Concrete(string template) =>
         Regex.Replace(template.EndsWith("/*", StringComparison.Ordinal) ? template[..^1] + "x9/y9" : template, @"\{[^}]+\}", "x1");
 
-    private async Task<(HttpStatusCode Status, string Stub)> SendAsync(string method, string path, string? overrideMethod = null)
+    private async Task<(HttpStatusCode Status, string Stub, string Endpoint)> SendAsync(string method, string path, string? overrideMethod = null)
     {
         using var request = new HttpRequestMessage(new HttpMethod(method), path);
         if (overrideMethod is not null)
@@ -56,7 +57,9 @@ public sealed class RouteMapTests : IClassFixture<WebApplicationFactory<Program>
         }
 
         using var response = await _client.SendAsync(request);
-        return (response.StatusCode, response.Headers.TryGetValues(Stub.Header, out var v) ? v.Single() : "");
+        return (response.StatusCode,
+            response.Headers.TryGetValues(Stub.Header, out var stub) ? stub.Single() : "",
+            response.Headers.TryGetValues(Stub.EndpointHeader, out var endpoint) ? endpoint.Single() : "");
     }
 
     [Fact]
@@ -74,14 +77,17 @@ public sealed class RouteMapTests : IClassFixture<WebApplicationFactory<Program>
             var reached = new HashSet<string>();
             foreach (var verb in verbs)
             {
-                var (status, stub) = await SendAsync(verb, Concrete(route.Path));
-                if ((int)status != s_stubStatus || stub == "")
+                // A ported endpoint answers whatever it answers (here, with no Mongo or Redis, that it cannot); a stub
+                // answers the stub status. Either way the endpoint names itself.
+                var (status, stub, endpoint) = await SendAsync(verb, Concrete(route.Path));
+                string name = endpoint != "" ? endpoint : stub;
+                if (name == "" || (stub != "" && (int)status != s_stubStatus))
                 {
-                    problems.Add($"{verb} {route.Path}: status {(int)status}, stub '{stub}'");
+                    problems.Add($"{verb} {route.Path}: status {(int)status}, stub '{stub}', endpoint '{endpoint}'");
                     continue;
                 }
 
-                reached.Add(stub);
+                reached.Add(name);
             }
 
             if (reached.Contains(Stub.FallbackName))
@@ -117,7 +123,7 @@ public sealed class RouteMapTests : IClassFixture<WebApplicationFactory<Program>
         // The game sends both of these as PUT to the same path; only the header differs.
         Assert.Equal("GetProfilesByIdInventory", (await SendAsync("PUT", "/profiles/abc/inventory", overrideMethod: "GET")).Stub);
         Assert.Equal("PutProfilesByIdInventory", (await SendAsync("PUT", "/profiles/abc/inventory")).Stub);
-        Assert.Equal("GetProfilesBulk", (await SendAsync("PUT", "/profiles/bulk", overrideMethod: "GET")).Stub);
+        Assert.Equal("GetProfilesBulk", (await SendAsync("PUT", "/profiles/bulk", overrideMethod: "GET")).Endpoint);
     }
 
     [Fact]
@@ -129,7 +135,7 @@ public sealed class RouteMapTests : IClassFixture<WebApplicationFactory<Program>
     [Fact]
     public async Task AnUnlistedSscNameReachesTheCatchAll()
     {
-        var (status, stub) = await SendAsync("PUT", "/ssc/invoke/some_name_the_map_does_not_have");
+        var (status, stub, _) = await SendAsync("PUT", "/ssc/invoke/some_name_the_map_does_not_have");
         Assert.Equal(s_stubStatus, (int)status);
         Assert.Equal("SscUnlisted", stub);
     }
@@ -137,7 +143,7 @@ public sealed class RouteMapTests : IClassFixture<WebApplicationFactory<Program>
     [Fact]
     public async Task AnUnknownPathReachesTheFallback()
     {
-        var (status, stub) = await SendAsync("GET", "/definitely/not/a/route");
+        var (status, stub, _) = await SendAsync("GET", "/definitely/not/a/route");
         Assert.Equal(s_stubStatus, (int)status);
         Assert.Equal(Stub.FallbackName, stub);
     }

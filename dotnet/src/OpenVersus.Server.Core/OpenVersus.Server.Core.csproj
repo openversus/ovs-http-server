@@ -14,6 +14,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Generated from the TS server's literals by tools/access/gen_templates.mjs. -->
+    <EmbeddedResource Include="Access/login-response.json" LogicalName="OpenVersus.Server.Core.Access.login-response.json" />
+    <EmbeddedResource Include="Access/sessions-auth-token.json" LogicalName="OpenVersus.Server.Core.Access.sessions-auth-token.json" />
+    <EmbeddedResource Include="Static/*.json" LogicalName="OpenVersus.Server.Core.Static.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="OpenVersus.Server.Core.Tests" />
   </ItemGroup>
 

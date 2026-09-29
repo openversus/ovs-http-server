@@ -1,4 +1,5 @@
 using FastEndpoints;
+using OpenVersus.Server.Http.Hosting;
 using OpenVersus.Server.Http.Stubs;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Leaderboards;
@@ -7,6 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Leaderboards;
 /// GET /leaderboards/{id}/around/me.
 /// Seen in: binary 0x145066ac0.
 /// </summary>
+[NoHydraToken]
 public sealed class GetLeaderboardsByIdAroundMe : StubEndpoint
 {
     public override void Configure()

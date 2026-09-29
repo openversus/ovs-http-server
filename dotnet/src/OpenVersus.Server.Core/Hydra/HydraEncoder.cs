@@ -25,19 +25,20 @@ public static class HydraCode
 /// tests/OpenVersus.Server.Core.Tests/Hydra/encoder-fixtures.json pins, generated from that encoder.
 /// <para>
 /// Values are JSON nodes with the TS data's conventions. A number is written as the smallest unsigned type that holds
-/// it, any negative integer as INT64, anything else as DOUBLE. Objects whose key is one of the wrappers become Hydra's
-/// special types: <c>_hydra_unix_date</c> (DATE), <c>_hydra_double</c> (a DOUBLE even when whole), <c>_hydra_compressed</c>,
-/// <c>_hydra_calendar</c>, <c>localizations</c>, <c>_hydra_StoreEnabed</c> (sic) and <c>file_reference</c>. As in mvs-dump,
-/// a wrapper replaces the most recently written piece, which is its object's map header when the wrapper is the
-/// object's first key (the only way the TS data uses them); the pieces are kept as mvs-dump keeps them so that even
-/// other uses come out the same.
+/// it, any negative integer as INT64, anything else as DOUBLE. An object whose only key is one of the wrappers is Hydra's
+/// special type rather than a map: <c>_hydra_unix_date</c> (DATE), <c>_hydra_double</c> (a DOUBLE even when whole),
+/// <c>_hydra_compressed</c>, <c>_hydra_calendar</c>, <c>localizations</c> and <c>_hydra_StoreEnabed</c> (sic); and the value
+/// under a <c>file_reference</c> key is a file reference. That is how the TS data and the decoder shape them.
+/// </para>
+/// <para>
+/// A wrapper next to other keys is refused. mvs-dump does not refuse it: it replaces whatever it wrote last (the previous
+/// key's value) and leaves the map's entry count wrong, which the game would misread. No captured traffic has one.
 /// </para>
 /// </summary>
 public sealed class HydraEncoder
 {
-    private readonly List<byte[]> _chunks = [];
+    private readonly MemoryStream _out = new();
     private readonly bool _webSocket;
-    private int _length;
 
     private HydraEncoder(bool webSocket)
     {
@@ -46,7 +47,7 @@ public sealed class HydraEncoder
 
     /// <summary>
     /// Encodes <paramref name="value"/>. For the websocket, the message is framed as the game expects: 0x06 and the
-    /// payload's length as 16 bits, so a websocket message over 65,535 bytes cannot be sent (the TS server cannot either).
+    /// payload's length in 16 bits. The frame cannot state a longer length, so a message over 65,535 bytes is refused.
     /// </summary>
     public static byte[] Encode(JsonNode? value, bool webSocket = false)
     {
@@ -57,42 +58,25 @@ public sealed class HydraEncoder
 
     private byte[] Result()
     {
-        if (_webSocket)
+        byte[] payload = _out.ToArray();
+        if (!_webSocket)
         {
-            if (_length > ushort.MaxValue)
-            {
-                throw new HydraFormatException($"a websocket message holds at most {ushort.MaxValue} bytes; this one is {_length}");
-            }
-
-            var header = new byte[3];
-            header[0] = HydraCode.WebSocket;
-            BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(1), (ushort)_length);
-            _chunks.Insert(0, header);
-            _length += 3;
+            return payload;
         }
 
-        var result = new byte[_length];
-        int at = 0;
-        foreach (var chunk in _chunks)
+        if (payload.Length > ushort.MaxValue)
         {
-            chunk.CopyTo(result, at);
-            at += chunk.Length;
+            throw new HydraFormatException($"a websocket message holds at most {ushort.MaxValue} bytes; this one is {payload.Length}");
         }
 
-        return result;
+        var framed = new byte[3 + payload.Length];
+        framed[0] = HydraCode.WebSocket;
+        BinaryPrimitives.WriteUInt16BigEndian(framed.AsSpan(1), (ushort)payload.Length);
+        payload.CopyTo(framed, 3);
+        return framed;
     }
 
-    private void Push(byte[] chunk)
-    {
-        _chunks.Add(chunk);
-        _length += chunk.Length;
-    }
-
-    private void PopLast()
-    {
-        _length -= _chunks[^1].Length;
-        _chunks.RemoveAt(_chunks.Count - 1);
-    }
+    private void Push(byte[] bytes) => _out.Write(bytes);
 
     private void Value(JsonNode? node)
     {
@@ -297,52 +281,65 @@ public sealed class HydraEncoder
         }
     }
 
+    private static readonly HashSet<string> s_wrappers =
+        ["_hydra_unix_date", "_hydra_double", "_hydra_compressed", "_hydra_calendar", "localizations", "_hydra_StoreEnabed"];
+
     private void Object(JsonObject obj)
     {
+        if (obj.Count == 1 && s_wrappers.Contains(obj.First().Key))
+        {
+            Wrapper(obj.First().Key, obj.First().Value);
+            return;
+        }
+
+        if (obj.FirstOrDefault(kv => s_wrappers.Contains(kv.Key)) is { Key: { } wrapper })
+        {
+            throw new HydraFormatException($"'{wrapper}' must be its object's only key");
+        }
+
         Header(HydraCode.Map8, obj.Count);
         foreach (var (key, value) in obj)
         {
-            switch (key)
+            String(key);
+            if (key == "file_reference")
             {
-                case "file_reference":
-                    String(key);
-                    FileReference(value?["value"] as JsonObject);
-                    break;
-                case "localizations":
-                    PopLast();
-                    Localizations(value as JsonObject);
-                    break;
-                case "_hydra_StoreEnabed":
-                    PopLast();
-                    Push([HydraCode.StoreEnabled, HydraCode.False, HydraCode.False]);
-                    Array(value as JsonArray ?? throw new HydraFormatException("_hydra_StoreEnabed must be an array"));
-                    break;
-                case "_hydra_unix_date":
-                    PopLast();
-                    var date = new byte[5];
-                    date[0] = HydraCode.Date;
-                    BinaryPrimitives.WriteUInt32BigEndian(date.AsSpan(1), (uint)NumberOf(value));
-                    Push(date);
-                    break;
-                case "_hydra_compressed":
-                    PopLast();
-                    Compressed(value);
-                    break;
-                case "_hydra_double":
-                    PopLast();
-                    Double(NumberOf(value));
-                    break;
-                case "_hydra_calendar":
-                    PopLast();
-                    Push([HydraCode.Calendar]);
-                    Value(value?["default"]);
-                    Value(value?["rendered"]);
-                    break;
-                default:
-                    String(key);
-                    Value(value);
-                    break;
+                FileReference(value?["value"] as JsonObject);
             }
+            else
+            {
+                Value(value);
+            }
+        }
+    }
+
+    private void Wrapper(string wrapper, JsonNode? value)
+    {
+        switch (wrapper)
+        {
+            case "_hydra_unix_date":
+                var date = new byte[5];
+                date[0] = HydraCode.Date;
+                BinaryPrimitives.WriteUInt32BigEndian(date.AsSpan(1), (uint)NumberOf(value));
+                Push(date);
+                break;
+            case "_hydra_double":
+                Double(NumberOf(value));
+                break;
+            case "_hydra_compressed":
+                Compressed(value);
+                break;
+            case "_hydra_calendar":
+                Push([HydraCode.Calendar]);
+                Value(value?["default"]);
+                Value(value?["rendered"]);
+                break;
+            case "localizations":
+                Localizations(value as JsonObject);
+                break;
+            case "_hydra_StoreEnabed":
+                Push([HydraCode.StoreEnabled, HydraCode.False, HydraCode.False]);
+                Array(value as JsonArray ?? throw new HydraFormatException("_hydra_StoreEnabed must be an array"));
+                break;
         }
     }
 

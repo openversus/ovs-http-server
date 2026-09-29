@@ -97,8 +97,7 @@ SOCIAL = [
 ]
 
 # SSC function names the binary holds on an SSC call path (ssc_names.py, verb-shaped ones only), and
-# the probable ones from static FString initializers (static_fstrings.py). Christopher confirmed these
-# are game terms (2026-09-28).
+# the probable ones from static FString initializers (static_fstrings.py), confirmed as game terms.
 SSC_BINARY = """activate_timed_boost add_custom_game_bot cancel_party_invite check_leaver_punishment check_server_grants
 check_training_server_ready claim_competition_points claim_server_grants claim_voting_competition_rewards
 consume_character_xp_boost convert_candy_to_gold create_party debug_lock_inventory_item debug_unlock_inventory_item
@@ -125,9 +124,11 @@ EXE = pathlib.Path.home() / ".local/share/Steam/steamapps/common/MultiVersus/Mul
 # Unreal's own routes (engine, not Hydra): the DataRouter string is in the exe as UTF-16.
 ENGINE = [("POST", "/datarouter/api/v1/public/data/clients", "string", "Unreal DataRouter (engine telemetry); exe holds 'datarouter/api/v1/public/data?SessionID='")]
 
-# AccelByte: the Custom Lobbies use it and it is live (Christopher, 2026-09-28), though no AccelByte string was
+# AccelByte: the Custom Lobbies use it and it is live, though no AccelByte string was
 # found in the exe or its DLLs; these routes come from the TS server.
 ACCELBYTE = re.compile(r"^/(iam|basic|lobby|agreement|platform|social)(/|\*|$)")
+# ...except the game's own social layer: /social/me/* goes to the OpenVersus host with the Hydra token (captured).
+SOCIAL_LAYER = re.compile(r"^/social/me/")
 # OpenVersus's own routes, by caller (checked against the handlers' comments and the rollback server's source,
 # 2026-09-28). Order matters: the first match wins.
 OVS_KINDS = [
@@ -265,7 +266,7 @@ def main():
 
     rows = sorted(routes.values(), key=lambda r: (r["area"], r["path"], r["method"]))
     for r in rows:
-        r["kind"] = "accelbyte" if ACCELBYTE.match(r["path"]) else next((k for k, rx in OVS_KINDS if rx.match(r["path"])), "game")
+        r["kind"] = "accelbyte" if ACCELBYTE.match(r["path"]) and not SOCIAL_LAYER.match(r["path"]) else next((k for k, rx in OVS_KINDS if rx.match(r["path"])), "game")
         r["in_game"] = r["kind"] in ("game", "accelbyte") and (bool(r["binary"]) or r["capture"] > 0 or r["kind"] == "accelbyte" or r["path"].endswith("/access"))
         r["in_server"] = bool(r["server"])
     DOCS.mkdir(exist_ok=True)

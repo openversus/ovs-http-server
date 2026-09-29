@@ -104,6 +104,16 @@ public sealed class HydraCodecTests
     }
 
     [Theory]
+    [InlineData("""{ "a": 1, "_hydra_unix_date": 5 }""")]
+    [InlineData("""{ "_hydra_double": 2, "b": true }""")]
+    [InlineData("""{ "x": { "localizations": { "en": "a" }, "y": 1 } }""")]
+    public void RefusesAWrapperNextToOtherKeys(string json)
+    {
+        // mvs-dump would overwrite the previous value and miscount the map; refusing is the only safe answer.
+        Assert.Throws<HydraFormatException>(() => HydraEncoder.Encode(JsonNode.Parse(json)));
+    }
+
+    [Theory]
     [InlineData("ee")]
     [InlineData("3005616263")]
     [InlineData("11")]

@@ -15,6 +15,12 @@ public sealed class StaticResponsesTests
         { "commerce_products.bin", ["commerce-products", "commerce-products-partial"] },
         { "commerce_purchases_me.bin", ["commerce-purchases-me"] },
         { "commerce_steam_mtx_user_info_me.bin", ["commerce-steam-mtx-user-info-me"] },
+        // File records and the drive sync.
+        { "file_storage_s5_bp_carousel_keyart.bin", ["file-storage-s5-bp-carousel-keyart"] },
+        { "file_storage_s5_bp_carousel_thumbnail.bin", ["file-storage-s5-bp-carousel-thumbnail"] },
+        { "file_storage_t_discord_qa_carousel_keyart.bin", ["file-storage-t-discord-qa-carousel-keyart"] },
+        { "file_storage_t_discord_qa_carousel_thumbnail.bin", ["file-storage-t-discord-qa-carousel-thumbnail"] },
+        { "drives_multiversus_sync.bin", ["drives-multiversus-sync"] },
         // Layouts (file names cut at 60 characters by the extractor). fighter-road-layout was never captured.
         { "layout_dokken_layout_type_personalized_account_cosmetics_va.bin", ["layout-account-cosmetics-variant"] },
         { "layout_dokken_layout_type_personalized_battlepass_variant_I.bin", ["layout-battlepass-variant"] },

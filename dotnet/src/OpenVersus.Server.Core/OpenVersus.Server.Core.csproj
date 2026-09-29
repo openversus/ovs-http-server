@@ -18,6 +18,8 @@
     <EmbeddedResource Include="Access/login-response.json" LogicalName="OpenVersus.Server.Core.Access.login-response.json" />
     <EmbeddedResource Include="Access/sessions-auth-token.json" LogicalName="OpenVersus.Server.Core.Access.sessions-auth-token.json" />
     <EmbeddedResource Include="Static/*.json" LogicalName="OpenVersus.Server.Core.Static.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="FileStorage/*.json" LogicalName="OpenVersus.Server.Core.FileStorage.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Inventory/*.json" LogicalName="OpenVersus.Server.Core.Inventory.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

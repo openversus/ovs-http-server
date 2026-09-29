@@ -1,0 +1,20 @@
+{
+  "slug": "beginnermode-carousel-keyart",
+  "name": "beginnermode_carousel_keyart",
+  "created_at": {
+    "_hydra_unix_date": 1728661052
+  },
+  "updated_at": {
+    "_hydra_unix_date": 1728661052
+  },
+  "s3_object_id": "dokken/production/70dc43d1-t_begginnermode_carousel_keyart.png",
+  "auto_sync": true,
+  "file_size": 8134018,
+  "file_type": "image/png",
+  "filename": "70dc43d1-t_begginnermode_carousel_keyart.png",
+  "md5_checksum": "f1b764ad9cf9b70dfff0bac8a59b55c2",
+  "auth_exempt": false,
+  "data": {},
+  "id": "6709463c7f18dba761677bc0",
+  "download_url": "https://wb-agora-hydra-file-storage-dokken.s3.amazonaws.com/dokken/production/70dc43d1-t_begginnermode_carousel_keyart.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5J6YDD2RMJ4AQTRN%2F20250318%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250318T023404Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=8347815beb15b8521e0499beec679f69c6942e6c731032b15e7bd0af169a9b41"
+}

@@ -121,7 +121,7 @@ public sealed class RouteMapTests : IClassFixture<GameAppFactory>
     public async Task TheHydraOverrideHeaderPicksTheRealMethod()
     {
         // The game sends both of these as PUT to the same path; only the header differs.
-        Assert.Equal("GetProfilesByIdInventory", (await SendAsync("PUT", "/profiles/abc/inventory", overrideMethod: "GET")).Stub);
+        Assert.Equal("GetProfilesByIdInventory", (await SendAsync("PUT", "/profiles/abc/inventory", overrideMethod: "GET")).Endpoint);
         Assert.Equal("PutProfilesByIdInventory", (await SendAsync("PUT", "/profiles/abc/inventory")).Stub);
         Assert.Equal("GetProfilesBulk", (await SendAsync("PUT", "/profiles/bulk", overrideMethod: "GET")).Endpoint);
     }

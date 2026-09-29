@@ -30,17 +30,15 @@ internal static class DailyToastBonus
         return new DateTimeOffset(eleven, s_chicago.GetUtcOffset(eleven)).ToUnixTimeSeconds();
     }
 
-    /// <summary>Grants the bonus when due. Returns the toasts granted (0 or <see cref="Bonus"/>) and the new count.</summary>
-    public static async Task<(int Granted, long Count)> TryGrantAsync(IMongoDatabase mongo, string accountId, DateTimeOffset now, CancellationToken ct)
+    /// <summary>
+    /// The player's counters document (TS getCounters), created with the defaults on first use. The fields and the
+    /// timestamps are the ones mongoose writes (the TS model has timestamps on and a version key), so the TS services
+    /// read the same document; like there, every call sets updatedAt.
+    /// </summary>
+    public static Task<BsonDocument> GetCountersAsync(IMongoDatabase mongo, string accountId, DateTimeOffset now, CancellationToken ct)
     {
-        var counters = mongo.GetCollection<BsonDocument>(Collection);
-        long boundary = MostRecentBoundary(now);
         var at = now.UtcDateTime;
-        var after = new FindOneAndUpdateOptions<BsonDocument> { ReturnDocument = ReturnDocument.After };
-
-        // Create with the defaults on first use. The fields and the timestamps are the ones mongoose writes (the TS
-        // model has timestamps on and a version key), so the TS services read the same document.
-        var current = await counters.FindOneAndUpdateAsync(
+        return mongo.GetCollection<BsonDocument>(Collection).FindOneAndUpdateAsync(
             new BsonDocument("accountId", accountId),
             new BsonDocument
             {
@@ -49,6 +47,16 @@ internal static class DailyToastBonus
             },
             new FindOneAndUpdateOptions<BsonDocument> { IsUpsert = true, ReturnDocument = ReturnDocument.After },
             ct);
+    }
+
+    /// <summary>Grants the bonus when due. Returns the toasts granted (0 or <see cref="Bonus"/>) and the new count.</summary>
+    public static async Task<(int Granted, long Count)> TryGrantAsync(IMongoDatabase mongo, string accountId, DateTimeOffset now, CancellationToken ct)
+    {
+        var counters = mongo.GetCollection<BsonDocument>(Collection);
+        long boundary = MostRecentBoundary(now);
+        var at = now.UtcDateTime;
+        var after = new FindOneAndUpdateOptions<BsonDocument> { ReturnDocument = ReturnDocument.After };
+        var current = await GetCountersAsync(mongo, accountId, now, ct);
 
         var granted = await counters.FindOneAndUpdateAsync(
             new BsonDocument { { "accountId", accountId }, { "lastToastBonusUnix", new BsonDocument("$lt", Number(boundary)) } },

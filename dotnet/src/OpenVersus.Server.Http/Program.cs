@@ -1,7 +1,11 @@
 using FastEndpoints;
 using OpenVersus.Server.Core.Access;
+using OpenVersus.Server.Core.FileStorage;
 using OpenVersus.Server.Core.Friends;
+using OpenVersus.Server.Core.Identity;
+using OpenVersus.Server.Core.Inventory;
 using OpenVersus.Server.Core.Layouts;
+using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Profiles;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Settings;
@@ -15,6 +19,10 @@ builder.AddAccess();
 builder.AddFriends();
 builder.AddProfiles();
 builder.AddLayouts();
+builder.AddFileStorage();
+builder.AddRanks();
+builder.AddAccountResolver();
+builder.AddInventory();
 builder.Services.AddFastEndpoints();
 
 var app = builder.Build();

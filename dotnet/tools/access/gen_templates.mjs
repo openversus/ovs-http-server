@@ -89,3 +89,44 @@ for (const variant of ["account-cosmetics-variant", "battlepass-variant", "curre
   const value = await literal(layouts, layoutSource.slice(at, start) + opening, "\n  });\n}", (layoutSource.slice(at, start) + "  res.send(").length, {});
   write(`layout-${variant}.json`, value, "Static");
 }
+
+// GET /file_storage and /file_storage/{slug} (handlers/file_storage.ts). The two openversus-update-required records are
+// built per request (their download_url is this server's /assets/ URL, from the request's host): templates with
+// markers in FileStorage/. The other records are the same for everyone: Static/.
+const fileStorage = "src/handlers/file_storage.ts";
+const fileSource = fs.readFileSync(path.join(root, fileStorage), "utf8");
+fs.mkdirSync(path.join(root, "dotnet/src/OpenVersus.Server.Core/FileStorage"), { recursive: true });
+const updateScope = {
+  UPDATE_KEYART_FILENAME: "openversus-update-required-keyart.png",
+  UPDATE_THUMBNAIL_FILENAME: "openversus-update-required-thumbnail.png",
+  getAssetDownloadUrl: (_req, filename) => `{{assets}}${filename}`,
+  req: {},
+};
+for (const [fn, name] of [["getUpdateKeyartRecord", "update-keyart"], ["getUpdateThumbnailRecord", "update-thumbnail"]]) {
+  const start = `function ${fn}(req: Request) {\n  return {`;
+  write(`file-storage-${name}.json`, await literal(fileStorage, start, "\n  };\n}", start.length - 1, updateScope), "FileStorage");
+}
+write("file-storage-list.json", await literal(fileStorage, "  res.send([\n    getUpdateKeyartRecord(req),", "\n  ]);", "  res.send(".length, {
+  getUpdateKeyartRecord: () => "{{update-keyart}}",
+  getUpdateThumbnailRecord: () => "{{update-thumbnail}}",
+  req: {},
+}), "FileStorage");
+for (const slug of ["beginnermode-carousel-keyart", "beginnermode-carousel-thumbnail", "harley-rift-s5-keyart", "harley-rift-s5-thumbnail",
+  "s5-bp-carousel-keyart", "s5-bp-carousel-thumbnail", "t-discord-qa-carousel-keyart", "t-discord-qa-carousel-thumbnail",
+  "wonderwoman-arena-keyart", "wonderwoman-arena-thumbnail"]) {
+  const fn = `function handleFile_storage_${slug.replaceAll("-", "_")}(`;
+  const at = fileSource.indexOf(fn);
+  if (at < 0) throw new Error(`${fn} not found in ${fileStorage}; update this script`);
+  const start = fileSource.slice(at, fileSource.indexOf("  res.send({", at) + "  res.send({".length);
+  write(`file-storage-${slug}.json`, await literal(fileStorage, start, "\n  });\n}", start.length - 1, {}), "Static");
+}
+
+// PUT /drives/multiversus/sync (handlers/drives.ts).
+write("drives-multiversus-sync.json", await literal("src/handlers/drives.ts", "  res.send({ additions", " });", "  res.send(".length, {}), "Static");
+
+// GET /profiles/{id}/inventory (handlers/profiles.ts): the parts that are literals. Gleamium and the toast record
+// (whose count and updated_at are filled per request), and the taunt list unlockAll adds (data/taunts.ts AllTaunts).
+fs.mkdirSync(path.join(root, "dotnet/src/OpenVersus.Server.Core/Inventory"), { recursive: true });
+write("inventory-gleamium.json", await literal("src/data/gleamium.ts", "export const GleamiumData = {", "\n};", "export const GleamiumData = ".length, {}), "Inventory");
+write("inventory-toast.json", await literal("src/data/toast.ts", "export const ToastData = {", "\n};", "export const ToastData = ".length, {}), "Inventory");
+write("inventory-taunts.json", await literal("src/data/taunts.ts", "const AllTaunts: ITaunt[] = [", "\n];", "const AllTaunts: ITaunt[] = ".length, {}), "Inventory");

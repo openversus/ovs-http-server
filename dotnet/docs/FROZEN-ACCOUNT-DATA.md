@@ -32,8 +32,9 @@ manifests at runtime yet; they are the plan for what each field becomes.
   `is_player_purchasable`, `valid_user_segments` and the `already_owned_adjusted_cost` prices; and, for `main-variant`,
   which products are listed at all (chosen per player on live).
 - **Becomes:** an `ILayoutSource` that takes the static parts from the same files and fills the account parts from the
-  player's inventory and purchases, per request. The ownership rule has to be the inventory's (`/profiles/{id}/inventory`),
-  so the store and the inventory agree; port them together.
+  player's inventory and purchases, per request. Ownership comes from `IInventoryService` (`Core/Inventory/`, the
+  `/profiles/{id}/inventory` answer: today every enabled asset, perk and taunt, for everyone), so the store and the
+  inventory agree. Purchase history has no source yet.
 
 ### Login: `POST /access`
 

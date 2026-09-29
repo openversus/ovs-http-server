@@ -17,7 +17,7 @@
 //   REF_DATA_ASSET_TOKEN  the servers' DATA_ASSET_TOKEN: POST /syncAsset makes the TS server reload its icon cache
 //                         after the harness seeds dataassets (it reads them only at startup otherwise)
 // Never point these at data you want to keep.
-import { require, need, openScratch, readProfile, dump, writeRun, diff } from "../refdiff/refdiff.mjs";
+import { require, need, openScratch, readProfile, dump, writeRun, diff, reloadAssets } from "../refdiff/refdiff.mjs";
 
 const { EJSON } = require(process.cwd() + "/node_modules/bson");
 // mvs-dump's modules run a CLI on import when argv[2] is set (they read it as a file): hide ours while they load.
@@ -167,16 +167,6 @@ async function run(baseUrl, outFile) {
 
   writeRun(outFile, baseUrl, Date.now(), steps, await readProfile(db, "friends_diff"));
   await close();
-}
-
-// POST /syncAsset with an asset as it is stored: the TS server rewrites it unchanged and reloads its asset cache.
-async function reloadAssets(baseUrl, asset) {
-  await fetch(baseUrl + "/syncAsset", {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${need("REF_DATA_ASSET_TOKEN")}` },
-    body: JSON.stringify(asset),
-  });
-  await new Promise((r) => setTimeout(r, 300));
 }
 
 // As the game sends a bulk lookup: PUT, the real method in x-hydra-http-method, a Hydra body.

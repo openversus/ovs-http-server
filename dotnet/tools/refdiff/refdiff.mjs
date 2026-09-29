@@ -181,3 +181,14 @@ function normalize(run, writes) {
     : undefined;
   return { ...run, steps, writes: sent };
 }
+
+/** POST /syncAsset with an asset as stored: the TS server rewrites it unchanged and reloads its asset cache (it reads
+ * dataassets only at startup otherwise). Needs REF_DATA_ASSET_TOKEN, the servers' DATA_ASSET_TOKEN. */
+export async function reloadAssets(baseUrl, asset) {
+  await fetch(baseUrl + "/syncAsset", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${need("REF_DATA_ASSET_TOKEN")}` },
+    body: JSON.stringify(asset),
+  });
+  await new Promise((r) => setTimeout(r, 300));
+}

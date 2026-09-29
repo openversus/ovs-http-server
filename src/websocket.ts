@@ -1,4 +1,5 @@
 import { WebSocket, WebSocketServer } from "ws";
+import { clientIpFromHeaders } from "./utils/clientIp";
 import { MVSHTTPServer } from "./server";
 import { randomUUID, randomInt } from "crypto";
 import { HydraDecoder, HydraEncoder } from "mvs-dump";
@@ -643,7 +644,9 @@ export class WebSocketService {
 
   setupSocketHandlers() {
     this.ws.on("connection", (ws, request) => {
-      let ip = request.socket.remoteAddress!.replace(/^::ffff:/, "");
+      // The client's address, not the reverse proxy's: the same rule the HTTP routes use, so this connection's
+      // IP-keyed records (active_ip_accounts, connections:{ip}) are the ones /access wrote.
+      let ip = clientIpFromHeaders(request.headers, request.socket.remoteAddress).ip.replace(/^::ffff:/, "");
       logger.info(`${logPrefix} Client with IP ${ip} connected`);
 
       const playerWS = new WebSocketPlayer(ws, ip!);

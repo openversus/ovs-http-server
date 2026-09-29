@@ -75,6 +75,53 @@ public static class Js
         return sign * value;
     }
 
+    /// <summary>
+    /// Number(text) for a string, as a Redis hash field reaches the TS server: surrounding white space ignored, "" is 0,
+    /// a decimal literal (with sign, fraction, exponent), Infinity, or 0x / 0o / 0b digits (no sign); anything else NaN.
+    /// Null (a missing field, undefined there) is NaN.
+    /// </summary>
+    public static double Number(string? text)
+    {
+        if (text is null)
+        {
+            return double.NaN;
+        }
+
+        string s = Trim(text);
+        if (s.Length == 0)
+        {
+            return 0;
+        }
+
+        if (s.Length > 2 && s[0] == '0' && char.ToLowerInvariant(s[1]) is 'x' or 'o' or 'b')
+        {
+            int radix = char.ToLowerInvariant(s[1]) switch { 'x' => 16, 'o' => 8, _ => 2 };
+            double value = 0;
+            foreach (char c in s[2..])
+            {
+                int digit = char.IsAsciiDigit(c) ? c - '0' : char.IsAsciiLetter(c) ? char.ToLowerInvariant(c) - 'a' + 10 : 99;
+                if (digit >= radix)
+                {
+                    return double.NaN;
+                }
+
+                value = value * radix + digit;
+            }
+
+            return value;
+        }
+
+        string unsigned = s[0] is '+' or '-' ? s[1..] : s;
+        if (unsigned == "Infinity")
+        {
+            return s[0] == '-' ? double.NegativeInfinity : double.PositiveInfinity;
+        }
+
+        return System.Text.RegularExpressions.Regex.IsMatch(unsigned, @"^(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$")
+            ? double.Parse(s, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent, CultureInfo.InvariantCulture)
+            : double.NaN;
+    }
+
     /// <summary>The index range Array.prototype.slice(start, end) takes from a list of <paramref name="length"/>.</summary>
     public static (int From, int To) SliceBounds(int length, double start, double end)
     {

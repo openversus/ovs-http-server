@@ -23,8 +23,14 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   do (the "migration contract" comments at the top of `AccessService`, `FriendsService`, `OpsService`, ...). The C# side copies TS and
   mongoose quirks on purpose (field order, `__v`, timestamps, defaults written into old documents).
 - **Why:** TS services (websocket, matchmaking, the website) still read what C# writes, and the other way round.
-- **Delete when:** no TS service reads or writes that key or collection any more. Then the C# side may change the shape,
-  drop the mongoose quirks, and the contract comment goes.
+- **Pub/sub channels too:** a message C# publishes is read by the TS websocket, which then tells the game. So far:
+  `lobby:player_joined` (`PartyLobbyService`, a player joined someone's lobby: `{lobbyId, ownerId, joinedPlayerId,
+  joinedPlayerUsername, allPlayerIds, mode}`) and `client_update:modal` (`ClientUpdateGate`, show a player the update
+  toast: `{playerId, nonce}`). Their payloads are JSON exactly as the TS server writes them.
+- **Lobby keys:** `lobby:{id}` (JSON written by the TS `ssc.ts` and `websocket.ts`; C# adds a player to it keeping every
+  other field as read), `player_lobby:{player}` and `lobby_redirect:{id}` (read only, for now).
+- **Delete when:** no TS service reads or writes that key, collection or channel any more. Then the C# side may change
+  the shape, drop the mongoose quirks, and the contract comment goes.
 
 ## Planned
 

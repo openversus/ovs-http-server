@@ -29,6 +29,31 @@ public sealed class JsNumberTests
     public void ParseIntWithNoDigitsIsNaN(string? text) => Assert.True(double.IsNaN(Js.ParseInt(text)));
 
     [Theory]
+    [InlineData("964", 964)]
+    [InlineData("  964 ", 964)]
+    [InlineData("", 0)]
+    [InlineData("0x3C4", 964)]
+    [InlineData("0o17", 15)]
+    [InlineData("0b101", 5)]
+    [InlineData("1e3", 1000)]
+    [InlineData("+5", 5)]
+    [InlineData(".5", 0.5)]
+    [InlineData("5.", 5)]
+    [InlineData("1.5e-2", 0.015)]
+    [InlineData("\uFEFF7", 7)]
+    [InlineData("Infinity", double.PositiveInfinity)]
+    [InlineData("-Infinity", double.NegativeInfinity)]
+    public void NumberAsNodeReadsAString(string text, double expected) => Assert.Equal(expected, Js.Number(text));
+
+    [Theory]
+    [InlineData("-0x10")]
+    [InlineData("abc")]
+    [InlineData("12abc")]
+    [InlineData("1_000")]
+    [InlineData(null)]
+    public void NumberOfNoNumberIsNaN(string? text) => Assert.True(double.IsNaN(Js.Number(text)));
+
+    [Theory]
     [InlineData(0, 10, 0, 10)]
     [InlineData(-3, double.PositiveInfinity, 7, 10)]
     [InlineData(0, -5, 0, 5)]

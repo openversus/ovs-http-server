@@ -22,7 +22,21 @@ public static class TsEnvironment
         ("IP_BANS_FILE", "Bans:IpFile"),
         ("CIDR_BANS_FILE", "Bans:CidrFile"),
         ("HASHBANS_FILE", "Bans:IdFile"),
+        ("MIN_CLIENT_VERSION", "Clients:MinimumVersion"),
+        ("CLIENT_VERSION_CHECK", "Clients:VersionCheck"),
+        ("GAME_VERSION", "Lobbies:GameVersion"),
     ];
+
+    // Values the TS server reads with envalid's bool (true/t/1, false/f/0), which .NET's binding does not; anything else
+    // is passed on and refused at startup, as there.
+    private static readonly HashSet<string> s_booleans = ["CLIENT_VERSION_CHECK"];
+
+    private static string EnvalidBool(string value) => value switch
+    {
+        "true" or "t" or "1" => "true",
+        "false" or "f" or "0" => "false",
+        _ => value,
+    };
 
     /// <summary>Adds the aliased values; call after the environment is in and before the override layers.</summary>
     public static void AddAliases(IConfigurationBuilder builder, IConfiguration current)
@@ -32,7 +46,7 @@ public static class TsEnvironment
         {
             if (current[key] is null && current[tsName] is { } value)
             {
-                values[key] = value;
+                values[key] = s_booleans.Contains(tsName) ? EnvalidBool(value) : value;
             }
         }
 

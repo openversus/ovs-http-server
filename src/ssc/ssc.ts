@@ -1,4 +1,6 @@
 import { logger } from "../config/logger";
+import { saveGameplayPreferences } from "../services/gameplayPreferences";
+import { gameplayPreferencesOf } from "../utils/gameplayPreferences";
 import ObjectID from "bson-objectid";
 import express, { Request, Response } from "express";
 import {
@@ -489,7 +491,7 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
             LobbyPlayerIndex: i,
             CrossplayPreference: 1,
           };
-          rejoinGameplayPrefs[pid] = Number(pConn?.GameplayPreferences) || 964;
+          rejoinGameplayPrefs[pid] = gameplayPreferencesOf(pConn?.GameplayPreferences);
           rejoinAutoParty[pid] = false;
           rejoinPlatforms[pid] = "PC";
           rejoinLoadouts[pid] = {
@@ -586,7 +588,7 @@ export async function handleSsc_invoke_create_party_lobby(req: Request<{}, {}, {
         LobbyType: 0,
         ReadyPlayers: {},
         //PlayerGameplayPreferences: { [aID]: 544 },
-        PlayerGameplayPreferences: { [aID]: (rPlayerConnectionByID.GameplayPreferences as number) ?? 964 },
+        PlayerGameplayPreferences: { [aID]: gameplayPreferencesOf(rPlayerConnectionByID.GameplayPreferences) },
         PlayerAutoPartyPreferences: { [aID]: false },
         GameVersion: env.GAME_VERSION,
         HissCrc: 1167552915,
@@ -771,7 +773,7 @@ export async function handle_ssc_set_lobby_mode(req: Request<{}, {}, SET_LOBBY_M
         CrossplayPreference: 1,
       };
 
-      gameplayPrefs[pid] = Number(pConn?.GameplayPreferences) || 964;
+      gameplayPrefs[pid] = gameplayPreferencesOf(pConn?.GameplayPreferences);
       autoPartyPrefs[pid] = false;
       platforms[pid] = "PC";
       lockedLoadouts[pid] = {
@@ -836,57 +838,17 @@ export async function handle_ssc_set_lobby_mode(req: Request<{}, {}, SET_LOBBY_M
 
 export async function handle_ssc_update_player_preferences(req: Request<{}, {}, {}, {}>, res: Response) {
   const account = AuthUtils.DecodeClientToken(req);
-  let ip = account.current_ip;
-
-  logger.info("Received update player prefs request, headers:\n")
-  if (req.headers)
-  {
-    KitchenSink.TryInspectVerbose(req.headers);
-  }
-
-  logger.info("Received update player prefs request, body:\n")
-  if (req.body)
-  {
-    KitchenSink.TryInspectVerbose(req.body);
-  }
-
-  let updatedPrefs = req.body as IUpdatePlayerPrefs;
-  let updateGameplayPrefs = updatedPrefs.GameplayPreferences as number;
+  const raw = (req.body as IUpdatePlayerPrefs | undefined)?.GameplayPreferences;
   try {
-    // Update by account id (household-safe). Old `{ ip }` query would pick whichever
-    // player shared the IP — potentially the wrong one.
-    if (account?.id) {
-      await PlayerTesterModel.findOneAndUpdate(
-        { _id: new Types.ObjectId(account.id) },
-        { GameplayPreferences: (updateGameplayPrefs as number) },
-        { new: true },
-      );
-      logger.info(`${logPrefix} Updated GameplayPreferences to ${updateGameplayPrefs} for player ${account.id} (IP ${ip})`);
-    } else {
-      logger.warn(`${logPrefix} Cannot update GameplayPreferences — no account id from token (IP ${ip})`);
+    // Only a real value is stored: a missing or unreadable one leaves the player's value as it is (it used to be
+    // replaced by the default 964 in their session).
+    const saved = account?.id ? await saveGameplayPreferences(account.id, raw, account.current_ip) : null;
+    if (saved === null) {
+      logger.warn(`${logPrefix} update_player_preferences for ${account?.id || "no account"}: GameplayPreferences ${JSON.stringify(raw)} not stored`);
     }
   }
   catch (error) {
-    logger.error(`${logPrefix} Error updating GameplayPreferences for player ${account?.id} (IP ${ip}), error: ${error}`);
-  }
-
-  try {
-    const resolvedConn = await resolveAccountFromRequest(req);
-    if (!resolvedConn?.id) {
-      logger.warn(`${logPrefix} Could not resolve account to update GameplayPreferences (IP ${ip})`);
-    } else {
-      const rPlayerConnectionByID = resolvedConn as unknown as RedisPlayerConnection;
-      rPlayerConnectionByID.GameplayPreferences = ((updateGameplayPrefs as number) ?? 964) as any;
-      await redisSetPlayerConnectionByID(rPlayerConnectionByID.id!, rPlayerConnectionByID);
-      // Keep the legacy IP-keyed record in sync while it still exists
-      if (ip) {
-        await redisSetPlayerConnectionByIp(ip, rPlayerConnectionByID);
-      }
-      logger.info(`${logPrefix} Updated GameplayPreferences in Redis to ${updateGameplayPrefs} for player ID ${rPlayerConnectionByID.id} (IP ${ip})`);
-    }
-  }
-  catch (error) {
-    logger.error(`${logPrefix} Error updating GameplayPreferences in Redis for player with IP ${ip}, error: ${error}`);
+    logger.error(`${logPrefix} Error updating GameplayPreferences for player ${account?.id}: ${error}`);
   }
 
   res.status(200).send({ body: {}, metadata: null, return_code: 0 });
@@ -1077,7 +1039,7 @@ export async function handleSsc_invoke_join_party_lobby(req: Request<{}, {}, {},
         { TeamIndex: 4, Players: {}, Length: 0 },
       ],
       LeaderID: joiningPlayerId, LobbyType: 0, ReadyPlayers: {},
-      PlayerGameplayPreferences: { [joiningPlayerId]: Number(pConn?.GameplayPreferences) || 964 },
+      PlayerGameplayPreferences: { [joiningPlayerId]: gameplayPreferencesOf(pConn?.GameplayPreferences) },
       PlayerAutoPartyPreferences: { [joiningPlayerId]: false },
       GameVersion: env.GAME_VERSION, HissCrc: 1167552915,
       Platforms: { [joiningPlayerId]: "PC" },
@@ -1142,7 +1104,7 @@ export async function handleSsc_invoke_join_party_lobby(req: Request<{}, {}, {},
       LobbyPlayerIndex: i,
       CrossplayPreference: 1,
     };
-    gameplayPrefs[pid] = Number(pConn?.GameplayPreferences) || 964;
+    gameplayPrefs[pid] = gameplayPreferencesOf(pConn?.GameplayPreferences);
     autoParty[pid] = false;
     platforms[pid] = "PC";
     loadouts[pid] = {

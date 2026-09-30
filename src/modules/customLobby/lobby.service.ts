@@ -1,4 +1,5 @@
 import ObjectID from "bson-objectid";
+import { gameplayPreferencesOf } from "../../utils/gameplayPreferences";
 import { randomBytes, randomInt } from "crypto";
 import {
   redisClient,
@@ -353,6 +354,7 @@ local accountId   = ARGV[1]
 local isSpectator = ARGV[2] == 'true'
 local ts          = ARGV[3]
 local loadout     = ARGV[4]
+local gameplayPrefs = tonumber(ARGV[5])
 local style       = l.match_config.TeamStyle
 
 local totalPlayers = 0
@@ -401,7 +403,7 @@ local pdata = {
 l.Teams[targetArrIdx].Players[accountId] = pdata
 l.Teams[targetArrIdx].Length = l.Teams[targetArrIdx].Length + 1
 l.PlayerAutoPartyPreferences[accountId] = false
-l.PlayerGameplayPreferences[accountId] = 964
+l.PlayerGameplayPreferences[accountId] = gameplayPrefs or 964
 l.Platforms[accountId] = 'PC'
 if loadout ~= '' then
   l.LockedLoadouts[accountId] = cjson.decode(loadout)
@@ -705,7 +707,7 @@ async function getPlayerConfig(accountId: string): Promise<PlayerConfig | null> 
   const skin = playerData?.skin || connData?.skin || "";
   const username = connData?.username || connData?.hydraUsername || "Unknown";
   const profileIcon = playerData?.profileIcon || connData?.profileIcon || "";
-  const gameplayPrefs = Number(connData?.GameplayPreferences) || 964;
+  const gameplayPrefs = gameplayPreferencesOf(connData?.GameplayPreferences);
 
   return {
     AccountId: accountId,
@@ -1356,7 +1358,7 @@ export async function joinCustomLobby(lobbyId: string, accountId: string, isSpec
   const result = await evalLua(
     LUA_JOIN_CUSTOM_LOBBY,
     [lobbyKey(lobbyId)],
-    [accountId, isSpectator ? "true" : "false", new Date().toISOString(), lockedLoadout],
+    [accountId, isSpectator ? "true" : "false", new Date().toISOString(), lockedLoadout, String(gameplayPreferencesOf(playerConfig?.GameplayPreferences))],
   );
   if (!result) return null;
   const raw = result as string;
@@ -1646,9 +1648,7 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
           Skin: skin,
           Buffs: buffs,
           Handicap: handicap,
-          GameplayPreferences: Number(
-            lobby.PlayerGameplayPreferences?.[playerId] ?? config.GameplayPreferences,
-          ),
+          GameplayPreferences: gameplayPreferencesOf(config?.GameplayPreferences ?? lobby.PlayerGameplayPreferences?.[playerId]),
           PartyId: null,
           PartyMember: null,
           IsHost: playerId === lobby.LeaderID,

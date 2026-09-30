@@ -8,6 +8,7 @@ import * as http from "http";
 import * as fs from "fs";
 import * as path from "path";
 import { hydraTokenMiddleware, SECRET } from "./middleware/auth";
+import { recordGameplayPreferencesFromRequest } from "./services/gameplayPreferences";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
 import { redisClient,
@@ -2067,6 +2068,17 @@ app.get("/agreement/public/policies/namespaces/:namespace", (req, res) => {
 
 app.use(hydraDecoderMiddleware);
 app.use(hydraTokenMiddleware);
+
+// The game sends its current GameplayPreferences (input settings) with every party-lobby request: keep the player's
+// value current, before the handlers and every match after them read it (utils/gameplayPreferences.ts). Batched
+// requests pass through here too.
+app.use([
+  "/ssc/invoke/create_party_lobby",
+  "/ssc/invoke/lock_lobby_loadout",
+  "/ssc/invoke/set_ready_for_lobby",
+  "/ssc/invoke/set_lobby_joinable",
+  "/ssc/invoke/set_lobby_not_joinable",
+], recordGameplayPreferencesFromRequest);
 
 // New friends/search/accounts routes — BEFORE old router for priority
 import { friendsRouter } from "./modules/friends/friends.routes";

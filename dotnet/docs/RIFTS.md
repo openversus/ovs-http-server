@@ -44,13 +44,16 @@ regen time), `LastFreeAttritionStockClaimTimestamp`, `PaidStockPurchasesSinceFre
 it (`OnRiftStateUpdated`). The client keeps the answer between sessions (`SaveGames/HydraRiftStateJson.sav`); the answer
 here uses the key names that cache has (`Chapter`, not `ChapterGuid`).
 
-Stored per account in Mongo `riftstates` (`account_id`, `state`, timestamps), created on the first call; only C# reads or
-writes it. A new player has nothing played, no daily rewards, and only the global attrition pool, full: stocks and daily
-attempts are settings (`Rifts:GlobalAttritionStocks` 6, `Rifts:GlobalDailyAttempts` 5, the values the WB cache shows).
-Per-rift pools (rifts whose config has `Attrition.bTargetRiftPoolInsteadOfGlobalPool`) appear only once a rift uses them,
-as in that cache.
+**The answer is `{body: {RiftState: <state>}}`**: the game's handler (`0x142a2dcc0`) reads `RiftState` and fails without
+it, and the rift page then spins forever. Until 2026-09-30 the state was sent as the body itself (the save cache, which
+holds only the state, had suggested that), and the page worked only while the game had an old cached state.
 
-Not done: daily rewards (WB picked 6 rifts and chapters a day); nothing updates the state yet.
+Stored per account in Mongo `riftstates` (`account_id`, `state`, timestamps), created on the first call; only C# reads or
+writes it. A new player has nothing played, no daily rewards, the global attrition pool full (stocks and daily attempts
+are settings: `Rifts:GlobalAttritionStocks` 6, `Rifts:GlobalDailyAttempts` 5, the values the WB cache shows), and a full
+pool for each rift that keeps its own (`Attrition.bTargetRiftPoolInsteadOfGlobalPool`: the tutorial 10, Triple Threat 6,
+the rogue rifts 5), in the shape WB wrote for each kind; an existing state gets missing pools when read. `LastPlayed`
+follows the last node played (`RiftProgressService`).
 
 ## Rift lobby: `create_rift_lobby` and `lock_rift_lobby_loadout`
 
@@ -155,27 +158,63 @@ Answers still keyed by Season 5 (ranked data, `ranked_season5_*` leaderboards, t
 per-season profile data, missions, milestones) may need filling for Season 6 where the game looks them up by the
 current season; switch back with `ovs-ctl settings set Season:Current Season:SeasonFive`.
 
-## Open
+## Decided
 
-- **Ended rifts: decided 2026-09-30.** No rift ends: every rift with `bRiftHasEndTime` (Season 4's and Season 5's
-  rogue rifts, 2025 dates) keeps it, `Rifts:EndTimeYears` (20) years later, in `load_rifts` and in the hiss the game
-  downloads. 100 years made the Season 5 page spin again on the bench; a guess, untested: the client counts the time
-  left in 32-bit seconds, and 100 years (about 3.2 billion) does not fit where 20 (about 630 million) does. The four
-  Season 6 rogue rifts, which the hiss has and the TS `load_rifts` lacks, are offered too, their runtime data
-  generated (`RiftCatalog`; its generator reproduces the Season 5 rogue rifts' WB-era data exactly, save bots WB drew
-  from a pool). These are the attrition chapters: attrition and buying lives are not built yet. The Season 6 rogue rifts
-  are re-runs: each is its Season 5 namesake node for node (maps, enemy sets, stocks, buffs, missions, rewards) and
-  chapter for chapter, with new GUIDs (progress kept apart), a new schedule and the Season 6 tag.
-- `equip_gems` (and where equipped gems are stored).
-- Daily rewards; per-player runtime data (today one frozen copy).
-- Bot difficulty: sent as 0, as the offline creator sends it. The Joker bot played very easily on the first test;
-  whether a rift bot's strength comes from elsewhere (the chapter difficulty, `DifficultyScalarsOverride`) is unread.
+- **No rift ends (2026-09-30).** Every rift with `bRiftHasEndTime` (the nine rogue rifts; no earlier rift has an end
+  date) keeps it, `Rifts:EndTimeYears` (20) years later, in `load_rifts` and in the hiss the game downloads
+  (`RiftCatalog`). 100 years was tried first; it displayed, but the Season 5 page spun on first open at the same time,
+  and the offset was lowered before the real cause was found (the rift state's shape, below), so 100 was never shown
+  to be wrong.
+- **Season 6's rogue rifts are offered.** The hiss has them and the TS `load_rifts` lacks them; their runtime data is
+  generated (`RiftCatalog`; the generator reproduces the Season 5 rogue rifts' WB-era data exactly, save bots WB drew
+  from a pool). They are re-runs: each is its Season 5 namesake node for node (maps, enemy sets, stocks, buffs,
+  missions, rewards) and chapter for chapter, with new GUIDs (progress kept apart), a new schedule and the Season 6
+  tag. The game lists them once Season 6 is current (`Season:Current`, above).
+- **Everyone starts rifts from scratch**, and every own-pool rift has its pool from the start.
 
-## Next
+## TODO
 
-1. Progress, first part built (`RiftProgressService`): per-player runtime data (everyone from scratch), a win adds the
-   node to `NodeCompletionsByDifficulty`, `LastPlayed` follows the last node, and both notifications are pushed
-   (MIGRATION-BRIDGES.md, 4). Left: a loss's consequences (enemy stocks carried over, attrition), missions and
-   rewards (stars are recorded: see Stars above), and the chapter's end (`bIsChapterComplete`, `HighestDifficultyCompleted`: most likely
-   `finish_rift_chapter`, when the end node is clicked).
-2. `equip_gems`; the Season 5 end dates; co-op (a friend joining the rift lobby).
+Getting rifts playable without dead ends was the goal so far; these are what is left, with what each needs. Client
+addresses are in build f97148ff. The client's offline backend answers most of these calls itself (dispatcher
+`0x14299b7d0`, see above): each offline handler is the reference for what the online answer holds.
+
+1. **Attrition (lives) for the rogue rifts** (`RiftType` 4, own pool). Config: `RiftData.Attrition` (`InitialStocks` 5,
+   `StockReplenishTimer`, `CostPerRun` 1, `bAllowPurchaseLives`, `bTargetRiftPoolInsteadOfGlobalPool`); the chapter's
+   `Attrition.DifficultyModifiedSettings` (`bDoPlayerStocksAndDamageCarryOver`, `bDoEnemyStocksAndDamageCarryOver`,
+   `PercentageOfPlayerDamageCarriedIntoNextMatch`); the node's (`bDoEnemyStocksAndDamageCarryOver`,
+   `PlayerStocksGrantedOnWin`). State: the pool in `PlayerAttrition[rift]` (`CurrentAttritionStocks`,
+   `CurrentAttritionDamage`, `CurrentDailyAttempts`, `PremiumResetAttempts`, `CurrentAttritionRegenTimestamp`), and
+   `LastFreeAttritionStockClaimTimestamp`, `PaidStockPurchasesSinceFreeClaim`. Runtime: a node's enemy
+   `Stocks`/`StartingDamage` carry over after a loss (`RuntimeNodeData[node].EnemyTeams[i]`, `LastKnownConfiguredStocks`).
+   Calls: `mod_player_attrition`, `buy_lives` / `purchase_stocks` (`AmountOfLives`, `CurrencyCost`),
+   `reset_challenge_rift`, `rift_reset_all_player_data`; notifications `AttritionLivesRewarded`,
+   `RiftRunAttemptsRewarded`. The match: team 0's stocks from the pool are capped by the global rift settings'
+   `MaxStocksTakenIntoMatch` (`UMvsRiftGlobalSettingsHsda` +0x80; not in the hiss: read the packaged asset). Reference:
+   the offline match-end handler (`0x1429c5720`: win check `0x1429c5a70`, then `0x1429c57c0`, `0x1429c5160`,
+   `0x1429c4fb0`), `RiftMatchService` (pool stocks already used when a chapter carries stocks over).
+2. **Mission rewards.** A node's `Missions[i].Reward` (`InventoryHsda`, e.g. `lootbox_gems_chaos_easy_first_win`,
+   `DirectInventoryItemCount`, `RewardGrantMethod` `DirectInventoryItem`, `RewardGuid`) and
+   `OneTimeCompletionRewardsByDifficulty`; claimed ones in the player data's `ClaimedOneTimeRewardGuidsByDifficulty`
+   (and `ClaimedBattlepassXp`; a mission's `ScoreContribution` 100 is probably battle pass XP). Granting goes through
+   the inventory (the TS `grant_reward`, or the C# inventory once it writes); the game is told with `OnRewardsGranted`
+   and, after a match, `EndOfMatchPayload` (`GameplayConfig`, `ClientReturnData`: what the offline handler sends,
+   `0x1429c9280`).
+3. **Cauldrons.** A chapter's `CauldronsByDifficulty` (config: per difficulty, `Tiers[{Reward, ...}]`; player data:
+   `CurrentScore`, which the stars already raise, and `ClaimedTiers`). Calls: `claim_cauldron`,
+   `rift_unlock_chapter_cauldron_tiers`.
+4. **A chapter's end and higher difficulties.** The end node (`RiftEndNodeData`, its `Dialogue.OnClicked`) most likely
+   calls `finish_rift_chapter` (a stub now), which should set the chapter's `bIsChapterComplete` and
+   `HighestDifficultyCompleted` (0 on a new chapter: whether it means "none" or "Easy done" is unread; the offline
+   handler decides). Difficulties: the chapter's `Difficulty` (`DifficultyScalars`, `DifficultyReleaseData`, timed
+   releases), `DifficultyIndexToDifficulty`, missions' `ChapterDifficultyThreshold`; calls `set_chapter_difficulty`,
+   `switch_rift_chapters`. The bot difficulty sent is 0, as the offline builder sends it; check at a higher difficulty
+   that the client scales the bots itself (`DifficultyScalars`).
+5. **Co-op.** A friend joining the rift lobby (`lobby:{id}` `playerIds`, invites, `set_lobby_joinable`, seen after a
+   match); `start_rift_node` with two humans (both on team 0, player indexes 0 and 2; the rollback server gets both);
+   the `mis_play_coop` star (`Objective:Match:PlayCoOp`). `RiftLobbyService` assumes one player today.
+6. **Smaller.** `equip_gems` (`{GemsToEquip: [3 slugs]}`, unanswered; storage, and the gameplay config's per-player
+   `Gems`); `select_rift_loadout`, `skip_rift_node`, `reload_rift_lobby`, `complete_rift_missions`; daily rewards
+   (`DailyRewards`: WB picked rifts and chapters each day); bonus nodes (`NodeType` 2, no enemy team, bonus maps: they
+   get a 1v1 config today); `retry_current_rift_node` is missing from the route map (seen only in a proxy log so far);
+   per-season data still keyed by Season 5 (ranked, leaderboards, trackers), filled for Season 6 only if a screen needs
+   it.

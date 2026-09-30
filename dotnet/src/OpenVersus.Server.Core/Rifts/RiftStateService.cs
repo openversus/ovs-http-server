@@ -13,8 +13,7 @@ namespace OpenVersus.Server.Core.Rifts;
 // daily reward rifts, the attrition pools), which the rift select page waits for. Neither the TS server nor any capture
 // answers it; the answer is {body: {RiftState: <state>}} (the game's handler reads RiftState: see Answer), the state's
 // shape the one the game cached from WB's server (SaveGames HydraRiftStateJson.sav holds the state), and a new player gets what that cache shows for an account's untouched pools: only the global pool,
-// full. The per-rift pools (rifts whose config has Attrition.bTargetRiftPoolInsteadOfGlobalPool) appear once a rift
-// uses them.
+// full, and every rift that keeps its own pool has it full (AddRiftPools).
 //
 // Mongo, read     riftstates {account_id}
 // Mongo, written  riftstates insert for a player with none: account_id, state (the answer's RiftState), createdAt, updatedAt;
@@ -105,8 +104,7 @@ internal sealed class RiftStateService(IServiceProvider services, IOptionsMonito
     /// bTargetRiftPoolInsteadOfGlobalPool: the tutorial, Triple Threat and the rogue rifts), where the state has none: its
     /// InitialStocks, in the shape WB's server wrote for that kind (the WB-era cache: a rogue rift's with daily attempts
     /// and PremiumResetAttempts, the others' with CurrentResetAttempts). WB's state had pools only for rifts played;
-    /// here every one exists from the start, a guess at why the Season 5 page (all rogue rifts) waited forever with no
-    /// cached state on the client.
+    /// here every one exists from the start (decided 2026-09-30), so each rift shows its full lives before it is played.
     /// </summary>
     internal static void AddRiftPools(JsonObject state)
     {

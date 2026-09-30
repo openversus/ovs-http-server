@@ -13,6 +13,7 @@ using OpenVersus.Server.Core.Assets;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Hydra;
+using OpenVersus.Server.Core.Rifts;
 using OpenVersus.Server.Core.Settings;
 
 namespace OpenVersus.Server.Core.Hiss;
@@ -136,10 +137,16 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         var assets = await DataAssets.EnabledAsync(mongo, CancellationToken.None);
         var values = Values(crc, assets);
         var answer = Fill(values);
+        RiftCatalog.ExtendEndTimes(answer["body"]?["Data"]?["rift-config"]?["_hydra_compressed"] as JsonObject);
         byte[] hydra = HydraEncoder.Encode(answer, compression: CompressionLevel.Optimal);
         log.LogInformation("Built the hiss answer for CRC {Crc}: {Assets} data assets, {Bytes} bytes, {Ms:F0} ms",
             crc, assets.Count, hydra.Length, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
-        return new HissAnswer(crc, hydra, Task.Run(() => BuildZstd(answer, crc)), () => Js.Stringify(Fill(values)));
+        return new HissAnswer(crc, hydra, Task.Run(() => BuildZstd(answer, crc)), () =>
+        {
+            var json = Fill(values);
+            RiftCatalog.ExtendEndTimes(json["body"]?["Data"]?["rift-config"]?["_hydra_compressed"] as JsonObject);
+            return Js.Stringify(json);
+        });
     }
 
     // The same answer with zstd sections. A failure leaves every client on zlib.

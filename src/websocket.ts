@@ -72,6 +72,9 @@ import {
   FRIEND_REQUEST_WS_CHANNEL,
   RedisFriendRequestWSNotification,
   CLIENT_UPDATE_MODAL_CHANNEL,
+  WS_SEND_CHANNEL,
+  WS_DISCONNECT_CHANNEL,
+  type RedisWsSendNotification,
   RedisClientUpdateModalNotification,
   DLLNotification,
   redisPushDLLNotification,
@@ -1507,6 +1510,12 @@ export class WebSocketService {
     for (const [playerId, fields] of Object.entries(notification.playerConfigOverrides ?? {})) {
       const target = message.data.GameplayConfig.Players[playerId];
       if (target) Object.assign(target, fields);
+    }
+    if (notification.gameplayConfigTemplate) {
+      message.data.template_id = notification.gameplayConfigTemplate;
+    }
+    if (notification.gameplayConfigData) {
+      Object.assign(message.data, notification.gameplayConfigData);
     }
 
     logwrapper.verbose("Message is: ");
@@ -3130,6 +3139,40 @@ export class WebSocketService {
     // When the update gate blocks a gameplay transition, an outdated client gets a toast
     // (ToastReceivedNotification) from the virtual update profile, with no rewards, so only
     // the banner shows. Its session is closed ten seconds later.
+    // A message the C# server has built, sent as it is (dotnet/docs/MIGRATION-BRIDGES.md).
+    this.redisSub.subscribe(WS_SEND_CHANNEL, (message) => {
+      try {
+        const notification = JSON.parse(message) as RedisWsSendNotification;
+        for (const playerId of notification.playerIds ?? []) {
+          const client = this.clients.get(playerId);
+          if (!client) {
+            logger.warn(`[${serviceName}]: Cannot send ${String((notification.message?.data as any)?.template_id ?? notification.message?.cmd)} to ${playerId}: Hydra WS is not connected`);
+            continue;
+          }
+          client.send(notification.message);
+        }
+      } catch (error) {
+        logger.error(`[${serviceName}]: Bad ws:send message: ${error}`);
+      }
+    });
+
+    // An administrator's forced disconnect (dotnet/docs/MIGRATION-BRIDGES.md): closed as the heartbeat timeout closes
+    // a silent connection, so the usual cleanup runs and the game logs out.
+    this.redisSub.subscribe(WS_DISCONNECT_CHANNEL, (message) => {
+      try {
+        const { playerId } = JSON.parse(message) as { playerId: string };
+        const client = this.clients.get(playerId);
+        if (!client) {
+          logger.info(`[${serviceName}]: Forced disconnect of ${playerId}: not connected to this service`);
+          return;
+        }
+        logger.warn(`[${serviceName}]: Forced disconnect of ${playerId} with IP ${client.ip} (administrator); closing the connection`);
+        client.ws.terminate();
+      } catch (error) {
+        logger.error(`[${serviceName}]: Bad ws:disconnect message: ${error}`);
+      }
+    });
+
     this.redisSub.subscribe(CLIENT_UPDATE_MODAL_CHANNEL, (message) => {
       try {
         const notification = JSON.parse(message) as RedisClientUpdateModalNotification;

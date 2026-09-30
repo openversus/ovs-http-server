@@ -35,6 +35,17 @@ export const PLAYER_LOADOUT_LOCKED_CHANNEL = "lobby:loadout_locked";
 export const LOBBY_RETURN_CHANNEL = "lobby:return";
 export const FRIEND_REQUEST_WS_CHANNEL = "friend:request:ws";
 export const CLIENT_UPDATE_MODAL_CHANNEL = "client_update:modal";
+// Bridges to the C# server (dotnet/docs/MIGRATION-BRIDGES.md): each match result as submitted, for the rifts it
+// records; and a websocket message C# asks this server to send, as it is, to the players named.
+export const END_OF_MATCH_STATS_CHANNEL = "match:end_of_match_stats";
+export const WS_SEND_CHANNEL = "ws:send";
+// An administrator's forced disconnect ({playerId}; ovs-ctl player disconnect).
+export const WS_DISCONNECT_CHANNEL = "ws:disconnect";
+
+export interface RedisWsSendNotification {
+  playerIds: string[];
+  message: Record<string, unknown>;
+}
 
 const CLIENT_UPDATE_MODAL_NONCE_PREFIX = "client_update_modal_nonce:";
 const CLIENT_UPDATE_MODAL_COOLDOWN_PREFIX = "client_update_modal_cooldown:";
@@ -202,6 +213,10 @@ export interface MATCH_FOUND_NOTIFICATION extends MVS_NOTIFICATION {
   // merged over the GameplayConfig, and over each named player's config, after both are built.
   gameplayConfigOverride?: Record<string, unknown>;
   playerConfigOverrides?: Record<string, Record<string, unknown>>;
+  // The template_id to send the config under instead of OnGameplayConfigNotified (a rift retry's RiftRetryNotification),
+  // and fields to add beside it (PriorMatchId).
+  gameplayConfigTemplate?: string;
+  gameplayConfigData?: Record<string, unknown>;
 }
 
 export interface RedisMatchEndNotification extends MVS_NOTIFICATION {

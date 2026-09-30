@@ -17,6 +17,7 @@ import {
   redisGetLobbyState,
   redisPublishToast,
   redisGetClientUpdateModalNonce,
+  END_OF_MATCH_STATS_CHANNEL,
 } from "../config/redis";
 import {  getCurrentCRC, MATCHMAKING_CRC } from "../data/config";
 import { adjustMatchToasts } from "../data/playerCounters";
@@ -57924,6 +57925,25 @@ export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}
   let preMatchElo: number | null = null;
   const account = AuthUtils.DecodeClientToken(req);
   const pid = account?.id;
+
+  // For the C# server, which records rift progress from it (dotnet/docs/MIGRATION-BRIDGES.md).
+  if (matchId) {
+    try {
+      await redisClient.publish(
+        END_OF_MATCH_STATS_CHANNEL,
+        JSON.stringify({
+          matchId,
+          playerId: pid ?? null,
+          winningTeamIndex: winningTeamIndex ?? null,
+          // The submitter's own counters (the rift stars are judged from them).
+          missionUpdates: (pid && req.body?.EndOfMatchStats?.PlayerMissionUpdates?.[pid]) ?? null,
+        }),
+      );
+    } catch (e) {
+      logger.error(`${logPrefix} Could not publish end of match stats for match ${matchId}: ${e}`);
+    }
+  }
+
   if (pid) {
     try {
       const preRating = await getOrCreateRating(pid);

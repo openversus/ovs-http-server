@@ -45,7 +45,7 @@ public sealed class RiftLobbyTests
     // The TS server never answers a lock of a disabled character (the game then hangs); this answers and refuses it.
     public async Task ADisabledCharacterIsRefusedNotLeftUnanswered(string character, bool locked)
     {
-        var lobbies = new RiftLobbyService(new ServiceCollection().BuildServiceProvider(), null!, new StaticMonitor(new LobbySettings()),
+        var lobbies = new RiftLobbyService(new ServiceCollection().BuildServiceProvider(), null!, null!, new StaticMonitor(new LobbySettings()),
             TimeProvider.System, NullLogger<RiftLobbyService>.Instance);
         var request = new JsonObject { ["Loadout"] = new JsonObject { ["Character"] = character, ["Skin"] = "skin" } };
 

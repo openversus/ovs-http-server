@@ -62,20 +62,46 @@ public sealed class OnlineCommand : AsyncCommand<OnlineSettings>
     protected override async Task<int> ExecuteAsync(CommandContext context, OnlineSettings settings, CancellationToken cancellation)
     {
         using var client = ControlClient.For(settings);
-        return OvsCtl.Report(_console, settings, await client.OnlineAsync(settings.Players), online =>
-        {
-            _console.MarkupLineInterpolated($"[bold]{online.Count}[/] player(s) connected");
-            if (online.Players is { Count: > 0 } players)
-            {
-                var table = new Table().Border(TableBorder.Rounded).AddColumn("Name").AddColumn("Id").AddColumn("Status");
-                foreach (var p in players)
-                {
-                    table.AddRow(Markup.Escape(p.Name), $"[grey]{Markup.Escape(p.Id)}[/]", Markup.Escape(p.Status ?? "-"));
-                }
+        return OvsCtl.Report(_console, settings, await client.OnlineAsync(settings.Players), online => OnlineRender.Show(_console, online));
+    }
+}
 
-                _console.Write(table);
-            }
-        });
+/// <summary>ovs-ctl player online: who is connected, with every handle the player commands take.</summary>
+public sealed class PlayerOnlineCommand : AsyncCommand<ConnectionSettings>
+{
+    private readonly IAnsiConsole _console;
+
+    public PlayerOnlineCommand(IAnsiConsole console)
+    {
+        _console = console;
+    }
+
+    protected override async Task<int> ExecuteAsync(CommandContext context, ConnectionSettings settings, CancellationToken cancellation)
+    {
+        using var client = ControlClient.For(settings);
+        return OvsCtl.Report(_console, settings, await client.OnlineAsync(true), online => OnlineRender.Show(_console, online));
+    }
+}
+
+internal static class OnlineRender
+{
+    public static void Show(IAnsiConsole console, OnlineView online)
+    {
+        console.MarkupLineInterpolated($"[bold]{online.Count}[/] player(s) connected");
+        if (online.Players is not { Count: > 0 } players)
+        {
+            return;
+        }
+
+        var table = new Table().Border(TableBorder.Rounded)
+            .AddColumn("Name").AddColumn("Username").AddColumn("Id").AddColumn("Steam id").AddColumn("IP").AddColumn("Status");
+        foreach (var p in players)
+        {
+            table.AddRow(Markup.Escape(p.Name), Markup.Escape(p.Username ?? "-"), $"[grey]{Markup.Escape(p.Id)}[/]",
+                Markup.Escape(p.SteamId ?? "-"), Markup.Escape(p.Ip ?? "-"), Markup.Escape(p.Status ?? "-"));
+        }
+
+        console.Write(table);
     }
 }
 
@@ -119,7 +145,7 @@ public sealed class MatchesCommand : AsyncCommand<ConnectionSettings>
 public class PlayerSettings : ConnectionSettings
 {
     [CommandArgument(0, "<WHO>")]
-    [Description("The player: their id, their exact name (any case), or their Steam id.")]
+    [Description("The player: their id, their exact name (any case), their generated username, their Steam id, or the IP address they are connected from (online players only).")]
     public string Who { get; set; } = "";
 }
 
@@ -158,6 +184,23 @@ public sealed class PlayerShowCommand : AsyncCommand<PlayerSettings>
     {
         using var client = ControlClient.For(settings);
         return OvsCtl.Report(_console, settings, await client.PlayerAsync(settings.Who), p => PlayerRender.Show(_console, p));
+    }
+}
+
+public sealed class PlayerDisconnectCommand : AsyncCommand<PlayerSettings>
+{
+    private readonly IAnsiConsole _console;
+
+    public PlayerDisconnectCommand(IAnsiConsole console)
+    {
+        _console = console;
+    }
+
+    protected override async Task<int> ExecuteAsync(CommandContext context, PlayerSettings settings, CancellationToken cancellation)
+    {
+        using var client = ControlClient.For(settings);
+        return OvsCtl.Report(_console, settings, await client.DisconnectAsync(settings.Who), d =>
+            _console.MarkupLineInterpolated($"Disconnect sent for [bold]{d.Name}[/] ({d.Id}) to {d.Websockets} websocket service(s); {(d.WasOnline ? "they were online" : "[yellow]they were not online[/]")}."));
     }
 }
 

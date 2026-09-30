@@ -6,6 +6,19 @@ namespace OpenVersus.Server.Core.Tests.Rifts;
 public sealed class RiftStateTests
 {
     [Fact]
+    // The game's handler reads body.RiftState; a bare state as the body left the rift page waiting forever.
+    public void TheAnswerHoldsTheStateUnderRiftState()
+    {
+        var state = RiftStateService.NewState(new RiftSettings());
+
+        var answer = RiftStateService.Answer(state);
+
+        Assert.Same(state, answer["body"]!["RiftState"]);
+        Assert.Single(answer["body"]!.AsObject());
+        Assert.Equal(0, (int)answer["return_code"]!);
+    }
+
+    [Fact]
     public void ANewPlayerHasOnlyTheGlobalPoolFullAndNothingPlayed()
     {
         var state = RiftStateService.NewState(new RiftSettings());

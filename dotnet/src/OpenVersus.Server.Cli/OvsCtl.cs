@@ -33,8 +33,10 @@ public static class OvsCtl
             config.AddBranch("player", player =>
             {
                 player.SetDescription("Player records.");
+                player.AddCommand<PlayerOnlineCommand>("online").WithDescription("Who is connected, with each one's name, username, id, Steam id and IP.");
                 player.AddCommand<PlayerShowCommand>("show").WithDescription("A player's record.");
                 player.AddCommand<PlayerRenameCommand>("rename").WithDescription("Rename a player (an administrator's rename: no censoring).");
+                player.AddCommand<PlayerDisconnectCommand>("disconnect").WithDescription("Close a player's game connection, as a heartbeat timeout would (the game logs out).");
             });
             config.AddBranch("settings", settings =>
             {

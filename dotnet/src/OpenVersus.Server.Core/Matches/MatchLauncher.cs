@@ -29,7 +29,9 @@ namespace OpenVersus.Server.Core.Matches;
 //
 // The notification may carry gameplayConfigOverride (merged over the websocket's GameplayConfig) and
 // playerConfigOverrides ({player: fields merged over that player's config}): the websocket builds a PvP config, and a
-// mode it does not know (rifts) replaces what differs. See docs/MIGRATION-BRIDGES.md (2).
+// mode it does not know (rifts) replaces what differs. It may also carry gameplayConfigTemplate (the template_id the
+// config is sent under instead of OnGameplayConfigNotified: a rift retry's RiftRetryNotification) and gameplayConfigData
+// (fields added beside the config: PriorMatchId). See docs/MIGRATION-BRIDGES.md (2).
 //
 // The rollback port, as the TS rollbackService.ts picks it:
 //   fixed (Rollback:OnDemand off, ON_DEMAND_ROLLBACK=0): servers already running; a random port in
@@ -103,7 +105,9 @@ public sealed record MatchLaunch(
     string Mode,
     IReadOnlyList<MatchPlayer> Players,
     JsonObject? GameplayConfigOverride = null,
-    JsonObject? PlayerConfigOverrides = null);
+    JsonObject? PlayerConfigOverrides = null,
+    string? ConfigTemplate = null,
+    JsonObject? ConfigData = null);
 
 /// <summary>The started match.</summary>
 public sealed record LaunchedMatch(string MatchId, int RollbackPort);
@@ -199,6 +203,16 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
         if (launch.PlayerConfigOverrides is not null)
         {
             notification["playerConfigOverrides"] = launch.PlayerConfigOverrides.DeepClone();
+        }
+
+        if (launch.ConfigTemplate is not null)
+        {
+            notification["gameplayConfigTemplate"] = launch.ConfigTemplate;
+        }
+
+        if (launch.ConfigData is not null)
+        {
+            notification["gameplayConfigData"] = launch.ConfigData.DeepClone();
         }
 
         if (rollback.OnDemand)

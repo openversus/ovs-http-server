@@ -17,7 +17,8 @@ namespace OpenVersus.Server.Core.Ops;
 //                                created_at (unix seconds), partyId, matchmakingRequestId, ... } (the queues the
 //                                matchmaking worker processes)
 //   online_players               set of connected player ids
-//   connections:{playerId}       hash; username (the display name), hydraUsername (the generated fallback), character
+//   connections:{playerId}       hash; username (the display name), hydraUsername (the generated fallback), character,
+//                                steamId, current_ip (the online list; finding an online player by IP address)
 //   player:{playerId}            hash; status (idle, queued, in_match, ...)
 //   match_started:{matchId}      set by the rollback server while a game is being played (10 min TTL)
 //   {matchId}                    the match's config, JSON: { players: [{ playerId, teamIndex, isSpectator }], mode,
@@ -25,6 +26,7 @@ namespace OpenVersus.Server.Core.Ops;
 //   player_ranked_set:{playerId} the ranked set a player's game belongs to
 //   ranked_set:{setId}           the set's state, JSON: { players, mode, scores, gamesPlayed, conceded }
 //   match_characters:{setId}     JSON { playerId: character }
+//   ws:disconnect                published { playerId }: the TS websocket closes that player's connection
 // Mongo
 //   playertesters                one document per player: _id (ObjectId; its hex is the player id above), name,
 //                                hydraUsername, steamId, public_id, profile_id
@@ -39,7 +41,8 @@ public sealed record QueuedTicket(string PartyId, string MatchmakingRequestId, l
 public sealed record QueueView(string Queue, int Tickets, int Players, IReadOnlyList<QueuedTicket> Entries);
 
 /// <summary>A connected player.</summary>
-public sealed record OnlinePlayer(string Id, string Name, string? Status);
+/// <summary>A connected player: who, and the handles the player commands take (username, Steam id, the IP connected from).</summary>
+public sealed record OnlinePlayer(string Id, string Name, string? Status, string? Username = null, string? SteamId = null, string? Ip = null);
 
 /// <summary>How many players are connected, and (when asked) who.</summary>
 public sealed record OnlineView(long Count, IReadOnlyList<OnlinePlayer>? Players);
@@ -53,6 +56,9 @@ public sealed record MatchView(string SetId, string MatchId, string? Mode, IRead
 /// <summary>A player's record.</summary>
 public sealed record PlayerView(string Id, string Name, string? HydraUsername, string? SteamId, string? PublicId, string? ProfileId, bool Online, string? Status);
 
+/// <summary>A forced disconnect sent: to whom, whether they were online, and how many websocket services heard it.</summary>
+public sealed record DisconnectView(string Id, string Name, bool WasOnline, long Websockets);
+
 /// <summary>
 /// Operations on the live game's state for administrators: queues, connected players, matches in progress, and player
 /// records. Behind the control API and its access policy, like the settings.
@@ -65,11 +71,15 @@ public interface IOpsService
 
     Task<ControlResult<IReadOnlyList<MatchView>>> MatchesAsync();
 
-    /// <summary>A player by id (ObjectId hex), else by exact name (any case), else by Steam id.</summary>
+    /// <summary>A player by id (ObjectId hex), else by exact name (any case), else by generated username, else by Steam
+    /// id, else by the IP address an online player is connected from.</summary>
     Task<ControlResult<PlayerView>> FindPlayerAsync(string who);
 
     /// <summary>Renames a player; see the implementation for how this differs from the website's name change.</summary>
     Task<ControlResult<PlayerView>> RenamePlayerAsync(string who, string newName);
+
+    /// <summary>Closes the player's game websocket, as a heartbeat timeout would (the client logs out).</summary>
+    Task<ControlResult<DisconnectView>> DisconnectPlayerAsync(string who);
 }
 
 internal sealed class OpsService : IOpsService
@@ -149,7 +159,9 @@ internal sealed class OpsService : IOpsService
         foreach (var member in await redis.SetMembersAsync("online_players"))
         {
             string id = member.ToString();
-            players.Add(new OnlinePlayer(id, await DisplayNameAsync(redis, id), (string?)await redis.HashGetAsync($"player:{id}", "status")));
+            var handles = await redis.HashGetAsync($"connections:{id}", ["hydraUsername", "steamId", "current_ip"]);
+            players.Add(new OnlinePlayer(id, await DisplayNameAsync(redis, id), (string?)await redis.HashGetAsync($"player:{id}", "status"),
+                NullIfEmpty(handles[0]), NullIfEmpty(handles[1]), NullIfEmpty(handles[2])));
         }
 
         return ControlResult<OnlineView>.Ok(new OnlineView(count, players.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList()));
@@ -277,6 +289,40 @@ internal sealed class OpsService : IOpsService
         return await FindPlayerAsync(id.ToString());
     }
 
+    // The websocket is the TS service's (src/websocket.ts): it closes the player's socket when it hears ws:disconnect
+    // {playerId}, with terminate(), the path its heartbeat timeout takes, so the usual cleanup runs (ticket, lobby,
+    // session) and the client logs out. docs/MIGRATION-BRIDGES.md (4).
+    public const string DisconnectChannel = "ws:disconnect";
+
+    public async Task<ControlResult<DisconnectView>> DisconnectPlayerAsync(string who)
+    {
+        if (Players is not { } players)
+        {
+            return NoMongo<DisconnectView>();
+        }
+
+        if (Redis is not { } redis)
+        {
+            return NoRedis<DisconnectView>();
+        }
+
+        var found = await ResolveAsync(players, who);
+        if (found.Error is not null)
+        {
+            return ControlResult<DisconnectView>.Missing(found.Error);
+        }
+
+        var view = await ViewAsync(found.Value!);
+        long heard = await redis.PublishAsync(RedisChannel.Literal(DisconnectChannel), JsonSerializer.Serialize(new { playerId = view.Id }));
+        if (heard == 0)
+        {
+            return ControlResult<DisconnectView>.Refused($"no websocket service is listening on {DisconnectChannel} (not running, or older than this command)");
+        }
+
+        _log.LogInformation("Asked {Heard} websocket service(s) to disconnect player {Id} (\"{Name}\", online: {Online})", heard, view.Id, view.Name, view.Online);
+        return ControlResult<DisconnectView>.Ok(new DisconnectView(view.Id, view.Name, view.Online, heard));
+    }
+
     private async Task<(BsonDocument? Value, string? Error)> ResolveAsync(IMongoCollection<BsonDocument> players, string who)
     {
         if (ObjectId.TryParse(who, out var id))
@@ -299,13 +345,52 @@ internal sealed class OpsService : IOpsService
             return (byName[0], null);
         }
 
-        var bySteam = await players.Find(Builders<BsonDocument>.Filter.Eq("steamId", who)).Limit(2).ToListAsync();
-        return bySteam.Count switch
+        var byUsername = await players.Find(Builders<BsonDocument>.Filter.Eq("hydraUsername", who)).Limit(2).ToListAsync();
+        if (byUsername.Count == 1)
         {
-            1 => (bySteam[0], null),
-            > 1 => (null, $"more than one player has Steam id {who}; use the player id"),
-            _ => (null, $"no player with id, name or Steam id \"{who}\""),
-        };
+            return (byUsername[0], null);
+        }
+
+        var bySteam = await players.Find(Builders<BsonDocument>.Filter.Eq("steamId", who)).Limit(2).ToListAsync();
+        if (bySteam.Count > 1)
+        {
+            return (null, $"more than one player has Steam id {who}; use the player id");
+        }
+
+        if (bySteam.Count == 1)
+        {
+            return (bySteam[0], null);
+        }
+
+        // Last, an IP address: the online players connected from it (connections:{id} current_ip). Several players can
+        // share one (a household, a proxy), so more than one is refused with their ids.
+        if (System.Net.IPAddress.TryParse(who, out var wanted) && Redis is { } redis)
+        {
+            var online = await redis.SetMembersAsync("online_players");
+            var fromIp = new List<string>();
+            foreach (var member in online)
+            {
+                // Compared as addresses: an IPv4 address and its IPv6-mapped form (::ffff:a.b.c.d) are one.
+                if (System.Net.IPAddress.TryParse((string?)await redis.HashGetAsync($"connections:{member}", "current_ip"), out var ip)
+                    && ip.MapToIPv6().Equals(wanted.MapToIPv6()))
+                {
+                    fromIp.Add(member.ToString());
+                }
+            }
+
+            if (fromIp.Count > 1)
+            {
+                return (null, $"more than one online player is connected from {who}; use the player id ({string.Join(", ", fromIp)})");
+            }
+
+            if (fromIp.Count == 1 && ObjectId.TryParse(fromIp[0], out var ipId)
+                && await players.Find(Builders<BsonDocument>.Filter.Eq("_id", ipId)).FirstOrDefaultAsync() is { } byIp)
+            {
+                return (byIp, null);
+            }
+        }
+
+        return (null, $"no player with id, name, username, Steam id or (online) IP address \"{who}\"");
     }
 
     private async Task<PlayerView> ViewAsync(BsonDocument player)
@@ -354,6 +439,8 @@ internal sealed class OpsService : IOpsService
     }
 
     // The website's fallback chain: the display name, else the generated Hydra name, else "Unknown".
+    private static string? NullIfEmpty(RedisValue value) => value.IsNullOrEmpty ? null : value.ToString();
+
     private static async Task<string> DisplayNameAsync(IDatabase redis, string id)
     {
         var fields = await redis.HashGetAsync($"connections:{id}", ["username", "hydraUsername"]);

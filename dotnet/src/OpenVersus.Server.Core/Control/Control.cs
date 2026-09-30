@@ -128,6 +128,7 @@ public static class ControlApi
         control.MapGet("/ops/players/{who}", async (string who, IOpsService ops) => ToResult(await ops.FindPlayerAsync(who)));
         control.MapPut("/ops/players/{who}/name", async (string who, HttpRequest request, IOpsService ops) =>
             ToResult(await ops.RenamePlayerAsync(who, await new StreamReader(request.Body).ReadToEndAsync())));
+        control.MapPost("/ops/players/{who}/disconnect", async (string who, IOpsService ops) => ToResult(await ops.DisconnectPlayerAsync(who)));
 
         return routes;
     }

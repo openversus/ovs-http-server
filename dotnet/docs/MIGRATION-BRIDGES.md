@@ -32,7 +32,9 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   demand) and publishes `match:notifications` (the TS `MATCH_FOUND_NOTIFICATION`) and `matchmaking:complete`. The TS
   websocket sends the match to the game and the TS rollback routes serve it. For modes the websocket does not know,
   the notification carries two fields added to the TS type for this (`src/config/redis.ts`): `gameplayConfigOverride`
-  and `playerConfigOverrides`, merged over the websocket's PvP gameplay config in `handleSendGamePlayConfig`. Delete
+  and `playerConfigOverrides`, merged over the websocket's PvP gameplay config in `handleSendGamePlayConfig`, and
+  `gameplayConfigTemplate` / `gameplayConfigData` (the config sent under another template, with fields beside it: a
+  rift retry's `RiftRetryNotification` and `PriorMatchId`). Delete
   them with the websocket's port.
 - **Lobby keys:** `lobby:{id}` (JSON written by the TS `ssc.ts` and `websocket.ts`; C# adds a player to it keeping every
   other field as read), `player_lobby:{player}` and `lobby_redirect:{id}` (read only, for now). C# also creates rift
@@ -65,6 +67,35 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 - **Delete when:** every route a batch can contain is ported (the SSC catch-all `SscUnlisted` included). Then the
   forwarding code, `Batch:TsUrl`, `Batch:ForwardRoutes`, `Batch:ForwardTimeoutSeconds`, the startup warning and this
   entry go; `/batch` keeps running its sub-requests in C#.
+
+### 4. Rift progress from TS match results, pushed through the TS websocket
+
+- **Decided:** 2026-09-30, on the condition that it is recorded here: each piece has to be ported to C#.
+- **What:** the TS `submit_end_of_match_stats` (`src/handlers/ssc.ts`) publishes every result as it arrives on
+  `match:end_of_match_stats` (`{matchId, playerId, winningTeamIndex, missionUpdates}`, the last being the
+  submitter's own counters from `EndOfMatchStats.PlayerMissionUpdates`, which the rift stars are judged from), before its own processing, which is unchanged.
+  The C# `RiftResultSubscriber` (`Core/Rifts/RiftProgressService.cs`) records the progress of rift matches (known by
+  `rift_match:{match}`) and tells the game by publishing on `ws:send` (`{playerIds, message}`), a generic channel the
+  TS websocket (`src/websocket.ts`) answers by sending `message`, as it is, to each connected player named. The C#
+  service logs a `MIGRATION BRIDGE` warning at startup for this.
+- **Why:** the client never asks for its rift progress; the server works it out from the match result and pushes it
+  (`OnLobbyRuntimeDataUpdated`, `OnLobbyRiftStateUpdated`). The result reaches only the TS server, and only the TS
+  websocket reaches the game. Taking over `submit_end_of_match_stats` instead would have put every ranked and casual
+  match's stats through new forwarding code for the sake of rifts.
+- **Delete when:** `submit_end_of_match_stats` is ported to C# (it records rift progress itself; the publish, the
+  channel constant and the subscriber go) and the websocket is ported (C# sends the notifications itself; `ws:send`
+  and its handler go).
+
+### 5. `ovs-ctl player disconnect` closes the connection through the TS websocket
+
+- **What:** the control API (`POST /control/ops/players/{who}/disconnect`, `OpsService.DisconnectPlayerAsync`)
+  publishes `ws:disconnect` (`{playerId}`); the TS websocket (`src/websocket.ts`) closes that player's socket with
+  `terminate()`, the path its heartbeat timeout takes, so the usual cleanup runs and the game logs out. The command
+  refuses when no websocket service is subscribed (the publish reached nobody). Every C# service logs a
+  `MIGRATION BRIDGE` warning for it at startup (each has the control API).
+- **Why:** a client stuck on an unanswered call has no way out of the menu; this frees it without restarting the game
+  or the websocket service.
+- **Delete when:** the websocket is ported: C# closes the socket itself; the channel and its TS handler go.
 
 ## Not bridges (kept after the migration)
 

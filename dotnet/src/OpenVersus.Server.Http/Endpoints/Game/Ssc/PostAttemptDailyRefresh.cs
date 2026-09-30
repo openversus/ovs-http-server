@@ -1,18 +1,20 @@
 using FastEndpoints;
-using OpenVersus.Server.Http.Stubs;
+using OpenVersus.Server.Core.Seasons;
+using OpenVersus.Server.Http.Hosting;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 
 /// <summary>
-/// POST /ssc/invoke/attempt_daily_refresh.
+/// POST /ssc/invoke/attempt_daily_refresh: the current season and the next refresh times (<see cref="ISeasonService"/>).
 /// Seen in: binary ssc name; captured 11x; TS server: POST /ssc/invoke/attempt_daily_refresh.
-/// Ssc: server/capture.
 /// </summary>
-public sealed class PostAttemptDailyRefresh : StubEndpoint
+public sealed class PostAttemptDailyRefresh : JsonBodyEndpoint
 {
     public override void Configure()
     {
         Verbs(FastEndpoints.Http.POST);
         Routes("/ssc/invoke/attempt_daily_refresh");
     }
+
+    public override Task HandleAsync(CancellationToken ct) => SendJsonAsync(Resolve<ISeasonService>().DailyRefresh(), ct);
 }

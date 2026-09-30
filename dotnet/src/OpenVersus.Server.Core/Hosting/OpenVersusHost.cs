@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
 using OpenVersus.Server.Core.Control;
 using OpenVersus.Server.Core.Logging;
 using OpenVersus.Server.Core.Settings;
@@ -107,6 +108,7 @@ public static class OpenVersusHost
         OpenVersusLogging.FollowLevelSetting(app.Services);
         app.LogFrozenAccountData();
         app.MapOpenVersusControl();
+        app.Logger.LogWarning("MIGRATION BRIDGE: the control API's player disconnect asks the TS websocket to close the connection (ws:disconnect); see dotnet/docs/MIGRATION-BRIDGES.md (5)");
         app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
         app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
         return app;

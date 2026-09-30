@@ -53,18 +53,19 @@ manifests at runtime yet; they are the plan for what each field becomes.
 
 ### Rifts: `GET /ssc/invoke/load_rifts`
 
-- **Served by:** `GetLoadRifts` (`Http/Endpoints/Game/Ssc/`): `Static/ssc-load-rifts.json` as generated from
-  `handlers/ssc.ts`, the same for everyone; registered by `RiftHosting` (`Core/Rifts/`). `create_rift_lobby`
-  (`RiftLobbyService`) sends the chosen rift's `DynamicInstanceRuntimeData` entry from the same file as the lobby's
-  `RuntimeData`, so it serves the same frozen data (registered too).
+- **Served by:** `GetLoadRifts` (`Http/Endpoints/Game/Ssc/`): `RiftConfigs` from `Static/ssc-load-rifts.json` as
+  generated from `handlers/ssc.ts`, the same for everyone, and the player's own runtime data
+  (`RiftProgressService`, `Core/Rifts/`, Mongo `riftinstances`); registered by `RiftHosting`. `create_rift_lobby`
+  (the lobby's `RuntimeData`) and `start_rift_node` (the node's bots) read that same per-player data (registered too).
 - **Classified in:** `docs/fields/load-rifts.json`, compared with the runtime data the game cached for another account
   on WB's servers.
-- **Frozen account data in it:** `DynamicInstanceRuntimeData` (chapter progress and each node's generated teams; the
-  copy sent is one account's, with two tutorial nodes done) and `PlayerInstanceRuntimeData` (cauldron scores, claimed
-  rewards and missions; the copy sent is a new player's, all empty). `RiftConfigs` is static.
-- **Becomes:** the runtime maps stored per player and updated by the rift calls the game makes during a run
-  (`start_rift_node`, `finish_rift_chapter` and the others, which neither server answers yet), with a new player's
-  state as the default.
+- **Frozen account data in it:** a player's first copy of `DynamicInstanceRuntimeData` is the file's, with every
+  chapter's progress cleared (the file's held one account's two finished tutorial nodes; everyone starts from
+  scratch). What stays frozen is each node's generated enemy teams (`RuntimeNodeData`), one account's, the same for
+  every new player. `PlayerInstanceRuntimeData` starts as the file's, a new player's (all empty). `RiftConfigs` is static.
+  The four Season 6 rogue rifts the file lacks get generated runtime data (`RiftCatalog`), their bots the characters and
+  skins WB picked for the same character sets on the file's rifts.
+- **Becomes:** enemy teams generated per player from each node's `CharacterSet`s, as WB's server did.
 
 ## Adding one
 

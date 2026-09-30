@@ -23,6 +23,12 @@ WB's servers. Each item says which.
 | the match | no `perks_lock`: the rift client never sends it, and the match starts without `PerksLockedNotification` | |
 | after it | `PUT /ssc/invoke/submit_end_of_match_stats` (`WinningTeamIndex`, `Score`, mission updates), the rollback server's `/ovs_end_match`, then `PUT /ssc/invoke/set_lobby_joinable`; the client is back on the node map | TS (stats, the match's end); **nothing records rift progress** |
 
+"Retry" on the results screen sends `PUT /ssc/invoke/retry_current_rift_node` `{Context: 1, MatchId}` (the match
+just played; `Context` is likely an `EMvsRiftRetryContext`; the offline backend, `0x1429c9930`, reads `MatchId`). C# (`RiftMatchService.RetryNodeAsync`) starts the same node again from
+the prior match's record and the websocket sends the config as `RiftRetryNotification` `{MatchId, GameplayConfig,
+PriorMatchId}`, which is what the offline backend sends instead of `OnGameplayConfigNotified`. Played on the bench
+(2026-09-30): the match restarted.
+
 `start_rift_node` sends `{ChapterId, NodeId, RiftLobbyId, MultiplayParams{MultiplayClusterSlug, MultiplayProfileId
 "1252499" (the one-player profile), MultiplayRegionId, MultiplayRegionSearchId}}`: on WB it asked for a Multiplay
 dedicated server. Here it starts a rollback match (below). The client never calls `complete_rift_node` after a match.
@@ -102,6 +108,27 @@ A completed node, in the game's WB-era cache (`HydraRiftDynamicInstanceJson`): t
 `RuntimeChapterData[chapter].NodeCompletionsByDifficulty` is `{"<difficulty>": [node GUID, ...]}`, next to
 `CurrentDifficulty`, `HighestDifficultyCompleted` and `bIsChapterComplete`.
 
+## Stars: a node's missions
+
+The stars beside a node on the map are its missions at the chosen difficulty: the node's `Missions` entries whose
+`ChapterDifficultyThreshold` is that difficulty (five at Easy on the Joker node), from the **hiss** `rift-config`,
+which the game shows; the TS `load_rifts` copy lists different ones. Each mission (`missions`) names objectives
+(`mission-objectives`) whose `ObjectiveFlags` test the counters the game reports with the result
+(`EndOfMatchStats.PlayerMissionUpdates[player]`, 206 of them, e.g. `Stat:Game:Character:TotalRingouts`), the win
+(`Objective:Match:Win`), or a tag on the player's skin (`Objective:Match:Tag:Skin`; the tags come from the TS
+`INVENTORY_DEFINITIONS`, `Core/Rifts/rift-item-tags.json`). Descriptions and objectives often disagree in the game's
+data; the objectives are what counts. Rules in `RiftMissions.cs`.
+
+A win keeps the stars that match earned (the others stay open for another attempt): each is added once to the node's
+`PlayerInstanceRuntimeData[rift].RuntimeNodeData[node].CompletedMissions["<difficulty>"]`, and the chapter's
+`CauldronsByDifficulty[difficulty].CurrentScore` goes up by one for each new one. In the WB-era cache that score equals
+the number of missions completed at that difficulty on every rift that has one (Joker 8, Samurai Jack 4, Rise of
+Smith 12). The game is then sent `OnPlayerInstanceUpdated` with `RiftSlug` and `PlayerInstance` (that rift's entry):
+its handler (`0x142a27740`) reads the slug first. Without it, the stars were stored but the map did not update.
+
+Not yet: the missions' rewards (the first win's gem lootbox, `Reward`, `ClaimedOneTimeRewardGuidsByDifficulty`), the
+cauldron tiers (`claim_cauldron`), and what unlocks a higher difficulty.
+
 ## The client's offline backend
 
 The final build answers its own SSC calls in offline mode (`UMvsOfflineSscManager`, `UMvsOfflineRiftsManager`, the
@@ -119,11 +146,26 @@ The route map (`routes.json`) misses most rift calls although they are plain str
 `complete_rift_missions`, `retry_current_rift_node`, `reload_rift_lobby`, `switch_rift_chapters`,
 `reset_challenge_rift`, `mod_player_attrition`, `buy_lives`.
 
+## The current season
+
+The rift season dropdown lists the seasons up to the current one, which the game learns at login from
+`attempt_daily_refresh` (`CurrentSeason`; the TS server always said `Season:SeasonFive`). C# answers it now, the
+season from the setting `Season:Current`, `Season:SeasonSix` since 2026-09-30 so the Season 6 rogue rifts show.
+Answers still keyed by Season 5 (ranked data, `ranked_season5_*` leaderboards, the login's `season5` trackers,
+per-season profile data, missions, milestones) may need filling for Season 6 where the game looks them up by the
+current season; switch back with `ovs-ctl settings set Season:Current Season:SeasonFive`.
+
 ## Open
 
-- **Season 5's rift page spins forever** (Seasons 1-4 list fine). Hypothesis, untested: all four Season 5 rifts (and
-  Season 4's challenge rift) have `bRiftHasEndTime` with end dates in February-April 2025, so the page finds no current
-  rift. Keeping them open is a change to the rift data (a policy decision).
+- **Ended rifts: decided 2026-09-30.** No rift ends: every rift with `bRiftHasEndTime` (Season 4's and Season 5's
+  rogue rifts, 2025 dates) keeps it, `Rifts:EndTimeYears` (20) years later, in `load_rifts` and in the hiss the game
+  downloads. 100 years made the Season 5 page spin again on the bench; a guess, untested: the client counts the time
+  left in 32-bit seconds, and 100 years (about 3.2 billion) does not fit where 20 (about 630 million) does. The four
+  Season 6 rogue rifts, which the hiss has and the TS `load_rifts` lacks, are offered too, their runtime data
+  generated (`RiftCatalog`; its generator reproduces the Season 5 rogue rifts' WB-era data exactly, save bots WB drew
+  from a pool). These are the attrition chapters: attrition and buying lives are not built yet. The Season 6 rogue rifts
+  are re-runs: each is its Season 5 namesake node for node (maps, enemy sets, stocks, buffs, missions, rewards) and
+  chapter for chapter, with new GUIDs (progress kept apart), a new schedule and the Season 6 tag.
 - `equip_gems` (and where equipped gems are stored).
 - Daily rewards; per-player runtime data (today one frozen copy).
 - Bot difficulty: sent as 0, as the offline creator sends it. The Joker bot played very easily on the first test;
@@ -131,6 +173,9 @@ The route map (`routes.json`) misses most rift calls although they are plain str
 
 ## Next
 
-1. Progress: per-player runtime data, updated from the match result and pushed with `OnLobbyRuntimeDataUpdated` /
-   `OnLobbyRiftStateUpdated`; `load_rifts` then answers each player's own.
+1. Progress, first part built (`RiftProgressService`): per-player runtime data (everyone from scratch), a win adds the
+   node to `NodeCompletionsByDifficulty`, `LastPlayed` follows the last node, and both notifications are pushed
+   (MIGRATION-BRIDGES.md, 4). Left: a loss's consequences (enemy stocks carried over, attrition), missions and
+   rewards (stars are recorded: see Stars above), and the chapter's end (`bIsChapterComplete`, `HighestDifficultyCompleted`: most likely
+   `finish_rift_chapter`, when the end node is clicked).
 2. `equip_gems`; the Season 5 end dates; co-op (a friend joining the rift lobby).

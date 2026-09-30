@@ -25,8 +25,8 @@ namespace OpenVersus.Server.Core.Rifts;
 //                 hash (id, created_at, mode, owner); connections:{player} lobby_id = id
 // Mongo           the player's rift state (RiftStateService)
 //
-// RuntimeData is, for now, the rift's entry in the frozen load_rifts answer (the same copy for everyone; see
-// docs/FROZEN-ACCOUNT-DATA.md), with no powerups.
+// RuntimeData is the rift's entry in the player's runtime data (RiftProgressService: a new player's is the frozen
+// load_rifts copy with the progress cleared, keeping its bots; see docs/FROZEN-ACCOUNT-DATA.md), with no powerups.
 
 public interface IRiftLobbyService
 {
@@ -37,8 +37,8 @@ public interface IRiftLobbyService
     Task<JsonObject> LockLoadoutAsync(JsonObject? claims, JsonObject? request, CancellationToken ct);
 }
 
-internal sealed class RiftLobbyService(IServiceProvider services, IRiftStateService states, IOptionsMonitor<LobbySettings> lobbies,
-    TimeProvider time, ILogger<RiftLobbyService> log) : IRiftLobbyService
+internal sealed class RiftLobbyService(IServiceProvider services, IRiftStateService states, IRiftProgressService progress,
+    IOptionsMonitor<LobbySettings> lobbies, TimeProvider time, ILogger<RiftLobbyService> log) : IRiftLobbyService
 {
     public const string Mode = "rift_lobby";
     private const string Cluster = "ec2-us-east-1-dokken";
@@ -137,7 +137,7 @@ internal sealed class RiftLobbyService(IServiceProvider services, IRiftStateServ
             ["RiftConfigSlug"] = slug,
             ["ChapterGuid"] = chapter,
             ["ChapterDifficulty"] = difficulty,
-            ["RuntimeData"] = RuntimeData(slug),
+            ["RuntimeData"] = RuntimeData((await progress.InstanceAsync(playerId, ct)).Dynamic, slug),
             ["RiftState"] = await states.StateAsync(playerId, ct),
         };
 
@@ -198,10 +198,13 @@ internal sealed class RiftLobbyService(IServiceProvider services, IRiftStateServ
     private static readonly HashSet<string> s_disabledCharacters =
         ["character_Meeseeks", "Meeseeks", "character_supershaggy", "supershaggy", "character_c022", "c022", "character_C022", "C022"];
 
-    /// <summary>The rift's runtime data (FMvsRiftRuntimeData): the frozen load_rifts copy, and no powerups.</summary>
-    internal static JsonObject RuntimeData(string slug)
+    /// <summary>The rift's runtime data (FMvsRiftRuntimeData) in the frozen load_rifts copy, and no powerups.</summary>
+    internal static JsonObject RuntimeData(string slug) => RuntimeData(s_runtimeData.Value, slug);
+
+    /// <summary>The rift's runtime data (FMvsRiftRuntimeData) in a player's DynamicInstanceRuntimeData, and no powerups.</summary>
+    internal static JsonObject RuntimeData(JsonObject dynamic, string slug)
     {
-        var data = s_runtimeData.Value[slug] is JsonObject entry
+        var data = dynamic[slug] is JsonObject entry
             ? entry.DeepClone().AsObject()
             : new JsonObject { ["RuntimeChapterData"] = new JsonObject(), ["RuntimeNodeData"] = new JsonObject() };
         data["Powerups"] = new JsonArray();

@@ -20,6 +20,30 @@ public sealed class JsNumberTests
     [InlineData("12345678901234567890", 12345678901234567000)]
     public void ParseIntAsNodeReadsIt(string text, double expected) => Assert.Equal(expected, Js.ParseInt(text));
 
+    // parseInt(text, 10): decimal only, so a 0x prefix reads as the 0 before it (values from node).
+    [Theory]
+    [InlineData("100", 100)]
+    [InlineData("  7x", 7)]
+    [InlineData("0x1A", 0)]
+    [InlineData("0x", 0)]
+    [InlineData("12abc", 12)]
+    [InlineData("-3", -3)]
+    [InlineData("1e3", 1)]
+    [InlineData("007", 7)]
+    public void ParseIntWithRadix10AsNodeReadsIt(string text, double expected) => Assert.Equal(expected, Js.ParseInt(text, 10));
+
+    // The order node gives Object.keys for keys set in this order: array indexes first, ascending; "01", "-1" and 2^32 - 1
+    // are not indexes.
+    [Fact]
+    public void KeysAreOrderedAsAJavaScriptObjectOrdersThem()
+    {
+        string[] set = ["b", "2", "10", "a", "1", "01", "4294967294", "4294967295", "-1", "0"];
+        Assert.Equal(["0", "1", "2", "10", "4294967294", "b", "a", "01", "4294967295", "-1"], Js.OrderedLikeAnObject(set, k => k));
+    }
+
+    [Fact]
+    public void ParseIntRefusesARadixItDoesNotSupport() => Assert.Throws<ArgumentOutOfRangeException>(() => Js.ParseInt("ff", 16));
+
     [Theory]
     [InlineData("abc")]
     [InlineData("")]

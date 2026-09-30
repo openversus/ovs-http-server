@@ -20,6 +20,7 @@
     <EmbeddedResource Include="Static/*.json" LogicalName="OpenVersus.Server.Core.Static.%(Filename)%(Extension)" />
     <EmbeddedResource Include="FileStorage/*.json" LogicalName="OpenVersus.Server.Core.FileStorage.%(Filename)%(Extension)" />
     <EmbeddedResource Include="Inventory/*.json" LogicalName="OpenVersus.Server.Core.Inventory.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Calendar/*.json" LogicalName="OpenVersus.Server.Core.Calendar.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

@@ -14,7 +14,7 @@
 // Both servers need the client gate on with a minimum of 2026.09.28.1 (MIN_CLIENT_VERSION=2026.09.28.1,
 // CLIENT_VERSION_CHECK=true). Never point these at data you want to keep.
 import fs from "node:fs";
-import { require, need, openScratch, toPlain, openMonitor, writes, state } from "../refdiff/refdiff.mjs";
+import { require, need, openScratch, toPlain, openMonitor, writes, state, hydraKeyOrders } from "../refdiff/refdiff.mjs";
 
 const jwt = require(process.cwd() + "/node_modules/jsonwebtoken");
 // mvs-dump's modules run a CLI on import when argv[2] is set (they read it as a file): hide ours while they load.
@@ -108,6 +108,8 @@ async function run(baseUrl, outFile) {
     }
     steps.push({
       name, status: response.status, platformIds: fresh ? await platformIds(redis) : steps.at(-1).platformIds, response: normalize(decoded, started), bytes: bytes.length,
+      // The wire order of the maps whose keys are integer-like (a decoded answer cannot show it).
+      intKeyOrders: (() => { try { return Object.fromEntries(Object.entries(hydraKeyOrders(bytes)).filter(([, lists]) => lists.some((keys) => keys.some((k) => /^\d+$/.test(k))))); } catch (e) { return `<${e.message}>`; } })(),
       writes: writes(lines, self), state: await state(redis),
     });
   }
@@ -188,7 +190,7 @@ function diffRuns(fileA, fileB) {
   let differing = 0;
   for (let i = 0; i < Math.max(a.steps.length, b.steps.length); i++) {
     const x = a.steps[i], y = b.steps[i];
-    const parts = ["status", "response", "writes", "state"].filter((p) => JSON.stringify(x?.[p]) !== JSON.stringify(y?.[p]));
+    const parts = ["status", "response", "intKeyOrders", "writes", "state"].filter((p) => JSON.stringify(x?.[p]) !== JSON.stringify(y?.[p]));
     if (!parts.length && x?.bytes === y?.bytes) continue;
     if (!parts.length) parts.push("bytes");
     const name = x?.name ?? y?.name;

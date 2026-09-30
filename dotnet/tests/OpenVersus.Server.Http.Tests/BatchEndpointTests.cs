@@ -78,6 +78,10 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
 
     private static JsonNode Static(string name) => JsonNode.Parse(StaticResponses.Json(name))!;
 
+    // The unported sub-request these tests send on: an SSC name no endpoint has, so the catch-all stub (SscUnlisted)
+    // answers it however many functions get ported.
+    private const string Unported = "/ssc/invoke/no_such_function";
+
     [Fact]
     public async Task PortedItemsAnswerHereAndTheOthersGoToTheTsServerAsOneBatchInTheGamesOrder()
     {
@@ -85,7 +89,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
         var client = Client(ts.Url);
         using var response = await PutAsync(client, Batch(
             Get("/commerce/products"),
-            Get("/ssc/invoke/get_country_code"),
+            Get(Unported),
             Get("/commerce/purchases/someone"),
             new JsonObject { ["verb"] = "PUT", ["url"] = "/commerce/purchases/me?count=25", ["headers"] = new JsonObject { ["x-hydra-http-method"] = "GET" } }),
             r =>
@@ -100,7 +104,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
         var forwarded = Assert.Single(ts.Requests);
         var body = HydraDecoder.Decode(forwarded.Body)!;
         Assert.True(JsonNode.DeepEquals(s_options, body["options"]));
-        Assert.Equal(["/ssc/invoke/get_country_code", "/commerce/purchases/someone"], body["requests"]!.AsArray().Select(r => (string)r!["url"]!));
+        Assert.Equal([Unported, "/commerce/purchases/someone"], body["requests"]!.AsArray().Select(r => (string)r!["url"]!));
         // The batch's headers go with it, as the game sent them, and the client address as this service worked it out.
         Assert.Equal(client.DefaultRequestHeaders.GetValues(HydraToken.Header).Single(), forwarded.Headers[HydraToken.Header]);
         Assert.Equal("identity-value", forwarded.Headers["X-OVS-Identity"]);
@@ -112,7 +116,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
         {
             ["responses"] = new JsonArray(
                 Item(200, Static("commerce-products")),
-                HydraRaw.Node(FakeTs.ItemFor("/ssc/invoke/get_country_code")),
+                HydraRaw.Node(FakeTs.ItemFor(Unported)),
                 HydraRaw.Node(FakeTs.ItemFor("/commerce/purchases/someone")),
                 Item(200, Static("commerce-purchases-me"))),
         });
@@ -155,7 +159,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
     [Fact]
     public async Task WithTheTsServerDownOnlyItsPartAnswers502()
     {
-        using var response = await PutAsync(Client("http://127.0.0.1:9"), Batch(Get("/ssc/invoke/get_country_code"), Get("/commerce/purchases/me")));
+        using var response = await PutAsync(Client("http://127.0.0.1:9"), Batch(Get(Unported), Get("/commerce/purchases/me")));
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var responses = HydraDecoder.Decode(await response.Content.ReadAsByteArrayAsync())!["responses"]!.AsArray();
         Assert.Equal(502, Status(responses[0]));
@@ -167,7 +171,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
     {
         await using var ts = await FakeTs.StartAsync(delay: TimeSpan.FromSeconds(20));
         var watch = Stopwatch.StartNew();
-        using var response = await PutAsync(Client(ts.Url, ("Batch:ForwardTimeoutSeconds", "1")), Batch(Get("/ssc/invoke/get_country_code"), Get("/commerce/purchases/me")));
+        using var response = await PutAsync(Client(ts.Url, ("Batch:ForwardTimeoutSeconds", "1")), Batch(Get(Unported), Get("/commerce/purchases/me")));
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"took {watch.Elapsed}");
         var responses = HydraDecoder.Decode(await response.Content.ReadAsByteArrayAsync())!["responses"]!.AsArray();
         Assert.Equal(504, Status(responses[0]));
@@ -202,13 +206,13 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
     {
         await using var ts = await FakeTs.StartAsync();
         var client = Client(ts.Url);
-        using (var forwarding = await PutAsync(client, Batch(Get("/ssc/invoke/get_country_code"))))
+        using (var forwarding = await PutAsync(client, Batch(Get(Unported))))
         {
             Assert.Equal("1", Assert.Single(ts.Requests).Headers[BatchRunner.ForwardedHeader]);
         }
 
         // Batch:TsUrl pointing back at this service (or the proxy): the forwarded batch arrives here marked.
-        using var loop = await PutAsync(client, Batch(Get("/ssc/invoke/get_country_code")), r => r.Headers.Add(BatchRunner.ForwardedHeader, "1"));
+        using var loop = await PutAsync(client, Batch(Get(Unported)), r => r.Headers.Add(BatchRunner.ForwardedHeader, "1"));
         Assert.Equal(HttpStatusCode.LoopDetected, loop.StatusCode);
         Assert.Single(ts.Requests);
     }

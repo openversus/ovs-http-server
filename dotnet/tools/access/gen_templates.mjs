@@ -124,6 +124,44 @@ for (const slug of ["beginnermode-carousel-keyart", "beginnermode-carousel-thumb
 // PUT /drives/multiversus/sync (handlers/drives.ts).
 write("drives-multiversus-sync.json", await literal("src/handlers/drives.ts", "  res.send({ additions", " });", "  res.send(".length, {}), "Static");
 
+// GET /ssc/invoke/get_country_code and /ssc/invoke/get_hiss_calendar_events (handlers/ssc.ts): fixed answers. (The hiss
+// calendar has nothing to do with the hiss_amalgamation CRC; its handler answers this literal to everyone.)
+const ssc = "src/handlers/ssc.ts";
+write("ssc-get-country-code.json", await literal(ssc, "  res.send({ body: { region:", " });", "  res.send(".length, {}), "Static");
+{
+  const sscSource = fs.readFileSync(path.join(root, ssc), "utf8");
+  const at = sscSource.indexOf("function handleSsc_invoke_get_hiss_calendar_events(");
+  if (at < 0) throw new Error("handleSsc_invoke_get_hiss_calendar_events was not found; update this script");
+  const start = sscSource.slice(at, sscSource.indexOf("  res.send({", at) + "  res.send({".length);
+  write("ssc-get-hiss-calendar-events.json", await literal(ssc, start, "\n  });\n}", start.length - 1, {}), "Static");
+}
+// GET /ssc/invoke/get_milestone_reward_tracks: a fixed answer too (the same states for every player).
+{
+  const sscSource = fs.readFileSync(path.join(root, ssc), "utf8");
+  const at = sscSource.indexOf("function handleSsc_invoke_get_milestone_reward_tracks(");
+  if (at < 0) throw new Error("handleSsc_invoke_get_milestone_reward_tracks was not found; update this script");
+  const start = sscSource.slice(at, sscSource.indexOf("  res.send({", at) + "  res.send({".length);
+  write("ssc-get-milestone-reward-tracks.json", await literal(ssc, start, "\n  });\n}", start.length - 1, {}), "Static");
+}
+
+// GET /ssc/invoke/get_calendar_events (handlers/ssc.ts): the carousel, with the required-update popup that is kept only
+// for a player who must update. Its start, ids and link are markers the C# side fills (CalendarService); its message is
+// a marker too, filled from the same setting as the gate's answer (Clients:UpdateMessage, whose default is this text).
+{
+  const calendar = await literal(ssc, "  const response = {", "\n  };\n  if (!updateState.required)", "  const response = ".length, {
+    updateEventStart: marker("start"),
+    updateEntryId: marker("entryId"),
+    updateEventRecordId: marker("recordId"),
+    CLIENT_UPDATE_URL: marker("updateUrl"),
+  });
+  const update = calendar.body.Events.find((e) => e.data.slug === "ovs-required-update");
+  if (!update) throw new Error("the required-update event was not found; update this script");
+  const [key] = Object.keys(update.data.description.localizations);
+  update.data.description.localizations[key] = marker("updateMessage");
+  fs.mkdirSync(path.join(root, "dotnet/src/OpenVersus.Server.Core/Calendar"), { recursive: true });
+  write("calendar-events.json", calendar, "Calendar");
+}
+
 // GET /profiles/{id}/inventory (handlers/profiles.ts): the parts that are literals. Gleamium and the toast record
 // (whose count and updated_at are filled per request), and the taunt list unlockAll adds (data/taunts.ts AllTaunts).
 fs.mkdirSync(path.join(root, "dotnet/src/OpenVersus.Server.Core/Inventory"), { recursive: true });

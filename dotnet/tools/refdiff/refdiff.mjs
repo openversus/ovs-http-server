@@ -83,8 +83,10 @@ export async function dump(redis, db, skip = []) {
   const mongo = {};
   for (const { name } of await db.listCollections().toArray()) {
     if (name.startsWith("system.") || skip.includes(name)) continue;
-    // Canonical EJSON keeps the BSON types ($numberInt vs $numberDouble, $date, $oid).
-    mongo[name] = JSON.parse(EJSON.stringify(await db.collection(name).find().sort({ _id: 1 }).toArray(), { relaxed: false }));
+    // Canonical EJSON of the raw BSON values keeps the stored types ($numberInt / $numberLong / $numberDouble, $date,
+    // $oid). promoteValues: false matters: a promoted value is a JS number, and EJSON then writes any whole number as
+    // $numberInt or $numberLong, whatever type was stored (a double 1790000000000 read as a long, 5.0 as an int).
+    mongo[name] = JSON.parse(EJSON.stringify(await db.collection(name).find({}, { promoteValues: false }).sort({ _id: 1 }).toArray(), { relaxed: false }));
   }
   return { redis: Object.fromEntries(Object.entries(keys).sort()), mongo: Object.fromEntries(Object.entries(mongo).sort()) };
 }
@@ -169,6 +171,12 @@ function normalize(run, writes) {
         const ms = Number(v.$date?.$numberLong ?? Date.parse(v.$date));
         return { $date: near(ms, "ms") ? "<now>" : new Date(ms).toISOString() };
       }
+      // A stored number near the run (a timestamp): the time is set aside, its BSON type still compares.
+      const [tag] = Object.keys(v);
+      if (Object.keys(v).length === 1 && ["$numberInt", "$numberLong", "$numberDouble"].includes(tag) && typeof v[tag] === "string") {
+        const n = Number(v[tag]);
+        return { [tag]: near(n, "ms") ? "<now-ms>" : near(n, "s") ? "<now-s>" : v[tag] };
+      }
       return Object.fromEntries(Object.entries(v).map(([k, x]) => [typeof str(k) === "string" ? str(k) : k, value(x)]));
     }
     return v;
@@ -244,4 +252,35 @@ export async function state(redis) {
     out[key] = { type, ttl: ttl > 0 ? `~${Math.round(ttl / 60)}m` : ttl, value };
   }
   return Object.fromEntries(Object.entries(out).sort());
+}
+
+/**
+ * The keys of every Hydra map in a message, in wire order, by path ("server_data.AllMultiplayParams": ["1", "2"]). A
+ * decoded answer is a JS object, which puts integer-like keys first whatever order they came in, so only the bytes show
+ * the order. Reads what the servers send (no compressed or special values: those are refused).
+ */
+export function hydraKeyOrders(bytes) {
+  let at = 0;
+  const orders = {};
+  const u = (n) => { let v = 0; for (let i = 0; i < n; i++) v = v * 256 + bytes[at++]; return v; };
+  const count = (code, base) => u(1 << (code - base));
+  const value = (path) => {
+    const code = bytes[at++];
+    if (code <= 0x03) return code === 0x02 ? true : code === 0x03 ? false : code === 0x01 ? null : 0;
+    if (code >= 0x10 && code <= 0x17) { at += [1, 1, 2, 2, 4, 4, 8, 8][code - 0x10]; return 0; }
+    if (code === 0x20) { at += 4; return 0; }
+    if (code === 0x21) { at += 8; return 0; }
+    if (code >= 0x30 && code <= 0x35) { const n = u([1, 2, 4, 1, 2, 4][code - 0x30]); const s = bytes.subarray(at, at + n).toString("utf8"); at += n; return s; }
+    if (code === 0x40) { at += 4; return 0; }
+    if (code >= 0x50 && code <= 0x53) { const n = count(code, 0x50); for (let i = 0; i < n; i++) value(`${path}[]`); return 0; }
+    if (code >= 0x60 && code <= 0x63) {
+      const n = count(code, 0x60), keys = [];
+      for (let i = 0; i < n; i++) { const k = String(value(`${path}.<key>`)); keys.push(k); value(`${path}.${k}`); }
+      (orders[path || "."] ??= []).push(keys);
+      return 0;
+    }
+    throw new Error(`hydraKeyOrders: code 0x${code.toString(16)} at ${at - 1}`);
+  };
+  value("");
+  return orders;
 }

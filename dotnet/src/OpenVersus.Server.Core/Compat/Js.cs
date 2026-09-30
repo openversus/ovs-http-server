@@ -29,10 +29,16 @@ public static class Js
 
     /// <summary>
     /// parseInt(text) with no radix: leading white space, a sign, then decimal digits (or hex after 0x); NaN when there
-    /// are none (null reads as NaN, as parseInt(undefined) does).
+    /// are none (null reads as NaN, as parseInt(undefined) does). parseInt(text, 10) with <paramref name="radix"/> 10:
+    /// decimal digits only, so "0x1f" is 0. No other radix is supported.
     /// </summary>
-    public static double ParseInt(string? text)
+    public static double ParseInt(string? text, int radix = 0)
     {
+        if (radix is not (0 or 10))
+        {
+            throw new ArgumentOutOfRangeException(nameof(radix), radix, "only parseInt(text) and parseInt(text, 10) are supported");
+        }
+
         if (text is null)
         {
             return double.NaN;
@@ -51,7 +57,7 @@ public static class Js
             i++;
         }
 
-        bool hex = i + 1 < text.Length && text[i] == '0' && text[i + 1] is 'x' or 'X';
+        bool hex = radix == 0 && i + 1 < text.Length && text[i] == '0' && text[i + 1] is 'x' or 'X';
         if (hex)
         {
             i += 2;
@@ -138,6 +144,22 @@ public static class Js
     private static bool IsSpace(char c) =>
         c is '\t' or '\n' or '\v' or '\f' or '\r' or ' ' or '\u00A0' or '\uFEFF' or '\u2028' or '\u2029'
         || char.GetUnicodeCategory(c) == UnicodeCategory.SpaceSeparator;
+
+    /// <summary>
+    /// Keys in the order a JavaScript object keeps them: integer-like keys ("0", "12"; canonical, below 2^32 - 1) first,
+    /// ascending, then the rest as given. A stored document read into a JS object (a lean read, JSON.parse) comes out in
+    /// this order, whatever order it was stored in.
+    /// </summary>
+    public static IEnumerable<T> OrderedLikeAnObject<T>(IEnumerable<T> entries, Func<T, string> key)
+    {
+        var list = entries.ToList();
+        return list.Where(e => ArrayIndex(key(e)) is not null).OrderBy(e => ArrayIndex(key(e))).Concat(list.Where(e => ArrayIndex(key(e)) is null));
+    }
+
+    // An array index as ECMAScript defines it: the canonical decimal string of an integer below 2^32 - 1.
+    private static uint? ArrayIndex(string key) =>
+        key.Length is > 0 and <= 10 && key.All(char.IsAsciiDigit) && (key.Length == 1 || key[0] != '0')
+            && ulong.Parse(key, CultureInfo.InvariantCulture) < uint.MaxValue ? uint.Parse(key, CultureInfo.InvariantCulture) : null;
 
     /// <summary>
     /// JSON.stringify of a JSON tree, byte for byte: only the quote, the backslash, control characters and lone

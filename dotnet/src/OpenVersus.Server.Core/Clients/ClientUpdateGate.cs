@@ -16,7 +16,7 @@ namespace OpenVersus.Server.Core.Clients;
 // infinity-war). A player is let through when the check is off, or when their session was registered through
 // /api/identify and their client is at least the minimum version (no minimum: any version).
 //
-// Redis, read     connections:{id} clientVersion, identityRegistered ("1")
+// Redis, read     connections:{id} clientVersion, identityRegistered ("1"); client_update_modal_nonce:{id} (the calendar)
 // Redis, written  client_update_modal_cooldown:{id} "1" (SET NX EX 15: one request per player per 15 s)
 //                 client_update_modal_nonce:{id} (INCR, then EXPIRE 86400)
 // Published       client_update:modal {"playerId", "nonce"} (the TS websocket shows the player the update toast)
@@ -57,6 +57,12 @@ public interface IClientUpdateGate
     /// the same name as JavaScript's <c>||</c> does (a stored "0" is kept, an empty one is not).
     /// </summary>
     Task<ClientUpdateState> ForRequestAsync(AccountLookup lookup, JsonObject? claims);
+
+    /// <summary>
+    /// How many update toasts the player has been sent (redisGetClientUpdateModalNonce): parseInt(value, 10), 0 for no
+    /// player, no value or not a number.
+    /// </summary>
+    Task<double> ModalNonceAsync(string playerId);
 
     /// <summary>The Hydra action answer that turns a blocked player away: HTTP 200 with return_code 1, so the game does not retry.</summary>
     JsonObject FailureBody();
@@ -160,6 +166,18 @@ internal sealed class ClientUpdateGate(IServiceProvider services, IOptionsMonito
             : Claim("identityRegistered") is JsonValue r && ((r.TryGetValue(out string? t) && t == "1") || (r.TryGetValue(out bool b) && b));
         var current = settings.CurrentValue;
         return new ClientUpdateState(accountId, version, registered, ClientVersions.GameplayAccessRequired(version, current.MinimumVersion, registered, current.VersionCheck));
+    }
+
+    public async Task<double> ModalNonceAsync(string playerId)
+    {
+        if (playerId.Length == 0)
+        {
+            return 0;
+        }
+
+        var value = await Redis.StringGetAsync($"client_update_modal_nonce:{playerId}");
+        double nonce = Js.ParseInt(value.HasValue && value.ToString().Length > 0 ? value.ToString() : "0", 10);
+        return double.IsNaN(nonce) ? 0 : nonce;
     }
 
     public async Task<IReadOnlyList<bool>> RequestModalsAsync(IEnumerable<string> playerIds)

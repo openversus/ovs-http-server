@@ -14,6 +14,9 @@
 // CLIENT_VERSION_CHECK=true), and the C# server's Batch:TsUrl must be the TS server. Never point these at data you want
 // to keep.
 //
+// The calendar (get_calendar_events), whose required-update popup follows the same decision, is compared whole: answer
+// (its popup's start, now minus a minute, as "<now>"), byte length and writes.
+//
 // A request the gate lets through reaches the route itself, which the C# port has not ported (a stub, or the TS server
 // inside a batch), so for those only the gate's own part is compared: not turned away, and no gate writes. A request
 // turned away is compared whole: status, answer, byte length and every write.
@@ -47,6 +50,16 @@ const EXPECTED = {
   },
 };
 
+// A date within two minutes of the request is "now" (the calendar popup's start is now minus 60 s).
+function aroundNow(value, started) {
+  if (Array.isArray(value)) return value.map((v) => aroundNow(v, started));
+  if (value && typeof value === "object") {
+    if (Object.keys(value).length === 1 && typeof value._hydra_unix_date === "number" && Math.abs(value._hydra_unix_date * 1000 - started) < 120000) return "<now>";
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, aroundNow(v, started)]));
+  }
+  return value;
+}
+
 const hydra = (value) => { const e = new HydraEncoder(); e.encodeValue(value); return e.returnValue(); };
 const isGateAnswer = (v) => v?.return_code === 1 && v?.body?.error === "client_update_required";
 const isGateWrite = (w) => / client_update_modal_|^publish client_update:modal /.test(w);
@@ -62,13 +75,15 @@ async function run(baseUrl, outFile) {
   const old = () => session({ clientVersion: OLD, identityRegistered: "1" });
 
   const steps = [];
-  async function step(name, { method = "POST", path, body = {}, claims = {}, setup, fresh = true }) {
+  async function step(name, { method = "POST", path, body = {}, claims = {}, setup, fresh = true, full = false, noId = false }) {
     if (fresh) {
       await redis.flushDb();
       await redis.set("refdiff:scratch", "1");
       await setup?.();
     }
-    const token = jwt.sign({ id: P1, wb_network_id: P1, username: "PlayerOne", ...claims }, need("REF_JWT_SECRET"));
+    const { id: _, ...withoutId } = { id: P1, wb_network_id: P1, username: "PlayerOne", ...claims };
+    const token = jwt.sign(noId ? withoutId : { id: P1, wb_network_id: P1, username: "PlayerOne", ...claims }, need("REF_JWT_SECRET"));
+    const started = Date.now();
     recording = [];
     let response, bytes;
     try {
@@ -92,7 +107,7 @@ async function run(baseUrl, outFile) {
       decoded = `<does not decode: ${e.message}>`;
     }
     const items = path === "/batch" ? decoded?.responses?.map((r) => ({ status: r.status_code, blocked: isGateAnswer(r.body), body: r.body })) : undefined;
-    steps.push({ name, status: response.status, blocked: isGateAnswer(decoded), response: decoded, bytes: bytes.length, items, writes: writes(lines, self) });
+    steps.push({ name, full, status: response.status, blocked: isGateAnswer(decoded), response: full ? aroundNow(decoded, started) : decoded, bytes: bytes.length, items, writes: writes(lines, self) });
     process.stdout.write(`${name}: ${response.status}${isGateAnswer(decoded) ? " (turned away)" : ""}\n`);
   }
 
@@ -123,6 +138,19 @@ async function run(baseUrl, outFile) {
     { verb: "PUT", url: ready, headers: {}, body: {} },
     { verb: "GET", url: "/ssc/invoke/get_country_code", headers: {} },
   ] };
+  // The calendar (get_calendar_events): its required-update popup is there only for a player who must update, with ids
+  // from the token's id and the player's toast count. Compared whole; the popup's start is now minus a minute.
+  const calendar = { method: "GET", path: "/ssc/invoke/get_calendar_events", full: true };
+  const nonce = (value) => async () => { await old(); await redis.set(`client_update_modal_nonce:${P1}`, value); };
+  await step("calendar-not-required", { ...calendar, setup: current });
+  await step("calendar-required", { ...calendar, setup: old });
+  for (const value of ["5", "0x1f", "12abc", "", "abc", "-3"]) await step(`calendar-nonce ${JSON.stringify(value)}`, { ...calendar, setup: nonce(value) });
+  await step("calendar-after-toast-toast", { path: ready, setup: old });
+  await step("calendar-after-toast", { ...calendar, fresh: false });
+  await step("calendar-token-without-id", { ...calendar, noId: true, setup: old });
+  await step("calendar-numeric-token-id", { ...calendar, claims: { id: 12345 }, setup: old });
+  await step("calendar-no-session", calendar);
+
   await step("batch-blocked", { method: "PUT", path: "/batch", body: batch, setup: old });
   await step("batch-passes", { method: "PUT", path: "/batch", body: batch, setup: current });
 
@@ -145,6 +173,12 @@ function diffRuns(fileA, fileB) {
       continue;
     }
     if (x.blocked !== y.blocked) { report(x.name, `turned away: ${x.blocked} vs ${y.blocked}`); continue; }
+    if (x.full) {
+      for (const k of ["status", "bytes"]) if (x[k] !== y[k]) report(x.name, `${k} ${x[k]} vs ${y[k]}`);
+      if (JSON.stringify(x.response) !== JSON.stringify(y.response)) report(x.name, "answer differs");
+      if (JSON.stringify(x.writes) !== JSON.stringify(y.writes)) report(x.name, "writes differ");
+      continue;
+    }
     if (x.blocked) {
       blocked++;
       for (const k of ["status", "bytes"]) if (x[k] !== y[k]) report(x.name, `${k} ${x[k]} vs ${y[k]}`);

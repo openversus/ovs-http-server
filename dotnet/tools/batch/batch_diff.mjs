@@ -9,7 +9,7 @@
 // ids rewritten), and one of the ported reads that could come in a batch plus sub-requests C# must send on (a stubbed
 // id, an unknown path, an unported SSC function), for the first <accounts> players with an identity (default 25),
 // plus REF_ACCOUNT (an account id) if set. Each batch runs in two C# modes, set live through the control API: "mixed"
-// (Batch:ForwardRoutes empty, so C# answers what it has ported) and "all-ts" (every ported route in a batch listed, so
+// (Batch:ForwardRoutes empty, so C# answers what it has ported) and "all-ts" (every game route in the route map listed, so
 // everything goes to the TS server).
 //
 // Each batch is sent to the TS server, then to C#, then to the TS server again. A path whose value differs between the
@@ -117,9 +117,11 @@ function synthetic(id, name) {
   };
 }
 
-const ALL_TS = "GET /friends/me, GET /friends/me/invitations/incoming, GET /friends/me/invitations/outgoing, GET /social/me/blocked, " +
-  "GET /commerce/products, GET /commerce/purchases/me, GET /commerce/steam/mtx_user_info/me, GET /file_storage, " +
-  "GET /profiles/search_queries/{id}/run, GET /matches/all/{id}, GET /profiles/{id}/inventory, GET /profiles/bulk";
+// Every game route in the route map (docs/routes.json), so "all-ts" stays all as routes are ported. (The map writes "?"
+// for a method nobody has seen, and a regex path for the TS /.*/access route; neither can be listed.)
+const ALL_TS = JSON.parse(fs.readFileSync("dotnet/docs/routes.json", "utf8"))
+  .filter((r) => r.kind === "game" && ["GET", "PUT", "POST", "DELETE"].includes(r.method) && !r.path.startsWith("/.*"))
+  .map((r) => `${r.method} ${r.path}`).join(", ");
 
 async function setting(key, value) {
   const response = await fetch(`http://127.0.0.1:${control}/control/settings/${key}?scope=instance`, { method: "PUT", body: value });

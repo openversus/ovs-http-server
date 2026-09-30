@@ -25,6 +25,7 @@ public static class TsEnvironment
         ("MIN_CLIENT_VERSION", "Clients:MinimumVersion"),
         ("CLIENT_VERSION_CHECK", "Clients:VersionCheck"),
         ("GAME_VERSION", "Lobbies:GameVersion"),
+        ("DEFAULT_ELO", "Ranked:DefaultElo"),
     ];
 
     // Values the TS server reads with envalid's bool (true/t/1, false/f/0), which .NET's binding does not; anything else

@@ -1,5 +1,6 @@
 using FastEndpoints;
 using OpenVersus.Server.Core.Access;
+using OpenVersus.Server.Core.Calendar;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.FileStorage;
 using OpenVersus.Server.Core.Friends;
@@ -8,6 +9,7 @@ using OpenVersus.Server.Core.Inventory;
 using OpenVersus.Server.Core.Layouts;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Matches;
+using OpenVersus.Server.Core.Perks;
 using OpenVersus.Server.Core.Profiles;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Settings;
@@ -30,6 +32,9 @@ builder.AddInventory();
 builder.AddMatchHistory();
 builder.AddClientUpdateGate();
 builder.AddPartyLobbies();
+builder.AddCalendar();
+builder.AddPerks();
+builder.AddRankedData();
 builder.AddBatch();
 builder.Services.AddFastEndpoints();
 

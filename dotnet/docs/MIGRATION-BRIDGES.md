@@ -29,6 +29,10 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   toast: `{playerId, nonce}`). Their payloads are JSON exactly as the TS server writes them.
 - **Lobby keys:** `lobby:{id}` (JSON written by the TS `ssc.ts` and `websocket.ts`; C# adds a player to it keeping every
   other field as read), `player_lobby:{player}` and `lobby_redirect:{id}` (read only, for now).
+- **Asset sync:** `dataassets` and the `config` collection's `CRC` are written only by the TS server's `POST /syncAsset`
+  (`dataAssetSync.ts`: the asset, then the CRC bumped). C# reads both (`HissService` builds its answer once per CRC;
+  the inventory, cosmetics and hiss answers read the assets), so an asset sync goes through the TS server until
+  `/syncAsset` is ported, and must keep bumping the CRC.
 - **Delete when:** no TS service reads or writes that key, collection or channel any more. Then the C# side may change
   the shape, drop the mongoose quirks, and the contract comment goes.
 

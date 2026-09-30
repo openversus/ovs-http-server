@@ -2,6 +2,7 @@
 // scratch stores, the state dump, the Mongo profile, and the normalizing diff. Run the harnesses from the repository
 // root: they load the TS server's node_modules.
 import net from "node:net";
+import zlib from "node:zlib";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 
@@ -283,4 +284,36 @@ export function hydraKeyOrders(bytes) {
   };
   value("");
   return orders;
+}
+
+/**
+ * A Hydra message split at its compressed values (0x67, index 1, a byte string holding zlib data): each one's bytes as
+ * sent (`blocks`), what each inflates to (`sections`), and the bytes around them (`rest`), where a compressed value is
+ * left as its 0x67 0x01 alone, so a length written in another width does not count. Compressors differ in the bytes
+ * they make from the same data; `sections` and `rest` are what a compressor cannot change.
+ */
+export function hydraSections(bytes) {
+  const blocks = [], sections = [], rest = [];
+  let from = 0;
+  for (let i = 0; i + 4 < bytes.length; i++) {
+    if (bytes[i] !== 0x67 || bytes[i + 1] !== 0x01) continue;
+    const width = { 0x33: 1, 0x34: 2, 0x35: 4 }[bytes[i + 2]];
+    if (!width || i + 3 + width > bytes.length) continue;
+    const length = bytes.readUIntBE(i + 3, width);
+    const start = i + 3 + width;
+    if (bytes[start] !== 0x78 || start + length > bytes.length) continue; // zlib data starts with 0x78
+    let inflated;
+    try {
+      inflated = zlib.inflateSync(bytes.subarray(start, start + length));
+    } catch {
+      continue;
+    }
+    rest.push(bytes.subarray(from, i + 2));
+    blocks.push(bytes.subarray(i, start + length));
+    sections.push(inflated);
+    from = start + length;
+    i = from - 1;
+  }
+  rest.push(bytes.subarray(from));
+  return { blocks, sections, rest: Buffer.concat(rest) };
 }

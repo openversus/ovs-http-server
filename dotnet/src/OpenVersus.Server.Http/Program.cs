@@ -5,6 +5,7 @@ using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Cosmetics;
 using OpenVersus.Server.Core.FileStorage;
 using OpenVersus.Server.Core.Friends;
+using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Core.Inventory;
 using OpenVersus.Server.Core.Layouts;
@@ -37,6 +38,7 @@ builder.AddCalendar();
 builder.AddPerks();
 builder.AddRankedData();
 builder.AddCosmetics();
+builder.AddHiss();
 builder.AddBatch();
 builder.Services.AddFastEndpoints();
 

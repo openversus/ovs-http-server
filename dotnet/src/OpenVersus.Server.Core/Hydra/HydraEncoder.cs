@@ -39,19 +39,23 @@ public sealed class HydraEncoder
 {
     private readonly MemoryStream _out = new();
     private readonly bool _webSocket;
+    private readonly CompressionLevel _compression;
 
-    private HydraEncoder(bool webSocket)
+    private HydraEncoder(bool webSocket, CompressionLevel compression)
     {
         _webSocket = webSocket;
+        _compression = compression;
     }
 
     /// <summary>
     /// Encodes <paramref name="value"/>. For the websocket, the message is framed as the game expects: 0x06 and the
     /// payload's length in 16 bits. The frame cannot state a longer length, so a message over 65,535 bytes is refused.
+    /// <paramref name="compression"/> is the zlib level for <c>_hydra_compressed</c> values: mvs-dump's (fastest) unless
+    /// an answer is encoded once and kept (HissService).
     /// </summary>
-    public static byte[] Encode(JsonNode? value, bool webSocket = false)
+    public static byte[] Encode(JsonNode? value, bool webSocket = false, CompressionLevel compression = CompressionLevel.Fastest)
     {
-        var encoder = new HydraEncoder(webSocket);
+        var encoder = new HydraEncoder(webSocket, compression);
         encoder.Value(value);
         return encoder.Result();
     }
@@ -369,12 +373,13 @@ public sealed class HydraEncoder
         Object(reference);
     }
 
-    // mvs-dump: 0x67, index 1, then the zlib-deflated (fastest) encoding of the value as a byte string.
+    // mvs-dump: 0x67, index 1, then the zlib-deflated encoding of the value as a byte string. The game inflates any zlib
+    // stream; the bytes differ from mvs-dump's (Node's zlib) at every level but the smallest values.
     private void Compressed(JsonNode? value)
     {
-        byte[] inner = Encode(value);
+        byte[] inner = Encode(value, compression: _compression);
         using var buffer = new MemoryStream();
-        using (var zlib = new ZLibStream(buffer, CompressionLevel.Fastest, leaveOpen: true))
+        using (var zlib = new ZLibStream(buffer, _compression, leaveOpen: true))
         {
             zlib.Write(inner);
         }

@@ -178,3 +178,30 @@ fs.mkdirSync(path.join(root, "dotnet/src/OpenVersus.Server.Core/Inventory"), { r
 write("inventory-gleamium.json", await literal("src/data/gleamium.ts", "export const GleamiumData = {", "\n};", "export const GleamiumData = ".length, {}), "Inventory");
 write("inventory-toast.json", await literal("src/data/toast.ts", "export const ToastData = {", "\n};", "export const ToastData = ".length, {}), "Inventory");
 write("inventory-taunts.json", await literal("src/data/taunts.ts", "const AllTaunts: ITaunt[] = [", "\n];", "const AllTaunts: ITaunt[] = ".length, {}), "Inventory");
+
+// PUT/GET /ssc/invoke/hiss_amalgamation (handlers/hiss_amalgation_get.ts generate_hiss): the game's configuration, its
+// data constants (src/data/*.ts) evaluated in place. Markers: the CRC (the config collection's, read per request) and
+// the lists built from the enabled data assets (HissService fills them as loadAssets.ts builds them).
+{
+  const hiss = "src/handlers/hiss_amalgation_get.ts";
+  const imports = [...fs.readFileSync(path.join(root, hiss), "utf8").matchAll(/^import \{ ([A-Z_, ]+) \} from "\.\.\/data\/(\w+)";$/gm)];
+  const scope = {
+    getCurrentCRC: () => marker("crc"),
+    MATCHMAKING_CRC: 1,
+    getAssetsByType: (type) => ({ map: () => marker(`assets:${type}`) }),
+    getAllAssets: () => ({ map: () => marker("assets:all") }),
+    getAllSkinsByChar: () => marker("skinsByCharacter"),
+    getAllTauntsByChar: () => marker("tauntsByCharacter"),
+  };
+  for (const [, names, file] of imports) {
+    for (const name of names.split(",").map((n) => n.trim()).filter((n) => n && !(n in scope))) {
+      const source = fs.readFileSync(path.join(root, `src/data/${file}.ts`), "utf8");
+      const declaration = source.match(new RegExp(`^export const ${name}(?:: \\w+)? = \\{$`, "m"));
+      if (!declaration) throw new Error(`${name} in src/data/${file}.ts was not found; update this script`);
+      scope[name] = await literal(`src/data/${file}.ts`, declaration[0], "\n};", declaration[0].length - 1, {});
+    }
+  }
+  const answer = await literal(hiss, "  return {\n    body: {\n      Crc: getCurrentCRC(),", "\n  };\n}", "  return ".length, scope);
+  fs.mkdirSync(path.join(root, "dotnet/src/OpenVersus.Server.Core/Hiss"), { recursive: true });
+  write("hiss-amalgamation.json", answer, "Hiss");
+}

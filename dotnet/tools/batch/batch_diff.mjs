@@ -14,7 +14,9 @@
 //
 // Each batch is sent to the TS server, then to C#, then to the TS server again. A path whose value differs between the
 // two TS answers changes on every request (a timestamp, a random id) and is set aside, and listed; anything else C#
-// answers differently is a difference. Where nothing was set aside, the whole answer must be the same bytes.
+// answers differently is a difference. Where nothing was set aside, the whole answer must be the same bytes (in "mixed"
+// mode, a batch holding hiss_amalgamation: the bytes around its compressed values, and what those values hold; see
+// RECOMPRESSED).
 //
 // Except: in "mixed" mode C# answers /matches/all, the username search and get_equipped_cosmetics itself, and changes
 // the TS answer on purpose (MatchHistoryService, ProfilesService.SearchAsync, CosmeticsService's WB-shaped answer;
@@ -24,7 +26,7 @@
 // on the TS batch's copied request, and the batch never answers) and the leaderboard views (their TS handlers call
 // res.setHeader, which the TS batch's fake response lacks; the throw is an unhandled rejection). Nested batches and malformed items are never sent to the TS server; the http tests cover them.
 import fs from "fs";
-import { require } from "../refdiff/refdiff.mjs";
+import { hydraSections, require } from "../refdiff/refdiff.mjs";
 
 const { MongoClient } = require(process.cwd() + "/node_modules/mongodb");
 const jwt = require(process.cwd() + "/node_modules/jsonwebtoken");
@@ -175,22 +177,11 @@ function objectIdsAsHex(value, side) {
   return value;
 }
 
-// Hydra's compressed values (0x67, index 1, a byte string holding zlib data): C# must pass the TS server's on byte for
-// byte, as decoding and encoding one again gives other bytes.
-function compressedBlocks(bytes) {
-  const blocks = [];
-  for (let i = 0; i + 4 < bytes.length; i++) {
-    if (bytes[i] !== 0x67 || bytes[i + 1] !== 1) continue;
-    const width = { 0x33: 1, 0x34: 2, 0x35: 4 }[bytes[i + 2]];
-    if (!width || i + 3 + width > bytes.length) continue;
-    const length = width === 1 ? bytes[i + 3] : width === 2 ? bytes.readUInt16BE(i + 3) : bytes.readUInt32BE(i + 3);
-    const start = i + 3 + width;
-    if (bytes[start] !== 0x78 || start + length > bytes.length) continue; // zlib data starts with 0x78
-    blocks.push(bytes.subarray(i, start + length));
-    i = start + length - 1;
-  }
-  return blocks;
-}
+// Hydra's compressed values: where C# forwards the sub-request, it must pass the TS server's on byte for byte, as decoding
+// and encoding one again gives other bytes. Where C# answers it (hiss_amalgamation in "mixed" mode) it compresses them
+// itself (HissService: .NET's zlib, smallest size), so there they must hold the same bytes (hydraSections) instead, and
+// the bytes around them must be the same.
+const RECOMPRESSED = /^\/ssc\/invoke\/hiss_amalgamation\b/;
 
 // One sub-request sent to C# on its own, as the game would send it outside a batch.
 async function alone(sub, tok, ip) {
@@ -277,17 +268,29 @@ for (const mode of ["mixed", "all-ts"]) {
         found.push(...(await sameAsAlone(cs.value?.responses?.[i], batch.requests[i], tok, ip)).map(p => `[${i}] vs C# alone: ${p}`));
         checkedAlone++;
       }
-      if (moving.size === 0 && corrected.size === 0 && !found.length && !cs.bytes.equals(ts2.bytes)) found.push(`bytes differ (${cs.bytes.length} vs ${ts2.bytes.length})`);
+      const recompressed = mode === "mixed" && batch.requests.some(r => RECOMPRESSED.test(r.url));
+      const [csParts, tsParts, ts1Parts] = [hydraSections(cs.bytes), hydraSections(ts2.bytes), hydraSections(ts1.bytes)];
+      // Around the compressed values where C# compresses them itself, the whole answer otherwise.
+      const [csOuter, tsOuter, ts1Outer] = recompressed ? [csParts.rest, tsParts.rest, ts1Parts.rest] : [cs.bytes, ts2.bytes, ts1.bytes];
+      if (moving.size === 0 && corrected.size === 0 && !found.length && !csOuter.equals(tsOuter)) found.push(`bytes differ (${csOuter.length} vs ${tsOuter.length})`);
       if (cs.bytes.equals(ts2.bytes)) identicalBytes++;
       // What moves is fixed-width (dates, ids, rand), so equal TS lengths mean C#'s must be the same length too: a
       // number written as another type, or a re-encoded compressed block, changes the length.
-      if (corrected.size === 0 && ts1.bytes.length === ts2.bytes.length) {
+      if (corrected.size === 0 && ts1Outer.length === tsOuter.length) {
         lengthChecked++;
-        if (cs.bytes.length !== ts2.bytes.length) found.push(`length ${cs.bytes.length} vs ${ts2.bytes.length}`);
+        if (csOuter.length !== tsOuter.length) found.push(`length ${csOuter.length} vs ${tsOuter.length}`);
       }
-      for (const block of compressedBlocks(ts2.bytes)) {
-        blocksChecked++;
-        if (cs.bytes.indexOf(block) < 0) found.push(`compressed block of ${block.length} bytes not passed on as it came`);
+      if (recompressed) {
+        if (csParts.sections.length !== tsParts.sections.length) found.push(`${csParts.sections.length} compressed values vs ${tsParts.sections.length}`);
+        tsParts.sections.forEach((section, i) => {
+          blocksChecked++;
+          if (!csParts.sections[i]?.equals(section)) found.push(`compressed value ${i} holds ${csParts.sections[i]?.length} vs ${section.length} bytes, not the same`);
+        });
+      } else {
+        for (const block of tsParts.blocks) {
+          blocksChecked++;
+          if (cs.bytes.indexOf(block) < 0) found.push(`compressed block of ${block.length} bytes not passed on as it came`);
+        }
       }
       if (found.length) {
         problems++;

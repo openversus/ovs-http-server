@@ -101,10 +101,12 @@ export function writeRun(outFile, baseUrl, ranAt, steps, profile) {
  * Prints what differs between two runs after normalizing; exit code 1 when anything does. With `writes`, the insert
  * and update commands each server sent (both runs recorded with REF_PROFILE=1) are compared too: the stored state
  * cannot show everything (MongoDB 5+ applies an update's new fields in name order, whatever order they were sent in).
+ * With `findAndModify` (collection names), those commands on them too (query, update, upsert; the TS server's
+ * findOneAndUpdate calls).
  */
-export function diff(fileA, fileB, { writes = false } = {}) {
-  const a = normalize(JSON.parse(fs.readFileSync(fileA, "utf8")), writes);
-  const b = normalize(JSON.parse(fs.readFileSync(fileB, "utf8")), writes);
+export function diff(fileA, fileB, { writes = false, findAndModify = [] } = {}) {
+  const a = normalize(JSON.parse(fs.readFileSync(fileA, "utf8")), writes, findAndModify);
+  const b = normalize(JSON.parse(fs.readFileSync(fileB, "utf8")), writes, findAndModify);
   let differences = 0;
   const report = (path, x, y) => {
     differences++;
@@ -137,7 +139,7 @@ export function diff(fileA, fileB, { writes = false } = {}) {
 
 // Values the server makes up (ids, names, tokens, the time) become placeholders numbered in order of first
 // appearance, so two runs compare by what was done rather than by the values chosen.
-function normalize(run, writes) {
+function normalize(run, writes, findAndModify) {
   const maps = new Map();
   const placeholder = (kind, value) => {
     if (!maps.has(kind)) maps.set(kind, new Map());
@@ -186,8 +188,10 @@ function normalize(run, writes) {
   // Per write: the collection, and for an update its filter and update. An insert's documents are left to the state
   // (stored as sent): the C# driver sends them in a message section the profiler does not record.
   const sent = writes && run.profile
-    ? value(run.profile.filter((op) => op.op === "insert" || op.op === "update").map((op) =>
-        op.op === "insert" ? { ns: op.ns, op: "insert" } : { ns: op.ns, q: op.command?.q, u: op.command?.u }))
+    ? value(run.profile.filter((op) => op.op === "insert" || op.op === "update" || (findAndModify && op.command?.findAndModify && findAndModify.some((c) => op.ns.endsWith("." + c)))).map((op) =>
+        op.op === "insert" ? { ns: op.ns, op: "insert" }
+          : op.command?.findAndModify ? { ns: op.ns, findAndModify: op.command.query, update: op.command.update, upsert: op.command.upsert ?? false }
+          : { ns: op.ns, q: op.command?.q, u: op.command?.u }))
     : undefined;
   return { ...run, steps, writes: sent };
 }

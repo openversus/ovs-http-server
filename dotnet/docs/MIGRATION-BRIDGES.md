@@ -43,6 +43,13 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   the TS server never writes (`"rift_lobby"`) and three more fields (`riftConfigSlug`, `chapterGuid`,
   `chapterDifficulty`) that TS code reading `lobby:{id}` (joins, invites) will see. The rift loadout lock writes
   `player:{player}` `character`/`skin` as the TS `lock_lobby_loadout` does.
+- **Cosmetics:** `player:{id}:cosmetics` (JSON, no TTL) and the `cosmetics` collection, read by
+  `get_equipped_cosmetics` and written by the six equip routes (`CosmeticsService`): the stored document as
+  `JSON.stringify` writes a lean read (`_id`, `account_id`, `__v` kept), with a taunt entry per character. The TS
+  websocket and match handlers (`websocket.ts`, `handlers/matches.ts`, `ssc/ssc.ts`) read the key to show a player's
+  cosmetics to the others in a match. `set_profile_icon` also writes `playertesters.profile_icon`, which `/access`,
+  profiles and friends read. The Mongo writes keep mongoose's upsert shape (`$setOnInsert` with `__v` and the schema's
+  defaults).
 - **Asset sync:** `dataassets` and the `config` collection's `CRC` are written only by the TS server's `POST /syncAsset`
   (`dataAssetSync.ts`: the asset, then the CRC bumped). C# reads both (`HissService` builds its answer once per CRC;
   the inventory, cosmetics and hiss answers read the assets), so an asset sync goes through the TS server until

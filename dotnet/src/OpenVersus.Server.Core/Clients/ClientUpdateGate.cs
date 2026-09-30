@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Core.Settings;
 using StackExchange.Redis;
 
@@ -49,6 +50,13 @@ public interface IClientUpdateGate
     /// when a request went out.
     /// </summary>
     Task<IReadOnlyList<bool>> RequestModalsAsync(IEnumerable<string> playerIds);
+
+    /// <summary>
+    /// The client of the player a request is from (TS getRequestClientUpdateState): the player the request resolves to
+    /// (<see cref="IAccountResolver"/>) and that connection's fields, each falling back to the session token's claim of
+    /// the same name as JavaScript's <c>||</c> does (a stored "0" is kept, an empty one is not).
+    /// </summary>
+    Task<ClientUpdateState> ForRequestAsync(AccountLookup lookup, JsonObject? claims);
 
     /// <summary>The Hydra action answer that turns a blocked player away: HTTP 200 with return_code 1, so the game does not retry.</summary>
     JsonObject FailureBody();
@@ -135,6 +143,23 @@ internal sealed class ClientUpdateGate(IServiceProvider services, IOptionsMonito
             return new ClientUpdateState(id, version, registered, ClientVersions.GameplayAccessRequired(version, current.MinimumVersion, registered, current.VersionCheck));
         }));
         return states.Where(s => s.Required).ToList();
+    }
+
+    public async Task<ClientUpdateState> ForRequestAsync(AccountLookup lookup, JsonObject? claims)
+    {
+        var connection = await services.GetRequiredService<IAccountResolver>().ResolveAsync(lookup);
+        string Field(string name) => connection?.Connection.FirstOrDefault(e => e.Name == name).Value is { HasValue: true } v ? v.ToString() : "";
+        JsonNode? Claim(string name) => claims?[name];
+        string ClaimText(string name) => Claim(name) is JsonValue v && v.TryGetValue(out string? text) ? text : "";
+
+        string accountId = connection?.Id is { Length: > 0 } id ? id : ClaimText("id");
+        string version = Field("clientVersion") is { Length: > 0 } stored ? stored : ClaimText("clientVersion");
+        // hasRegisteredIdentity: "1" or true.
+        bool registered = Field("identityRegistered") is { Length: > 0 } flag
+            ? flag == "1"
+            : Claim("identityRegistered") is JsonValue r && ((r.TryGetValue(out string? t) && t == "1") || (r.TryGetValue(out bool b) && b));
+        var current = settings.CurrentValue;
+        return new ClientUpdateState(accountId, version, registered, ClientVersions.GameplayAccessRequired(version, current.MinimumVersion, registered, current.VersionCheck));
     }
 
     public async Task<IReadOnlyList<bool>> RequestModalsAsync(IEnumerable<string> playerIds)

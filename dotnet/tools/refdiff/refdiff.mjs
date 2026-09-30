@@ -1,6 +1,7 @@
 // Shared parts of the TS-reference diff harnesses (tools/access/access_diff.mjs, tools/friends/friends_diff.mjs): the
 // scratch stores, the state dump, the Mongo profile, and the normalizing diff. Run the harnesses from the repository
 // root: they load the TS server's node_modules.
+import net from "node:net";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 
@@ -191,4 +192,56 @@ export async function reloadAssets(baseUrl, asset) {
     body: JSON.stringify(asset),
   });
   await new Promise((r) => setTimeout(r, 300));
+}
+
+// A raw MONITOR connection (the Redis client in node_modules has no monitor mode): each reply line after +OK is one
+// command some client sent, as `<time> [<db> <addr>] "CMD" "arg" ...`.
+export async function openMonitor(url, onLine) {
+  const { hostname, port, username, password } = new URL(url);
+  const socket = net.connect(Number(port || 6379), hostname);
+  await new Promise((resolve, reject) => { socket.once("connect", resolve); socket.once("error", reject); });
+  // +OK for AUTH (when there is a password), then +OK for MONITOR: recording starts after the last.
+  let buffer = "", oks = 0, ready;
+  const expected = password ? 2 : 1;
+  const started = new Promise((resolve) => { ready = resolve; });
+  socket.on("data", (chunk) => {
+    buffer += chunk.toString("utf8");
+    let at;
+    while ((at = buffer.indexOf("\r\n")) >= 0) {
+      const line = buffer.slice(0, at);
+      buffer = buffer.slice(at + 2);
+      if (line === "+OK" && oks < expected) { if (++oks === expected) ready(); }
+      else if (line.startsWith("+")) onLine(line.slice(1));
+      else if (line.startsWith("-")) throw new Error(`MONITOR: ${line}`);
+    }
+  });
+  const auth = password ? `AUTH ${decodeURIComponent(username || "default")} ${decodeURIComponent(password)}\r\n` : "";
+  socket.write(`${auth}MONITOR\r\n`);
+  await started;
+  return socket;
+}
+
+// The writes and publishes in the MONITOR lines, in order, from any client but the harness; reads are left out (the
+// two servers read differently: HGETALL vs HMGET).
+const WRITES = new Set(["set", "setex", "incr", "expire", "publish", "del", "hset", "hdel", "sadd", "srem", "zadd", "lpush", "rpush"]);
+export function writes(lines, self) {
+  return lines
+    .filter((line) => line.match(/\[\d+ ([^\]]+)\]/)?.[1] !== self)
+    .map((line) => [...line.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]))
+    .filter((parts) => parts.length && WRITES.has(parts[0].toLowerCase()) && parts[1] !== "refdiff:scratch")
+    // SETEX k s v is SET k v EX s (the C# Redis client spells it the first way).
+    .map((parts) => (parts[0].toLowerCase() === "setex" ? ["set", parts[1], parts[3], "EX", parts[2]] : [parts[0].toLowerCase(), ...parts.slice(1)]).join(" "));
+}
+
+export async function state(redis) {
+  const out = {};
+  for await (const key of redis.scanIterator({ COUNT: 1000 })) {
+    if (key === "refdiff:scratch") continue;
+    const type = await redis.type(key);
+    const ttl = await redis.ttl(key);
+    const value = type === "string" ? await redis.get(key) : type === "hash" ? Object.fromEntries(Object.entries(await redis.hGetAll(key)).sort()) : type;
+    // A TTL is compared to the minute: both runs set it moments before reading it.
+    out[key] = { type, ttl: ttl > 0 ? `~${Math.round(ttl / 60)}m` : ttl, value };
+  }
+  return Object.fromEntries(Object.entries(out).sort());
 }

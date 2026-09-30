@@ -54,6 +54,8 @@ app.Use((context, next) =>
 });
 // Game routes answer only a valid session token, as the TS server's hydraTokenMiddleware.
 app.UseHydraToken();
+// Gameplay transitions only from a current, registered client, as the TS server's requireCurrentClientForGameplay.
+app.UseClientGameplayGate();
 app.UseFastEndpoints(c =>
 {
     // ASP.NET's authorization is not used: game endpoints require the session token through RequiresHydraToken

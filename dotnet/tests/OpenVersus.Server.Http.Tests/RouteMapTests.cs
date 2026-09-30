@@ -28,7 +28,7 @@ public sealed class RouteMapTests : IClassFixture<GameAppFactory>
 
     public sealed record Route(string Method, string Path, string Kind, string Area);
 
-    private static IReadOnlyList<Route> LoadRoutes()
+    internal static IReadOnlyList<Route> LoadRoutes()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "docs", "routes.json")))

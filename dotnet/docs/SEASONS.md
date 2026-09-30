@@ -49,17 +49,16 @@ No rewards are granted: the claim answers what the TS catch-all answered (`{Crc,
    - The login profile: Season 6's `SeasonalData` entry comes from that export (`Core/Seasons/seasonal-data.json`,
      `tools/seasons/gen_seasonal_data.mjs`), added while `Season:Current` is Season 6; one account's values for everyone,
      as the rest of the literal's seasonal data is. With Season 5 current the login is the TS server's, byte for byte.
-   Not done: the websocket push (open item 1) and the profile lookups (open item 3). **When a season after 6 is made
+   Not done: the websocket push (open item 1); the profile lookups carry no `SeasonalData` (open item 3). **When a season after 6 is made
    current:** nothing has data for it; decide then whether ratings carry over, reset, or start with placement, and
    whether ratings get kept per season.
-3. **Opening a custom lobby waits 3 seconds since Season 6 is current.** Seen on the bench (2026-09-30): with Season 5
-   current, `create_custom_game_lobby` was followed by `PUT /matches/{id}` within 30 ms. With Season 6 current, the
-   game first asks `PUT /profiles/bulk?...&fields=server_data.SeasonalData.Season:SeasonSix&partial_response=1` (sent
-   as GET), and `PUT /matches/{id}` follows 3.0 s later, every time (the spinner before the lobby shows). Both servers
-   answer that lookup the same way, with no `SeasonalData` at all; the login's profile has Season 5's but not Season
-   6's. Hypothesis, not checked in the client: the game waits for the current season's seasonal data and times out.
-   Control: `Season:Current` back to Season 5, relog, open a custom lobby. **When:** part of open item 2; the profile
-   lookups (`ProfilesService`) and the login's profile would carry the current season's `SeasonalData`.
+3. **Opening a custom lobby waited 3 seconds with Season 6 current. Fixed 2026-09-30.** With Season 5 current,
+   `create_custom_game_lobby` was followed by `PUT /matches/{id}` within 30 ms. With Season 6 current and no Season 6
+   entry in the login's profile, the game first asked `PUT /profiles/bulk?...&fields=server_data.SeasonalData.Season:SeasonSix&partial_response=1`
+   (sent as GET), got no `SeasonalData` (neither server has ever sent any there), and `PUT /matches/{id}` followed 3.0 s
+   later, every time. Since the login's profile carries Season 6 (open item 2), the game no longer asks, and the lobby
+   opens in 34 ms. If a later season is made current without a login entry for it, expect the wait again; the profile
+   lookups (`ProfilesService`) never carry `SeasonalData`.
 
 ## Still tied to Season 5
 

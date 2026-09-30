@@ -23,6 +23,7 @@ import { redisClient,
   redisGetOnlinePlayerCount,
   redisGetActiveRankedSets,
   redisGetInProgressMatches,
+  redisGetMatchTickets,
   redisUpdateIpMirror,
 } from "./config/redis";
 import { getLeaderboard, getPlayerRank, processMatchLeave, eloToTierDivision } from "./services/eloService";
@@ -669,12 +670,31 @@ app.get("/leaderboard", async (req, res) => {
 // does one Redis sweep regardless of how many tabs are polling.
 
 const MATCHES_CACHE_TICK_MS = 2000;
-let matchesCache: { matches: any[]; count: number; onlinePlayers: number; generatedAt: number } = {
+// The matchmaking queues (Redis lists of tickets) whose searching players the page counts.
+const SEARCHING_QUEUES = ["1v1", "2v2"] as const;
+type SearchingCounts = Record<(typeof SEARCHING_QUEUES)[number], number>;
+
+let matchesCache: { matches: any[]; count: number; onlinePlayers: number; searching: SearchingCounts; generatedAt: number } = {
   matches: [],
   count: 0,
   onlinePlayers: 0,
+  searching: { "1v1": 0, "2v2": 0 },
   generatedAt: 0,
 };
+
+/** Players searching in each queue: the distinct player ids across its tickets (a party counts as its members). */
+async function countSearchingPlayers(previous: SearchingCounts): Promise<SearchingCounts> {
+  const counts = { ...previous };
+  for (const queue of SEARCHING_QUEUES) {
+    try {
+      const tickets = await redisGetMatchTickets(queue);
+      counts[queue] = new Set(tickets.flatMap((t) => (t.players || []).map((p) => p.id))).size;
+    } catch (e) {
+      logger.warn(`${logPrefix} counting ${queue} searching players failed, keeping previous value: ${e}`);
+    }
+  }
+  return counts;
+}
 
 async function refreshMatchesCache(): Promise<void> {
   try {
@@ -779,7 +799,9 @@ async function refreshMatchesCache(): Promise<void> {
       logger.warn(`${logPrefix} redisGetOnlinePlayerCount failed, keeping previous value: ${e}`);
     }
 
-    matchesCache = { matches: results, count: results.length, onlinePlayers, generatedAt: Date.now() };
+    const searching = await countSearchingPlayers(matchesCache.searching);
+
+    matchesCache = { matches: results, count: results.length, onlinePlayers, searching, generatedAt: Date.now() };
   } catch (e) {
     logger.error(`${logPrefix} refreshMatchesCache error: ${e}`);
   }

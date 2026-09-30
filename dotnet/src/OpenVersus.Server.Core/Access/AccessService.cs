@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Bans;
+using OpenVersus.Server.Core.Seasons;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Access;
@@ -106,6 +107,7 @@ internal sealed class AccessService(
     IServiceProvider services,
     IOptionsMonitor<AccessSettings> access,
     IOptionsMonitor<RealtimeSettings> realtime,
+    IOptionsMonitor<SeasonSettings> seasons,
     IBanService bans,
     TimeProvider time,
     ILogger<AccessService> log) : IAccessService
@@ -215,6 +217,8 @@ internal sealed class AccessService(
                 (string)account["hydraUsername"]!, icon, iconAsset?.GetValue("assetPath", BsonNull.Value) is { IsString: true } path ? path.AsString : null,
                 access.CurrentValue.IdentityAvatarUrl, access.CurrentValue.SteamAvatarUrl),
             stats);
+        // The current season's profile data when the TS literal has none (Season 6: docs/SEASONS.md).
+        SeasonalData.AddTo(response, seasons.CurrentValue.Current);
         return new AccessResult.Ok(response, id);
     }
 

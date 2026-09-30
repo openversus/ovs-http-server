@@ -119,6 +119,24 @@ public sealed class EndOfSeasonRewardsTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    public async Task TheCurrentSeasonHasTheSameRatingsAsARunningSeason()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        // Season:Current is Season 6 by default.
+        var seasonal = (await Ranked.DataAsync(new JsonObject { ["id"] = NewPlayer(), ["username"] = "p" }, default))["body"]!["SeasonalData"]!.AsObject();
+        Assert.Equal(["Season:SeasonFive", "Season:SeasonSix"], seasonal.Select(kv => kv.Key));
+        var five = seasonal["Season:SeasonFive"]!["Ranked"]!.AsObject();
+        var six = seasonal["Season:SeasonSix"]!["Ranked"]!.AsObject();
+        Assert.Equal(["DataByMode", "ClaimedRewards"], six.Select(kv => kv.Key));
+        foreach (string mode in new[] { "1v1", "2v2" })
+        {
+            var expected = five["DataByMode"]![mode]!.DeepClone().AsObject();
+            expected.Remove("FinalLeaderboardRank");
+            Assert.Equal(expected.ToJsonString(), six["DataByMode"]![mode]!.ToJsonString());
+        }
+    }
+
+    [SkippableFact]
     public async Task AnotherSeasonsClaimDoesNotGrantSeasonFive()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");

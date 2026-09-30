@@ -9,6 +9,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Hiss;
+using OpenVersus.Server.Core.Seasons;
 using OpenVersus.Server.Core.Settings;
 using StackExchange.Redis;
 
@@ -33,8 +34,11 @@ namespace OpenVersus.Server.Core.Leaderboards;
 // login's profile says granted for Seasons 2 to 4 and nothing for Season 5), and when the screen's animation ends it
 // sends PUT /ssc/invoke/ranked_claim_end_of_season_rewards {Season} (ClaimRewardsAsync), which TS never answered but
 // with its catch-all. Recording that claim shows the screen once per player and season. The TS websocket's
-// FullRankUpdate (websocket.ts, after a ranked match) still sends Season 5 with the flag false, and nothing is keyed
-// by Season 6 yet: docs/SEASONS.md, open items.
+// FullRankUpdate (websocket.ts, after a ranked match) still sends Season 5 with the flag false: docs/SEASONS.md.
+//
+// Also unlike there: when Season:Current is a later season, the answer carries it too, with the same ratings (they are
+// not kept per season) in the shape WB answered a running season with: no FinalLeaderboardRank, no
+// bEndOfSeasonRewardsGranted.
 //
 // PUT /ssc/invoke/ranked_claim_end_of_season_rewards: $addToSet the season (text, up to 64 characters) to
 // endofseasonrewards {_id: ObjectId(player)} {seasons: [...]} (upserted; only C# reads it). The answer is the TS
@@ -58,7 +62,7 @@ public interface IRankedDataService
     Task<JsonNode> ClaimRewardsAsync(string accountId, JsonNode? season, CancellationToken ct);
 }
 
-internal sealed class RankedDataService(IServiceProvider services, IOptionsMonitor<RankedSettings> settings, TimeProvider time, ILogger<RankedDataService> log) : IRankedDataService
+internal sealed class RankedDataService(IServiceProvider services, IOptionsMonitor<RankedSettings> settings, IOptionsMonitor<SeasonSettings> seasons, TimeProvider time, ILogger<RankedDataService> log) : IRankedDataService
 {
     private const string DefaultCharacter = "character_wonder_woman";
     private const string Season = "Season:SeasonFive";
@@ -105,23 +109,36 @@ internal sealed class RankedDataService(IServiceProvider services, IOptionsMonit
                 return ModeData(elo, wins, losses, wins + losses, place?.Rank ?? 0, Map(rating, $"characters_{mode}"), Map(stats, $"characters_{mode}"), character, now);
             }
 
-            return new JsonObject
+            var seasonal = new JsonObject
             {
-                ["body"] = new JsonObject
+                [Season] = new JsonObject
                 {
-                    ["SeasonalData"] = new JsonObject
+                    ["Ranked"] = new JsonObject
                     {
-                        [Season] = new JsonObject
-                        {
-                            ["Ranked"] = new JsonObject
-                            {
-                                ["DataByMode"] = new JsonObject { ["1v1"] = Mode("1v1", place1v1), ["2v2"] = Mode("2v2", place2v2) },
-                                ["ClaimedRewards"] = new JsonArray(),
-                                ["bEndOfSeasonRewardsGranted"] = granted,
-                            },
-                        },
+                        ["DataByMode"] = new JsonObject { ["1v1"] = Mode("1v1", place1v1), ["2v2"] = Mode("2v2", place2v2) },
+                        ["ClaimedRewards"] = new JsonArray(),
+                        ["bEndOfSeasonRewardsGranted"] = granted,
                     },
                 },
+            };
+
+            // A later current season gets the same ratings, as a season still running: no final rank and no
+            // end-of-season flag (WB's answer for Season 6 while it ran, May 2025).
+            string current = seasons.CurrentValue.Current;
+            if (current != Season)
+            {
+                var modes = new JsonObject { ["1v1"] = Mode("1v1", place1v1), ["2v2"] = Mode("2v2", place2v2) };
+                foreach (var (_, mode) in modes)
+                {
+                    mode!.AsObject().Remove("FinalLeaderboardRank");
+                }
+
+                seasonal[current] = new JsonObject { ["Ranked"] = new JsonObject { ["DataByMode"] = modes, ["ClaimedRewards"] = new JsonArray() } };
+            }
+
+            return new JsonObject
+            {
+                ["body"] = new JsonObject { ["SeasonalData"] = seasonal },
                 ["metadata"] = null,
                 ["return_code"] = 0,
             };

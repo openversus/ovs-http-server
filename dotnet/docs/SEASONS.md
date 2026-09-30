@@ -41,11 +41,25 @@ No rewards are granted: the claim answers what the TS catch-all answered (`{Crc,
    `bEndOfSeasonRewardsGranted: false`, whatever the player has claimed. If the end-of-season screen shows up right
    after a ranked match, this is why. **When:** the websocket's ranked updates are ported to C#: build them with
    `RankedDataService` (or the same claim lookup), and key them by the season the ranked data is for.
-2. **Ranked data has no entry for Season 6.** `ranked_data` (and the websocket push) key everything under
-   `Season:SeasonFive`, while the game is told Season 6 is current. What the ranked screen shows for the current
-   season (rank, placement, rewards) depends on an entry for it. **When:** ranked play is looked at for Season 6, or
-   any time a new season is made current. Decide then whether a new season carries ratings over, resets them, or
-   starts with placement, and which season's key the ratings live under.
+2. **Season 6 data is backfilled, not kept.** Decided 2026-09-30: fill what Season 6 is missing from Season 5, or from
+   real Season 6 data where it exists. Done:
+   - `ranked_data`: while a later season is current, it gets an entry too, with the same ratings (they are not kept
+     per season) in the shape WB answered a running season with: no `FinalLeaderboardRank` in a mode, no
+     `bEndOfSeasonRewardsGranted` (a live export of May 2025, when Season 6 was current, answered Seasons 2 to 6).
+   - The login profile: Season 6's `SeasonalData` entry comes from that export (`Core/Seasons/seasonal-data.json`,
+     `tools/seasons/gen_seasonal_data.mjs`), added while `Season:Current` is Season 6; one account's values for everyone,
+     as the rest of the literal's seasonal data is. With Season 5 current the login is the TS server's, byte for byte.
+   Not done: the websocket push (open item 1) and the profile lookups (open item 3). **When a season after 6 is made
+   current:** nothing has data for it; decide then whether ratings carry over, reset, or start with placement, and
+   whether ratings get kept per season.
+3. **Opening a custom lobby waits 3 seconds since Season 6 is current.** Seen on the bench (2026-09-30): with Season 5
+   current, `create_custom_game_lobby` was followed by `PUT /matches/{id}` within 30 ms. With Season 6 current, the
+   game first asks `PUT /profiles/bulk?...&fields=server_data.SeasonalData.Season:SeasonSix&partial_response=1` (sent
+   as GET), and `PUT /matches/{id}` follows 3.0 s later, every time (the spinner before the lobby shows). Both servers
+   answer that lookup the same way, with no `SeasonalData` at all; the login's profile has Season 5's but not Season
+   6's. Hypothesis, not checked in the client: the game waits for the current season's seasonal data and times out.
+   Control: `Season:Current` back to Season 5, relog, open a custom lobby. **When:** part of open item 2; the profile
+   lookups (`ProfilesService`) and the login's profile would carry the current season's `SeasonalData`.
 
 ## Still tied to Season 5
 

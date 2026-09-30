@@ -1,0 +1,552 @@
+{
+  "Season:SeasonSix": {
+    "LastLoginDay": {
+      "_hydra_unix_date": 1746748800
+    },
+    "NumDaysLoggedIn": 34,
+    "NumLogins": 91,
+    "Ranked": {
+      "DataByMode": {
+        "1v1": {
+          "DataByCharacter": {
+            "character_wonder_woman": {
+              "CurrentPoints": 1484,
+              "MaxPoints": 1539,
+              "GamesPlayed": 230,
+              "SetsPlayed": 107,
+              "Wins": 48,
+              "Losses": 49,
+              "DamageDealt": 72193,
+              "DamageTaken": 72668,
+              "Ringouts": 516,
+              "Deaths": 522,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746764279
+              },
+              "LastDecayMs": 0
+            },
+            "character_C027": {
+              "CurrentPoints": 417,
+              "MaxPoints": 417,
+              "GamesPlayed": 34,
+              "SetsPlayed": 22,
+              "Wins": 11,
+              "Losses": 10,
+              "DamageDealt": 12061,
+              "DamageTaken": 9602,
+              "Ringouts": 91,
+              "Deaths": 62,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746765819
+              },
+              "LastDecayMs": 0
+            },
+            "character_Jason": {
+              "CurrentPoints": 659,
+              "MaxPoints": 660,
+              "GamesPlayed": 60,
+              "SetsPlayed": 27,
+              "Wins": 18,
+              "Losses": 19,
+              "DamageDealt": 18086,
+              "DamageTaken": 15844,
+              "Ringouts": 149,
+              "Deaths": 121,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746584286
+              },
+              "LastDecayMs": 0
+            },
+            "character_C025": {
+              "CurrentPoints": 0,
+              "MaxPoints": 0,
+              "GamesPlayed": 3,
+              "SetsPlayed": 2,
+              "Wins": 0,
+              "Losses": 1,
+              "DamageDealt": 549,
+              "DamageTaken": 1100,
+              "Ringouts": 4,
+              "Deaths": 9,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1745561968
+              },
+              "LastDecayMs": 0
+            },
+            "character_C017": {
+              "CurrentPoints": 0,
+              "MaxPoints": 0,
+              "GamesPlayed": 8,
+              "SetsPlayed": 5,
+              "Wins": 0,
+              "Losses": 1,
+              "DamageDealt": 1719,
+              "DamageTaken": 3706,
+              "Ringouts": 10,
+              "Deaths": 24,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746768176
+              },
+              "LastDecayMs": 0
+            }
+          },
+          "GamesPlayed": 335,
+          "SetsPlayed": 163,
+          "BestCharacter": {
+            "CurrentPoints": 1484,
+            "MaxPoints": 1539,
+            "GamesPlayed": 231,
+            "SetsPlayed": 108,
+            "CharacterSlug": "character_wonder_woman",
+            "LastUpdateTimestamp": {
+              "_hydra_unix_date": 1743526196
+            }
+          },
+          "LastUpdateTimestamp": {
+            "_hydra_unix_date": 1746768176
+          }
+        },
+        "2v2": {
+          "DataByCharacter": {
+            "character_Jason": {
+              "CurrentPoints": 2031,
+              "MaxPoints": 2031,
+              "GamesPlayed": 314,
+              "SetsPlayed": 140,
+              "Wins": 83,
+              "Losses": 82,
+              "DamageDealt": 76320,
+              "DamageTaken": 87240,
+              "Ringouts": 553,
+              "Deaths": 570,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746771540
+              },
+              "LastDecayMs": 0
+            },
+            "character_C027": {
+              "CurrentPoints": 1659,
+              "MaxPoints": 1671,
+              "GamesPlayed": 237,
+              "SetsPlayed": 110,
+              "Wins": 58,
+              "Losses": 57,
+              "DamageDealt": 59309,
+              "DamageTaken": 57763,
+              "Ringouts": 336,
+              "Deaths": 362,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746391098
+              },
+              "LastDecayMs": 0
+            },
+            "character_superman": {
+              "CurrentPoints": 707,
+              "MaxPoints": 725,
+              "GamesPlayed": 19,
+              "SetsPlayed": 9,
+              "Wins": 7,
+              "Losses": 8,
+              "DamageDealt": 3868,
+              "DamageTaken": 5309,
+              "Ringouts": 27,
+              "Deaths": 26,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746253490
+              },
+              "LastDecayMs": 0
+            },
+            "character_wonder_woman": {
+              "CurrentPoints": 2500,
+              "MaxPoints": 2544,
+              "GamesPlayed": 1154,
+              "SetsPlayed": 504,
+              "Wins": 260,
+              "Losses": 261,
+              "DamageDealt": 280049,
+              "DamageTaken": 292374,
+              "Ringouts": 1708,
+              "Deaths": 1770,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746773185
+              },
+              "LastDecayMs": 0
+            },
+            "character_C026": {
+              "CurrentPoints": 801,
+              "MaxPoints": 840,
+              "GamesPlayed": 58,
+              "SetsPlayed": 29,
+              "Wins": 15,
+              "Losses": 16,
+              "DamageDealt": 13912,
+              "DamageTaken": 13704,
+              "Ringouts": 77,
+              "Deaths": 88,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746322943
+              },
+              "LastDecayMs": 0
+            },
+            "character_harleyquinn": {
+              "CurrentPoints": 606,
+              "MaxPoints": 606,
+              "GamesPlayed": 14,
+              "SetsPlayed": 7,
+              "Wins": 4,
+              "Losses": 3,
+              "DamageDealt": 2828,
+              "DamageTaken": 2845,
+              "Ringouts": 17,
+              "Deaths": 20,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746268171
+              },
+              "LastDecayMs": 0
+            },
+            "character_BananaGuard": {
+              "CurrentPoints": 516,
+              "MaxPoints": 525,
+              "GamesPlayed": 4,
+              "SetsPlayed": 2,
+              "Wins": 1,
+              "Losses": 2,
+              "DamageDealt": 763,
+              "DamageTaken": 920,
+              "Ringouts": 8,
+              "Deaths": 5,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746259168
+              },
+              "LastDecayMs": 0
+            },
+            "character_shaggy": {
+              "CurrentPoints": 809,
+              "MaxPoints": 809,
+              "GamesPlayed": 33,
+              "SetsPlayed": 16,
+              "Wins": 12,
+              "Losses": 11,
+              "DamageDealt": 8796,
+              "DamageTaken": 7603,
+              "Ringouts": 70,
+              "Deaths": 44,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746266917
+              },
+              "LastDecayMs": 0
+            },
+            "character_arya": {
+              "CurrentPoints": 747,
+              "MaxPoints": 752,
+              "GamesPlayed": 42,
+              "SetsPlayed": 21,
+              "Wins": 11,
+              "Losses": 12,
+              "DamageDealt": 8691,
+              "DamageTaken": 8721,
+              "Ringouts": 43,
+              "Deaths": 58,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746245744
+              },
+              "LastDecayMs": 0
+            },
+            "character_bugs_bunny": {
+              "CurrentPoints": 20,
+              "MaxPoints": 20,
+              "GamesPlayed": 0,
+              "SetsPlayed": 0,
+              "Wins": 0,
+              "Losses": 0,
+              "DamageDealt": 0,
+              "DamageTaken": 0,
+              "Ringouts": 0,
+              "Deaths": 0,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1743526196
+              },
+              "LastDecayMs": 0
+            },
+            "character_C031": {
+              "CurrentPoints": 748,
+              "MaxPoints": 749,
+              "GamesPlayed": 26,
+              "SetsPlayed": 14,
+              "Wins": 9,
+              "Losses": 10,
+              "DamageDealt": 5837,
+              "DamageTaken": 5596,
+              "Ringouts": 34,
+              "Deaths": 36,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746268688
+              },
+              "LastDecayMs": 0
+            },
+            "character_C025": {
+              "CurrentPoints": 634,
+              "MaxPoints": 675,
+              "GamesPlayed": 22,
+              "SetsPlayed": 12,
+              "Wins": 6,
+              "Losses": 7,
+              "DamageDealt": 3381,
+              "DamageTaken": 5334,
+              "Ringouts": 22,
+              "Deaths": 38,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1745660182
+              },
+              "LastDecayMs": 0
+            },
+            "character_garnet": {
+              "CurrentPoints": 597,
+              "MaxPoints": 597,
+              "GamesPlayed": 10,
+              "SetsPlayed": 5,
+              "Wins": 3,
+              "Losses": 2,
+              "DamageDealt": 1716,
+              "DamageTaken": 2839,
+              "Ringouts": 11,
+              "Deaths": 16,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746321904
+              },
+              "LastDecayMs": 0
+            },
+            "character_C017": {
+              "CurrentPoints": 586,
+              "MaxPoints": 586,
+              "GamesPlayed": 14,
+              "SetsPlayed": 6,
+              "Wins": 4,
+              "Losses": 3,
+              "DamageDealt": 2972,
+              "DamageTaken": 4757,
+              "Ringouts": 16,
+              "Deaths": 23,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746245065
+              },
+              "LastDecayMs": 0
+            },
+            "character_C028": {
+              "CurrentPoints": 500,
+              "MaxPoints": 500,
+              "GamesPlayed": 4,
+              "SetsPlayed": 2,
+              "Wins": 0,
+              "Losses": 1,
+              "DamageDealt": 717,
+              "DamageTaken": 1279,
+              "Ringouts": 4,
+              "Deaths": 9,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746253057
+              },
+              "LastDecayMs": 0
+            },
+            "character_C029": {
+              "CurrentPoints": 500,
+              "MaxPoints": 500,
+              "GamesPlayed": 2,
+              "SetsPlayed": 1,
+              "Wins": 0,
+              "Losses": 1,
+              "DamageDealt": 398,
+              "DamageTaken": 519,
+              "Ringouts": 2,
+              "Deaths": 4,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1744452852
+              },
+              "LastDecayMs": 0
+            },
+            "character_batman": {
+              "CurrentPoints": 600,
+              "MaxPoints": 612,
+              "GamesPlayed": 27,
+              "SetsPlayed": 12,
+              "Wins": 5,
+              "Losses": 6,
+              "DamageDealt": 6719,
+              "DamageTaken": 6556,
+              "Ringouts": 53,
+              "Deaths": 45,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746329281
+              },
+              "LastDecayMs": 0
+            },
+            "character_finn": {
+              "CurrentPoints": 1538,
+              "MaxPoints": 1562,
+              "GamesPlayed": 164,
+              "SetsPlayed": 74,
+              "Wins": 46,
+              "Losses": 47,
+              "DamageDealt": 32323,
+              "DamageTaken": 37079,
+              "Ringouts": 158,
+              "Deaths": 234,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746393453
+              },
+              "LastDecayMs": 0
+            },
+            "character_steven": {
+              "CurrentPoints": 550,
+              "MaxPoints": 550,
+              "GamesPlayed": 5,
+              "SetsPlayed": 2,
+              "Wins": 2,
+              "Losses": 1,
+              "DamageDealt": 1295,
+              "DamageTaken": 1142,
+              "Ringouts": 11,
+              "Deaths": 6,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746327427
+              },
+              "LastDecayMs": 0
+            },
+            "character_tom_and_jerry": {
+              "CurrentPoints": 512,
+              "MaxPoints": 525,
+              "GamesPlayed": 7,
+              "SetsPlayed": 3,
+              "Wins": 1,
+              "Losses": 2,
+              "DamageDealt": 1520,
+              "DamageTaken": 1763,
+              "Ringouts": 8,
+              "Deaths": 11,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746258232
+              },
+              "LastDecayMs": 0
+            },
+            "character_C021": {
+              "CurrentPoints": 584,
+              "MaxPoints": 584,
+              "GamesPlayed": 8,
+              "SetsPlayed": 3,
+              "Wins": 3,
+              "Losses": 2,
+              "DamageDealt": 1940,
+              "DamageTaken": 2211,
+              "Ringouts": 15,
+              "Deaths": 14,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746244065
+              },
+              "LastDecayMs": 0
+            },
+            "character_creature": {
+              "CurrentPoints": 540,
+              "MaxPoints": 540,
+              "GamesPlayed": 6,
+              "SetsPlayed": 3,
+              "Wins": 2,
+              "Losses": 1,
+              "DamageDealt": 1613,
+              "DamageTaken": 1551,
+              "Ringouts": 9,
+              "Deaths": 10,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746327028
+              },
+              "LastDecayMs": 0
+            },
+            "character_velma": {
+              "CurrentPoints": 525,
+              "MaxPoints": 525,
+              "GamesPlayed": 16,
+              "SetsPlayed": 6,
+              "Wins": 2,
+              "Losses": 1,
+              "DamageDealt": 3652,
+              "DamageTaken": 3973,
+              "Ringouts": 23,
+              "Deaths": 22,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746327866
+              },
+              "LastDecayMs": 0
+            },
+            "character_c16": {
+              "CurrentPoints": 525,
+              "MaxPoints": 525,
+              "GamesPlayed": 3,
+              "SetsPlayed": 1,
+              "Wins": 1,
+              "Losses": 0,
+              "DamageDealt": 256,
+              "DamageTaken": 798,
+              "Ringouts": 0,
+              "Deaths": 5,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746258742
+              },
+              "LastDecayMs": 0
+            },
+            "character_taz": {
+              "CurrentPoints": 500,
+              "MaxPoints": 500,
+              "GamesPlayed": 2,
+              "SetsPlayed": 1,
+              "Wins": 0,
+              "Losses": 1,
+              "DamageDealt": 188,
+              "DamageTaken": 437,
+              "Ringouts": 1,
+              "Deaths": 4,
+              "LastUpdateTimestamp": {
+                "_hydra_unix_date": 1746263304
+              },
+              "LastDecayMs": 0
+            }
+          },
+          "GamesPlayed": 2199,
+          "SetsPlayed": 987,
+          "BestCharacter": {
+            "CurrentPoints": 2500,
+            "MaxPoints": 2544,
+            "GamesPlayed": 1154,
+            "SetsPlayed": 504,
+            "CharacterSlug": "character_wonder_woman",
+            "LastUpdateTimestamp": {
+              "_hydra_unix_date": 1743526196
+            }
+          },
+          "LastUpdateTimestamp": {
+            "_hydra_unix_date": 1746773185
+          },
+          "CharactersInMaster": 1
+        }
+      },
+      "ClaimedRewards": [
+        "3EF2C81B417F7ABBB8D82FBEFFC54813",
+        "EDF9B9D74C50BD549181CB8C0D2C9FA7",
+        "EEEDD5AC43A6277104D583A7B121B2BE",
+        "6AECED2143F9F7DB671ED7A8A95E9195",
+        "EB00261E461785AF19880D86786BB08C",
+        "D37D985046E6ED86975E95A6B191C22F",
+        "7A42646F4DD4C04256359AAF3145839B",
+        "C5BCF77046B0D7D9EBA23189DDA94985",
+        "1362F016487051D823820694F8FDFB9E"
+      ]
+    },
+    "Arenas": {
+      "DataByMode": {
+        "Normal": {
+          "A2": {
+            "CurrentPoints": 30
+          }
+        }
+      }
+    }
+  }
+}

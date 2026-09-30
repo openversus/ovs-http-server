@@ -26,6 +26,7 @@
     <EmbeddedResource Include="Cosmetics/*.json" LogicalName="OpenVersus.Server.Core.Cosmetics.%(Filename)%(Extension)" />
     <EmbeddedResource Include="Hiss/*.json" LogicalName="OpenVersus.Server.Core.Hiss.%(Filename)%(Extension)" />
     <EmbeddedResource Include="Rifts/*.json" LogicalName="OpenVersus.Server.Core.Rifts.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Seasons/*.json" LogicalName="OpenVersus.Server.Core.Seasons.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

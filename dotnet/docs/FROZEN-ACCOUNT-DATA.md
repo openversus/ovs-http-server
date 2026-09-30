@@ -39,7 +39,8 @@ manifests at runtime yet; they are the plan for what each field becomes.
 ### Login: `POST /access`
 
 - **Served by:** `LoginResponse` (`Core/Access/`), filling `login-response.json`'s `{{markers}}` and computing the stat
-  trackers per request.
+  trackers per request; while `Season:Current` is Season 6, `profile.server_data.SeasonalData` also gets Season 6's
+  entry (`Core/Seasons/seasonal-data.json`, from a live profile export of May 2025: `tools/seasons/gen_seasonal_data.mjs`).
 - **Classified in:** `docs/fields/login-response.json`, compared with live login responses of two real accounts.
 - **Frozen account data in it:** most of `profile` (inventory, seasonal data, match history, perk preferences, level and
   XP, owned-fighter counts) and parts of `account` (linked platforms and their ids, timestamps, flags).

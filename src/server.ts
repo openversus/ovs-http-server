@@ -232,20 +232,26 @@ app.get("/stats", async (req, res) => {
     const accountId = String((player as any)._id);
     const stats = await PlayerStatsModel.findOne({ account_id: accountId }).lean();
 
-    if (!stats || !stats.aggregate || Object.keys(stats.aggregate).length === 0) {
+    const hasAggregate = !!stats?.aggregate && Object.keys(stats.aggregate).length > 0;
+    const hasRecord = Object.keys(stats?.characters_1v1 || {}).length > 0 || Object.keys(stats?.characters_2v2 || {}).length > 0;
+    if (!stats || (!hasAggregate && !hasRecord)) {
       const html = myStatsTemplate({ hasStats: false, playerName: (player as any).name || "" });
       res.send(html);
       return;
     }
 
-    // Stringify the aggregate as JSON for the inline <script> block. Escape `</`
-    // so the JSON can't close the script tag if a field name ever contains it.
-    const aggregateJson = JSON.stringify(stats.aggregate).replace(/<\//g, "<\\/");
+    // Stringify as JSON for the inline <script> blocks. Escape `</` so the JSON
+    // can't close the script tag if a field name ever contains it.
+    const toScriptJson = (value: unknown) => JSON.stringify(value).replace(/<\//g, "<\\/");
+    const aggregateJson = toScriptJson(stats.aggregate || {});
+    // Ranked set records per character (and 1v1 matchups), as recordSetStats writes them.
+    const charactersJson = toScriptJson({ "1v1": stats.characters_1v1 || {}, "2v2": stats.characters_2v2 || {} });
 
     const html = myStatsTemplate({
       hasStats: true,
       playerName: (player as any).name || "Unknown",
       aggregateJson,
+      charactersJson,
       updatedAt: Number(stats.updated_at) || Date.now(),
     });
     res.send(html);

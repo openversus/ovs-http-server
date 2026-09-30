@@ -156,6 +156,19 @@
       }
       .back-btn:hover { opacity: 0.7; }
       .back-btn svg { width: 16px; height: 16px; }
+      .record_sub { display: block; margin-top: 2px; color: #5a6170; font-family: Arial, sans-serif; font-size: 12px; }
+      .win { color: #1a7f37; }
+      .loss { color: #c0392b; }
+      .char_tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+      .char_tables h3 { margin: 6px 0; color: var(--mv-blue-dark); font-size: 15px; font-weight: normal; }
+      .matchup_picker {
+          display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+          font-family: Arial, sans-serif; font-size: 14px;
+      }
+      .matchup_picker select {
+          font: inherit; padding: 5px 8px; border-radius: 8px;
+          border: 1px solid rgba(0,0,0,0.2); background: #fff; color: var(--ink);
+      }
   </style>
 </head>
 <body>
@@ -170,6 +183,28 @@
       {{#if hasStats}}
         <div class="player_name">{{playerName}}</div>
         <div class="subtitle">Aggregated across every match you've played. Last updated <span id="updated_at_human"></span>.</div>
+
+        <div class="section_title">Ranked Record</div>
+        <div class="stat_grid" id="record_grid"></div>
+
+        <div class="section_title">Record by Character</div>
+        <div class="char_tables">
+          <div>
+            <h3>1v1</h3>
+            <table><thead><tr><th>Character</th><th class="num">W</th><th class="num">L</th><th class="num">Win %</th></tr></thead><tbody id="chars_1v1_tbody"></tbody></table>
+          </div>
+          <div>
+            <h3>2v2</h3>
+            <table><thead><tr><th>Character</th><th class="num">W</th><th class="num">L</th><th class="num">Win %</th></tr></thead><tbody id="chars_2v2_tbody"></tbody></table>
+          </div>
+        </div>
+
+        <div class="section_title">1v1 Matchups</div>
+        <div class="matchup_picker"><label for="matchup_char">Playing as</label><select id="matchup_char"></select></div>
+        <table>
+          <thead><tr><th>Against</th><th class="num">W</th><th class="num">L</th><th class="num">Win %</th><th class="num">Upsets</th><th class="num">Chokes</th></tr></thead>
+          <tbody id="matchups_tbody"></tbody>
+        </table>
 
         <div class="section_title">Move Usage &amp; Accuracy</div>
         <table id="moves_table">
@@ -204,6 +239,142 @@
 
   {{#if hasStats}}
   <script id="agg_data" type="application/json">{{{aggregateJson}}}</script>
+  <script id="char_data" type="application/json">{{{charactersJson}}}</script>
+  <script>
+    // Ranked record, per-character records and 1v1 matchups (PlayerStats.characters_1v1/_2v2,
+    // written per set by recordSetStats), as the stored wins and losses: the one count every
+    // record has kept the same way (the dodge counters changed meaning on 2026-04-20).
+    (function() {
+      const chars = JSON.parse(document.getElementById("char_data").textContent || "{}");
+      const CHARACTER_NAMES = {
+        'character_wonder_woman': 'Wonder Woman', 'character_batman': 'Batman', 'character_arya': 'Arya Stark',
+        'character_superman': 'Superman', 'character_steven': 'Steven Universe', 'character_garnet': 'Garnet',
+        'character_velma': 'Velma', 'character_finn': 'Finn', 'character_tom_and_jerry': 'Tom & Jerry',
+        'character_shaggy': 'Shaggy', 'character_jake': 'Jake', 'character_creature': 'Reindog',
+        'character_bugs_bunny': 'Bugs Bunny', 'character_harleyquinn': 'Harley Quinn', 'character_taz': 'Taz',
+        'character_c017': 'Iron Giant', 'character_c018': 'Marvin', 'character_c019': 'Morty',
+        'character_c020': 'Rick', 'character_c021': 'Black Adam', 'character_c023a': 'Gizmo',
+        'character_c023b': 'Stripe', 'character_c024': 'Betelgeuse', 'character_c025': 'Raven',
+        'character_c026': 'Samurai Jack', 'character_c027': 'Nubia', 'character_c028': 'The Joker',
+        'character_c029': 'Aquaman', 'character_c030': 'Powerpuff Girls', 'character_c031': 'Marceline',
+        'character_bananaguard': 'Banana Guard', 'character_jason': 'Jason Voorhees',
+        'character_c036': 'Agent Smith', 'character_c038': 'Lola Bunny', 'character_c16': 'LeBron James',
+      };
+      const nameOf = (slug) => {
+        if (!slug) return "Unknown";
+        const lower = String(slug).toLowerCase();
+        return CHARACTER_NAMES[lower] || CHARACTER_NAMES[slug] ||
+          String(slug).replace(/^character_/i, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      };
+      const n = (v) => Number(v || 0);
+      const fmt = (v) => v.toLocaleString();
+      const winPct = (w, l) => (w + l) > 0 ? ((w / (w + l)) * 100).toFixed(1) + "%" : "—";
+
+      const played = (c) => ({ wins: n(c.wins), losses: n(c.losses) });
+      const rowsFor = (mode) => Object.entries(chars[mode] || {})
+        .filter(([slug]) => slug && slug !== "unknown")
+        .map(([slug, c]) => Object.assign({ slug, c: c || {} }, played(c || {})))
+        .filter(r => r.wins + r.losses > 0)
+        .sort((a, b) => (b.wins + b.losses) - (a.wins + a.losses));
+
+      // textContent only, so names from the data can never inject markup.
+      function textCell(tr, text, className) {
+        const td = document.createElement("td");
+        if (className) td.className = className;
+        td.textContent = text;
+        tr.appendChild(td);
+        return td;
+      }
+
+      function emptyRow(tbody, text, span) {
+        const tr = document.createElement("tr");
+        const td = textCell(tr, text);
+        td.colSpan = span;
+        td.style.textAlign = "center";
+        tbody.appendChild(tr);
+      }
+
+      // ─── Overall record ─────────────────────────────────────────────
+      const grid = document.getElementById("record_grid");
+      for (const mode of ["1v1", "2v2"]) {
+        const rows = rowsFor(mode);
+        const w = rows.reduce((s, r) => s + r.wins, 0);
+        const l = rows.reduce((s, r) => s + r.losses, 0);
+        const card = document.createElement("div");
+        card.className = "stat_card";
+        const label = document.createElement("div");
+        label.className = "label";
+        label.textContent = mode + " Record";
+        const value = document.createElement("div");
+        value.className = "value";
+        value.textContent = fmt(w) + " – " + fmt(l);
+        const sub = document.createElement("span");
+        sub.className = "record_sub";
+        sub.textContent = winPct(w, l) + " win rate · " + fmt(w + l) + " sets";
+        value.appendChild(sub);
+        card.appendChild(label);
+        card.appendChild(value);
+        grid.appendChild(card);
+      }
+
+      // ─── Record by character ────────────────────────────────────────
+      for (const mode of ["1v1", "2v2"]) {
+        const tbody = document.getElementById("chars_" + mode + "_tbody");
+        const rows = rowsFor(mode);
+        for (const r of rows) {
+          const tr = document.createElement("tr");
+          textCell(tr, nameOf(r.slug), "move_name");
+          textCell(tr, fmt(r.wins), "num win");
+          textCell(tr, fmt(r.losses), "num loss");
+          textCell(tr, winPct(r.wins, r.losses), "num");
+          tbody.appendChild(tr);
+        }
+        if (rows.length === 0) emptyRow(tbody, "No ranked " + mode + " sets yet.", 4);
+      }
+
+      // ─── 1v1 matchups ───────────────────────────────────────────────
+      const picker = document.getElementById("matchup_char");
+      const matchupBody = document.getElementById("matchups_tbody");
+      const mine = rowsFor("1v1").filter(r => Object.keys(r.c.matchups || {}).length > 0);
+      for (const r of mine) {
+        const opt = document.createElement("option");
+        opt.value = r.slug;
+        opt.textContent = nameOf(r.slug) + " (" + fmt(r.wins + r.losses) + " sets)";
+        picker.appendChild(opt);
+      }
+
+      function renderMatchups(slug) {
+        matchupBody.textContent = "";
+        const own = (chars["1v1"] || {})[slug] || {};
+        const rows = Object.entries(own.matchups || {})
+          .filter(([opp]) => opp && opp !== "unknown")
+          .map(([opp, m]) => ({
+            opp,
+            wins: n(m && m.wins),
+            losses: n(m && m.losses),
+            upsets: n(m && m.upsets),
+            chokes: n(m && m.chokes),
+          }))
+          .filter(m => m.wins + m.losses > 0)
+          .sort((a, b) => (b.wins + b.losses) - (a.wins + a.losses));
+        for (const m of rows) {
+          const tr = document.createElement("tr");
+          textCell(tr, nameOf(m.opp), "move_name");
+          textCell(tr, fmt(m.wins), "num win");
+          textCell(tr, fmt(m.losses), "num loss");
+          textCell(tr, winPct(m.wins, m.losses), "num");
+          textCell(tr, fmt(m.upsets), "num");
+          textCell(tr, fmt(m.chokes), "num");
+          matchupBody.appendChild(tr);
+        }
+        if (rows.length === 0) emptyRow(matchupBody, mine.length ? "No matchups for this character yet." : "No ranked 1v1 sets yet.", 6);
+      }
+
+      picker.disabled = mine.length === 0;
+      picker.addEventListener("change", () => renderMatchups(picker.value));
+      renderMatchups(mine.length ? mine[0].slug : "");
+    })();
+  </script>
   <script>
     (function() {
       const agg = JSON.parse(document.getElementById("agg_data").textContent || "{}");

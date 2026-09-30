@@ -256,10 +256,13 @@ public sealed class BatchRunner(
                     return (true, new JsonObject());
                 }
 
+                // A Hydra answer as its bytes; a text answer as its text, empty included (res.send("") gives the TS batch "");
+                // no answer at all (no content type, nothing sent) as null.
                 byte[] bytes = responseBody.ToArray();
-                JsonNode? answer = bytes.Length == 0 ? null
-                    : string.Equals(response.ContentType, HydraBodies.ContentType, StringComparison.OrdinalIgnoreCase) ? HydraRaw.Node(bytes)
-                    : JsonValue.Create(Encoding.UTF8.GetString(bytes));
+                bool hydra = string.Equals(response.ContentType, HydraBodies.ContentType, StringComparison.OrdinalIgnoreCase);
+                JsonNode? answer = hydra ? (bytes.Length == 0 ? null : HydraRaw.Node(bytes))
+                    : bytes.Length > 0 || response.ContentType is { Length: > 0 } ? JsonValue.Create(Encoding.UTF8.GetString(bytes))
+                    : null;
                 return (false, Item(response.StatusCode, answer));
             }
             finally

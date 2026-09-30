@@ -167,6 +167,11 @@ write("ssc-get-country-code.json", await literal(ssc, "  res.send({ body: { regi
 fs.mkdirSync(path.join(root, "dotnet/src/OpenVersus.Server.Core/Cosmetics"), { recursive: true });
 write("cosmetics-default-taunts.json", await literal("src/database/Cosmetics.ts", "export const defaultTaunts: IDefaultTaunts = {", "\n};", "export const defaultTaunts: IDefaultTaunts = ".length, {}), "Cosmetics");
 
+// GET /objects/preferences/unique/{id}/{key} (handlers/objects.ts): a fixed object whose owner is the session's player.
+write("objects-preferences.json", await literal("src/handlers/objects.ts", "  res.send({\n    updated_at", "\n  });\n}", "  res.send(".length, {
+  account: { id: marker("id") },
+}), "Static");
+
 // GET /profiles/{id}/inventory (handlers/profiles.ts): the parts that are literals. Gleamium and the toast record
 // (whose count and updated_at are filled per request), and the taunt list unlockAll adds (data/taunts.ts AllTaunts).
 fs.mkdirSync(path.join(root, "dotnet/src/OpenVersus.Server.Core/Inventory"), { recursive: true });

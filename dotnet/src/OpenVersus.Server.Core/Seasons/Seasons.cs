@@ -13,7 +13,7 @@ namespace OpenVersus.Server.Core.Seasons;
 // field, with CurrentSeason from the setting Season:Current instead of its fixed "Season:SeasonFive". The game lists
 // the rift seasons up to the current one (the Season 6 rogue rifts need Season:SeasonSix); other per-season data the
 // servers still key by Season 5 (ranked, leaderboards, the login's trackers) may need filling for Season 6: see
-// docs/RIFTS.md.
+// docs/SEASONS.md.
 
 /// <summary>Season settings.</summary>
 public sealed class SeasonSettings

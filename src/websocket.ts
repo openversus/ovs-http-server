@@ -2753,6 +2753,8 @@ export class WebSocketService {
                   };
                 };
 
+                // Season 5, never granted, whatever the player has claimed: the C# ranked_data says granted once the
+                // end-of-season rewards are claimed. See dotnet/docs/SEASONS.md (open items) before porting this.
                 const rankedPayload = {
                   SeasonalData: {
                     "Season:SeasonFive": {
@@ -3363,6 +3365,7 @@ export class WebSocketService {
               return { BestCharacter: { CurrentPoints: bestElo > 0 ? bestElo : elo, MaxPoints: bestElo > 0 ? bestElo : elo, GamesPlayed: wins + losses, SetsPlayed: wins + losses, CharacterSlug: bestChar, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) } }, DataByCharacter, GamesPlayed: wins + losses, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) }, SetsPlayed: wins + losses, FinalLeaderboardRank: rank?.rank || 0 };
             };
 
+            // Season 5, never granted: see dotnet/docs/SEASONS.md (open items) before porting this.
             client.send({
               data: {
                 template_id: "FullRankUpdate",

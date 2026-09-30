@@ -10,6 +10,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 /// PUT /ssc/invoke/ranked_claim_end_of_season_rewards: the player got past the end-of-season screen for a season
 /// (<see cref="IRankedDataService.ClaimRewardsAsync"/>); ranked_data then says that season's rewards are granted, and
 /// the screen is not shown again. Answers as the TS catch-all did.
+/// Body: {"Season": "Season:SeasonFive"} (bench, 2026-09-30).
 /// Seen in: binary ssc name; captured 3x (bench, 2026-09-30). The TS server answers it only with its catch-all.
 /// </summary>
 public sealed class PutRankedClaimEndOfSeasonRewards : JsonBodyEndpoint
@@ -23,7 +24,6 @@ public sealed class PutRankedClaimEndOfSeasonRewards : JsonBodyEndpoint
     public override async Task HandleAsync(CancellationToken ct)
     {
         var body = await ReadBodyAsync(ct) as JsonObject;
-        Logger.LogInformation("ranked_claim_end_of_season_rewards body: {Body}", body?.ToJsonString());
         try
         {
             await SendJsonAsync(await Resolve<IRankedDataService>().ClaimRewardsAsync(HttpContext.Session()?.AccountId ?? "", body?["Season"], ct), ct);

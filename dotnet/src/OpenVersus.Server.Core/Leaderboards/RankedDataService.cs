@@ -33,7 +33,8 @@ namespace OpenVersus.Server.Core.Leaderboards;
 // login's profile says granted for Seasons 2 to 4 and nothing for Season 5), and when the screen's animation ends it
 // sends PUT /ssc/invoke/ranked_claim_end_of_season_rewards {Season} (ClaimRewardsAsync), which TS never answered but
 // with its catch-all. Recording that claim shows the screen once per player and season. The TS websocket's
-// FullRankUpdate (websocket.ts, after a ranked match) still sends Season 5 with the flag false.
+// FullRankUpdate (websocket.ts, after a ranked match) still sends Season 5 with the flag false, and nothing is keyed
+// by Season 6 yet: docs/SEASONS.md, open items.
 //
 // PUT /ssc/invoke/ranked_claim_end_of_season_rewards: $addToSet the season (text, up to 64 characters) to
 // endofseasonrewards {_id: ObjectId(player)} {seasons: [...]} (upserted; only C# reads it). The answer is the TS

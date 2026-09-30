@@ -98,7 +98,7 @@ public sealed class HissServiceTests : IAsyncLifetime
     [Theory]
     [InlineData(100, HydraCode.Bytes8)]
     [InlineData(5_000, HydraCode.Bytes16)]
-    [InlineData(100_000, HydraCode.Bytes32)]
+    [InlineData(200_000, HydraCode.Bytes32)]
     public void CompressedValuesAreFramedByTheirSize(int length, byte code)
     {
         // Random letters: little to compress, so the compressed size lands in the band.
@@ -106,7 +106,7 @@ public sealed class HissServiceTests : IAsyncLifetime
         string text = new([.. Enumerable.Range(0, length).Select(_ => (char)('a' + random.Next(26)))]);
         var value = new JsonObject { ["section"] = new JsonObject { ["_hydra_compressed"] = new JsonObject { ["text"] = text } } };
 
-        byte[] bytes = HydraEncoder.Encode(value, compression: CompressionLevel.SmallestSize);
+        byte[] bytes = HydraEncoder.Encode(value, compression: CompressionLevel.Optimal);
 
         int at = bytes.AsSpan().IndexOf(HydraCode.Compressed);
         Assert.Equal(1, bytes[at + 1]);

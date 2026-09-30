@@ -5,7 +5,7 @@
 //
 // Each answer is asked for as GET and as PUT (a Crc in the body, which neither server reads), in Hydra and in JSON.
 // JSON must be the same bytes. In Hydra the compressed sections are compared by what they hold, not by their bytes: the
-// C# port compresses with .NET's zlib at its smallest size, the TS server with Node's at its fastest, and the game
+// C# port compresses with .NET's zlib at its optimal level, the TS server with Node's at its fastest, and the game
 // inflates either. So each answer is split into its compressed sections (0x67, index 1, a byte string of zlib data) and
 // the rest: the rest must be the same bytes (where only a section's length is written differently: its byte-string
 // header is left out), and each section must inflate to the same bytes (a byte comparison, so key order counts).

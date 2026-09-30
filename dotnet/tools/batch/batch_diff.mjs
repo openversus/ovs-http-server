@@ -179,7 +179,7 @@ function objectIdsAsHex(value, side) {
 
 // Hydra's compressed values: where C# forwards the sub-request, it must pass the TS server's on byte for byte, as decoding
 // and encoding one again gives other bytes. Where C# answers it (hiss_amalgamation in "mixed" mode) it compresses them
-// itself (HissService: .NET's zlib, smallest size), so there they must hold the same bytes (hydraSections) instead, and
+// itself (HissService: .NET's zlib, optimal level), so there they must hold the same bytes (hydraSections) instead, and
 // the bytes around them must be the same.
 const RECOMPRESSED = /^\/ssc\/invoke\/hiss_amalgamation\b/;
 

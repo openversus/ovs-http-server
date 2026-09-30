@@ -22,8 +22,8 @@ namespace OpenVersus.Server.Core.Hiss;
 // (the TS server reads it once, at startup, and only the replica that took the sync sees it). A build reads the assets
 // after the CRC: an answer is never older than its CRC.
 //
-// Built once, the compressed sections take zlib's smallest size (about 410 KB, against about 514 KB at mvs-dump's fastest
-// level). The game inflates the sections itself (zlib; the client has no other decompressor for them), so their bytes
+// Built once, the compressed sections take zlib's optimal level (about 408 KB, against about 514 KB at mvs-dump's fastest
+// level; smallest size gave about 410 KB on this data, and takes longer). The game inflates the sections itself (zlib; the client has no other decompressor for them), so their bytes
 // need not be the TS server's; what they hold is.
 //
 // Mongo, read     config (the first document's CRC), dataassets (enabled)
@@ -89,7 +89,7 @@ internal sealed class HissService(IServiceProvider services, ILogger<HissService
         var assets = await DataAssets.EnabledAsync(mongo, CancellationToken.None);
         var values = Values(crc, assets);
         var answer = Fill(values);
-        byte[] hydra = HydraEncoder.Encode(answer, compression: CompressionLevel.SmallestSize);
+        byte[] hydra = HydraEncoder.Encode(answer, compression: CompressionLevel.Optimal);
         log.LogInformation("Built the hiss answer for CRC {Crc}: {Assets} data assets, {Bytes} bytes, {Ms:F0} ms",
             crc, assets.Count, hydra.Length, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
         return new HissAnswer(crc, hydra, () => Js.Stringify(Fill(values)));

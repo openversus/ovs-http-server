@@ -125,7 +125,8 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
     }
 
     // LoadConfig: the first document's CRC.
-    private static async Task<double> CrcAsync(IMongoDatabase mongo, CancellationToken ct)
+    /// <summary>The config CRC the TS server answers with (getCurrentCRC): the config document's, else the default.</summary>
+    internal static async Task<double> CrcAsync(IMongoDatabase mongo, CancellationToken ct)
     {
         var config = await mongo.GetCollection<BsonDocument>("config").Find(FilterDefinition<BsonDocument>.Empty).Limit(1).FirstOrDefaultAsync(ct);
         return config?.GetValue("CRC", BsonNull.Value) is { IsNumeric: true } value ? value.ToDouble() : DefaultCrc;

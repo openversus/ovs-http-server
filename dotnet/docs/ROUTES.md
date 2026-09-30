@@ -18,8 +18,8 @@ override header, not on the wire method. `?` means the method is not known yet.
 server pings `0x0c` every 20 s and the game answers `0x0a`), and the AccelByte lobby socket at `/lobby/`
 (text `type: …` messages; Custom Lobbies).
 
-**Totals.** 262 routes. The game can call 208 Hydra/engine/social routes and SSC functions; the TS
-server answers 115. Not answered: 33 routes and 60 SSC functions.
+**Totals.** 263 routes. The game can call 209 Hydra/engine/social routes and SSC functions; the TS
+server answers 115. Not answered: 33 routes and 61 SSC functions.
 AccelByte: 13. OpenVersus's own, not the game: openversus client mod 10, rollback server 7, website (browser) 18, admin, testing and data sync 6.
 
 Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVersus's own (`ovs-client`,
@@ -110,6 +110,7 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | ? | `/ssc/invoke/notify_changing_modes` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/post_login_bonuses` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/purchase_stocks` | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/ranked_claim_end_of_season_rewards` | binary `ssc name`, capture ×3 | **no** | ssc: server/capture |
 | ? | `/ssc/invoke/read_cached_configs` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/reset_inventory` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/rift_reset_all_chapters` | binary `ssc name` | **no** | ssc: binary (probable) |
@@ -384,6 +385,7 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | ? | `/ssc/invoke/post_login_bonuses` | binary `ssc name` | **no** | ssc: binary |
 | PUT | `/ssc/invoke/promote_to_lobby_leader` | binary `ssc name` | yes | ssc: binary |
 | ? | `/ssc/invoke/purchase_stocks` | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/ranked_claim_end_of_season_rewards` | binary `ssc name`, capture ×3 | **no** | ssc: server/capture |
 | GET | `/ssc/invoke/ranked_data` | binary `ssc name` | yes | ssc: server/capture |
 | ? | `/ssc/invoke/read_cached_configs` | binary `ssc name` | **no** | ssc: binary |
 | PUT | `/ssc/invoke/rematch_accept` | binary `ssc name` | yes | ssc: server/capture |

@@ -3282,6 +3282,20 @@
     "in_server": false
   },
   {
+    "method": "PUT",
+    "path": "/ssc/invoke/ranked_claim_end_of_season_rewards",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 3,
+    "server": [],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
     "method": "GET",
     "path": "/ssc/invoke/ranked_data",
     "area": "ssc",

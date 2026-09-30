@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Settings;
 using StackExchange.Redis;
 
@@ -24,6 +25,20 @@ namespace OpenVersus.Server.Core.Leaderboards;
 //                 empty characters maps are not stored: mongoose leaves empty objects out); eloratings updateOne
 //                 {account_id} $set username when the token's differs from the stored one
 // Redis, read     connections:{id} character
+//
+// Mongo, read     endofseasonrewards {_id} (the seasons whose end-of-season rewards the player has claimed)
+//
+// Unlike there: bEndOfSeasonRewardsGranted is whether the player has claimed that season's rewards (TS: always false).
+// For a past season whose rewards are not granted, the game shows its end-of-season screen at every login (the
+// login's profile says granted for Seasons 2 to 4 and nothing for Season 5), and when the screen's animation ends it
+// sends PUT /ssc/invoke/ranked_claim_end_of_season_rewards {Season} (ClaimRewardsAsync), which TS never answered but
+// with its catch-all. Recording that claim shows the screen once per player and season. The TS websocket's
+// FullRankUpdate (websocket.ts, after a ranked match) still sends Season 5 with the flag false.
+//
+// PUT /ssc/invoke/ranked_claim_end_of_season_rewards: $addToSet the season (text, up to 64 characters) to
+// endofseasonrewards {_id: ObjectId(player)} {seasons: [...]} (upserted; only C# reads it). The answer is the TS
+// catch-all's, which the game has always had: {body: {Crc, MatchmakingCrc: 1}, metadata: null, return_code: 200}. The
+// game reads RewardsGranted from it and, with none, carries on to its season-reset notice; no rewards are granted.
 
 /// <summary>Ranked settings.</summary>
 public sealed class RankedSettings
@@ -36,11 +51,22 @@ public interface IRankedDataService
 {
     /// <summary>The ranked data of the player the session token (<paramref name="claims"/>) names.</summary>
     Task<JsonNode> DataAsync(JsonObject? claims, CancellationToken ct);
+
+    /// <summary>ranked_claim_end_of_season_rewards: records that the player has claimed <paramref name="season"/>'s
+    /// end-of-season rewards; the answer.</summary>
+    Task<JsonNode> ClaimRewardsAsync(string accountId, JsonNode? season, CancellationToken ct);
 }
 
 internal sealed class RankedDataService(IServiceProvider services, IOptionsMonitor<RankedSettings> settings, TimeProvider time, ILogger<RankedDataService> log) : IRankedDataService
 {
     private const string DefaultCharacter = "character_wonder_woman";
+    private const string Season = "Season:SeasonFive";
+
+    /// <summary>The seasons whose end-of-season rewards each player has claimed: {_id: ObjectId(player), seasons: [...]}.</summary>
+    internal const string ClaimsCollection = "endofseasonrewards";
+
+    /// <summary>The longest season name recorded (the game's are gameplay tags like "Season:SeasonFive").</summary>
+    internal const int MaxSeasonLength = 64;
 
     public async Task<JsonNode> DataAsync(JsonObject? claims, CancellationToken ct)
     {
@@ -67,6 +93,8 @@ internal sealed class RankedDataService(IServiceProvider services, IOptionsMonit
                 .Find(new BsonDocument("account_id", playerId)).FirstOrDefaultAsync(ct);
             var place1v1 = playerId is null ? null : await RankService.PlaceAsync(ratings, playerId, "1v1", ct);
             var place2v2 = playerId is null ? null : await RankService.PlaceAsync(ratings, playerId, "2v2", ct);
+            bool granted = playerId is not null && ObjectId.TryParse(playerId, out var oid) && await mongo.GetCollection<BsonDocument>(ClaimsCollection)
+                .Find(new BsonDocument { { "_id", oid }, { "seasons", Season } }).AnyAsync(ct);
             // Math.floor(Date.now() / 1000), for every timestamp in the answer.
             long now = time.GetUtcNow().ToUnixTimeMilliseconds() / 1000;
 
@@ -82,13 +110,13 @@ internal sealed class RankedDataService(IServiceProvider services, IOptionsMonit
                 {
                     ["SeasonalData"] = new JsonObject
                     {
-                        ["Season:SeasonFive"] = new JsonObject
+                        [Season] = new JsonObject
                         {
                             ["Ranked"] = new JsonObject
                             {
                                 ["DataByMode"] = new JsonObject { ["1v1"] = Mode("1v1", place1v1), ["2v2"] = Mode("2v2", place2v2) },
                                 ["ClaimedRewards"] = new JsonArray(),
-                                ["bEndOfSeasonRewardsGranted"] = false,
+                                ["bEndOfSeasonRewardsGranted"] = granted,
                             },
                         },
                     },
@@ -262,6 +290,28 @@ internal sealed class RankedDataService(IServiceProvider services, IOptionsMonit
     // x || {}: the document stored there, or an empty one.
     private static BsonDocument Map(BsonDocument? doc, string field) =>
         doc?.GetValue(field, BsonNull.Value) as BsonDocument ?? [];
+
+    public async Task<JsonNode> ClaimRewardsAsync(string accountId, JsonNode? season, CancellationToken ct)
+    {
+        var mongo = services.GetService<IMongoDatabase>() ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)");
+        if (ObjectId.TryParse(accountId, out var id) && season is JsonValue v && v.TryGetValue(out string? name) && name.Length is > 0 and <= MaxSeasonLength)
+        {
+            await mongo.GetCollection<BsonDocument>(ClaimsCollection).UpdateOneAsync(
+                new BsonDocument("_id", id), new BsonDocument("$addToSet", new BsonDocument("seasons", name)), new UpdateOptions { IsUpsert = true }, ct);
+            log.LogInformation("End-of-season rewards of {Season} claimed by {Account}", name, accountId);
+        }
+        else
+        {
+            log.LogWarning("End-of-season rewards claim not recorded: account {Account}, season {Season}", accountId, season?.ToJsonString());
+        }
+
+        return new JsonObject
+        {
+            ["body"] = new JsonObject { ["Crc"] = await HissService.CrcAsync(mongo, ct), ["MatchmakingCrc"] = 1 },
+            ["metadata"] = null,
+            ["return_code"] = 200,
+        };
+    }
 
     // x || 0 for a number (a stored non-number is refused: none exists, and TS would carry it on as it is).
     private static double Number(BsonDocument? doc, string field) => doc?.GetValue(field, BsonNull.Value) switch

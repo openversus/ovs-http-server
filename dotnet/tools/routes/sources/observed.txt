@@ -85,3 +85,4 @@ PUT	/ssc/invoke/create_rift_lobby	5
 PUT	/ssc/invoke/equip_gems	3
 PUT	/ssc/invoke/lock_rift_lobby_loadout	3
 PUT	/ssc/invoke/start_rift_node	1
+PUT	/ssc/invoke/ranked_claim_end_of_season_rewards	3

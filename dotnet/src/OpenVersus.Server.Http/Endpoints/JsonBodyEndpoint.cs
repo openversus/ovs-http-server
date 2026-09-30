@@ -24,4 +24,8 @@ public abstract class JsonBodyEndpoint : StaticEndpoint
     /// <summary>Sends <paramref name="value"/> as the TS server's res.send writes it (Hydra for a Hydra request).</summary>
     protected Task SendJsonAsync(JsonNode value, CancellationToken ct) =>
         Send.StringAsync(Js.Stringify(value), contentType: "application/json; charset=utf-8", cancellation: ct);
+
+    /// <summary>As <see cref="SendJsonAsync(JsonNode, CancellationToken)"/>, with the status <paramref name="status"/>.</summary>
+    protected Task SendJsonAsync(JsonNode value, int status, CancellationToken ct) =>
+        Send.StringAsync(Js.Stringify(value), status, contentType: "application/json; charset=utf-8", cancellation: ct);
 }

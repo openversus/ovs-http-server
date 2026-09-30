@@ -27,6 +27,7 @@ public sealed class SscConstantsEndpointTests(GameAppFactory factory) : IClassFi
     [InlineData("PUT", "decline_party_invite", Empty)]
     [InlineData("PUT", "update_party_game_modes", Empty)]
     [InlineData("POST", "claim_mission_rewards", """{"body":{"MissionControllerContainers":{},"ClaimLocks":{}},"metadata":null,"return_code":0}""")]
+    [InlineData("PUT", "perks_absent", """{"body":{"message":"Early absent report"},"metadata":null,"return_code":2}""")]
     public async Task AnswersTheTsServersFixedAnswer(string method, string route, string json)
     {
         using var response = await SendHydraAsync(new HttpMethod(method), route);

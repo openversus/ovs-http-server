@@ -11,11 +11,12 @@ written. Each needs a closer look before the TS server goes.
 
 | Function | The game sends | Answered with | To do |
 |---|---|---|---|
-| `PUT game_install` | not captured yet; carries the EULA acceptance date, among others. The C# endpoint logs the body (`game_install body: ...`) | `{body: {}}` | **Store it** (per account): the EULA acceptance and whatever else it carries. Read the logged body first, and find out when the game sends it (each launch, or once). |
+| `PUT game_install` | not captured yet; carries the EULA acceptance date, among others. The C# endpoint logs the body (`game_install body: ...`) | `{body: {}}` | **Store it** (per account): the EULA acceptance and whatever else it carries. Read the logged body first. Sent only when the game starts without its local settings/save folder (a new install, or that folder deleted), not at every login. |
 | `PUT game_launch_event` | `{account_platform_id, hydra_public_id, is_production, os, platform_name, resolution, user_name}` (11 captures) | status 200, `text/html`, no body (the TS server's `res.send("")`), even to a Hydra request | Check what the game expects back (the WB answer was never captured). Decide what to keep (platform, `hydra_public_id`, last launch). |
 | `POST claim_mission_rewards` | `{ContainerSlug, MissionsToClaim: [{MissionControllerSlug, MissionGuid, MissionSlug}]}` (3 captures, weekly battle pass missions) | `{MissionControllerContainers: {}, ClaimLocks: {}}` (as every captured answer) | Nothing is granted. Belongs with missions (`get_or_create_mission_object`) and the rift mission rewards (`RIFTS.md`). |
 | `PUT cancel_party_invite` | not captured | `{body: {}}` | Find out what the game expects to happen (the invitee told? the invite withdrawn from the lobby?). |
 | `PUT decline_party_invite` | not captured | `{body: {}}` | Same: the inviter is never told. |
+| `PUT perks_absent` | `{ContainerMatchId}` (3 captures, during a match's perk selection) | `{body: {message: "Early absent report"}, return_code: 2}` (as every captured answer) | The TS server's fixed answer; find out what an absent report should do (a player who never picked perks?) and what the game does with return code 2. Part of the match flow (`perks_lock`). |
 | `PUT update_party_game_modes` | not captured | `{body: {}}` | The party's chosen modes are not kept; check whether matchmaking or the lobby should use them. |
 
 ## Other notes

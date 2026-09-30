@@ -18,8 +18,8 @@ override header, not on the wire method. `?` means the method is not known yet.
 server pings `0x0c` every 20 s and the game answers `0x0a`), and the AccelByte lobby socket at `/lobby/`
 (text `type: …` messages; Custom Lobbies).
 
-**Totals.** 259 routes. The game can call 205 Hydra/engine/social routes and SSC functions; the TS
-server answers 115. Not answered: 33 routes and 57 SSC functions.
+**Totals.** 262 routes. The game can call 208 Hydra/engine/social routes and SSC functions; the TS
+server answers 115. Not answered: 33 routes and 60 SSC functions.
 AccelByte: 13. OpenVersus's own, not the game: openversus client mod 10, rollback server 7, website (browser) 18, admin, testing and data sync 6.
 
 Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVersus's own (`ovs-client`,
@@ -82,17 +82,19 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | ? | `/ssc/invoke/consumable_event` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/consume_character_xp_boost` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/convert_candy_to_gold` | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/create_rift_lobby` | binary `ssc name`, capture ×5 | **no** | ssc: server/capture |
 | ? | `/ssc/invoke/debug_lock_inventory_item` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/debug_unlock_inventory_item` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/deduct_guild_dungeon_ticket` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/dlc_event` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/equip_gems` | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/equip_gems` | binary `ssc name`, capture ×3 | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/equip_profile_icon` | binary `ssc name` | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/finish_rift_chapter` | binary `ssc name` | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/follow_account` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/get_active_ranked_seasons` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/get_current_ftue_step` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/get_or_create_my_match_config` | binary `ssc name` | **no** | ssc: binary |
+| GET | `/ssc/invoke/get_or_create_rift_state` | binary `ssc name`, capture ×5 | **no** | ssc: server/capture |
 | ? | `/ssc/invoke/get_preferred_currency` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/grant_character_gift` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/grant_currency` | binary `ssc name` | **no** | ssc: binary |
@@ -104,6 +106,7 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | ? | `/ssc/invoke/leave_party` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/local_leaderboard_claim_rewards` | binary `ssc name` | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/local_leaderboard_has_unclaimed_rewards` | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/lock_rift_lobby_loadout` | binary `ssc name`, capture ×3 | **no** | ssc: server/capture |
 | ? | `/ssc/invoke/notify_changing_modes` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/post_login_bonuses` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/purchase_stocks` | binary `ssc name` | **no** | ssc: binary (probable) |
@@ -118,7 +121,7 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | ? | `/ssc/invoke/set_chapter_difficulty` | binary `ssc name` | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/set_joinable` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/skip_rift_node` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/start_rift_node` | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/start_rift_node` | binary `ssc name`, capture ×1 | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/sync_match_config` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/unlock_ftue_character` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/update_member_data` | binary `ssc name` | **no** | ssc: binary |
@@ -318,6 +321,7 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | PUT | `/ssc/invoke/create_custom_game_lobby` | binary `ssc name` | yes | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it |
 | PUT | `/ssc/invoke/create_party` | binary `ssc name` | yes | ssc: binary |
 | PUT | `/ssc/invoke/create_party_lobby` | binary `ssc name`, capture ×11 | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/create_rift_lobby` | binary `ssc name`, capture ×5 | **no** | ssc: server/capture |
 | ? | `/ssc/invoke/debug_lock_inventory_item` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/debug_unlock_inventory_item` | binary `ssc name` | **no** | ssc: binary |
 | PUT | `/ssc/invoke/decline_party_invite` | binary `ssc name` | yes | ssc: binary |
@@ -325,7 +329,7 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | ? | `/ssc/invoke/dlc_event` | binary `ssc name` | **no** | ssc: binary |
 | PUT | `/ssc/invoke/equip_announcer_pack` | binary `ssc name` | yes | ssc: binary (probable) |
 | PUT | `/ssc/invoke/equip_banner` | binary `ssc name`, capture ×2 | yes | ssc: binary (probable) |
-| ? | `/ssc/invoke/equip_gems` | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/equip_gems` | binary `ssc name`, capture ×3 | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/equip_profile_icon` | binary `ssc name` | **no** | ssc: binary (probable) |
 | PUT | `/ssc/invoke/equip_ringout_vfx` | binary `ssc name` | yes | ssc: binary (probable) |
 | PUT | `/ssc/invoke/equip_stat_tracker` | binary `ssc name` | yes | ssc: binary (probable) |
@@ -345,6 +349,7 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | GET | `/ssc/invoke/get_milestone_reward_tracks` | binary `ssc name` | yes | ssc: binary (probable) |
 | POST | `/ssc/invoke/get_or_create_mission_object` | binary `ssc name`, capture ×11 | yes | ssc: server/capture |
 | ? | `/ssc/invoke/get_or_create_my_match_config` | binary `ssc name` | **no** | ssc: binary |
+| GET | `/ssc/invoke/get_or_create_rift_state` | binary `ssc name`, capture ×5 | **no** | ssc: server/capture |
 | ? | `/ssc/invoke/get_preferred_currency` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/grant_character_gift` | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/grant_currency` | binary `ssc name` | **no** | ssc: binary |
@@ -367,6 +372,7 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | ? | `/ssc/invoke/local_leaderboard_claim_rewards` | binary `ssc name` | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/local_leaderboard_has_unclaimed_rewards` | binary `ssc name` | **no** | ssc: binary (probable) |
 | PUT | `/ssc/invoke/lock_lobby_loadout` | binary `ssc name`, capture ×18 | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/lock_rift_lobby_loadout` | binary `ssc name`, capture ×3 | **no** | ssc: server/capture |
 | PUT | `/ssc/invoke/match_set_absent` | binary `ssc name`, capture ×2 | yes | ssc: server/capture |
 | PUT | `/ssc/invoke/match_set_checkin` | binary `ssc name`, capture ×6 | yes | ssc: server/capture |
 | PUT | `/ssc/invoke/match_set_concede` | binary `ssc name` | yes | ssc: server/capture |
@@ -404,7 +410,7 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | PUT | `/ssc/invoke/set_world_buffs_for_custom_game` | binary `ssc name` | yes | ssc: binary |
 | ? | `/ssc/invoke/skip_rift_node` | binary `ssc name` | **no** | ssc: binary (probable) |
 | PUT | `/ssc/invoke/start_custom_match` | binary `ssc name` | yes | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it |
-| ? | `/ssc/invoke/start_rift_node` | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/start_rift_node` | binary `ssc name`, capture ×1 | **no** | ssc: binary (probable) |
 | PUT | `/ssc/invoke/submit_end_of_match_stats` | binary `ssc name`, capture ×9 | yes | ssc: server/capture |
 | PUT | `/ssc/invoke/switch_custom_game_lobby_team` | binary `ssc name` | yes | ssc: binary |
 | ? | `/ssc/invoke/sync_match_config` | binary `ssc name` | **no** | ssc: binary |

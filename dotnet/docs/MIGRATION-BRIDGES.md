@@ -27,6 +27,13 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   `lobby:player_joined` (`PartyLobbyService`, a player joined someone's lobby: `{lobbyId, ownerId, joinedPlayerId,
   joinedPlayerUsername, allPlayerIds, mode}`) and `client_update:modal` (`ClientUpdateGate`, show a player the update
   toast: `{playerId, nonce}`). Their payloads are JSON exactly as the TS server writes them.
+- **Starting a match:** `IMatchLauncher` (`Core/Matches/`, for rifts so far) writes what the TS custom lobby writes
+  when a match starts (`match:{id}`, `match:{id}:perks:{bot}`, the notification at `{id}`, `rollback:current_port` on
+  demand) and publishes `match:notifications` (the TS `MATCH_FOUND_NOTIFICATION`) and `matchmaking:complete`. The TS
+  websocket sends the match to the game and the TS rollback routes serve it. For modes the websocket does not know,
+  the notification carries two fields added to the TS type for this (`src/config/redis.ts`): `gameplayConfigOverride`
+  and `playerConfigOverrides`, merged over the websocket's PvP gameplay config in `handleSendGamePlayConfig`. Delete
+  them with the websocket's port.
 - **Lobby keys:** `lobby:{id}` (JSON written by the TS `ssc.ts` and `websocket.ts`; C# adds a player to it keeping every
   other field as read), `player_lobby:{player}` and `lobby_redirect:{id}` (read only, for now). C# also creates rift
   lobbies (`RiftLobbyService`, `create_rift_lobby`): the same `lobby:{id}` JSON, `player_lobby:{player}`,

@@ -27,6 +27,16 @@ public sealed class TsEnvironmentTests
     public void ClientVersionCheckReadsAsEnvalidDoes(string value, string expected) =>
         Assert.Equal(expected, With(new() { ["CLIENT_VERSION_CHECK"] = value })["Clients:VersionCheck"]);
 
+    [Theory]
+    // The TS server compares ON_DEMAND_ROLLBACK === 1 (envalid's num): 1 is on, any other number off.
+    [InlineData("1", "true")]
+    [InlineData("0", "false")]
+    [InlineData("2", "false")]
+    // Not a number: passed on, and refused at startup as envalid refuses it.
+    [InlineData("yes", "yes")]
+    public void OnDemandRollbackReadsAsTheTsServerCompares(string value, string expected) =>
+        Assert.Equal(expected, With(new() { ["ON_DEMAND_ROLLBACK"] = value })["Rollback:OnDemand"]);
+
     [Fact]
     public void TheCatalogKeyWins() =>
         Assert.Equal("2.0", With(new() { ["MIN_CLIENT_VERSION"] = "1.0", ["Clients:MinimumVersion"] = "2.0" })["Clients:MinimumVersion"]);

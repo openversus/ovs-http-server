@@ -35,6 +35,7 @@ builder.AddInventory();
 builder.AddMatchHistory();
 builder.AddClientUpdateGate();
 builder.AddPartyLobbies();
+builder.AddMatchLauncher();
 builder.AddCalendar();
 builder.AddPerks();
 builder.AddRankedData();

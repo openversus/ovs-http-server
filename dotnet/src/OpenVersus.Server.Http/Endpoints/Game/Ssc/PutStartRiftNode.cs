@@ -8,16 +8,16 @@ using StackExchange.Redis;
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 
 /// <summary>
-/// GET /ssc/invoke/get_or_create_rift_state: the player's rift state (<see cref="IRiftStateService"/>), which the rift
-/// select page waits for; 503 when the stores cannot be reached.
+/// PUT /ssc/invoke/start_rift_node: the player starts a match node of the rift; the match reaches the game over the
+/// websocket (<see cref="IRiftMatchService.StartNodeAsync"/>); 503 when the stores cannot be reached.
 /// Seen in: binary ssc name; capture (bench, 2026-09-30). The TS server does not answer it.
 /// </summary>
-public sealed class GetGetOrCreateRiftState : JsonBodyEndpoint
+public sealed class PutStartRiftNode : JsonBodyEndpoint
 {
     public override void Configure()
     {
-        Verbs(FastEndpoints.Http.GET);
-        Routes("/ssc/invoke/get_or_create_rift_state");
+        Verbs(FastEndpoints.Http.PUT);
+        Routes("/ssc/invoke/start_rift_node");
     }
 
     public override async Task HandleAsync(CancellationToken ct)
@@ -25,12 +25,12 @@ public sealed class GetGetOrCreateRiftState : JsonBodyEndpoint
         JsonNode answer;
         try
         {
-            answer = await Resolve<IRiftStateService>().GetOrCreateAsync(HttpContext.Session()?.Claims, ct);
+            answer = await Resolve<IRiftMatchService>().StartNodeAsync(HttpContext.Session()?.Claims, (await ReadBodyAsync(ct))?.AsObject(), ct);
         }
         catch (Exception e) when (e is InvalidOperationException or MongoException or RedisException or TimeoutException)
         {
             // The stores cannot be reached.
-            Logger.LogError("Rift state: {Error}", e.Message);
+            Logger.LogError("start_rift_node: {Error}", e.Message);
             await Send.ResultAsync(Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
             return;
         }

@@ -7,7 +7,8 @@ Sources (inputs in tools/routes/sources/, with the scanners that made them; made
            (0x140f932a0..0x140fa3780), read with i-can-haz's haz.disasm (route_funcs.py, verbs.py). The
            Hydra builders pass the method to 0x144ffaa40 as its third argument: 0 GET, 1 PUT, 2 POST,
            checked against captured requests.
-  capture  every request in 8 captures (6 prod, decrypted with the TLS keylog; 2 local), ids normalized.
+  capture  every request in 8 captures (6 prod, decrypted with the TLS keylog; 2 local), ids normalized; plus the rift
+           calls of 2 bench captures (2026-09-30, rifts-0930 and rifts-state-0930), which the others never reach.
   server   every express route registration in src/ (server_routes.txt).
   ssc      /ssc/invoke/<name> names from the server, the captures and the binary (ssc_names.py,
            static_fstrings.py).

@@ -198,6 +198,10 @@ export interface MATCH_FOUND_NOTIFICATION extends MVS_NOTIFICATION {
   customShields?: boolean;
   worldBuffs?: string[];
   playerBuffs?: Record<string, string[]>;
+  // Set by the C# server for modes this websocket does not know (rifts; dotnet/docs/MIGRATION-BRIDGES.md, 2):
+  // merged over the GameplayConfig, and over each named player's config, after both are built.
+  gameplayConfigOverride?: Record<string, unknown>;
+  playerConfigOverrides?: Record<string, Record<string, unknown>>;
 }
 
 export interface RedisMatchEndNotification extends MVS_NOTIFICATION {

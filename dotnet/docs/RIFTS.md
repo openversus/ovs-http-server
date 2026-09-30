@@ -19,11 +19,13 @@ WB's servers. Each item says which.
 | gems | `PUT /ssc/invoke/equip_gems` `{GemsToEquip: [3 slugs]}` (3 empty strings on "Auto equip") | **nobody** (gems do not save) |
 | "Auto equip & fight!" | `PUT /ssc/invoke/lock_rift_lobby_loadout` | C#: `RiftLobbyService.LockLoadoutAsync` |
 | then | `PUT /ssc/invoke/set_ready_for_lobby` | TS (party lobby code) |
-| then | `PUT /ssc/invoke/start_rift_node` | **nobody**: the client waits on "Traversing Rift" |
+| then | `PUT /ssc/invoke/start_rift_node` | C#: `RiftMatchService` (the match reaches the game over the websocket) |
+| the match | no `perks_lock`: the rift client never sends it, and the match starts without `PerksLockedNotification` | |
+| after it | `PUT /ssc/invoke/submit_end_of_match_stats` (`WinningTeamIndex`, `Score`, mission updates), the rollback server's `/ovs_end_match`, then `PUT /ssc/invoke/set_lobby_joinable`; the client is back on the node map | TS (stats, the match's end); **nothing records rift progress** |
 
 `start_rift_node` sends `{ChapterId, NodeId, RiftLobbyId, MultiplayParams{MultiplayClusterSlug, MultiplayProfileId
 "1252499" (the one-player profile), MultiplayRegionId, MultiplayRegionSearchId}}`: on WB it asked for a Multiplay
-dedicated server. Here it has to start a rollback match (below).
+dedicated server. Here it starts a rollback match (below). The client never calls `complete_rift_node` after a match.
 
 An unanswered call leaves the client waiting with no way out of the menu; the game has to be closed, or its websocket
 dropped from the server side.
@@ -61,25 +63,44 @@ powerups. The Redis lobby records are the party lobby's (see `MIGRATION-BRIDGES.
 bAreAllLoadoutsLocked}`); the three characters the TS server disables get `bAreAllLoadoutsLocked: false` (the TS server
 never answers them).
 
-## Starting a rift match (not built)
+## Starting a rift match: `start_rift_node`
 
-A custom lobby with a bot, played on the bench, shows what a match start is (capture `custom-bots-0930.pcapng`). The
-TS websocket sends, in order: `GameServerReadyNotification` (`MatchKey`, `MatchID`, `Port`, `IPAddress`),
-`matchmaking-complete`, `OnGameplayConfigNotified` (`{MatchId, GameplayConfig}`), `PerksLockedNotification` (the same
-config with perks), `game-server-instance-ready`. The rollback server sees only the human players (bots run inside the
-clients) and posts the end of the match to `/ovs_end_match`.
+Played on the bench (2026-09-30): the Joker node, a full match against the bot, back to the node map afterwards.
 
-The gameplay config already has the rift fields, empty in PvP: `bIsRift`, `RiftNodeId`, `RiftNodeAttunement`,
-`TeamData`, `HudSettings`, and per player `Gems`, `Buffs`, `StartingDamage`, `BotDifficultyMin`/`Max`,
-`BotBehaviorOverride`. A rift match is that pipeline with them filled from the node, not the custom lobby's settings.
-Each match node in `load_rifts` (`RiftMatchNodeData[guid].MatchData`) pre-selects everything: `Map`, `EnemyTeams` (bots
-by `CharacterSet`, `NumStocks`, `TeamBuffs`), `FriendlyTeam` (partner bots, if any, stocks and buffs: 1v1, 2v1 with a bot
-partner, 1v3 and so on), `WorldBuffs`, `bAllowMapHazards`, `Attunement`, `HudSettings`, `CountdownDisplay`,
-`MatchDurationSecondsByDifficulty`, `ForcedBuddyFighter`, `GuestFighter`, `PermittedLoadout`, attrition. The runtime
-data holds the bots actually picked from each `CharacterSet` (character and skin).
+`RiftMatchService` answers an empty success and starts the match through `IMatchLauncher` (`Core/Matches/`), which
+does what the TS custom lobby does when its host presses start: a rollback port (the fixed range, or on demand: a
+port from `rollback:current_port` and a signed POST to the deploy webhook, as `rollbackService.ts`), `match:{id}`,
+the bots' perks locked, the notification stored at `{id}` and published on `match:notifications`, then
+`matchmaking:complete`. The TS websocket then sends `GameServerReadyNotification`, `matchmaking-complete` and
+`OnGameplayConfigNotified`; the rollback server, registering, triggers `game-server-instance-ready`. The rollback
+server sees only the human (bots run inside the client).
 
-After the match: `complete_rift_node`, `submit_end_of_match_stats` and `finish_rift_chapter` record progress (none is
-answered yet).
+The websocket builds a PvP gameplay config; the notification carries `gameplayConfigOverride` and
+`playerConfigOverrides`, which it merges over that config before sending (MIGRATION-BRIDGES.md, 2). What they hold is
+what the client's own offline backend builds for a rift match (`start_rift_node` at `0x1429ca0f0`, which answers an
+empty success and hands the game an `OnGameplayConfigNotified` made by `UMvsRiftGameplayConfigCreator`,
+`0x1429cbe50`): `bIsRift`, not PvP, `TargetScoreIsLoss` / `AttributeToVictim`, `TeamData [{TargetScore}, {TargetScore}]`
+(each side's stocks), the node's map, attunement, HUD, countdown, world buffs, hazards and duration, `ModeString`
+"1v1" or "2v2" (a partner bot), and each bot from the runtime data (character, skin, starting damage) and the node's
+`MatchData` (banner, icon, ring-out, behaviour, name, its team's buffs), `BotDifficultyMin`/`Max` 0. The rules, with
+their sources, are at the top of `RiftMatchService.cs`.
+
+Team 0's stocks are `FriendlyTeam.NumStocks`, unless the chapter carries player stocks over at the lobby's difficulty
+(`bDoPlayerStocksAndDamageCarryOver`, on 9 chapters): then the attrition pool, which the client also caps at the
+global rift settings' `MaxStocksTakenIntoMatch`, a value nothing here holds (so uncapped).
+
+## After a rift match: how WB recorded progress
+
+The client does not ask for its progress after a match; the server works it out from the result and pushes it. The
+client's notification router (`0x140d08390`) handles these rift templates, each a websocket notification whose data
+holds the new value: `OnLobbyRuntimeDataUpdated` (`RuntimeData`: the lobby's rift runtime data, read by
+`0x142905d90`), `OnLobbyRiftStateUpdated` (`RiftState`, `0x142905cb0`), `OnPlayerInstanceUpdated`,
+`MissionUpdatesComplete`, `AttritionLivesRewarded`, `RiftRunAttemptsRewarded`, `OnSwitchedChapters`,
+`RiftRetryNotification`, plus `EndOfMatchPayload` and `OnRewardsGranted`.
+
+A completed node, in the game's WB-era cache (`HydraRiftDynamicInstanceJson`): the chapter's
+`RuntimeChapterData[chapter].NodeCompletionsByDifficulty` is `{"<difficulty>": [node GUID, ...]}`, next to
+`CurrentDifficulty`, `HighestDifficultyCompleted` and `bIsChapterComplete`.
 
 ## The client's offline backend
 
@@ -105,11 +126,11 @@ The route map (`routes.json`) misses most rift calls although they are plain str
   rift. Keeping them open is a change to the rift data (a policy decision).
 - `equip_gems` (and where equipped gems are stored).
 - Daily rewards; per-player runtime data (today one frozen copy).
+- Bot difficulty: sent as 0, as the offline creator sends it. The Joker bot played very easily on the first test;
+  whether a rift bot's strength comes from elsewhere (the chapter difficulty, `DifficultyScalarsOverride`) is unread.
 
 ## Next
 
-1. `start_rift_node`: a match on the custom-lobby pipeline (rollback port, the match in Redis, bot perks locked) with a
-   rift gameplay config built from the node's `MatchData` and the lobby's runtime data; the websocket messages above.
-2. After the match: `complete_rift_node` / `submit_end_of_match_stats` / `finish_rift_chapter` update the rift state and
-   runtime data, which then become per player.
-3. `equip_gems`; the Season 5 end dates; co-op (a friend joining the rift lobby).
+1. Progress: per-player runtime data, updated from the match result and pushed with `OnLobbyRuntimeDataUpdated` /
+   `OnLobbyRiftStateUpdated`; `load_rifts` then answers each player's own.
+2. `equip_gems`; the Season 5 end dates; co-op (a friend joining the rift lobby).

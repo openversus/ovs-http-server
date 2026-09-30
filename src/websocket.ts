@@ -1501,6 +1501,14 @@ export class WebSocketService {
       cmd: "update",
     };
 
+    if (notification.gameplayConfigOverride) {
+      Object.assign(message.data.GameplayConfig, notification.gameplayConfigOverride);
+    }
+    for (const [playerId, fields] of Object.entries(notification.playerConfigOverrides ?? {})) {
+      const target = message.data.GameplayConfig.Players[playerId];
+      if (target) Object.assign(target, fields);
+    }
+
     logwrapper.verbose("Message is: ");
     KitchenSink.TryInspectVerbose(message);
 
@@ -1524,8 +1532,8 @@ export class WebSocketService {
     }
 
     // Only dump full gameplay config for custom games — ranked is high-volume
-    // and not the focus of current debugging.
-    if (notification.isCustomGame) {
+    // and not the focus of current debugging. Also dumped for C#-overridden configs (rifts).
+    if (notification.isCustomGame || notification.gameplayConfigOverride) {
       logger.info(
         `[${serviceName}]: [DEBUG-GAMEPLAY-CONFIG] match=${notification.matchId} message=${JSON.stringify(message)}`,
       );

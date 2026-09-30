@@ -26,11 +26,30 @@ public static class TsEnvironment
         ("CLIENT_VERSION_CHECK", "Clients:VersionCheck"),
         ("GAME_VERSION", "Lobbies:GameVersion"),
         ("DEFAULT_ELO", "Ranked:DefaultElo"),
+        ("ROLLBACK_UDP_PORT_LOW", "Rollback:UdpPortLow"),
+        ("ROLLBACK_UDP_PORT_HIGH", "Rollback:UdpPortHigh"),
+        ("ON_DEMAND_ROLLBACK", "Rollback:OnDemand"),
+        ("ON_DEMAND_ROLLBACK_PORT_LOW", "Rollback:OnDemandPortLow"),
+        ("ON_DEMAND_ROLLBACK_PORT_HIGH", "Rollback:OnDemandPortHigh"),
+        ("WEBHOOK_HOST", "Rollback:WebhookHost"),
+        ("WEBHOOK_PORT", "Rollback:WebhookPort"),
+        ("WEBHOOK_DEPLOY_PATH", "Rollback:WebhookDeployPath"),
+        ("WEBHOOK_HMAC_SECRET", "Rollback:WebhookHmacSecret"),
+        ("OVS_SERVER", "Rollback:OvsServer"),
     ];
 
     // Values the TS server reads with envalid's bool (true/t/1, false/f/0), which .NET's binding does not; anything else
     // is passed on and refused at startup, as there.
     private static readonly HashSet<string> s_booleans = ["CLIENT_VERSION_CHECK"];
+
+    // Numbers the TS server compares with === 1 (envalid's num): 1 is on, any other number off; anything else is passed
+    // on and refused at startup, as envalid refuses it.
+    private static readonly HashSet<string> s_numericBooleans = ["ON_DEMAND_ROLLBACK"];
+
+    private static string NumericBool(string value) =>
+        double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double n)
+            ? (n == 1 ? "true" : "false")
+            : value;
 
     private static string EnvalidBool(string value) => value switch
     {
@@ -47,7 +66,7 @@ public static class TsEnvironment
         {
             if (current[key] is null && current[tsName] is { } value)
             {
-                values[key] = s_booleans.Contains(tsName) ? EnvalidBool(value) : value;
+                values[key] = s_booleans.Contains(tsName) ? EnvalidBool(value) : s_numericBooleans.Contains(tsName) ? NumericBool(value) : value;
             }
         }
 

@@ -80,3 +80,8 @@ GET	/textfilter/ajaxgetcommunitypreferences	6
 GET	/textfilter/gettextfilterdictionary	6
 GET	/v1/fleets/{uuid}/servers	6
 GET	/{n}	6
+GET	/ssc/invoke/get_or_create_rift_state	5
+PUT	/ssc/invoke/create_rift_lobby	5
+PUT	/ssc/invoke/equip_gems	3
+PUT	/ssc/invoke/lock_rift_lobby_loadout	3
+PUT	/ssc/invoke/start_rift_node	1

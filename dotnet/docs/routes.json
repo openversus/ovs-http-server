@@ -2330,6 +2330,20 @@
     "in_server": true
   },
   {
+    "method": "PUT",
+    "path": "/ssc/invoke/create_rift_lobby",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 5,
+    "server": [],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
     "method": "?",
     "path": "/ssc/invoke/debug_lock_inventory_item",
     "area": "ssc",
@@ -2434,11 +2448,11 @@
     "in_server": true
   },
   {
-    "method": "?",
+    "method": "PUT",
     "path": "/ssc/invoke/equip_gems",
     "area": "ssc",
     "binary": "ssc name",
-    "capture": 0,
+    "capture": 3,
     "server": [],
     "notes": [
       "ssc: binary (probable)"
@@ -2734,6 +2748,20 @@
     "server": [],
     "notes": [
       "ssc: binary"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
+  },
+  {
+    "method": "GET",
+    "path": "/ssc/invoke/get_or_create_rift_state",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 5,
+    "server": [],
+    "notes": [
+      "ssc: server/capture"
     ],
     "kind": "game",
     "in_game": true,
@@ -3068,6 +3096,20 @@
     "kind": "game",
     "in_game": true,
     "in_server": true
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/lock_rift_lobby_loadout",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 3,
+    "server": [],
+    "notes": [
+      "ssc: server/capture"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false
   },
   {
     "method": "PUT",
@@ -3634,11 +3676,11 @@
     "in_server": true
   },
   {
-    "method": "?",
+    "method": "PUT",
     "path": "/ssc/invoke/start_rift_node",
     "area": "ssc",
     "binary": "ssc name",
-    "capture": 0,
+    "capture": 1,
     "server": [],
     "notes": [
       "ssc: binary (probable)"

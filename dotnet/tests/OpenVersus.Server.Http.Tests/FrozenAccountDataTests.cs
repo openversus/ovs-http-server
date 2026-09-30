@@ -13,6 +13,7 @@ public sealed class FrozenAccountDataTests(GameAppFactory factory) : IClassFixtu
         Assert.Equal(
         [
             "GET /layout/dokken-layout-type/personalized/{variant}/{id}",
+            "GET /ssc/invoke/load_rifts",
             "POST /access",
             "POST /sessions/auth/token",
         ], responses);

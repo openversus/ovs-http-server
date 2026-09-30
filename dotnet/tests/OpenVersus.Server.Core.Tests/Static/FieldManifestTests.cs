@@ -46,13 +46,15 @@ public sealed partial class FieldManifestTests
     private static bool Covers(string manifestPath, string leaf) =>
         Regex.IsMatch(leaf, "^" + Regex.Escape(manifestPath).Replace(@"\[]", @"\[\d+]") + @"($|[.\[])");
 
-    [Fact]
-    public void TheLoginResponseIsClassifiedLeafByLeaf()
+    [Theory]
+    [InlineData("login-response.json", 500)]
+    [InlineData("load-rifts.json", 10000)]
+    public void TheResponseIsClassifiedLeafByLeaf(string manifestFile, int minimumLeaves)
     {
-        var manifest = Load("docs", "fields", "login-response.json");
+        var manifest = Load("docs", "fields", manifestFile);
         var leaves = Leaves(Load(((string)manifest["file"]!).Split('/'))).ToList();
         var fields = manifest["fields"]!.AsArray().Select(f => f!.AsObject()).ToList();
-        Assert.True(leaves.Count > 500, $"the template has only {leaves.Count} leaves");
+        Assert.True(leaves.Count > minimumLeaves, $"the template has only {leaves.Count} leaves");
 
         var problems = new List<string>();
         foreach (string leaf in leaves)

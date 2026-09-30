@@ -143,6 +143,14 @@ write("ssc-get-country-code.json", await literal(ssc, "  res.send({ body: { regi
   const start = sscSource.slice(at, sscSource.indexOf("  res.send({", at) + "  res.send({".length);
   write("ssc-get-milestone-reward-tracks.json", await literal(ssc, start, "\n  });\n}", start.length - 1, {}), "Static");
 }
+// GET /ssc/invoke/load_rifts: a fixed answer too (the rift configurations and one copy of the runtime data for everyone).
+{
+  const sscSource = fs.readFileSync(path.join(root, ssc), "utf8");
+  const at = sscSource.indexOf("function handleSsc_invoke_load_rifts(");
+  if (at < 0) throw new Error("handleSsc_invoke_load_rifts was not found; update this script");
+  const start = sscSource.slice(at, sscSource.indexOf("  res.send({", at) + "  res.send({".length);
+  write("ssc-load-rifts.json", await literal(ssc, start, "\n  });\n}", start.length - 1, {}), "Static");
+}
 
 // GET /ssc/invoke/get_calendar_events (handlers/ssc.ts): the carousel, with the required-update popup that is kept only
 // for a player who must update. Its start, ids and link are markers the C# side fills (CalendarService); its message is

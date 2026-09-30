@@ -13,6 +13,7 @@ using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Perks;
 using OpenVersus.Server.Core.Profiles;
+using OpenVersus.Server.Core.Rifts;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Settings;
 using OpenVersus.Server.Http.Batch;
@@ -39,6 +40,7 @@ builder.AddPerks();
 builder.AddRankedData();
 builder.AddCosmetics();
 builder.AddHiss();
+builder.AddRifts();
 builder.AddBatch();
 builder.Services.AddFastEndpoints();
 

@@ -51,6 +51,19 @@ manifests at runtime yet; they are the plan for what each field becomes.
 - **Served by:** `SessionTokenResponse` (`Core/Access/`), filling `sessions-auth-token.json`.
 - **Not classified yet.** Its `account` object is one captured WB account (id, username, public ids) sent to every player.
 
+### Rifts: `GET /ssc/invoke/load_rifts`
+
+- **Served by:** `GetLoadRifts` (`Http/Endpoints/Game/Ssc/`): `Static/ssc-load-rifts.json` as generated from
+  `handlers/ssc.ts`, the same for everyone; registered by `RiftHosting` (`Core/Rifts/`).
+- **Classified in:** `docs/fields/load-rifts.json`, compared with the runtime data the game cached for another account
+  on WB's servers.
+- **Frozen account data in it:** `DynamicInstanceRuntimeData` (chapter progress and each node's generated teams; the
+  copy sent is one account's, with two tutorial nodes done) and `PlayerInstanceRuntimeData` (cauldron scores, claimed
+  rewards and missions; the copy sent is a new player's, all empty). `RiftConfigs` is static.
+- **Becomes:** the runtime maps stored per player and updated by the rift calls the game makes during a run
+  (`start_rift_node`, `finish_rift_chapter` and the others, which neither server answers yet), with a new player's
+  state as the default.
+
 ## Adding one
 
 A new response that carries captured account data gets a manifest in `docs/fields/`, a test in `FieldManifestTests`,

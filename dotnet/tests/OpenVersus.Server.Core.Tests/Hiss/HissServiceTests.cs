@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,6 +10,7 @@ using MongoDB.Driver;
 using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Hydra;
+using ZstdSharp;
 
 namespace OpenVersus.Server.Core.Tests.Hiss;
 
@@ -124,6 +126,113 @@ public sealed class HissServiceTests : IAsyncLifetime
         Assert.True(JsonNode.DeepEquals(value, HydraDecoder.Decode(bytes)), "the compressed value does not decode to itself");
     }
 
+    [Theory]
+    [InlineData("2026.10.1", "2026.10.1", true)]
+    [InlineData("2026.10.2", "2026.10.1", true)]
+    [InlineData("2026.11.1", "2026.10.30", true)]
+    [InlineData("2026.9.30", "2026.10.1", false)]
+    [InlineData("2026.10.1", "", false)]
+    [InlineData("2026.10.1", "not a version", false)]
+    [InlineData("", "2026.10.1", false)]
+    [InlineData("legacy", "2026.10.1", false)]
+    public void ZstdGoesToClientsFromTheMinimumOn(string client, string minimum, bool zstd)
+    {
+        Assert.Equal(zstd, HissService.ReadsZstd(client, minimum));
+    }
+
+    // The contract with the client's decoder (HissZstd): one frame, the magic, the content size (so the window is the
+    // section's size), a window the client accepts, and a checksum.
+    [Theory]
+    [InlineData(2)]
+    [InlineData(94)]
+    [InlineData(64_828)]
+    [InlineData(1_563_088)]
+    public void ZstdSectionsAreFramesTheClientReads(int size)
+    {
+        var random = new Random(size);
+        byte[] section = Encoding.UTF8.GetBytes(string.Concat(Enumerable.Range(0, size / 5 + 1).Select(i => $"s{random.Next(500):D3},")))[..size];
+
+        byte[] frame = HissZstd.Compress(section);
+
+        Assert.Equal([0x28, 0xB5, 0x2F, 0xFD], frame[..4]);
+        var (checksum, contentSize, window) = FrameHeader(frame);
+        Assert.True(checksum, "no checksum");
+        Assert.Equal((ulong)size, contentSize);
+        Assert.True(window <= HissZstd.ClientWindowLimit, $"window {window}");
+        Assert.Equal(section, Decompress(frame));
+    }
+
+    // A zstd frame header (RFC 8878, 3.1.1.1): the checksum flag, the content size if stated, and the window size.
+    private static (bool Checksum, ulong? ContentSize, ulong Window) FrameHeader(byte[] frame)
+    {
+        byte descriptor = frame[4];
+        int sizeFlag = descriptor >> 6, dictionaryFlag = descriptor & 3;
+        bool singleSegment = (descriptor & 0x20) != 0, checksum = (descriptor & 0x04) != 0;
+        int at = 5;
+        ulong window = 0;
+        if (!singleSegment)
+        {
+            int exponent = frame[at] >> 3, mantissa = frame[at] & 7;
+            ulong windowBase = 1UL << (10 + exponent);
+            window = windowBase + windowBase / 8 * (ulong)mantissa;
+            at++;
+        }
+
+        at += dictionaryFlag switch { 0 => 0, 1 => 1, 2 => 2, _ => 4 };
+        int sizeBytes = sizeFlag switch { 0 => singleSegment ? 1 : 0, 1 => 2, 2 => 4, _ => 8 };
+        ulong? contentSize = null;
+        if (sizeBytes > 0)
+        {
+            ulong value = 0;
+            for (int b = sizeBytes - 1; b >= 0; b--)
+            {
+                value = (value << 8) | frame[at + b];
+            }
+
+            contentSize = sizeBytes == 2 ? value + 256 : value;
+        }
+
+        // A single-segment frame's window is its content size.
+        return (checksum, contentSize, singleSegment ? contentSize ?? 0 : window);
+    }
+
+    // Compressed values (0x67, index 1, a byte string) whose data is a zstd frame.
+    private static int ZstdSections(byte[] hydra)
+    {
+        int found = 0;
+        for (int i = 0; i + 7 < hydra.Length; i++)
+        {
+            int width = hydra[i] == HydraCode.Compressed && hydra[i + 1] == 1
+                ? hydra[i + 2] switch { HydraCode.Bytes8 => 1, HydraCode.Bytes16 => 2, HydraCode.Bytes32 => 4, _ => 0 }
+                : 0;
+            if (width == 0)
+            {
+                continue;
+            }
+
+            long length = 0;
+            for (int b = 0; b < width; b++)
+            {
+                length = (length << 8) | hydra[i + 3 + b];
+            }
+
+            int data = i + 3 + width;
+            if (data + 4 <= hydra.Length && hydra.AsSpan(data, 4).SequenceEqual((byte[])[0x28, 0xB5, 0x2F, 0xFD]))
+            {
+                found++;
+                i = data + (int)length - 1;
+            }
+        }
+
+        return found;
+    }
+
+    private static byte[] Decompress(byte[] frame)
+    {
+        using var decompressor = new Decompressor();
+        return decompressor.Unwrap(frame).ToArray();
+    }
+
     [Fact]
     public async Task TheAnswerIsBuiltOncePerCrc()
     {
@@ -149,6 +258,15 @@ public sealed class HissServiceTests : IAsyncLifetime
         Assert.DoesNotContain("skin_new", first.Json, StringComparison.Ordinal);
         Assert.Equal("2", HydraDecoder.Decode(second.Hydra)!["body"]!["Crc"]!.ToJsonString());
         Assert.Same(second, await Hiss.AnswerAsync(CancellationToken.None));
+
+        // The zstd encoding holds the same answer, and is smaller.
+        byte[]? zstd = await second.Zstd;
+        Assert.NotNull(zstd);
+        Assert.Same(zstd, second.ZstdHydra);
+        Assert.True(JsonNode.DeepEquals(HydraDecoder.Decode(second.Hydra), HydraDecoder.Decode(zstd)), "the zstd answer differs from the zlib one");
+        Assert.True(zstd!.Length < second.Hydra.Length, $"zstd {zstd.Length} vs zlib {second.Hydra.Length}");
+        Assert.Equal(20, ZstdSections(zstd));
+        Assert.Equal(0, ZstdSections(second.Hydra));
     }
 
     private static int FreePort()

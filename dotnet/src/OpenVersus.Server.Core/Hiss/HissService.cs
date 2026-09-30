@@ -1,14 +1,19 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Assets;
+using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Hydra;
+using OpenVersus.Server.Core.Settings;
 
 namespace OpenVersus.Server.Core.Hiss;
 
@@ -23,31 +28,58 @@ namespace OpenVersus.Server.Core.Hiss;
 // after the CRC: an answer is never older than its CRC.
 //
 // Built once, the compressed sections take zlib's optimal level (about 408 KB, against about 514 KB at mvs-dump's fastest
-// level; smallest size gave about 410 KB on this data, and takes longer). The game inflates the sections itself (zlib; the client has no other decompressor for them), so their bytes
-// need not be the TS server's; what they hold is.
+// level; smallest size gave about 410 KB on this data, and takes longer). The game unpacks the sections itself, so their
+// bytes need not be the TS server's; what they hold is. The stock game reads only zlib; the OpenVersus client from
+// Hiss:ZstdMinimumVersion on also reads zstd (its HydraZstd hook), and gets zstd sections (about 250 KB, HissZstd). The
+// zstd encoding is made after the zlib one, in the background, so a login never waits for it: until it is ready, every
+// client gets zlib. Both are made at startup (HissWarmup).
 //
 // Mongo, read     config (the first document's CRC), dataassets (enabled)
+// Redis, read     what IClientUpdateGate.ForRequestAsync reads (the client's version), only while Hiss:ZstdMinimumVersion is set
+
+/// <summary>The hiss settings.</summary>
+public sealed class HissSettings
+{
+    [Description("The oldest OpenVersus client version that reads zstd sections (its HydraZstd hook), such as 2026.10.01.1; those clients get the smaller zstd answer. Empty: every client gets zlib.")]
+    public string ZstdMinimumVersion { get; set; } = "";
+}
 
 public interface IHissService
 {
     /// <summary>The answer for the current CRC.</summary>
     Task<HissAnswer> AnswerAsync(CancellationToken ct);
+
+    /// <summary>Whether zstd sections may be sent to anyone (Hiss:ZstdMinimumVersion is a version).</summary>
+    bool ZstdEnabled { get; }
+
+    /// <summary>Whether a client of <paramref name="clientVersion"/> reads zstd sections: at least Hiss:ZstdMinimumVersion.</summary>
+    bool ReadsZstd(string clientVersion);
 }
 
-/// <summary>The hiss answer for one CRC: its Hydra encoding, and its JSON text (made on first use).</summary>
-public sealed class HissAnswer(double crc, byte[] hydra, Func<string> json)
+/// <summary>
+/// The hiss answer for one CRC: its Hydra encoding with zlib sections, the same with zstd sections once that is made,
+/// and its JSON text (made on first use).
+/// </summary>
+public sealed class HissAnswer(double crc, byte[] hydra, Task<byte[]?> zstd, Func<string> json)
 {
     private readonly Lazy<string> _json = new(json);
 
     public double Crc { get; } = crc;
 
+    /// <summary>The Hydra encoding, its sections in zlib: for every client.</summary>
     public byte[] Hydra { get; } = hydra;
+
+    /// <summary>The Hydra encoding with zstd sections, for clients that read them; null until it is made (or if it failed).</summary>
+    public byte[]? ZstdHydra => Zstd.IsCompletedSuccessfully ? Zstd.Result : null;
+
+    /// <summary>Making <see cref="ZstdHydra"/>.</summary>
+    internal Task<byte[]?> Zstd { get; } = zstd;
 
     /// <summary>As Express writes it (JSON.stringify): the sections stay plain objects under <c>_hydra_compressed</c>.</summary>
     public string Json => _json.Value;
 }
 
-internal sealed class HissService(IServiceProvider services, ILogger<HissService> log) : IHissService
+internal sealed class HissService(IServiceProvider services, IOptionsMonitor<HissSettings> settings, ILogger<HissService> log) : IHissService
 {
     // data/config.ts: the CRC the TS server answers with while the config collection has no document.
     internal const double DefaultCrc = 1267552956;
@@ -76,6 +108,21 @@ internal sealed class HissService(IServiceProvider services, ILogger<HissService
         return await build.WaitAsync(ct);
     }
 
+    public bool ZstdEnabled => ClientVersions.Parts(Js.Trim(settings.CurrentValue.ZstdMinimumVersion)) is not null;
+
+    public bool ReadsZstd(string clientVersion) => ReadsZstd(clientVersion, settings.CurrentValue.ZstdMinimumVersion);
+
+    /// <summary>
+    /// At least <paramref name="minimum"/>, compared as versions (2026.10.1 is above 2026.9.30). No minimum, or a
+    /// client that states no version: no.
+    /// </summary>
+    internal static bool ReadsZstd(string clientVersion, string minimum)
+    {
+        string configured = Js.Trim(minimum);
+        return ClientVersions.Parts(configured) is not null && ClientVersions.Parts(clientVersion) is not null
+            && ClientVersions.Compare(clientVersion, configured) >= 0;
+    }
+
     // LoadConfig: the first document's CRC.
     private static async Task<double> CrcAsync(IMongoDatabase mongo, CancellationToken ct)
     {
@@ -92,7 +139,24 @@ internal sealed class HissService(IServiceProvider services, ILogger<HissService
         byte[] hydra = HydraEncoder.Encode(answer, compression: CompressionLevel.Optimal);
         log.LogInformation("Built the hiss answer for CRC {Crc}: {Assets} data assets, {Bytes} bytes, {Ms:F0} ms",
             crc, assets.Count, hydra.Length, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
-        return new HissAnswer(crc, hydra, () => Js.Stringify(Fill(values)));
+        return new HissAnswer(crc, hydra, Task.Run(() => BuildZstd(answer, crc)), () => Js.Stringify(Fill(values)));
+    }
+
+    // The same answer with zstd sections. A failure leaves every client on zlib.
+    private byte[]? BuildZstd(JsonNode answer, double crc)
+    {
+        long started = Stopwatch.GetTimestamp();
+        try
+        {
+            byte[] hydra = HydraEncoder.Encode(answer, compressor: HissZstd.Compress);
+            log.LogInformation("Built the zstd hiss answer for CRC {Crc}: {Bytes} bytes, {Ms:F0} ms", crc, hydra.Length, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            return hydra;
+        }
+        catch (Exception e)
+        {
+            log.LogError("The zstd hiss answer for CRC {Crc} failed; every client gets zlib: {Error}", crc, e.Message);
+            return null;
+        }
     }
 
     /// <summary>The markers' values: the CRC, and loadAssets.ts's lists (getAssetsByType, getAllSkinsByChar, ...).</summary>
@@ -183,11 +247,37 @@ internal sealed class HissService(IServiceProvider services, ILogger<HissService
     }
 }
 
+// Builds the answer (both encodings) at startup, in the background, so the first login does not wait for it and a client
+// that reads zstd gets zstd from the first login on. Startup does not wait for it; an answer still being built is
+// shared with any request that comes in meanwhile. A later CRC is built by the first request that sees it.
+internal sealed class HissWarmup(IHissService hiss, IServiceProvider services, ILogger<HissWarmup> log) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        if (services.GetService<IMongoDatabase>() is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var answer = await hiss.AnswerAsync(ct);
+            await answer.Zstd.WaitAsync(ct);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            log.LogWarning("The hiss answer could not be built at startup; the first request builds it: {Error}", e.Message);
+        }
+    }
+}
+
 public static class HissHosting
 {
     public static WebApplicationBuilder AddHiss(this WebApplicationBuilder builder)
     {
+        builder.AddSetting<HissSettings>("Hiss");
         builder.Services.AddSingleton<IHissService, HissService>();
+        builder.Services.AddHostedService<HissWarmup>();
         return builder;
     }
 }

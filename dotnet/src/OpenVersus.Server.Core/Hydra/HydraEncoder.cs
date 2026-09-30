@@ -40,22 +40,25 @@ public sealed class HydraEncoder
     private readonly MemoryStream _out = new();
     private readonly bool _webSocket;
     private readonly CompressionLevel _compression;
+    private readonly Func<byte[], byte[]>? _compressor;
 
-    private HydraEncoder(bool webSocket, CompressionLevel compression)
+    private HydraEncoder(bool webSocket, CompressionLevel compression, Func<byte[], byte[]>? compressor)
     {
         _webSocket = webSocket;
         _compression = compression;
+        _compressor = compressor;
     }
 
     /// <summary>
     /// Encodes <paramref name="value"/>. For the websocket, the message is framed as the game expects: 0x06 and the
     /// payload's length in 16 bits. The frame cannot state a longer length, so a message over 65,535 bytes is refused.
     /// <paramref name="compression"/> is the zlib level for <c>_hydra_compressed</c> values: mvs-dump's (fastest) unless
-    /// an answer is encoded once and kept (HissService).
+    /// an answer is encoded once and kept (HissService). <paramref name="compressor"/>, when given, compresses them
+    /// instead of zlib (HissZstd, for clients that read zstd).
     /// </summary>
-    public static byte[] Encode(JsonNode? value, bool webSocket = false, CompressionLevel compression = CompressionLevel.Fastest)
+    public static byte[] Encode(JsonNode? value, bool webSocket = false, CompressionLevel compression = CompressionLevel.Fastest, Func<byte[], byte[]>? compressor = null)
     {
-        var encoder = new HydraEncoder(webSocket, compression);
+        var encoder = new HydraEncoder(webSocket, compression, compressor);
         encoder.Value(value);
         return encoder.Result();
     }
@@ -377,14 +380,8 @@ public sealed class HydraEncoder
     // stream; the bytes differ from mvs-dump's (Node's zlib) at every level but the smallest values.
     private void Compressed(JsonNode? value)
     {
-        byte[] inner = Encode(value, compression: _compression);
-        using var buffer = new MemoryStream();
-        using (var zlib = new ZLibStream(buffer, _compression, leaveOpen: true))
-        {
-            zlib.Write(inner);
-        }
-
-        byte[] data = buffer.ToArray();
+        byte[] inner = Encode(value, compression: _compression, compressor: _compressor);
+        byte[] data = _compressor?.Invoke(inner) ?? Zlib(inner, _compression);
         var (code, width) = data.Length <= byte.MaxValue ? (HydraCode.Bytes8, 1) : data.Length <= ushort.MaxValue ? (HydraCode.Bytes16, 2) : (HydraCode.Bytes32, 4);
         var header = new byte[3 + width];
         header[0] = HydraCode.Compressed;
@@ -393,6 +390,17 @@ public sealed class HydraEncoder
         WriteLength(header.AsSpan(3), (ulong)data.Length);
         Push(header);
         Push(data);
+    }
+
+    private static byte[] Zlib(byte[] data, CompressionLevel level)
+    {
+        using var buffer = new MemoryStream();
+        using (var zlib = new ZLibStream(buffer, level, leaveOpen: true))
+        {
+            zlib.Write(data);
+        }
+
+        return buffer.ToArray();
     }
 
     private static double NumberOf(JsonNode? node)

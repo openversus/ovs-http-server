@@ -1,5 +1,6 @@
 using FastEndpoints;
 using MongoDB.Driver;
+using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Http.Hosting;
 
@@ -19,7 +20,11 @@ public sealed class GetHissAmalgamation : HissAmalgamationEndpoint
     }
 }
 
-/// <summary>Sends the hiss answer for the current CRC: its Hydra encoding (made once per CRC) or its JSON; 503 when the stores cannot be reached.</summary>
+/// <summary>
+/// Sends the hiss answer for the current CRC: its Hydra encoding (made once per CRC), with zstd sections for a client that
+/// reads them (<see cref="IHissService.ReadsZstd"/>, by the version the client gate sees) and zlib ones for any other,
+/// or its JSON; 503 when the stores cannot be reached.
+/// </summary>
 public abstract class HissAmalgamationEndpoint : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
@@ -38,11 +43,34 @@ public abstract class HissAmalgamationEndpoint : EndpointWithoutRequest
 
         if (HydraBodies.IsHydra(HttpContext))
         {
-            await HydraBodies.WriteEncodedAsync(HttpContext, answer.Hydra, ct);
+            byte[]? zstd = answer.ZstdHydra is { } ready && await ReadsZstdAsync() ? ready : null;
+            await HydraBodies.WriteEncodedAsync(HttpContext, zstd ?? answer.Hydra, ct);
         }
         else
         {
             await Send.StringAsync(answer.Json, contentType: "application/json; charset=utf-8", cancellation: ct);
+        }
+    }
+
+    // The client's version as the gate sees it (its connection record, else its token). Anything going wrong: zlib,
+    // which every client reads.
+    private async Task<bool> ReadsZstdAsync()
+    {
+        var hiss = Resolve<IHissService>();
+        if (!hiss.ZstdEnabled)
+        {
+            return false;
+        }
+
+        try
+        {
+            var state = await Resolve<IClientUpdateGate>().ForRequestAsync(AccountLookups.From(HttpContext), HttpContext.Session()?.Claims);
+            return hiss.ReadsZstd(state.ClientVersion);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            Logger.LogWarning("Hiss amalgamation: the client's version could not be read; sending zlib: {Error}", e.Message);
+            return false;
         }
     }
 }

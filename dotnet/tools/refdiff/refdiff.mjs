@@ -287,13 +287,15 @@ export function hydraKeyOrders(bytes) {
 }
 
 /**
- * A Hydra message split at its compressed values (0x67, index 1, a byte string holding zlib data): each one's bytes as
- * sent (`blocks`), what each inflates to (`sections`), and the bytes around them (`rest`), where a compressed value is
- * left as its 0x67 0x01 alone, so a length written in another width does not count. Compressors differ in the bytes
- * they make from the same data; `sections` and `rest` are what a compressor cannot change.
+ * A Hydra message split at its compressed values (0x67, index 1, a byte string holding zlib or zstd data): each one's
+ * bytes as sent (`blocks`), what each unpacks to (`sections`), which of them are zstd (`zstd`, a count), and the bytes
+ * around them (`rest`), where a compressed value is left as its 0x67 0x01 alone, so a length written in another width
+ * does not count. Compressors differ in the bytes they make from the same data; `sections` and `rest` are what a
+ * compressor cannot change.
  */
 export function hydraSections(bytes) {
   const blocks = [], sections = [], rest = [];
+  let zstd = 0;
   let from = 0;
   for (let i = 0; i + 4 < bytes.length; i++) {
     if (bytes[i] !== 0x67 || bytes[i + 1] !== 0x01) continue;
@@ -301,13 +303,18 @@ export function hydraSections(bytes) {
     if (!width || i + 3 + width > bytes.length) continue;
     const length = bytes.readUIntBE(i + 3, width);
     const start = i + 3 + width;
-    if (bytes[start] !== 0x78 || start + length > bytes.length) continue; // zlib data starts with 0x78
+    if (start + length > bytes.length) continue;
+    // zlib data starts with 0x78, a zstd frame with 28 B5 2F FD.
+    const isZstd = bytes.readUInt32BE(start) === 0x28b52ffd;
+    if (bytes[start] !== 0x78 && !isZstd) continue;
     let inflated;
     try {
-      inflated = zlib.inflateSync(bytes.subarray(start, start + length));
+      const data = bytes.subarray(start, start + length);
+      inflated = isZstd ? zlib.zstdDecompressSync(data) : zlib.inflateSync(data);
     } catch {
       continue;
     }
+    if (isZstd) zstd++;
     rest.push(bytes.subarray(from, i + 2));
     blocks.push(bytes.subarray(i, start + length));
     sections.push(inflated);
@@ -315,5 +322,39 @@ export function hydraSections(bytes) {
     i = from - 1;
   }
   rest.push(bytes.subarray(from));
-  return { blocks, sections, rest: Buffer.concat(rest) };
+  return { blocks, sections, zstd, rest: Buffer.concat(rest) };
+}
+
+/**
+ * The same Hydra message with every zstd compressed value rewritten as zlib holding the same bytes, for decoders that
+ * read only zlib (mvs-dump). Only for reading values: the bytes are not what either server sent.
+ */
+export function zstdAsZlib(bytes) {
+  const out = [];
+  let from = 0;
+  for (let i = 0; i + 7 < bytes.length; i++) {
+    if (bytes[i] !== 0x67 || bytes[i + 1] !== 0x01) continue;
+    const width = { 0x33: 1, 0x34: 2, 0x35: 4 }[bytes[i + 2]];
+    if (!width) continue;
+    const length = bytes.readUIntBE(i + 3, width);
+    const start = i + 3 + width;
+    if (start + length > bytes.length || bytes.readUInt32BE(start) !== 0x28b52ffd) continue;
+    let deflated;
+    try {
+      deflated = zlib.deflateSync(zlib.zstdDecompressSync(bytes.subarray(start, start + length)));
+    } catch {
+      continue;
+    }
+    const [code, size] = deflated.length <= 0xff ? [0x33, 1] : deflated.length <= 0xffff ? [0x34, 2] : [0x35, 4];
+    const header = Buffer.alloc(3 + size);
+    header[0] = 0x67;
+    header[1] = 0x01;
+    header[2] = code;
+    header.writeUIntBE(deflated.length, 3, size);
+    out.push(bytes.subarray(from, i), header, deflated);
+    from = start + length;
+    i = from - 1;
+  }
+  out.push(bytes.subarray(from));
+  return Buffer.concat(out);
 }

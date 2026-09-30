@@ -3,7 +3,7 @@
 // both servers run against the same stores. Run from the repository root:
 //
 //   REF_MONGO_URI=mongodb://127.0.0.1:27017/<db> REF_JWT_SECRET=<both servers' JWT_SECRET> REF_CS_CONTROL=<C# control port> \
-//     [REF_ACCOUNT=<account id>] node dotnet/tools/batch/batch_diff.mjs run <tsUrl> <csUrl> [accounts]
+//     [REF_ACCOUNT=<account id>] [REF_CLIENT_VERSION=<version>] node dotnet/tools/batch/batch_diff.mjs run <tsUrl> <csUrl> [accounts]
 //
 // Batches: every distinct batch the game sent in the captures (REF_CORPUS, default dotnet/local/hydra-corpus; account
 // ids rewritten), and one of the ported reads that could come in a batch plus sub-requests C# must send on (a stubbed
@@ -26,7 +26,7 @@
 // on the TS batch's copied request, and the batch never answers) and the leaderboard views (their TS handlers call
 // res.setHeader, which the TS batch's fake response lacks; the throw is an unhandled rejection). Nested batches and malformed items are never sent to the TS server; the http tests cover them.
 import fs from "fs";
-import { hydraSections, require } from "../refdiff/refdiff.mjs";
+import { hydraSections, require, zstdAsZlib } from "../refdiff/refdiff.mjs";
 
 const { MongoClient } = require(process.cwd() + "/node_modules/mongodb");
 const jwt = require(process.cwd() + "/node_modules/jsonwebtoken");
@@ -77,10 +77,14 @@ const accessFile = fs.readdirSync(`${corpus}/req`).find(f => f.endsWith("_access
 const accessBody = new HydraDecoder(fs.readFileSync(`${corpus}/req/${accessFile}`)).readValue();
 delete accessBody.auth?.steam;
 
+// With REF_CLIENT_VERSION (at least the C# server's Hiss:ZstdMinimumVersion), every second player logs in stating that
+// version, so C# answers their hiss_amalgamation with zstd sections and everyone else's with zlib; both are checked.
+const zstdClient = (index) => Boolean(process.env.REF_CLIENT_VERSION) && index % 2 === 1;
+
 async function login(player, index) {
   const identity = jwt.sign({
     steamId: player.steamId ?? "", epicId: player.epicId ?? "", installId: player.installId ?? "",
-    hardwareId: player.hardwareId ?? "", clientVersion: player.clientVersion ?? "", identityRegistered: "1",
+    hardwareId: player.hardwareId ?? "", clientVersion: zstdClient(index) ? process.env.REF_CLIENT_VERSION : player.clientVersion ?? "", identityRegistered: "1",
   }, process.env.REF_JWT_SECRET);
   const ip = `198.18.${index >> 8}.${(index & 255) + 1}`;
   const encoder = new HydraEncoder();
@@ -144,7 +148,8 @@ async function send(base, batch, tok, ip, wait = 60000) {
   });
   const bytes = Buffer.from(await response.arrayBuffer());
   const type = response.headers.get("content-type") ?? "";
-  return { status: response.status, type, bytes, value: type.startsWith(HYDRA) && bytes.length ? objectIdsAsHex(new HydraDecoder(bytes).readValue(), base) : bytes.toString() };
+  // mvs-dump reads only zlib: zstd sections (hiss for a client that reads them) are read as zlib with the same bytes.
+  return { status: response.status, type, bytes, value: type.startsWith(HYDRA) && bytes.length ? objectIdsAsHex(new HydraDecoder(zstdAsZlib(bytes)).readValue(), base) : bytes.toString() };
 }
 
 // Paths (a.b[3].c) where two decoded values differ.
@@ -194,7 +199,7 @@ async function alone(sub, tok, ip) {
   }
   const response = await fetch(`${csUrl}${sub.url}`, { method: sub.verb, headers, body, signal: AbortSignal.timeout(60000) });
   const bytes = Buffer.from(await response.arrayBuffer());
-  return { status_code: response.status, headers: {}, body: bytes.length ? new HydraDecoder(bytes).readValue() : null };
+  return { status_code: response.status, headers: {}, body: bytes.length ? new HydraDecoder(zstdAsZlib(bytes)).readValue() : null };
 }
 
 // A C# item that must not be compared with the TS server's: the same sub-request answered by C# on its own must give
@@ -213,6 +218,24 @@ const csOnly = id => [
   { verb: "GET", url: `/leaderboards/ranked_season5_1v1_all/around/${id}`, headers: {} },
   { verb: "GET", url: `/matches/all/${id}?count=3&page=1`, headers: {} },
 ];
+
+// C# makes the zstd hiss answer in the background after the first hiss request; until it is ready everyone gets zlib,
+// which would let a stock player's batches pass the zstd check by timing alone. So wait for it first.
+if (process.env.REF_CLIENT_VERSION) {
+  const tok = jwt.sign({ id: "0000000000000000000a0009", clientVersion: process.env.REF_CLIENT_VERSION }, process.env.REF_JWT_SECRET);
+  let ready = false;
+  for (let i = 0; i < 60 && !ready; i++) {
+    const response = await fetch(`${csUrl}/ssc/invoke/hiss_amalgamation`, {
+      method: "PUT", headers: { "content-type": HYDRA, "x-hydra-access-token": tok, "x-real-ip": "198.19.255.254" }, signal: AbortSignal.timeout(60000),
+    });
+    ready = hydraSections(Buffer.from(await response.arrayBuffer())).zstd > 0;
+    if (!ready) await new Promise(r => setTimeout(r, 500));
+  }
+  if (!ready) {
+    console.error("C# never answered hiss_amalgamation with zstd sections: is Hiss:ZstdMinimumVersion at most REF_CLIENT_VERSION?");
+    process.exit(1);
+  }
+}
 
 const general = p => p.replace(/\[\d+\]/g, "[]");
 let batches = 0, identicalBytes = 0, problems = 0, hangs = 0, checkedAlone = 0, lengthChecked = 0, blocksChecked = 0;
@@ -281,6 +304,9 @@ for (const mode of ["mixed", "all-ts"]) {
         if (csOuter.length !== tsOuter.length) found.push(`length ${csOuter.length} vs ${tsOuter.length}`);
       }
       if (recompressed) {
+        const hissItems = batch.requests.filter(r => RECOMPRESSED.test(r.url)).length;
+        const expected = zstdClient(index) ? 20 * hissItems : 0;
+        if (csParts.zstd !== expected) found.push(`${csParts.zstd} zstd sections, ${expected} expected`);
         if (csParts.sections.length !== tsParts.sections.length) found.push(`${csParts.sections.length} compressed values vs ${tsParts.sections.length}`);
         tsParts.sections.forEach((section, i) => {
           blocksChecked++;

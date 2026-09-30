@@ -288,7 +288,8 @@ public ref struct HydraDecoder
         _ => key.ToJsonString(),
     };
 
-    // 0x67, an index byte (always 1 in practice), then a byte string holding the zlib (or gzip) data of one value.
+    // 0x67, an index byte (always 1 in practice), then a byte string holding the zlib (or gzip, or zstd: HissZstd) data of
+    // one value.
     private JsonNode Compressed()
     {
         Byte();
@@ -301,9 +302,11 @@ public ref struct HydraDecoder
         };
         var data = Take(Count(width));
         using var input = new MemoryStream(data.ToArray());
-        using Stream inflate = data.Length > 1 && data[0] == 0x1F && data[1] == 0x8B
-            ? new GZipStream(input, CompressionMode.Decompress)
-            : new ZLibStream(input, CompressionMode.Decompress);
+        using Stream inflate = data.Length > 3 && data[0] == 0x28 && data[1] == 0xB5 && data[2] == 0x2F && data[3] == 0xFD
+            ? new ZstdSharp.DecompressionStream(input)
+            : data.Length > 1 && data[0] == 0x1F && data[1] == 0x8B
+                ? new GZipStream(input, CompressionMode.Decompress)
+                : new ZLibStream(input, CompressionMode.Decompress);
         using var output = new MemoryStream();
         inflate.CopyTo(output);
         return new JsonObject { ["_hydra_compressed"] = Decode(output.ToArray()) };

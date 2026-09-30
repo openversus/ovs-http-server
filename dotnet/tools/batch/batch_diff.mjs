@@ -16,9 +16,10 @@
 // two TS answers changes on every request (a timestamp, a random id) and is set aside, and listed; anything else C#
 // answers differently is a difference. Where nothing was set aside, the whole answer must be the same bytes.
 //
-// Except: in "mixed" mode C# answers /matches/all and the username search itself, and corrects the TS answer on purpose
-// (MatchHistoryService, ProfilesService.SearchAsync; matches_diff.mjs and search_diff.mjs check the corrections), so
-// those items must instead equal the same request answered by C# alone. The same check covers what the TS server
+// Except: in "mixed" mode C# answers /matches/all, the username search and get_equipped_cosmetics itself, and changes
+// the TS answer on purpose (MatchHistoryService, ProfilesService.SearchAsync, CosmeticsService's WB-shaped answer;
+// matches_diff.mjs, search_diff.mjs and cosmetics_diff.mjs check those against TS), so those items must instead equal
+// the same request answered by C# alone. The same check covers what the TS server
 // cannot answer inside a batch at all, sent to C# only: /file_storage (its TS handler reads req.protocol, which throws
 // on the TS batch's copied request, and the batch never answers) and the leaderboard views (their TS handlers call
 // res.setHeader, which the TS batch's fake response lacks; the throw is an unhandled rejection). Nested batches and malformed items are never sent to the TS server; the http tests cover them.
@@ -214,7 +215,7 @@ async function sameAsAlone(item, sub, tok, ip) {
   const moving = new Set(differences(a, b));
   return differences(item, b).filter(p => !moving.has(p));
 }
-const CORRECTED = /^\/(matches\/all|profiles\/search_queries)\//;
+const CORRECTED = /^\/(matches\/all\/|profiles\/search_queries\/|ssc\/invoke\/get_equipped_cosmetics\b)/;
 const csOnly = id => [
   { verb: "GET", url: "/file_storage", headers: {} },
   { verb: "GET", url: "/leaderboards/ranked_season5_1v1_all/show?count=5", headers: {} },

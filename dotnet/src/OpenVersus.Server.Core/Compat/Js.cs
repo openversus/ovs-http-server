@@ -146,6 +146,18 @@ public static class Js
         || char.GetUnicodeCategory(c) == UnicodeCategory.SpaceSeparator;
 
     /// <summary>
+    /// JSON.parse's result as a node: every object's keys in a JS object's order (<see cref="OrderedLikeAnObject{T}"/>).
+    /// </summary>
+    public static JsonNode? Parse(string json) => Reorder(JsonNode.Parse(json));
+
+    private static JsonNode? Reorder(JsonNode? node) => node switch
+    {
+        JsonObject obj => new JsonObject(OrderedLikeAnObject(obj.ToList(), kv => kv.Key).Select(kv => KeyValuePair.Create(kv.Key, Reorder(kv.Value?.DeepClone())))),
+        JsonArray array => new JsonArray(array.Select(item => Reorder(item?.DeepClone())).ToArray()),
+        _ => node?.DeepClone(),
+    };
+
+    /// <summary>
     /// Keys in the order a JavaScript object keeps them: integer-like keys ("0", "12"; canonical, below 2^32 - 1) first,
     /// ascending, then the rest as given. A stored document read into a JS object (a lean read, JSON.parse) comes out in
     /// this order, whatever order it was stored in.

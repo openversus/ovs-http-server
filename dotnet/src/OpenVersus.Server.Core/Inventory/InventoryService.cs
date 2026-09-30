@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using OpenVersus.Server.Core.Assets;
 using OpenVersus.Server.Core.Access;
 
 namespace OpenVersus.Server.Core.Inventory;
@@ -32,10 +33,6 @@ public interface IInventoryService
 internal sealed class InventoryService(IServiceProvider services, TimeProvider time, ILogger<InventoryService> log) : IInventoryService
 {
     // TS data/testCharacters.ts; ENABLE_TEST_CHARACTERS (off on every server) is not ported.
-    private static readonly HashSet<string> s_testCharacters = new(
-        ["character_supershaggy", "character_Meeseeks", "character_C022", "character_C033", "character_cmanny", "character_manny", "character_C037", "character_C099"],
-        StringComparer.OrdinalIgnoreCase);
-
     private static readonly Lazy<string> s_gleamium = new(() => Template("inventory-gleamium"));
     private static readonly Lazy<string> s_toast = new(() => Template("inventory-toast"));
     private static readonly Lazy<string[]> s_taunts = new(() =>
@@ -49,9 +46,7 @@ internal sealed class InventoryService(IServiceProvider services, TimeProvider t
             return null;
         }
 
-        var assets = (await mongo.GetCollection<BsonDocument>("dataassets").Find(new BsonDocument("enabled", true)).ToListAsync(ct))
-            .Where(a => !(Str(a, "assetType") == "CharacterData" && IsTestCharacter(Str(a, "slug"))) && !IsTestCharacter(Str(a, "character_slug")))
-            .ToList();
+        var assets = await DataAssets.EnabledAsync(mongo, ct);
 
         var items = new JsonArray();
         foreach (var asset in assets)
@@ -144,8 +139,6 @@ internal sealed class InventoryService(IServiceProvider services, TimeProvider t
     }
 
     private static string? Str(BsonDocument doc, string field) => doc.GetValue(field, BsonNull.Value) is { IsString: true } v ? v.AsString : null;
-
-    private static bool IsTestCharacter(string? slug) => !string.IsNullOrEmpty(slug) && s_testCharacters.Contains(slug);
 
     private static string Template(string name)
     {

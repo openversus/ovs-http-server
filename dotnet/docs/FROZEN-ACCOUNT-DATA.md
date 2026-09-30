@@ -54,7 +54,9 @@ manifests at runtime yet; they are the plan for what each field becomes.
 ### Rifts: `GET /ssc/invoke/load_rifts`
 
 - **Served by:** `GetLoadRifts` (`Http/Endpoints/Game/Ssc/`): `Static/ssc-load-rifts.json` as generated from
-  `handlers/ssc.ts`, the same for everyone; registered by `RiftHosting` (`Core/Rifts/`).
+  `handlers/ssc.ts`, the same for everyone; registered by `RiftHosting` (`Core/Rifts/`). `create_rift_lobby`
+  (`RiftLobbyService`) sends the chosen rift's `DynamicInstanceRuntimeData` entry from the same file as the lobby's
+  `RuntimeData`, so it serves the same frozen data (registered too).
 - **Classified in:** `docs/fields/load-rifts.json`, compared with the runtime data the game cached for another account
   on WB's servers.
 - **Frozen account data in it:** `DynamicInstanceRuntimeData` (chapter progress and each node's generated teams; the

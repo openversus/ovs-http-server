@@ -28,7 +28,12 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   joinedPlayerUsername, allPlayerIds, mode}`) and `client_update:modal` (`ClientUpdateGate`, show a player the update
   toast: `{playerId, nonce}`). Their payloads are JSON exactly as the TS server writes them.
 - **Lobby keys:** `lobby:{id}` (JSON written by the TS `ssc.ts` and `websocket.ts`; C# adds a player to it keeping every
-  other field as read), `player_lobby:{player}` and `lobby_redirect:{id}` (read only, for now).
+  other field as read), `player_lobby:{player}` and `lobby_redirect:{id}` (read only, for now). C# also creates rift
+  lobbies (`RiftLobbyService`, `create_rift_lobby`): the same `lobby:{id}` JSON, `player_lobby:{player}`,
+  `player:{player}:lobby:{id}` and `connections:{player}` `lobby_id` as the TS `create_party_lobby` writes, with a mode
+  the TS server never writes (`"rift_lobby"`) and three more fields (`riftConfigSlug`, `chapterGuid`,
+  `chapterDifficulty`) that TS code reading `lobby:{id}` (joins, invites) will see. The rift loadout lock writes
+  `player:{player}` `character`/`skin` as the TS `lock_lobby_loadout` does.
 - **Asset sync:** `dataassets` and the `config` collection's `CRC` are written only by the TS server's `POST /syncAsset`
   (`dataAssetSync.ts`: the asset, then the CRC bumped). C# reads both (`HissService` builds its answer once per CRC;
   the inventory, cosmetics and hiss answers read the assets), so an asset sync goes through the TS server until

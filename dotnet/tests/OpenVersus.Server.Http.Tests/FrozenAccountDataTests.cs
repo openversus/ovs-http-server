@@ -16,6 +16,7 @@ public sealed class FrozenAccountDataTests(GameAppFactory factory) : IClassFixtu
             "GET /ssc/invoke/load_rifts",
             "POST /access",
             "POST /sessions/auth/token",
+            "PUT /ssc/invoke/create_rift_lobby",
         ], responses);
     }
 }

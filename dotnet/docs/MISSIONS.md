@@ -1,13 +1,14 @@
 # Missions
 
-Status: **missions are rolled per player and moved by matches; claims work but item rewards.** With `Missions:Enabled`
-(off by default, as `MISSIONS_ENABLED` is on the TS server and prod), `get_or_create_mission_object` answers the
-player's own missions (C# `Core/Missions/MissionService.cs`, Mongo `missionobjects`), rolled from the game data for the
-containers in `Missions:Containers` and refreshed at the resets (`Missions:ResetHourUtc`, `ResetMinute`,
-`WeeklyResetDay`, which `attempt_daily_refresh` also reports), and the calendar the game is sent keeps those containers'
-events running (`Missions:EventEndYears`). Match results move them (step 2). Off, it answers as the TS server does: no
-containers. Claims (`claim_mission_rewards`) remove finished missions and add to the container's reward tracks, which
-are per player and start from nothing (`RewardTracks:PerPlayer`). This file is what is known so far and the plan.
+Status: **missions, reward tracks, rewards and match XP work; all three switches default to off.** Off, every answer is
+the TS server's, so a deploy changes nothing players see; each switch then turns a part on: `Missions:Enabled` (each
+player's own missions, rolled from the game data for `Missions:Containers`, refreshed at `Missions:ResetHourUtc`,
+`ResetMinute` and `WeeklyResetDay`, which `attempt_daily_refresh` also reports; the calendar keeps those containers'
+events running, `Missions:EventEndYears`; matches move them; claims pay them), `RewardTracks:PerPlayer` (battle passes,
+the missions' bonus tracks and events as each player's own, from nothing) and `RewardTracks:CharacterMastery` (character
+and account levels as each player's own, from zero, earned in matches). A part that is off is not written to either, so
+turning it on later starts everyone clean. Ranked and ELO are separate and unaffected. This file is what is known so far
+and the plan.
 
 Sources, each item says which: the game data the servers already send (HISS, `hiss-amalgamation.json`; the calendar,
 `Static/ssc-get-hiss-calendar-events.json`), the client binary (build `f97148ff`; headers in the UHT and jmap dumps),
@@ -185,6 +186,18 @@ mastery sources' modifiers, which the export leaves at the class default (inferr
 written; WB's one example message shows 50 on both tracks). Custom games only with `Missions:CustomGamesProgress`. Not
 in `EndOfMatchPayload` (the TS websocket's `ClientReturnData` stays empty); the game is told with
 `RewardTrackStatesUpdated` (`EndOfGameProcessing`). Skin mastery tracks (586, not in the answer's 111) are left out.
+
+**Decided (2026-10-01):** rifts count for mission progress and XP wherever a mission's conditions allow (missions
+that require PvP move only in matchmade games: a rift reports `bIsPvP` false). Custom games give nothing for now; that
+is a setting (`Missions:CustomGamesProgress`), to revisit, not a closed door.
+
+**Idea (2026-10-01): any season's battle pass.** All six battle pass tracks (Seasons 1, 2, 3, 4, 4.5, 5) are in the
+game data and in every player's `get_milestone_reward_tracks` answer; the calendar's battle pass event
+(`evt_battlepass_season_five`) is what makes one the current pass. A per-player calendar plus per-player battle pass
+XP routing would let a player choose which pass earns XP, without client changes, if the client still shows the older
+seasons' passes (to try: a Season 4 event and XP to `mrt_battlepass_season_four` for one account on the bench). The
+older seasons' calendar entries are not in the calendar file and would have to be rebuilt. Choosing inside the game,
+or several passes at once, would need the ovs-client ASI.
 
 **Decided (2026-10-01): Fighter Road is a dead feature.** Every character is unlocked for every player, and Fighter
 Road existed to unlock them. Nothing else reads it (`MRT_FighterRoadV2` takes no match XP and no track forwards to it),

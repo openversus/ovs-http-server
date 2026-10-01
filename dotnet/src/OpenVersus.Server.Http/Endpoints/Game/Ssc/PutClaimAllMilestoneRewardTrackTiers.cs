@@ -14,11 +14,11 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 
 /// <summary>
 /// PUT /ssc/invoke/claim_all_milestone_reward_track_tiers {TrackSlug} (captured: {"TrackSlug":
-/// "mrt_battlepass_season_five"}): with RewardTracks:PerPlayer, every reward of the track's completed tiers is marked
+/// "mrt_battlepass_season_five"}): for a track that is the player's own (RewardTracks:PerPlayer, CharacterMastery), every reward of the track's completed tiers is marked
 /// claimed (<see cref="IRewardTrackService.ClaimAllAsync"/>), the answer is {RewardTrackStates: [the track],
 /// RewardsGranted: [the tier rewards paid]} (the fields of the client's OnMilestoneRewardTrackTiersClaimed; WB's answer
 /// was never captured), the rewards are paid (<see cref="IRewardGrants"/>) and the game is sent RewardTrackStatesUpdated
-/// (UpdateContext RewardTrackClaim). Off: as the TS server answers, its catch-all.
+/// (UpdateContext RewardTrackClaim). Another track: as the TS server answers, its catch-all.
 /// Seen in: binary ssc name; captured 1x (answered by the TS catch-all).
 /// </summary>
 public sealed class PutClaimAllMilestoneRewardTrackTiers : JsonBodyEndpoint
@@ -34,8 +34,8 @@ public sealed class PutClaimAllMilestoneRewardTrackTiers : JsonBodyEndpoint
         var body = await ReadBodyAsync(ct) as JsonObject ?? [];
         string accountId = HttpContext.Session()?.AccountId ?? "";
         Logger.LogInformation("claim_all_milestone_reward_track_tiers by {Account}: {Body}", accountId, Js.Stringify(body));
-        if (!Resolve<IOptionsMonitor<RewardTrackSettings>>().CurrentValue.PerPlayer
-            || body["TrackSlug"] is not JsonValue v || !v.TryGetValue(out string? trackSlug))
+        if (body["TrackSlug"] is not JsonValue v || !v.TryGetValue(out string? trackSlug)
+            || !Resolve<IOptionsMonitor<RewardTrackSettings>>().CurrentValue.Governs(trackSlug))
         {
             await SendJsonAsync(await TsCatchAll.AnswerAsync(TryResolve<IMongoDatabase>(), ct), ct);
             return;

@@ -38,7 +38,7 @@ public sealed class RewardGrantTests : IAsyncLifetime
 
     private ServiceProvider Services() => new ServiceCollection()
         .AddSingleton(_mongo!.GetDatabase(TestMongoDb)).AddLogging().AddSingleton(TimeProvider.System)
-        .AddSingleton<IRewardTrackService, RewardTrackService>().AddSingleton<IRewardGrants, RewardGrants>()
+        .AddSingleton<Microsoft.Extensions.Options.IOptionsMonitor<RewardTrackSettings>>(new TestOptions<RewardTrackSettings>(new RewardTrackSettings { PerPlayer = true, CharacterMastery = true })).AddSingleton<IRewardTrackService, RewardTrackService>().AddSingleton<IRewardGrants, RewardGrants>()
         .AddSingleton<IInventoryService, InventoryService>().BuildServiceProvider();
 
     private static JsonObject Table(string slug) => new() { ["RewardGrantMethod"] = "RewardTableLookup", ["RewardGuid"] = slug, ["RewardHsda"] = slug, ["Constraints"] = new JsonArray() };

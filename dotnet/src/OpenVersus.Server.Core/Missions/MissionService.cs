@@ -315,7 +315,7 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
     public async Task RecordMatchXpAsync(string matchId, string playerId, int? winningTeamIndex, CancellationToken ct)
     {
         var rewards = services.GetService<Microsoft.Extensions.Options.IOptionsMonitor<RewardTracks.RewardTrackSettings>>()?.CurrentValue ?? new RewardTracks.RewardTrackSettings();
-        if (!rewards.PerPlayer || !rewards.MatchXp || !ObjectId.TryParse(playerId, out _)
+        if (!rewards.CharacterMastery || !rewards.MatchXp || !ObjectId.TryParse(playerId, out _)
             || services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis
             || !await redis.StringSetAsync($"match_xp:{matchId}:{playerId}", "1", TimeSpan.FromHours(1), When.NotExists))
         {

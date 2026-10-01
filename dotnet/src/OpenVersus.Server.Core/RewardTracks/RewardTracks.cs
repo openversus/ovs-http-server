@@ -16,7 +16,10 @@ namespace OpenVersus.Server.Core.RewardTracks;
 // GET /ssc/invoke/get_milestone_reward_tracks: the player's reward tracks (battle passes, character and account
 // mastery, Fighter Road, the missions' bonus tracks, events). The TS server answers one fixed state for everyone
 // (Static/ssc-get-milestone-reward-tracks.json, copied from a WB account, every track at tier 99), so the game offers
-// tiers nobody earned. With RewardTracks:PerPlayer each player has their own, starting from nothing:
+// tiers nobody earned. Two settings make tracks each player's own, starting from nothing: RewardTracks:CharacterMastery
+// the character and account levels (mrt_mastery_*), RewardTracks:PerPlayer the others. A track neither makes the
+// player's own is answered as the fixed answer has it, and nothing is added to it or claimed on it (both off: the fixed
+// answer, byte for byte, as today on prod). For the player's own:
 //
 //   - the tracks, their order and their fixed fields (RewardTrackClass, Guid, bHasPremium, InfiniteTierThreshold) are
 //     the fixed answer's (Guid is per track, not per player: a WB-era cache of another account has the same ones);
@@ -35,10 +38,22 @@ namespace OpenVersus.Server.Core.RewardTracks;
 /// <summary>Reward track settings.</summary>
 public sealed class RewardTrackSettings
 {
-    [Description("Each player has their own reward tracks (battle passes, character levels, the missions' bonus tracks), starting from nothing. Off: the TS server's fixed answer, the same for everyone (every track at tier 99, with tiers to claim nobody earned).")]
-    public bool PerPlayer { get; set; } = true;
+    [Description("Each player has their own reward tracks other than character and account levels (battle passes, the missions' bonus tracks, events), starting from nothing. Off: those tracks as the TS server's fixed answer has them, the same for everyone, and nothing is added to them.")]
+    public bool PerPlayer { get; set; }
 
-    [Description("Matches add XP to the account and character mastery tracks (character and account levels): 150 for a win, 50 for a loss (the game's XPSRC_Base; custom games only with Missions:CustomGamesProgress).")]
+    [Description("Character and account levels (the mrt_mastery_* tracks) are each player's own, starting from zero and earned in matches. Off: as the TS server's fixed answer has them (every character at level 99), and no match XP is recorded.")]
+    public bool CharacterMastery { get; set; }
+
+    /// <summary>Whether <paramref name="slug"/> is a character or account level track (mrt_mastery_*).</summary>
+    public static bool IsMastery(string slug) => slug.StartsWith("mrt_mastery_", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Whether <paramref name="slug"/> is each player's own under these settings (else the fixed answer's).</summary>
+    public bool Governs(string slug) => IsMastery(slug) ? CharacterMastery : PerPlayer;
+
+    /// <summary>Whether any track is each player's own.</summary>
+    public bool Any => PerPlayer || CharacterMastery;
+
+    [Description("Matches add XP to the account and character mastery tracks (character and account levels; only with RewardTracks:CharacterMastery): 150 for a win, 50 for a loss (the game's XPSRC_Base; custom games only with Missions:CustomGamesProgress).")]
     public bool MatchXp { get; set; } = true;
 
     [Description("Rift matches add that XP too. The client's offline rift backend marks rifts as granting no progress (bModeGrantsProgress false), which says nothing about WB's online rifts.")]
@@ -62,6 +77,9 @@ public interface IRewardTrackService
 
 internal sealed class RewardTrackService(IServiceProvider services, ILogger<RewardTrackService> log) : IRewardTrackService
 {
+    // Off by default (the settings' defaults): no track is the player's own.
+    private RewardTrackSettings Settings => services.GetService<IOptionsMonitor<RewardTrackSettings>>()?.CurrentValue ?? new RewardTrackSettings();
+
     internal const string Collection = "rewardtracks";
     private const string Fixed = "ssc-get-milestone-reward-tracks";
 
@@ -71,12 +89,13 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
 
     public async Task<JsonObject> AnswerAsync(string accountId, CancellationToken ct)
     {
+        var settings = Settings;
         var stored = await StoredAsync(accountId, ct);
         var states = new JsonArray();
         foreach (var track in s_tracks.Value)
         {
             string slug = track["TrackSlug"]?.GetValue<string>() ?? "";
-            states.Add(Entry(track, stored?[slug] as JsonObject ?? Initial(slug)));
+            states.Add(settings.Governs(slug) ? Entry(track, stored?[slug] as JsonObject ?? Initial(slug)) : track.DeepClone());
         }
 
         return new JsonObject { ["body"] = new JsonObject { ["RewardTrackStates"] = states }, ["metadata"] = null, ["return_code"] = 0 };
@@ -84,6 +103,9 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
 
     public async Task<IReadOnlyList<JsonObject>> AddScoreAsync(string accountId, IReadOnlyDictionary<string, int> points, CancellationToken ct)
     {
+        // Only the tracks that are the player's own (the others are the fixed answer's, and stay so).
+        var settings = Settings;
+        points = points.Where(p => settings.Governs(p.Key)).ToDictionary();
         if (points.Count == 0)
         {
             return [];
@@ -110,6 +132,11 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
 
     public async Task<(JsonObject? Track, IReadOnlyList<JsonObject> Claimed)> ClaimAllAsync(string accountId, string trackSlug, CancellationToken ct)
     {
+        if (!Settings.Governs(trackSlug))
+        {
+            return (null, []);
+        }
+
         var claimed = new List<JsonObject>();
         var tracks = await UpdateAsync(accountId, stored =>
         {

@@ -7,7 +7,8 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 
 /// <summary>
 /// GET /ssc/invoke/get_milestone_reward_tracks: the player's reward tracks (<see cref="IRewardTrackService"/>) with
-/// RewardTracks:PerPlayer; off, the same for everyone, as the TS server answers (Static/ssc-get-milestone-reward-tracks.json).
+/// RewardTracks:PerPlayer or CharacterMastery; both off, the same for everyone, as the TS server answers
+/// (Static/ssc-get-milestone-reward-tracks.json).
 /// In the login batch.
 /// Seen in: binary ssc name; TS server: GET /ssc/invoke/get_milestone_reward_tracks.
 /// </summary>
@@ -21,7 +22,7 @@ public sealed class GetGetMilestoneRewardTracks : JsonBodyEndpoint
 
     public override async Task HandleAsync(CancellationToken ct)
     {
-        if (!Resolve<IOptionsMonitor<RewardTrackSettings>>().CurrentValue.PerPlayer)
+        if (!Resolve<IOptionsMonitor<RewardTrackSettings>>().CurrentValue.Any)
         {
             await SendStaticAsync("ssc-get-milestone-reward-tracks", ct);
             return;

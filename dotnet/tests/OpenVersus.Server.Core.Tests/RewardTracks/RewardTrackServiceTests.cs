@@ -36,9 +36,11 @@ public sealed class RewardTrackServiceTests : IAsyncLifetime
         }
     }
 
-    private RewardTrackService Service()
+    private RewardTrackService Service(bool perPlayer = true, bool mastery = true)
     {
         var services = new ServiceCollection();
+        services.AddSingleton<Microsoft.Extensions.Options.IOptionsMonitor<RewardTrackSettings>>(
+            new TestOptions<RewardTrackSettings>(new RewardTrackSettings { PerPlayer = perPlayer, CharacterMastery = mastery }));
         if (_mongo is not null)
         {
             services.AddSingleton(_mongo.GetDatabase(TestMongoDb));
@@ -146,6 +148,40 @@ public sealed class RewardTrackServiceTests : IAsyncLifetime
 
         // A track the answer does not list.
         Assert.Null((await Service().ClaimAllAsync(id, "mrt_no_such_track", default)).Track);
+    }
+
+    [Fact]
+    public async Task CharacterLevelsAndTheOtherTracksSwitchApart()
+    {
+        var fixedPass = Fixed().OfType<JsonObject>().Single(t => t["TrackSlug"]!.GetValue<string>() == "mrt_battlepass_season_five");
+        var fixedWonderWoman = Fixed().OfType<JsonObject>().Single(t => t["TrackSlug"]!.GetValue<string>() == "mrt_mastery_wonder_woman");
+
+        // Levels the player's own, the rest as before: Wonder Woman from zero, the battle pass the fixed answer's.
+        var levels = await Service(perPlayer: false, mastery: true).AnswerAsync("", default);
+        Assert.Equal(0, Track(levels, "mrt_mastery_wonder_woman")["CurrentScore"]!.GetValue<int>());
+        Assert.Equal(fixedPass.ToJsonString(), Track(levels, "mrt_battlepass_season_five").ToJsonString());
+
+        // The other way round.
+        var passes = await Service(perPlayer: true, mastery: false).AnswerAsync("", default);
+        Assert.Equal(fixedWonderWoman.ToJsonString(), Track(passes, "mrt_mastery_wonder_woman").ToJsonString());
+        Assert.Equal(0, Track(passes, "mrt_battlepass_season_five")["CurrentScore"]!.GetValue<int>());
+
+        // Both off: the fixed answer's tracks as they are.
+        var neither = await Service(perPlayer: false, mastery: false).AnswerAsync("", default);
+        Assert.Equal(Fixed().ToJsonString(), States(neither).ToJsonString());
+    }
+
+    [SkippableFact]
+    public async Task NothingIsAddedToOrClaimedOnATrackThatIsNotThePlayersOwn()
+    {
+        Skip.If(_mongo is null, "set OVS_TEST_MONGO to run");
+        string id = ObjectId.GenerateNewId().ToString();
+        var changed = await Service(perPlayer: true, mastery: false).AddScoreAsync(id,
+            new Dictionary<string, int> { ["mrt_mastery_wonder_woman"] = 150, ["mrt_battlepass_season_five"] = 150 }, default);
+        Assert.Equal(["mrt_battlepass_season_five"], changed.Select(t => t["TrackSlug"]!.GetValue<string>()));
+        Assert.Null((await Service(perPlayer: true, mastery: false).ClaimAllAsync(id, "mrt_mastery_wonder_woman", default)).Track);
+        // Turned on later: Wonder Woman starts from zero (nothing was recorded while off).
+        Assert.Equal(0, Track(await Service().AnswerAsync(id, default), "mrt_mastery_wonder_woman")["CurrentScore"]!.GetValue<int>());
     }
 
     [SkippableFact]

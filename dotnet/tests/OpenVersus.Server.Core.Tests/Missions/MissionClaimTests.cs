@@ -65,7 +65,7 @@ public sealed class MissionClaimTests : IAsyncLifetime
     {
         var db = _mongo!.GetDatabase(TestMongoDb);
         var services = new ServiceCollection().AddSingleton(db).AddLogging()
-            .AddSingleton<IRewardTrackService, RewardTrackService>().AddSingleton<IRewardGrants, RewardGrants>().AddSingleton(TimeProvider.System).BuildServiceProvider();
+            .AddSingleton<Microsoft.Extensions.Options.IOptionsMonitor<RewardTrackSettings>>(new TestOptions<RewardTrackSettings>(new RewardTrackSettings { PerPlayer = true, CharacterMastery = true })).AddSingleton<IRewardTrackService, RewardTrackService>().AddSingleton<IRewardGrants, RewardGrants>().AddSingleton(TimeProvider.System).BuildServiceProvider();
         var settings = new MissionSettings { Enabled = true, Containers = "miscon_battlepassdaily_s5, miscon_unlockable_c020" };
         var service = new MissionService(services, new Monitor(settings), TimeProvider.System, new MissionRandom(), NullLogger<MissionService>.Instance);
         string player = ObjectId.GenerateNewId().ToString();

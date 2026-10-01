@@ -130,6 +130,17 @@ tracks (battle pass progress) as well.
    are client data the servers do not have). Client side for the record: the claim request (`0x142924b30`) registers its
    answer callback through a delegate (vtable `0x146736d40`, thunk `0x142927250`) to `0x1429219b0`, which ends either by
    setting a timer delegate or by calling `0x14292a030`, the routine that handles the whole mission object.
+   After a claim the game is sent `RewardTrackStatesUpdated` {`RewardTrackStates` (the changed tracks, as
+   `get_milestone_reward_tracks` lists them), `UpdateContext` 2} (a `profile-notification`; the client's router,
+   `0x140d06c10`, reads both; `UpdateContext` is `EMvsRewardTrackUpdateContext`: Unknown, RewardTrackClaim,
+   MissionClaim, EndOfGameProcessing, DailyLogin, DebugEndpoint, XpReward). Beside it the router takes
+   `OnMilestoneRewardTrackTiersClaimed` {`RewardTrackStates`, `RewardsGranted`}.
+   Tier claims: `claim_all_milestone_reward_track_tiers` {`TrackSlug`} (one capture; the bench's logged sizes agree)
+   marks every reward of the track's completed tiers claimed, answers {`RewardTrackStates`: [the track],
+   `RewardsGranted`: []} (WB's answer was never captured: the fields of `OnMilestoneRewardTrackTiersClaimed`, for the
+   bench to settle) and pushes `RewardTrackStatesUpdated` (`UpdateContext` 1, RewardTrackClaim). The rewards are not
+   granted yet (reward tables: below). `claim_milestone_reward_track_tiers` (one tier) is not built: no body seen.
+
 4. **Reward tracks, started:** `get_milestone_reward_tracks` answers each player's own (C#
    `Core/RewardTracks/RewardTracks.cs`, `RewardTracks:PerPlayer`, on by default): the fixed answer's tracks, every one
    starting at score 0 (character and account levels, battle passes, the missions' bonus tracks), the threshold-0 tiers
@@ -157,6 +168,18 @@ unlocked by owning the character (`UnlockConstraints: misobj_ownsitem_c0NN`), ea
 character is played (`ProgressConstraints: misobj_skintag_fixed_c0NN`), and each paying `reward_xp_fighter_road_300`
 (`RewardGrantMethod: RewardTableLookup`: Fighter Road XP, not character mastery). Count 50 over a list of 5: all five
 at once.
+
+Blocked on client data (the game's own assets; not in the hiss, `dataassets` or the archive): the reward tables a
+`RewardTableLookup` names (`reard_perk_currency_80` (sic), `reward_toast_10`, `reward_xp_fighter_road_300`,
+`reward_xp_battlepass_tiny`: the names suggest amounts, the tables hold them; an FModel JSON export of them is coming),
+and the match XP sources the mastery
+tracks name (`MatchData.MatchXpConfig`: `XPSRC_CharacterMastery`, `XPSRC_AccountMastery`, `XPSRC_SkinMastery`,
+`XPSRC_CyberEvent`; WB's one example: 50 for `Eog:Source:PlayMatch` on account and character mastery, 100 on
+`MRT_FighterRoadV2`). Character and account levels move only once these are known.
+
+**Decided (2026-10-01): Fighter Road is a dead feature.** Every character is unlocked for every player, and Fighter
+Road existed to unlock them. Nothing else reads it (`MRT_FighterRoadV2` takes no match XP and no track forwards to it),
+so `reward_xp_fighter_road_*` rewards (the character missions' only payout) grant nothing, by design.
 
 Open items: what reaching a mastery tier again grants to a player who already owns that tier's items; WB's
 `claim_mission_rewards` answer; what `ClaimLocks` holds; whether a claimed mission leaves `Missions`

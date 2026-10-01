@@ -113,6 +113,42 @@ public sealed class RewardTrackServiceTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    public async Task AddedScoreReturnsTheChangedTracksAsTheAnswerListsThem()
+    {
+        Skip.If(_mongo is null, "set OVS_TEST_MONGO to run");
+        string id = ObjectId.GenerateNewId().ToString();
+        var changed = await Service().AddScoreAsync(id, new Dictionary<string, int> { ["mrt_bonus_mission_new"] = 1, ["mrt_battlepass_season_five"] = 2150 }, default);
+        var answer = await Service().AnswerAsync(id, default);
+        // In the answer's order (the battle pass comes first there), each entry equal to the answer's.
+        var expected = States(answer).OfType<JsonObject>()
+            .Where(t => t["TrackSlug"]!.GetValue<string>() is "mrt_bonus_mission_new" or "mrt_battlepass_season_five").ToList();
+        Assert.Equal(expected.Select(e => e.ToJsonString()), changed.Select(c => c.ToJsonString()));
+        Assert.Equal(2, Track(answer, "mrt_battlepass_season_five")["CurrentTier"]!.GetValue<int>());
+    }
+
+    [SkippableFact]
+    public async Task ClaimingATrackClaimsTheRewardsOfItsCompletedTiersOnce()
+    {
+        Skip.If(_mongo is null, "set OVS_TEST_MONGO to run");
+        string id = ObjectId.GenerateNewId().ToString();
+        // Nothing earned: nothing to claim (the battle pass's free tier is claimed already).
+        var (pass, none) = await Service().ClaimAllAsync(id, "mrt_battlepass_season_five", default);
+        Assert.Empty(none);
+        Assert.Equal(1, pass!["CurrentTier"]!.GetValue<int>());
+
+        // One daily claimed: the bonus track's first tier (threshold 1) is completed, its reward claimable once.
+        await Service().AddScoreAsync(id, new Dictionary<string, int> { ["mrt_bonus_mission_new"] = 1 }, default);
+        var (bonus, claimed) = await Service().ClaimAllAsync(id, "mrt_bonus_mission_new", default);
+        Assert.Equal(["B21C1BFB44663B2442338985077A5C34"], claimed.Select(r => r["RewardGuid"]!.GetValue<string>()));
+        Assert.Equal(["B21C1BFB44663B2442338985077A5C34"], bonus!["ClaimedRewards"]!.AsArray().Select(r => r!.GetValue<string>()));
+        Assert.Equal(bonus.ToJsonString(), Track(await Service().AnswerAsync(id, default), "mrt_bonus_mission_new").ToJsonString());
+        Assert.Empty((await Service().ClaimAllAsync(id, "mrt_bonus_mission_new", default)).Claimed);
+
+        // A track the answer does not list.
+        Assert.Null((await Service().ClaimAllAsync(id, "mrt_no_such_track", default)).Track);
+    }
+
+    [SkippableFact]
     public async Task AStoredStateWins()
     {
         Skip.If(_mongo is null, "set OVS_TEST_MONGO to run");

@@ -7,6 +7,7 @@ using MongoDB.Bson.IO;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Hiss;
+using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.Rifts;
 using StackExchange.Redis;
 
@@ -153,7 +154,12 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
             var points = TrackPoints(containerSlug!, claimed);
             log.LogInformation("Missions claimed by {Account} in {Container}: {Missions}; reward tracks {Points}", accountId, containerSlug,
                 string.Join(", ", claimed), string.Join(", ", points.Select(p => $"{p.Key} +{p.Value}")));
-            await services.GetRequiredService<RewardTracks.IRewardTrackService>().AddScoreAsync(accountId, points, ct);
+            var changed = await services.GetRequiredService<RewardTracks.IRewardTrackService>().AddScoreAsync(accountId, points, ct);
+            if (changed.Count > 0 && services.GetService<IConnectionMultiplexer>()?.GetDatabase() is { } redis)
+            {
+                await ProfileNotifications.SendAsync(redis, accountId, ProfileNotifications.RewardTrackStatesUpdated(changed, 2));
+            }
+
             return ClaimAnswer(state, live);
         }
 
@@ -330,20 +336,9 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
             }
         }
 
-        return new JsonObject
-        {
-            ["data"] = new JsonObject { ["template_id"] = "MissionUpdatesComplete", ["data"] = body },
-            ["payload"] = new JsonObject
-            {
-                ["frm"] = new JsonObject { ["id"] = "internal-server", ["type"] = "server-api-key" },
-                ["template"] = "realtime",
-                ["account_id"] = playerId,
-                ["profile_id"] = playerId,
-            },
-            ["header"] = "",
-            ["cmd"] = "profile-notification",
-        };
+        return ProfileNotifications.Message(new JsonObject { ["template_id"] = "MissionUpdatesComplete", ["data"] = body }, playerId);
     }
+
 
     private void Report(ICollection<string> unknown, string playerId, string matchId)
     {

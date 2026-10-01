@@ -172,6 +172,28 @@ public sealed class MissionProgressTests : IAsyncLifetime
         Assert.Equal(2, data["MissionControllerContainers"]!["miscon_unlockable_c020"]!["MissionControllers"]!["misctl_unlockable_c020"]!["Missions"]![0]!["mis_ringout_c020"]!["MissionObjectives"]![0]!["Progress"]!.GetValue<int>());
     }
 
+    [Fact]
+    public void ACharactersMissionsMoveWithAnyOfItsSkins()
+    {
+        // The skin's own tags lack TS:Fixed:WonderWoman (only her character entry has it): the bench, 2026-10-01.
+        var data = new JsonObject
+        {
+            ["MissionControllerContainers"] = new JsonObject
+            {
+                ["miscon_unlockable_c001"] = new JsonObject { ["MissionControllers"] = new JsonObject { ["misctl_unlockable_c001"] = new JsonObject
+                {
+                    ["Missions"] = new JsonArray(new JsonObject { ["mis_dealalldamage_c001"] = new JsonObject
+                    {
+                        ["MissionObjectives"] = new JsonArray(new JsonObject { ["Slug"] = "misobj_deal_damage", ["Progress"] = 0 }), ["MissionGuid"] = "g",
+                    } }),
+                    ["UsedMissions"] = new JsonArray("mis_dealalldamage_c001"),
+                } } },
+            },
+        };
+        Assert.True(MissionRules.Apply(data, ["miscon_unlockable_c001"], Rift(), []));
+        Assert.Equal(287, data["MissionControllerContainers"]!["miscon_unlockable_c001"]!["MissionControllers"]!["misctl_unlockable_c001"]!["Missions"]![0]!["mis_dealalldamage_c001"]!["MissionObjectives"]![0]!["Progress"]!.GetValue<int>());
+    }
+
     [SkippableFact]
     public async Task AResultIsRecordedOnceAndThePlayerIsTold()
     {

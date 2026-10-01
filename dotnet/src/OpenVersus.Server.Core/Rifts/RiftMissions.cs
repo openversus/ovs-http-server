@@ -23,8 +23,8 @@ namespace OpenVersus.Server.Core.Rifts;
 //
 // A flag holds when:
 //   Objective:Match:Win == true        the player's team won
-//   Objective:Match:Tag:Skin == <tag>  the player's skin carries the tag (e.g. TS:Fixed:Universe:DC; a skin with no
-//                                      tags known falls back to its character's)
+//   Objective:Match:Tag:Skin == <tag>  the player's skin or its character carries the tag (e.g. TS:Fixed:Universe:DC,
+//                                      TS:Fixed:WonderWoman: a skin's own tags lack its character's)
 //   <counter> +=                       the match's counter reached the objective's Count
 //   <counter> >= / > / == / <= / < v   the match's counter compared with Value
 // Anything else (another operator, a tag this cannot know) does not hold, and is reported.
@@ -130,9 +130,11 @@ internal static class RiftMissions
         }
     }
 
-    /// <summary>A skin's gameplay tags, else its character's; none when neither is known.</summary>
+    /// <summary>A skin's gameplay tags with its character's: a skin's own list lacks its character's tag
+    /// (TS:Fixed:WonderWoman is on character_wonder_woman, not on skin_c001_s01: 447 of 448 skins), which the character
+    /// missions test. None when neither is known.</summary>
     internal static HashSet<string> SkinTags(string skin, string character) =>
-        (s_itemTags.Value[skin] as JsonArray ?? s_itemTags.Value[character] as JsonArray ?? []).Select(Str).OfType<string>().ToHashSet();
+        (s_itemTags.Value[skin] as JsonArray ?? []).Concat(s_itemTags.Value[character] as JsonArray ?? []).Select(Str).OfType<string>().ToHashSet();
 
     // A reported counter: a number, or {"_hydra_double": n} as a Hydra double reaches JSON; absent is 0.
     private static double Counter(JsonNode? node) => node is JsonObject o ? Number(o["_hydra_double"]) ?? 0 : Number(node) ?? 0;

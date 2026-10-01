@@ -289,3 +289,15 @@ public static class HissHosting
         return builder;
     }
 }
+
+/// <summary>The TS server's answer to an SSC call it does not implement (its catch-all).</summary>
+public static class TsCatchAll
+{
+    /// <summary>{Crc (the config CRC; the default without Mongo), MatchmakingCrc 1}, return_code 200.</summary>
+    public static async Task<JsonObject> AnswerAsync(IMongoDatabase? mongo, CancellationToken ct) => new()
+    {
+        ["body"] = new JsonObject { ["Crc"] = mongo is null ? HissService.DefaultCrc : await HissService.CrcAsync(mongo, ct), ["MatchmakingCrc"] = 1 },
+        ["metadata"] = null,
+        ["return_code"] = 200,
+    };
+}

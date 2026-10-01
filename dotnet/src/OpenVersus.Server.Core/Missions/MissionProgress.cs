@@ -25,7 +25,7 @@ namespace OpenVersus.Server.Core.Missions;
 // hold, the sum of its += counters (whole numbers: a fractional counter is rounded down), or 1 when it has none (a
 // match that meets the conditions), capped at the mission's Count for it. The flags (hiss mission-objectives):
 //   Stat:..., Fighter:..., Objective:Match:... += / >= / > / == / <= / <   a counter the game reported (absent: 0)
-//   Objective:Match:Tag:Skin == <tag>        the skin played carries the tag, else its character (RiftMissions.SkinTags)
+//   Objective:Match:Tag:Skin == <tag>        the skin played or its character carries the tag (RiftMissions.SkinTags)
 //   Objective:Match:Mode:Type:Play == <mode> the match's mode (1v1, 2v2, ffa)
 //   Objective:Match:Map:Play == <tag>        TS:Fixed:Maps:<the match's map, any _V2-style suffix dropped>
 //   Objective:Match:Win == <bool>            the player's team won

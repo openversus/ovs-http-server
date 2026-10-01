@@ -20,10 +20,10 @@ namespace OpenVersus.Server.Core.Matches;
 // OnGameplayConfigNotified, and PerksLockedNotification once every player's perks are locked), and the rollback server,
 // asking /ovs_get_registry, gets the humans and triggers game-server-instance-ready.
 //
-// Redis, written  match:{match} (the TS RedisMatch: one ticket holding every player, isPasswordMatch, so no ELO) EX 20 min;
-//                 match:{match}:perks:{bot} "[]" EX 20 min for each bot (bots never send perks_lock, and the TS
-//                 all-perks-locked check waits for every ticket player); {match} (the notification, which
-//                 /ovs_get_registry reads) EX 20 min
+// Redis, written  match:{match} (the TS RedisMatch: one ticket holding every player but the spectators, isPasswordMatch,
+//                 so no ELO) EX 20 min; match:{match}:perks:{bot} (the launch's bot perks, "[]" when none) EX 20 min for
+//                 each bot (bots never send perks_lock, and the TS all-perks-locked check waits for every ticket
+//                 player); {match} (the notification, which /ovs_get_registry reads) EX 20 min
 // Published       match:notifications (the notification: the websocket sends the match to its players), then
 //                 matchmaking:complete ({containerMatchId, playerIds, matchmakingRequestId, resultId})
 //
@@ -94,11 +94,16 @@ public sealed class RollbackSettings
     public string OvsServer { get; set; } = "http://localhost:8000";
 }
 
-/// <summary>A player in a match, as the TS RedisTeamEntry.</summary>
-public sealed record MatchPlayer(string PlayerId, int PlayerIndex, int TeamIndex, bool IsHost, string Ip, bool IsBot);
+/// <summary>
+/// A player in a match, as the TS RedisTeamEntry. A spectator (a custom lobby's) is in the notification only, with
+/// isSpectator in place of isBot: not in the ticket, not counted.
+/// </summary>
+public sealed record MatchPlayer(string PlayerId, int PlayerIndex, int TeamIndex, bool IsHost, string Ip, bool IsBot, bool IsSpectator = false);
 
 /// <summary>A match to start: its players (humans at the lowest player indexes), map and mode, and what the websocket's
-/// PvP gameplay config needs replaced.</summary>
+/// PvP gameplay config needs replaced. <paramref name="BotPerks"/> are what each bot's perks are locked as (none when
+/// null); <paramref name="NotificationFields"/> are added to the notification after rollbackPort (a custom game's
+/// settings).</summary>
 public sealed record MatchLaunch(
     string MatchType,
     string Map,
@@ -107,7 +112,9 @@ public sealed record MatchLaunch(
     JsonObject? GameplayConfigOverride = null,
     JsonObject? PlayerConfigOverrides = null,
     string? ConfigTemplate = null,
-    JsonObject? ConfigData = null);
+    JsonObject? ConfigData = null,
+    JsonArray? BotPerks = null,
+    JsonObject? NotificationFields = null);
 
 /// <summary>The started match.</summary>
 public sealed record LaunchedMatch(string MatchId, int RollbackPort);
@@ -148,11 +155,12 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
         string resultId = ObjectId.GenerateNewId().ToString();
         string matchmakingRequestId = ObjectId.GenerateNewId().ToString();
         long now = time.GetUtcNow().ToUnixTimeMilliseconds();
+        var playing = launch.Players.Where(p => !p.IsSpectator).ToList();
 
         var ticket = new JsonObject
         {
-            ["party_size"] = launch.Players.Count,
-            ["players"] = new JsonArray([.. launch.Players.Select(p => (JsonNode)new JsonObject { ["id"] = p.PlayerId, ["skill"] = 0, ["region"] = "local" })]),
+            ["party_size"] = playing.Count,
+            ["players"] = new JsonArray([.. playing.Select(p => (JsonNode)new JsonObject { ["id"] = p.PlayerId, ["skill"] = 0, ["region"] = "local" })]),
             ["created_at"] = now,
             ["partyId"] = matchId,
             ["matchmakingRequestId"] = matchmakingRequestId,
@@ -166,7 +174,7 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
             ["status"] = "pending",
             ["createdAt"] = now,
             ["matchType"] = launch.MatchType,
-            ["totalPlayers"] = launch.Players.Count,
+            ["totalPlayers"] = playing.Count,
             ["rollbackPort"] = rollbackPort,
             ["isPasswordMatch"] = true,
         };
@@ -174,20 +182,24 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
 
         foreach (var bot in launch.Players.Where(p => p.IsBot))
         {
-            await redis.StringSetAsync($"match:{matchId}:perks:{bot.PlayerId}", "[]", s_ttl);
+            await redis.StringSetAsync($"match:{matchId}:perks:{bot.PlayerId}", Js.Stringify(launch.BotPerks ?? []), s_ttl);
         }
 
         var notification = new JsonObject
         {
-            ["players"] = new JsonArray([.. launch.Players.Select(p => (JsonNode)new JsonObject
+            ["players"] = new JsonArray([.. launch.Players.Select(p =>
             {
-                ["playerId"] = p.PlayerId,
-                ["partyId"] = matchId,
-                ["playerIndex"] = p.PlayerIndex,
-                ["teamIndex"] = p.TeamIndex,
-                ["isHost"] = p.IsHost,
-                ["ip"] = p.Ip,
-                ["isBot"] = p.IsBot,
+                var entry = new JsonObject
+                {
+                    ["playerId"] = p.PlayerId,
+                    ["partyId"] = matchId,
+                    ["playerIndex"] = p.PlayerIndex,
+                    ["teamIndex"] = p.TeamIndex,
+                    ["isHost"] = p.IsHost,
+                    ["ip"] = p.Ip,
+                };
+                entry[p.IsSpectator ? "isSpectator" : "isBot"] = p.IsSpectator || p.IsBot;
+                return (JsonNode)entry;
             })]),
             ["matchId"] = matchId,
             ["matchKey"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
@@ -195,6 +207,11 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
             ["mode"] = launch.Mode,
             ["rollbackPort"] = rollbackPort,
         };
+        foreach (var (key, value) in launch.NotificationFields ?? [])
+        {
+            notification[key] = value?.DeepClone();
+        }
+
         if (launch.GameplayConfigOverride is not null)
         {
             notification["gameplayConfigOverride"] = launch.GameplayConfigOverride.DeepClone();

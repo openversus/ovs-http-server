@@ -55,8 +55,9 @@ and rejoin. Those handlers move together with the gateway and the matchmaker. Un
 they listen to as the TS server does (`matchmaking:cancel` from a party join, `match:notifications` and
 `matchmaking:complete` from a rift start; MIGRATION-BRIDGES.md 2).
 
-Done so far: rift progress, missions and reward tracks (MIGRATION-BRIDGES.md 4), and the party lobby routes (invite,
-join, leave, mode, ready, loadout lock; the custom lobby side still on the TS server, MIGRATION-BRIDGES.md 6).
+Done so far: rift progress, missions and reward tracks (MIGRATION-BRIDGES.md 4), the party lobby routes (invite,
+join, leave, mode, ready, loadout lock) and the custom lobby (its routes, its messages, the match start; its match end
+and rematch vote stay with the match flow).
 
 ## A node restart without disconnecting anyone
 

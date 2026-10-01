@@ -1,0 +1,2740 @@
+{
+ "gm_infinitejumps": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_infinitejumps",
+  "Maps": [
+   "PVE_M003_Floorless"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_infinite_jumps",
+     "buff_low_gravity"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_infinite_jumps",
+     "buff_low_gravity"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_frostgauntlets": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedDuos",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5",
+   "M017_V1",
+   "PVE_14",
+   "M018_V1",
+   "M018_V2",
+   "mts003_v1",
+   "mts003_v4",
+   "M023_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_perma_ice_gauntlets"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_perma_ice_gauntlets"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_tiny": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 2,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_tiny",
+  "Maps": [
+   "M015_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_tiny",
+     "buff_attack_power_up"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_tiny",
+     "buff_attack_power_up"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_spotlight": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_rocketfistrain",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5"
+  ],
+  "RequiredWorldBuffs": [
+   "world_buff_spotlight"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_lazaruspit": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 2,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_lazaruspit",
+  "Maps": [
+   "M003_V1"
+  ],
+  "RequiredWorldBuffs": [
+   "world_buff_lazarus_pit"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_volleyball": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 5,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_volleyball",
+  "Maps": [
+   "pve_volleyball_001"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_volleyballpvp"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_turbo": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 1,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedDuos",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5",
+   "M017_V1",
+   "PVE_14",
+   "M018_V1",
+   "M018_V2",
+   "mts003_v1",
+   "mts003_v4",
+   "M023_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_turbo"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_turbo"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_armature": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedDuos",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5",
+   "M017_V1",
+   "PVE_14",
+   "M018_V1",
+   "M018_V2",
+   "mts003_v1",
+   "mts003_v4",
+   "M023_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_armature"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_armature"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_kartrace": {
+  "TeamStyle": "FFA",
+  "NumRingouts": -1,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_racecar",
+  "Maps": [
+   "RaceCourse_001",
+   "RaceCourse_002",
+   "RaceCourse_003",
+   "RaceCourse_004",
+   "pve_racecourse_005",
+   "pve_racecourse_006"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_racecarpvp"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_chickensvsicecubes": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedDuos",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5",
+   "M017_V1",
+   "PVE_14",
+   "M018_V1",
+   "M018_V2",
+   "mts003_v1",
+   "mts003_v4",
+   "M023_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_perma_chicken_gauntlets"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_perma_ice_gauntlets"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_cancelsystem": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedSolos",
+  "Maps": [
+   "M001_V2",
+   "M002_V2",
+   "M003_V1",
+   "M009_V2",
+   "M011_V4",
+   "M016_V3",
+   "M007_V3",
+   "M012_V2",
+   "M014_V2",
+   "M015_V2",
+   "M017_V1",
+   "M018_V2",
+   "mts003_v2",
+   "M023_V2",
+   "M008_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_cancelsystem"
+    ],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_cancelsystem"
+    ],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_selectpowerup": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedDuos",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5",
+   "M017_V1",
+   "PVE_14",
+   "M018_V1",
+   "M018_V2",
+   "mts003_v1",
+   "mts003_v4",
+   "M023_V2"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_powerselect_pvp"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_rocketfistrain": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_rocketfistrain",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5"
+  ],
+  "RequiredWorldBuffs": [
+   "rocket_rain"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_retrohorror": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_retrohorror",
+  "Maps": [
+   "M002_V3",
+   "M006_V1",
+   "M006_V2",
+   "M014",
+   "M015_V2"
+  ],
+  "RequiredWorldBuffs": [
+   "mvbuff_vhshorror",
+   "world_buff_ghosts"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_hotpotato": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 2,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedDuos",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5",
+   "M017_V1",
+   "PVE_14",
+   "M018_V1",
+   "M018_V2",
+   "mts003_v1",
+   "mts003_v4",
+   "M023_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_hotpotato"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_hotpotato"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "boss_fight_game_mode_1": {
+  "TeamStyle": "Solos",
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "",
+  "RequiredWorldBuffs": [],
+  "Teams": []
+ },
+ "mini_game_mode_2": {
+  "TeamStyle": "Solos",
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "",
+  "RequiredWorldBuffs": [],
+  "Teams": []
+ },
+ "mini_game_mode_1": {
+  "TeamStyle": "Solos",
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "",
+  "RequiredWorldBuffs": [],
+  "Teams": []
+ },
+ "classic_game_mode": {
+  "TeamStyle": "Solos",
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "",
+  "RequiredWorldBuffs": [],
+  "Teams": []
+ },
+ "boss_fight_game_mode_2": {
+  "TeamStyle": "Solos",
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "",
+  "RequiredWorldBuffs": [],
+  "Teams": []
+ },
+ "ffa": {
+  "TeamStyle": "FFA",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedFFA",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016",
+   "M002_V1",
+   "M007",
+   "M012_V1",
+   "M014",
+   "mts001_v3",
+   "M003_V5",
+   "M016_V4",
+   "PVE_14",
+   "PvE_03",
+   "PVE_05_V1",
+   "PVE_09",
+   "mts002_V3",
+   "M017_V2",
+   "M018_V1",
+   "mts003_v4",
+   "mts003_v3",
+   "M023_V1"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_toasty": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedDuos",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5",
+   "M017_V1",
+   "PVE_14",
+   "M018_V1",
+   "M018_V2",
+   "mts003_v1",
+   "mts003_v4",
+   "M023_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "companion_buff"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "companion_buff"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_tinyvsgiant": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedDuos",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5",
+   "M017_V1",
+   "PVE_14",
+   "M018_V1",
+   "M018_V2",
+   "mts003_v1",
+   "mts003_v4",
+   "M023_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [
+      "buff_tiny"
+     ],
+     [
+      "buff_giant"
+     ]
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [
+      "buff_tiny"
+     ],
+     [
+      "buff_giant"
+     ]
+    ]
+   }
+  ]
+ },
+ "gm_splat": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_splat",
+  "Maps": [
+   "M006_V2",
+   "M007",
+   "M009_V1",
+   "M010_V1",
+   "M012_V1",
+   "M014"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_splat"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_splat"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_slaythegiant": {
+  "TeamStyle": "FFA",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedDuos",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5",
+   "M017_V1",
+   "PVE_14",
+   "M018_V1",
+   "M018_V2",
+   "mts003_v1",
+   "mts003_v4",
+   "M023_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_tiny"
+    ],
+    "Players": [
+     [],
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_giant",
+     "mvsbuff_recievereducedhitstun",
+     "buff_defence_power_up"
+    ],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_shockfloor": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_shockfloor",
+  "Maps": [
+   "M003_V1",
+   "M011_V2"
+  ],
+  "RequiredWorldBuffs": [
+   "world_buff_electric_floor"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_itemparty": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedDuos",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5",
+   "M017_V1",
+   "PVE_14",
+   "M018_V1",
+   "M018_V2",
+   "mts003_v1",
+   "mts003_v4",
+   "M023_V2"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_itemparty_dice"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_icepit": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_icepit",
+  "Maps": [
+   "PVE_09"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_MJDD"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_hammertime": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 6,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_hammertime",
+  "Maps": [
+   "PvE_03"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_hammertime"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_counter": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 6,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedDuos",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5",
+   "M017_V1",
+   "PVE_14",
+   "M018_V1",
+   "M018_V2",
+   "mts003_v1",
+   "mts003_v4",
+   "M023_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_counterhit"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_counterhit"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_cunning": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedDuos",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5",
+   "M017_V1",
+   "PVE_14",
+   "M018_V1",
+   "M018_V2",
+   "mts003_v1",
+   "mts003_v4",
+   "M023_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_instant_cooldowns"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_instant_cooldowns"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_bambooboogie": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_bambooboogie",
+  "Maps": [
+   "PVE_05_V1"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_bambooboogie"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_1v1shields": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": false,
+  "MapRotation": "RankedSolos",
+  "Maps": [
+   "M001_V2",
+   "M002_V2",
+   "M003_V1",
+   "M009_V2",
+   "M011_V3",
+   "M007_V2",
+   "M012_V2",
+   "M016_V3",
+   "M015_V2",
+   "M003_V5",
+   "M017_V1",
+   "M018_V2",
+   "mts003_v2",
+   "M023_V2",
+   "M008_V2"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_shields"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_2v2shields": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": false,
+  "MapRotation": "RankedDuos",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M006_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M010_V2",
+   "M007_V2",
+   "M012_V3",
+   "MTS001_V1",
+   "M003_V5",
+   "M016_V4",
+   "M017_V1",
+   "M018_V2",
+   "mts003_v1",
+   "M023_V1"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_shields"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_targetrush": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 3,
+  "MatchDuration": 120,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_targetrush",
+  "Maps": [
+   "targetrush_001",
+   "pve_targetrush_002",
+   "pve_targetrush_003"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_targetrush"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_conteder": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 7,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_contender",
+  "Maps": [
+   "contender",
+   "contender_002",
+   "contender_003"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_contender"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_contender"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_volleyball_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 5,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_volleyball",
+  "Maps": [
+   "pve_volleyball_001"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_volleyballpvp"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_turbo_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 1,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedSolos",
+  "Maps": [
+   "M001_V2",
+   "M002_V2",
+   "M003_V1",
+   "M009_V2",
+   "M011_V4",
+   "M016_V3",
+   "M007_V3",
+   "M012_V2",
+   "M014_V2",
+   "M015_V2",
+   "M017_V1",
+   "M018_V2",
+   "mts003_v2",
+   "M023_V2",
+   "M008_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_turbo"
+    ],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_turbo"
+    ],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_toasty_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedSolos",
+  "Maps": [
+   "M001_V2",
+   "M002_V2",
+   "M003_V1",
+   "M009_V2",
+   "M011_V4",
+   "M016_V3",
+   "M007_V3",
+   "M012_V2",
+   "M014_V2",
+   "M015_V2",
+   "M017_V1",
+   "M018_V2",
+   "mts003_v2",
+   "M023_V2",
+   "M008_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "companion_buff"
+    ],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "companion_buff"
+    ],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_tiny_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 2,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_tiny",
+  "Maps": [
+   "M015_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_tiny",
+     "buff_attack_power_up"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_tiny",
+     "buff_attack_power_up"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_tinyvsgiant_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedSolos",
+  "Maps": [
+   "M001_V2",
+   "M002_V2",
+   "M003_V1",
+   "M009_V2",
+   "M011_V4",
+   "M016_V3",
+   "M007_V3",
+   "M012_V2",
+   "M014_V2",
+   "M015_V2",
+   "M017_V1",
+   "M018_V2",
+   "mts003_v2",
+   "M023_V2",
+   "M008_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [
+      "buff_tiny"
+     ]
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [
+      "buff_giant"
+     ]
+    ]
+   }
+  ]
+ },
+ "gm_targetrush_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 120,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_targetrush",
+  "Maps": [
+   "targetrush_001",
+   "pve_targetrush_002",
+   "pve_targetrush_003"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_targetrush"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_spotlight_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_rocketfistrain_1v1",
+  "Maps": [
+   "M001_V2",
+   "M002_V2",
+   "M003_V1",
+   "M009_V2",
+   "M011_V4",
+   "M016_V3",
+   "M007_V3",
+   "M012_V2",
+   "M014_V2",
+   "M015_V2",
+   "M008_V2"
+  ],
+  "RequiredWorldBuffs": [
+   "world_buff_spotlight"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_spotlightpilot_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_spotlightpilot",
+  "Maps": [
+   "mts001_v5"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_spotlightpilot"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [
+      "mvsbuff_pilot"
+     ]
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [
+      "mvsbuff_pilot"
+     ]
+    ]
+   }
+  ]
+ },
+ "gm_splat_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_splat",
+  "Maps": [
+   "M006_V2",
+   "M007",
+   "M009_V1",
+   "M010_V1",
+   "M012_V1",
+   "M014"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_splat"
+    ],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_splat"
+    ],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_selectpowerup_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedSolos",
+  "Maps": [
+   "M001_V2",
+   "M002_V2",
+   "M003_V1",
+   "M009_V2",
+   "M011_V4",
+   "M016_V3",
+   "M007_V3",
+   "M012_V2",
+   "M014_V2",
+   "M015_V2",
+   "M017_V1",
+   "M018_V2",
+   "mts003_v2",
+   "M023_V2",
+   "M008_V2"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_powerselect_pvp"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_rocketfistrain_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_rocketfistrain_1v1",
+  "Maps": [
+   "M001_V2",
+   "M002_V2",
+   "M003_V1",
+   "M009_V2",
+   "M011_V4",
+   "M016_V3",
+   "M007_V3",
+   "M012_V2",
+   "M014_V2",
+   "M015_V2",
+   "M008_V2"
+  ],
+  "RequiredWorldBuffs": [
+   "rocket_rain"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_retrohorror_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_retrohorror",
+  "Maps": [
+   "M002_V3",
+   "M006_V1",
+   "M006_V2",
+   "M014",
+   "M015_V2"
+  ],
+  "RequiredWorldBuffs": [
+   "mvbuff_vhshorror",
+   "world_buff_ghosts"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_onehitwonder_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 1,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedSolos",
+  "Maps": [
+   "M001_V2",
+   "M002_V2",
+   "M003_V1",
+   "M009_V2",
+   "M011_V4",
+   "M016_V3",
+   "M007_V3",
+   "M012_V2",
+   "M014_V2",
+   "M015_V2",
+   "M017_V1",
+   "M018_V2",
+   "mts003_v2",
+   "M023_V2",
+   "M008_V2"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_onehitwonder"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_lazaruspit1_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 2,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_lazaruspit",
+  "Maps": [
+   "M003_V1"
+  ],
+  "RequiredWorldBuffs": [
+   "world_buff_lazarus_pit"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_kartrace_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_racecar",
+  "Maps": [
+   "RaceCourse_001",
+   "RaceCourse_002",
+   "RaceCourse_003",
+   "RaceCourse_004",
+   "pve_racecourse_005",
+   "pve_racecourse_006"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_racecarpvp"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_icepit_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_icepit",
+  "Maps": [
+   "PVE_09"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_MJDD"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_hammertime_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_hammertime",
+  "Maps": [
+   "PvE_03"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_hammertime"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_gumballshower_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_gumballshower",
+  "Maps": [
+   "M018_V1"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_gumballshowerpvp"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_divekick_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 7,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_divekick",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V2",
+   "M009_V1",
+   "M006_V2",
+   "M015_V1",
+   "M002_V3",
+   "M010_V2",
+   "M007_V2",
+   "M012_V1",
+   "M017_V1",
+   "M018_V2",
+   "mts003_v1"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_divekick"
+    ],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_divekick"
+    ],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_counter_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedSolos",
+  "Maps": [
+   "M001_V2",
+   "M002_V2",
+   "M003_V1",
+   "M009_V2",
+   "M011_V4",
+   "M016_V3",
+   "M007_V3",
+   "M012_V2",
+   "M014_V2",
+   "M015_V2",
+   "M017_V1",
+   "M018_V2",
+   "mts003_v2",
+   "M023_V2",
+   "M008_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_counterhit"
+    ],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_counterhit"
+    ],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_conteder_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 7,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_contender",
+  "Maps": [
+   "contender",
+   "contender_002",
+   "contender_003"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_contender"
+    ],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_contender"
+    ],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_chickensvsicecubes_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedSolos",
+  "Maps": [
+   "M001_V2",
+   "M002_V2",
+   "M003_V1",
+   "M009_V2",
+   "M011_V4",
+   "M016_V3",
+   "M007_V3",
+   "M012_V2",
+   "M014_V2",
+   "M015_V2",
+   "M017_V1",
+   "M018_V2",
+   "mts003_v2",
+   "M023_V2",
+   "M008_V2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_perma_chicken_gauntlets"
+    ],
+    "Players": [
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "buff_perma_ice_gauntlets"
+    ],
+    "Players": [
+     []
+    ]
+   }
+  ]
+ },
+ "gm_spotlightpilot": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_spotlightpilot",
+  "Maps": [
+   "mts001_v5"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_spotlightpilot"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [
+      "mvsbuff_pilot"
+     ],
+     [
+      "mvsbuff_pilot"
+     ]
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [
+      "mvsbuff_pilot"
+     ],
+     [
+      "mvsbuff_pilot"
+     ]
+    ]
+   }
+  ]
+ },
+ "gm_onehitwonder": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 1,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "UnrankedDuos",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V1",
+   "M009_V1",
+   "M008",
+   "M006_V1",
+   "M010_V2",
+   "M016_V2",
+   "M015_V1",
+   "M002_V3",
+   "M007",
+   "M012_V3",
+   "M014",
+   "M016_V4",
+   "MTS001_V1",
+   "M003_V5",
+   "M017_V1",
+   "PVE_14",
+   "M018_V1",
+   "M018_V2",
+   "mts003_v1",
+   "mts003_v4",
+   "M023_V2"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_onehitwonder"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_gumballshower": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_gumballshower",
+  "Maps": [
+   "M018_V1"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_gumballshowerpvp"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_divekick": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 7,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_divekick",
+  "Maps": [
+   "M003_V3",
+   "M001",
+   "M011_V2",
+   "M009_V1",
+   "M006_V2",
+   "M015_V1",
+   "M002_V3",
+   "M010_V2",
+   "M007_V2",
+   "M012_V1",
+   "M017_V1",
+   "M018_V2",
+   "mts003_v1"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_divekick"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   },
+   {
+    "RequiredTeamPlayerBuffs": [
+     "mvsbuff_divekick"
+    ],
+    "Players": [
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_classic_ffa": {
+  "TeamStyle": "FFA",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "PlaytestCustomFFA",
+  "Maps": [
+   "M000_V1_NEW",
+   "M001",
+   "PvE_03",
+   "M002_V1",
+   "M002_V3",
+   "M003_V3",
+   "M003_V4",
+   "M003_V5",
+   "PVE_M003_Floorless",
+   "PVE_05_V1",
+   "M006_V1",
+   "M006_V2",
+   "M008",
+   "M009_V1",
+   "M010_V1",
+   "M010_V2",
+   "M011_V1",
+   "M011_V2",
+   "M015_V1",
+   "M016",
+   "M016_V2",
+   "M016_V4",
+   "M007",
+   "M007_V2",
+   "M012_V3",
+   "M012_V1",
+   "M014",
+   "M017_V1",
+   "M017_V2",
+   "M018_V1",
+   "M018_V2",
+   "M023_V1",
+   "M025_V1",
+   "M026_V1",
+   "M026_V2",
+   "MTS001_V1",
+   "mts001_V4",
+   "mts001_v3",
+   "PVE_09",
+   "PVE_14",
+   "MTS002_V1",
+   "mts002_v2",
+   "mts002_V3",
+   "PVE_08",
+   "mts003_v1",
+   "mts003_v3",
+   "mts003_v4",
+   "map_pve_m016_module04",
+   "map_pve_m016_module05",
+   "map_pve_m016_module08",
+   "map_pve_m016_module09",
+   "map_pve_m016_module10"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": []
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": []
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": []
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": []
+   }
+  ]
+ },
+ "gm_classic_2v2": {
+  "TeamStyle": "Duos",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "CustomDuos",
+  "Maps": [
+   "M000_V1_NEW",
+   "M001",
+   "PvE_03",
+   "M002_V1",
+   "M002_V3",
+   "M003_V3",
+   "M003_V4",
+   "M003_V5",
+   "PVE_M003_Floorless",
+   "PVE_05_V1",
+   "M006_V1",
+   "M006_V2",
+   "M008",
+   "M009_V1",
+   "M010_V1",
+   "M010_V2",
+   "M011_V1",
+   "M011_V2",
+   "M015_V1",
+   "M016",
+   "M016_V2",
+   "M016_V4",
+   "map_pve_m016_module04",
+   "map_pve_m016_module05",
+   "map_pve_m016_module08",
+   "map_pve_m016_module09",
+   "map_pve_m016_module10",
+   "M007",
+   "M007_V2",
+   "M012_V1",
+   "M012_V3",
+   "M014",
+   "M017_V1",
+   "M017_V2",
+   "M018_V1",
+   "M018_V2",
+   "M023_V1",
+   "MTS001_V1",
+   "mts001_V4",
+   "mts001_v3",
+   "PVE_14",
+   "PVE_09",
+   "MTS002_V1",
+   "mts002_v2",
+   "mts002_V3",
+   "PVE_08",
+   "mts003_v1",
+   "mts003_v4",
+   "mts003_v3"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": []
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": []
+   }
+  ]
+ },
+ "gm_classic_1v1": {
+  "TeamStyle": "Solos",
+  "NumRingouts": 3,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "CustomSolos",
+  "Maps": [
+   "M000_V2_NEW",
+   "M001_V2",
+   "PvE_03",
+   "M002_V2",
+   "M002_V3",
+   "M003_V1",
+   "M003_V2",
+   "M003_V5",
+   "PVE_M003_Floorless",
+   "PVE_05_V1",
+   "M006_V3",
+   "M006_V2",
+   "M008_V2",
+   "M009_V2",
+   "M010_V1",
+   "M010_V2",
+   "M011_V3",
+   "M011_V4",
+   "M015_V1",
+   "M015_V2",
+   "M016",
+   "M016_V3",
+   "M016_V4",
+   "map_pve_m016_module04",
+   "map_pve_m016_module05",
+   "map_pve_m016_module08",
+   "map_pve_m016_module09",
+   "map_pve_m016_module10",
+   "M007_V2",
+   "M007_V3",
+   "M012_V2",
+   "M014_V2",
+   "M017_V1",
+   "M017_V2",
+   "M018_V2",
+   "M023_V2",
+   "MTS001_V1",
+   "mts001_V4",
+   "PVE_09",
+   "MTS002_V1",
+   "mts002_v2",
+   "mts002_V3",
+   "PVE_08",
+   "mts003_v1",
+   "mts003_v2"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": []
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": []
+   }
+  ]
+ },
+ "gm_targetrun_local": {
+  "TeamStyle": "Other",
+  "NumRingouts": 1,
+  "MatchDuration": 70,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_targetrun",
+  "Maps": [
+   "TargetRun_001",
+   "TargetRun_002",
+   "TargetRun_003",
+   "TargetRun_004"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_targetrun_local"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     [],
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_targetclimb_local": {
+  "TeamStyle": "Other",
+  "NumRingouts": 1,
+  "MatchDuration": 70,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_targetclimb",
+  "Maps": [
+   "TargetClimb_001",
+   "TargetClimb_002",
+   "TargetClimb_003",
+   "TargetClimb_004"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_targetclimb_local"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     [],
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_targetbreak": {
+  "TeamStyle": "Other",
+  "NumRingouts": 1,
+  "MatchDuration": 70,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_targetbreak",
+  "Maps": [
+   "TargetBreak_001",
+   "TargetBreak_002",
+   "pve_targetbreak_003_data_local",
+   "TargetBreak_004",
+   "pve_targetbreak_005_data_local",
+   "TargetBreak_006",
+   "TargetBreak_007",
+   "TargetBreak_008",
+   "TargetBreak_009",
+   "TargetBreak_010",
+   "pve_08_targetbreak_data_local",
+   "pve_targetbreak_012",
+   "pve_targetbreak_013",
+   "pve_targetbreak_014",
+   "pve_targetbreak_015"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_targetbreak_local"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     [],
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_targetrun_local_2": {
+  "TeamStyle": "Other",
+  "NumRingouts": -1,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "maprotation_golf",
+  "Maps": [
+   "GolfCourse_001",
+   "GolfCourse_002",
+   "GolfCourse_003",
+   "GolfCourse_004",
+   "golfcourse_005",
+   "pve_golfcourse_006",
+   "GolfCourse_008",
+   "PVE_08_Golf",
+   "pve_golfcourse_007"
+  ],
+  "RequiredWorldBuffs": [
+   "mvsworldbuff_golf_10balls"
+  ],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": [
+     [],
+     [],
+     [],
+     []
+    ]
+   }
+  ]
+ },
+ "gm_classic_localplay": {
+  "TeamStyle": "FFA",
+  "NumRingouts": 4,
+  "MatchDuration": 420,
+  "bMapHazards": true,
+  "MapRotation": "LocalPlay",
+  "Maps": [
+   "M000_V1_NEW",
+   "M000_V2_NEW",
+   "M001",
+   "M001_V2",
+   "PvE_03",
+   "M002_V1",
+   "M002_V2",
+   "M002_V3",
+   "M003_V1",
+   "M003_V2",
+   "M003_V3",
+   "M003_V4",
+   "M003_V5",
+   "PVE_M003_Floorless",
+   "PVE_05_V1",
+   "M006_V1",
+   "M006_V2",
+   "M006_V3",
+   "M008",
+   "M008_V2",
+   "M009_V1",
+   "M009_V2",
+   "M010_V1",
+   "M010_V2",
+   "M010_V3",
+   "M011_V1",
+   "M011_V2",
+   "M011_V3",
+   "M011_V4",
+   "M015_V1",
+   "M015_V2",
+   "M016",
+   "M016_V2",
+   "M016_V3",
+   "M016_V4",
+   "map_pve_m016_module04",
+   "map_pve_m016_module05",
+   "map_pve_m016_module08",
+   "map_pve_m016_module09",
+   "map_pve_m016_module10",
+   "M007",
+   "M007_V2",
+   "M007_V3",
+   "M012_V1",
+   "M012_V2",
+   "M012_V3",
+   "M014",
+   "M014_V2",
+   "M017_V1",
+   "M017_V2",
+   "M018_V1",
+   "M018_V2",
+   "M023_V1",
+   "M023_V2",
+   "MTS001_V1",
+   "mts001_V4",
+   "mts001_v3",
+   "PVE_14",
+   "PVE_09",
+   "MTS002_V1",
+   "mts002_v2",
+   "mts002_V3",
+   "PVE_08",
+   "mts003_v1",
+   "mts003_v2",
+   "mts003_v4",
+   "mts003_v3"
+  ],
+  "RequiredWorldBuffs": [],
+  "Teams": [
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": []
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": []
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": []
+   },
+   {
+    "RequiredTeamPlayerBuffs": [],
+    "Players": []
+   }
+  ]
+ }
+}

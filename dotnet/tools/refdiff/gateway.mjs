@@ -44,10 +44,10 @@ export function decodeFrame(bytes) {
  */
 export async function connectPlayers(url, players) {
   const received = new Map(players.map((p) => [p.id, []]));
-  const sockets = [];
-  await Promise.all(players.map((player, i) => new Promise((resolve, reject) => {
+  const sockets = new Map();
+  const open = (player, i) => new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
-    sockets.push(ws);
+    sockets.set(player.id, ws);
     let greeted = false;
     const timer = setTimeout(() => reject(new Error(`no id frame for ${player.id}`)), 5000);
     ws.on("open", () => ws.send(initFrame(player.token, i + 1)));
@@ -66,11 +66,20 @@ export async function connectPlayers(url, players) {
       received.get(player.id).push(decodeFrame(bytes));
     });
     ws.on("error", reject);
-  })));
+  });
+  await Promise.all(players.map(open));
   return {
     frames: (id) => received.get(id),
     all: () => Object.fromEntries([...received].map(([id, list]) => [id, list])),
     clear: () => { for (const list of received.values()) list.length = 0; },
-    close: () => { for (const ws of sockets) ws.terminate(); },
+    close: () => { for (const ws of sockets.values()) ws.terminate(); },
+    /** The players whose socket the server closed. */
+    closed: () => players.filter((p) => sockets.get(p.id).readyState === WebSocket.CLOSED).map((p) => p.id),
+    /** Connects again every player whose socket the server closed; their ids. */
+    async reopen() {
+      const gone = players.map((p, i) => [p, i]).filter(([p]) => sockets.get(p.id).readyState === WebSocket.CLOSED);
+      await Promise.all(gone.map(([p, i]) => open(p, i)));
+      return gone.map(([p]) => p.id);
+    },
   };
 }

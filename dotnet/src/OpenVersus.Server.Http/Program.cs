@@ -3,6 +3,7 @@ using OpenVersus.Server.Core.Access;
 using OpenVersus.Server.Core.Calendar;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Cosmetics;
+using OpenVersus.Server.Core.CustomLobbies;
 using OpenVersus.Server.Core.FileStorage;
 using OpenVersus.Server.Core.Friends;
 using OpenVersus.Server.Core.Hiss;
@@ -39,6 +40,7 @@ builder.AddInventory();
 builder.AddMatchHistory();
 builder.AddClientUpdateGate();
 builder.AddPartyLobbies();
+builder.AddCustomLobbies();
 builder.AddMatchLauncher();
 builder.AddCalendar();
 builder.AddSeasons();
@@ -99,8 +101,6 @@ app.UseOpenVersus();
 // The TS server checks the token before it knows whether a path exists.
 app.MapFallback(Stub.FallbackAsync).WithMetadata(RequiresHydraToken.Instance);
 app.Logger.LogWarning("MIGRATION BRIDGE: /batch sends the sub-requests C# has not ported to the TS server ({TsUrl}); see dotnet/docs/MIGRATION-BRIDGES.md (3)",
-    app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<BatchSettings>>().CurrentValue.TsUrl);
-app.Logger.LogWarning("MIGRATION BRIDGE: the party routes send custom lobby requests to the TS server ({TsUrl}); see dotnet/docs/MIGRATION-BRIDGES.md (6)",
     app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<BatchSettings>>().CurrentValue.TsUrl);
 
 app.Run();

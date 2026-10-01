@@ -1,18 +1,9 @@
-using FastEndpoints;
-using OpenVersus.Server.Http.Stubs;
-
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 
 /// <summary>
-/// PUT /ssc/invoke/join_custom_game_lobby.
-/// Seen in: binary ssc name; TS server: PUT /ssc/invoke/join_custom_game_lobby.
-/// Ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it.
+/// PUT /ssc/invoke/join_custom_game_lobby: joins a custom lobby, as a player or a spectator. Seen in: binary ssc name; TS server: PUT /ssc/invoke/join_custom_game_lobby.
 /// </summary>
-public sealed class PutJoinCustomGameLobby : StubEndpoint
+public sealed class PutJoinCustomGameLobby : CustomLobbyEndpoint
 {
-    public override void Configure()
-    {
-        Verbs(FastEndpoints.Http.PUT);
-        Routes("/ssc/invoke/join_custom_game_lobby");
-    }
+    protected override string Route => "join_custom_game_lobby";
 }

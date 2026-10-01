@@ -1,18 +1,9 @@
-using FastEndpoints;
-using OpenVersus.Server.Http.Stubs;
-
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 
 /// <summary>
-/// PUT /ssc/invoke/lobby_code.
-/// Seen in: binary ssc name; TS server: PUT /ssc/invoke/lobby_code.
-/// Ssc: server/capture.
+/// PUT /ssc/invoke/lobby_code: the leader gets a code others can join the lobby by (GET /matches/{code}). Seen in: binary ssc name; TS server: PUT /ssc/invoke/lobby_code.
 /// </summary>
-public sealed class PutLobbyCode : StubEndpoint
+public sealed class PutLobbyCode : CustomLobbyEndpoint
 {
-    public override void Configure()
-    {
-        Verbs(FastEndpoints.Http.PUT);
-        Routes("/ssc/invoke/lobby_code");
-    }
+    protected override string Route => "lobby_code";
 }

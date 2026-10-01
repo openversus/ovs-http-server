@@ -261,6 +261,19 @@ function normalize(step, started, ids) {
 // The deliberate differences (see PartyService): for each step, what the difference must be; any other difference on
 // that step is reported like any other.
 const EXPECTED = {
+  "invite-no-lobby-id": {
+    why: "the port does not send an invite that names no lobby; the TS server sent it with an empty MatchID",
+    holds: (ts, cs) => ts.frames[P2].length === 1 && Object.values(cs.frames).every((f) => f.length === 0)
+      && JSON.stringify(ts.answer) === JSON.stringify(cs.answer) && JSON.stringify(ts.state) === JSON.stringify(cs.state),
+  },
+  "mode-party": {
+    why: "the port tells everyone in the party of a mode change; the TS server told only the player who made it",
+    holds: (ts, cs) => {
+      const sent = (step, pid) => JSON.stringify(step.frames[pid]);
+      return sent(ts, P2) === "[]" && sent(cs, P2) === sent(ts, P1) && sent(cs, P1) === sent(ts, P1)
+        && JSON.stringify(ts.answer) === JSON.stringify(cs.answer) && JSON.stringify(ts.state) === JSON.stringify(cs.state);
+    },
+  },
   "create-no-session": {
     why: "a player with no session: the port puts their own cosmetics in the match copy; the TS server wrote those of \"undefined\"",
     holds: (ts, cs) => ts.writes.some((w) => w.startsWith("set player:undefined:cosmetics")) && !cs.writes.some((w) => w.includes("undefined"))

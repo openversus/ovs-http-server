@@ -221,6 +221,28 @@ public sealed class PartyServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AnInviteIsSentOnlyWhenItNamesALobby()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        var heard = await ListenAsync();
+        await Service().InviteAsync(Asking(Owner, $$"""{"InviteeAccountID": "{{Guest}}"}"""));
+        await Task.Delay(200);
+        Assert.Empty(heard);
+        Assert.False(await Db.KeyExistsAsync($"pending_join_lobby:{Guest}"));
+
+        await SeedLobbyAsync(Owner);
+        await Service().InviteAsync(Asking(Owner, $$"""{"InviteeAccountID": "{{Guest}}", "LobbyId": "{{Lobby}}"}"""));
+        var told = await Eventually(() => heard.TryPeek(out var m) ? m : null);
+        Assert.Equal(Guest, told["playerIds"]!.AsArray().Single()!.GetValue<string>());
+        Assert.Equal("InviteReceivedForLobby", told["message"]!["data"]!["template_id"]!.GetValue<string>());
+        Assert.Equal(Lobby, (string?)await Db.StringGetAsync($"pending_join_lobby:{Guest}"));
+    }
+
+    [Fact]
     public async Task LeavingAPartyTellsTheRestAndGivesTheLeaverASoloLobby()
     {
         if (_redis is null)
@@ -269,7 +291,7 @@ public sealed class PartyServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AModeChangeKeepsTheSessionAndAnotherPlayersIpCopy()
+    public async Task AModeChangeReachesThePartyAndKeepsTheSessionAndAnotherPlayersIpCopy()
     {
         if (_redis is null)
         {
@@ -283,8 +305,14 @@ public sealed class PartyServiceTests : IAsyncLifetime
         // The IP-keyed copy is another household member's.
         await Db.HashSetAsync($"connections:{ip}", [new("id", Guest), new("lobby_id", "theirs")]);
 
+        var heard = await ListenAsync();
+        await SeedLobbyAsync(Owner, Guest);
         await Service().SetModeAsync(Asking(Owner, """{"ModeString": "2v2"}"""));
 
+        // Everyone in the party hears of it.
+        var told = await Eventually(() => heard.TryPeek(out var m) ? m : null);
+        Assert.Equal([Owner, Guest], told["playerIds"]!.AsArray().Select(p => p!.GetValue<string>()));
+        Assert.Equal("OnLobbyModeUpdated", told["message"]!["data"]!["template_id"]!.GetValue<string>());
         Assert.Equal(Lobby, (string?)await Db.HashGetAsync($"connections:{Owner}", "lobby_id"));
         Assert.Equal("448", (string?)await Db.HashGetAsync($"connections:{Owner}", "GameplayPreferences"));
         Assert.Equal("theirs", (string?)await Db.HashGetAsync($"connections:{ip}", "lobby_id"));

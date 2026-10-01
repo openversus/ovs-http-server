@@ -17,8 +17,8 @@ namespace OpenVersus.Server.Core.Matches;
 // The party lobby SSC routes, ported from the TS server (ssc/ssc.ts, modules/lobby/shared.routes.ts, ssc/routes.ts,
 // services/lobbyService.ts) together with what the TS websocket sent the players for them (websocket.ts
 // handleOnLobbyModeChanged, handlePartyInvite, handlePlayerLoadoutLocked, the custom_lobby:notification relay): those
-// messages now go through ws:send (PlayerMessages). The custom lobby side of the shared routes stays on the TS server
-// (the endpoints hand those requests on: MIGRATION-BRIDGES.md 6); CustomLobbyAsync says which.
+// messages now go through ws:send (PlayerMessages). The custom lobby side of the shared routes is CustomLobbyService's
+// (CustomLobbies/); CustomLobbyAsync says which requests are.
 //
 // Redis, the TS server's keys (MIGRATION-BRIDGES.md 2):
 //   lobby:{id}                  JSON {lobbyId, ownerId, ownerUsername, mode, playerIds, createdAt (ms)} (+ joinable false
@@ -43,6 +43,8 @@ namespace OpenVersus.Server.Core.Matches;
 //     the copy's id with itself, so it always wrote, into another household member's copy too.
 //   - set_mode_for_lobby no longer reads every session in Redis (KEYS connections:*) for a debug log.
 //   - party keys (the retired /party page) are not updated: nothing makes them any more.
+//   - a mode change is sent to everyone in the party; the TS server told only the player who changed it.
+//   - an invite that names no lobby is not sent (it could not be accepted); the TS server sent it with an empty MatchID.
 //   - a loadout lock with a disabled character, or from a player with no record, is answered (bAreAllLoadoutsLocked
 //     false, as the rift lock answers); the TS server never answered it.
 //   - a player with no session (connections:{player}) is still the player their token names: their cosmetics go into
@@ -55,7 +57,7 @@ public sealed record PartyRequest(string AccountId, JsonObject? Claims, string C
 
 public interface IPartyService
 {
-    /// <summary>The custom lobby a shared route's request belongs to (the TS server answers those), or null.</summary>
+    /// <summary>The custom lobby a shared route's request belongs to (ICustomLobbyService answers those), or null.</summary>
     Task<string?> CustomLobbyAsync(string route, PartyRequest request);
 
     Task<JsonObject> CreatePartyLobbyAsync(PartyRequest request, CancellationToken ct = default);
@@ -225,7 +227,9 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         else
         {
             await redis.HashSetAsync($"player:{me}:lobby:{lobbyId}", "mode", modeText);
-            await PlayerMessages.SendAsync(redis, [me], PlayerMessages.Update(new JsonObject
+            // Everyone in the party hears of it (the TS server told only the player who changed it).
+            var party = await LobbyAsync(redis, lobbyId) is { } current && current.PlayerIds.Contains(me) ? current.PlayerIds : [me];
+            await PlayerMessages.SendAsync(redis, party, PlayerMessages.Update(new JsonObject
             {
                 ["template_id"] = "OnLobbyModeUpdated",
                 ["LobbyId"] = lobbyId,
@@ -248,7 +252,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         return LobbyDocuments.Ssc([]);
     }
 
-    // ── invite_to_player_lobby (a party lobby; custom lobbies are the TS server's) ───────────────────────────────────
+    // ── invite_to_player_lobby (a party lobby; custom lobbies are CustomLobbyService's) ───────────────────────────────────
     public async Task<JsonObject> InviteAsync(PartyRequest request, CancellationToken ct)
     {
         var redis = Redis();
@@ -266,8 +270,15 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             return LobbyDocuments.Ssc([]);
         }
 
+        // An invite to no lobby could not be accepted (the join has nowhere to go): not sent.
+        if (lobbyId.Length == 0)
+        {
+            log.LogWarning("Invite from {Inviter} to {Invitee} names no lobby; not sent", me, invitee);
+            return LobbyDocuments.Ssc([]);
+        }
+
         // The game does not always hide "+" once the party is full: refused here.
-        if (lobbyId.Length > 0 && await LobbyAsync(redis, lobbyId) is { } lobby)
+        if (await LobbyAsync(redis, lobbyId) is { } lobby)
         {
             if (lobby.PlayerIds.Count >= 2)
             {
@@ -293,10 +304,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         });
 
         // The invitee's join goes to this lobby when they accept.
-        if (lobbyId.Length > 0)
-        {
-            await redis.StringSetAsync($"pending_join_lobby:{invitee}", lobbyId, TimeSpan.FromSeconds(60));
-        }
+        await redis.StringSetAsync($"pending_join_lobby:{invitee}", lobbyId, TimeSpan.FromSeconds(60));
 
         return LobbyDocuments.Ssc([]);
     }
@@ -399,7 +407,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         return LobbyDocuments.Answer(answerLobby);
     }
 
-    // ── leave_player_lobby (a party lobby; custom lobbies are the TS server's) ───────────────────────────────────────
+    // ── leave_player_lobby (a party lobby; custom lobbies are CustomLobbyService's) ───────────────────────────────────────
     public async Task<JsonObject> LeaveAsync(PartyRequest request, CancellationToken ct)
     {
         var redis = Redis();
@@ -545,7 +553,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         return LobbyDocuments.Ssc([]);
     }
 
-    // ── set_ready_for_lobby (a party lobby; custom lobbies are the TS server's) ──────────────────────────────────────
+    // ── set_ready_for_lobby (a party lobby; custom lobbies are CustomLobbyService's) ──────────────────────────────────────
     public async Task<JsonObject> SetReadyAsync(PartyRequest request, CancellationToken ct)
     {
         var redis = Redis();
@@ -609,7 +617,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         return LobbyDocuments.Ssc(answer);
     }
 
-    // ── lock_lobby_loadout (a party lobby; custom lobbies are the TS server's) ───────────────────────────────────────
+    // ── lock_lobby_loadout (a party lobby; custom lobbies are CustomLobbyService's) ───────────────────────────────────────
     public async Task<JsonObject> LockLoadoutAsync(PartyRequest request, CancellationToken ct)
     {
         var redis = Redis();

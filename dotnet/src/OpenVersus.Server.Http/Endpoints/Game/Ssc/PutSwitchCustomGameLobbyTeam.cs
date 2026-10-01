@@ -1,18 +1,9 @@
-using FastEndpoints;
-using OpenVersus.Server.Http.Stubs;
-
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 
 /// <summary>
-/// PUT /ssc/invoke/switch_custom_game_lobby_team.
-/// Seen in: binary ssc name; TS server: PUT /ssc/invoke/switch_custom_game_lobby_team.
-/// Ssc: binary.
+/// PUT /ssc/invoke/switch_custom_game_lobby_team: a player moves to another team, or to or from the spectators. Seen in: binary ssc name; TS server: PUT /ssc/invoke/switch_custom_game_lobby_team.
 /// </summary>
-public sealed class PutSwitchCustomGameLobbyTeam : StubEndpoint
+public sealed class PutSwitchCustomGameLobbyTeam : CustomLobbyEndpoint
 {
-    public override void Configure()
-    {
-        Verbs(FastEndpoints.Http.PUT);
-        Routes("/ssc/invoke/switch_custom_game_lobby_team");
-    }
+    protected override string Route => "switch_custom_game_lobby_team";
 }

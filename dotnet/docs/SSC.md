@@ -20,8 +20,30 @@ written. Each needs a closer look before the TS server goes.
 | `PUT update_party_game_modes` | not captured | `{body: {}}` | The party's chosen modes are not kept; check whether matchmaking or the lobby should use them. |
 | `PUT set_lobby_joinable` | `{LobbyId, ...}` (5 captures) | `{body: {}}` | Nothing is kept, as on the TS server, where `router.ts` answers first and shadows a second handler in `ssc/routes.ts` that would set the lobby's `joinable` back to true. `set_lobby_not_joinable` sets it false; neither server reads it. |
 | `PUT autoparty_join` | not captured | `{body: {}}` | The game's auto-party is not a feature here. |
-| `PUT set_mode_for_lobby` (ported 2026-10-01 with the party routes) | `{ModeString, ...}` | the lobby, or `{body: {}}` | Only the lobby's maker is told (`OnLobbyModeUpdated`); the other party member never hears of a mode change. The TS server did the same. |
-| `PUT invite_to_player_lobby` (ported 2026-10-01) | `{InviteeAccountID, LobbyId, IsSpectator, ...}` (not captured; names from the TS code) | `{body: {}}` | An invite with no lobby id is still sent, with an empty `MatchID`, as the TS server sends it. |
+| `PUT set_mode_for_lobby` (ported 2026-10-01 with the party routes) | `{ModeString, ...}` | the lobby, or `{body: {}}` | Only the lobby's maker can change it; everyone in the party is told (`OnLobbyModeUpdated`). The TS server told only the maker. |
+| `PUT invite_to_player_lobby` (ported 2026-10-01) | `{InviteeAccountID, LobbyId, IsSpectator, ...}` (not captured; names from the TS code) | `{body: {}}` | An invite that names no lobby is not sent (it could not be accepted); the TS server sent it with an empty `MatchID`. |
+
+## The custom lobby (ported 2026-10-01)
+
+The 16 custom lobby functions (`create_custom_game_lobby`, `join_custom_game_lobby`, `update_team_style_for_custom_game`,
+`update_int_setting_for_custom_game`, `set_game_mode_for_custom_game`, `set_enabled_maps_for_custom_game`,
+`set_player_handicap_for_custom_game`, `switch_custom_game_lobby_team`, `add_custom_game_bot`,
+`update_custom_game_bot_fighter`, `reset_custom_lobby_to_defaults`, `promote_to_lobby_leader`, `kick_from_lobby`,
+`set_world_buffs_for_custom_game`, `lobby_code`, `start_custom_match`), the custom lobby side of five party functions
+(`create_party_lobby`, `leave_player_lobby`, `invite_to_player_lobby`, `lock_lobby_loadout`, `set_ready_for_lobby`) and
+`GET /matches/{code}`: `Core/CustomLobbies/CustomLobbyService.cs`, recorded against the TS server with
+`tools/matches/custom_lobby_diff.mjs`. The TS server's bugs that players hit are fixed (the service's header lists each,
+and the harness asserts it): a player added twice, a ready lost to a loadout lock, the lead passed to the wrong player
+or a bot, anyone able to promote, team changes allowed only in Duos.
+
+| Left as the TS server has it | To do |
+|---|---|
+| `bAllPlayersReady` counts spectators' ready flags but not spectators, and counts bots, who never ready | Decide what "all ready" means with spectators and bots; anything that changes who plays or their indexes is checked against the rollback server first. |
+| `LobbyPlayerIndex` is the player count at join: it can repeat after a leave | The lobby screen's only (the match's indexes are worked out at the start); change it only if the lobby screen shows a problem. |
+| `set_game_mode_for_custom_game` waited 1.5 s before changing the mode, for a reason nobody remembers | `CustomLobbies:GameModeDelayMs`, 0: put 1500 back if mode changes misbehave. |
+| `rematch_accept`, `rematch_decline` and the match end (`handleSscCustomLobbyMatchEnd`) | Still the TS server's (they read the same lobby); they move with the match flow. The match end resets `ReadyPlayers` outside any script (a ready landing then can be lost, as the loadout lock lost them). |
+| A player who disconnects leaves their lobby through the TS websocket (`handleDisconnect`), which runs the TS leave script: a leader who crashes or quits still hands the lead to the first player of the first team, a bot included | Fixed when the websocket's disconnect moves (REALTIME.md): it calls the C# leave. |
+| `GET /matches/{id}` for anything but a lobby code | Not ported (the TS server had no route for it either). |
 
 ## Other notes
 

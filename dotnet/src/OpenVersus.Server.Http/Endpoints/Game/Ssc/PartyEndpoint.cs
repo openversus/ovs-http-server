@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using OpenVersus.Server.Core.CustomLobbies;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Http.Hosting;
 using StackExchange.Redis;
@@ -7,7 +8,8 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 
 /// <summary>
 /// A party lobby route (<see cref="IPartyService"/>). One the game also uses inside a custom lobby (<see cref="Shared"/>)
-/// hands those requests to the TS server, which still answers custom lobbies (<see cref="TsForwarder"/>).
+/// answers those requests from the custom lobby (<see cref="ICustomLobbyService.SharedAsync"/>), or as a party route when
+/// that has no answer (the TS server fell through to its party route the same way).
 /// </summary>
 public abstract class PartyEndpoint : JsonBodyEndpoint
 {
@@ -34,15 +36,13 @@ public abstract class PartyEndpoint : JsonBodyEndpoint
             return;
         }
 
-        HttpContext.Request.EnableBuffering();
         var body = (await ReadBodyAsync(ct)) as JsonObject;
-        HttpContext.Request.Body.Position = 0;
         var request = new PartyRequest(session.AccountId, session.Claims, ClientAddress.Of(HttpContext, stripMapped: true), body);
         var party = Resolve<IPartyService>();
-        if (Shared && await party.CustomLobbyAsync(Route, request) is { } custom)
+        if (Shared && await party.CustomLobbyAsync(Route, request) is { } custom
+            && await Resolve<ICustomLobbyService>().SharedAsync(Route, request, custom, ct) is { } answer)
         {
-            Logger.LogInformation("{Route}: custom lobby {Lobby}: answered by the TS server", Route, custom);
-            await TsForwarder.ForwardAsync(HttpContext, ct);
+            await SendJsonAsync(answer, ct);
             return;
         }
 

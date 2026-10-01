@@ -4,6 +4,7 @@
  * to old handlers in ssc/routes.ts when not applicable.
  */
 import express, { Request, Response } from "express";
+import { gameplayPreferencesOf } from "../../utils/gameplayPreferences";
 import { logger } from "../../config/logger";
 import { redisClient } from "../../config/redis";
 import * as AuthUtils from "../../utils/auth";
@@ -121,7 +122,7 @@ sharedLobbyRouter.put("/ssc/invoke/leave_player_lobby", async (req: Request, res
           const connData = await redisClient.hGetAll(`connections:${account.id}`);
           const character = connData?.character || "character_shaggy";
           const skin = connData?.skin || "skin_shaggy_default";
-          const gameplayPrefs = Number(connData?.GameplayPreferences) || 964;
+          const gameplayPrefs = gameplayPreferencesOf(connData?.GameplayPreferences);
 
           const soloLobby = {
             Teams: [

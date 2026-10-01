@@ -19,6 +19,7 @@ namespace OpenVersus.Server.Core.Tests.Hiss;
 /// answer built once per CRC (tools/hiss/hiss_diff.mjs compares it with the TS server's). The cache tests use real Mongo
 /// (a database of their own, dropped) and Redis: OVS_TEST_MONGO, OVS_TEST_REDIS, OVS_TEST_REDIS_USER, OVS_TEST_REDIS_PW.
 /// </summary>
+[Collection(RedisTestDatabase.Name)]
 public sealed class HissServiceTests : IAsyncLifetime
 {
     private const string TestMongoDb = "ovs_hiss_tests";

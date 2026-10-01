@@ -15,6 +15,7 @@ namespace OpenVersus.Server.Core.Tests.Friends;
 /// not). Real Redis (database 15) and Mongo (a database of its own, dropped): OVS_TEST_REDIS, OVS_TEST_REDIS_USER,
 /// OVS_TEST_REDIS_PW, OVS_TEST_MONGO, as OpsTests.
 /// </summary>
+[Collection(RedisTestDatabase.Name)]
 public sealed class FriendsServiceTests : IAsyncLifetime
 {
     private const int TestRedisDb = 15;

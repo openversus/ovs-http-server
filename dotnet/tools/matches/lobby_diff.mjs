@@ -24,14 +24,9 @@ const { HydraDecoder } = await import(process.cwd() + "/node_modules/mvs-dump/di
 process.argv = argv;
 
 // The deliberate differences (see PartyLobbyService): for each step, what the difference must be; any other difference
-// on that step is reported like any other.
+// on that step is reported like any other. (solo-no-session was one until 2026-09-30, when the TS server stopped
+// sending NaN for a missing GameplayPreferences: both now send 964, and solo-zero-preferences checks a stored 0 stays 0.)
 const EXPECTED = {
-  "solo-no-session": {
-    why: "GameplayPreferences 964 where the TS server's encoder writes NaN as a map entry with no value",
-    // TS: the next key is read as that value and the rest of the answer shifts (no id, no players). C#: 964, whole.
-    holds: (ts, cs) => typeof ts.response?.server_data?.PlayerGameplayPreferences?.[P1] === "string" && ts.response?.players === undefined
-      && cs.status === 200 && cs.response?.server_data?.PlayerGameplayPreferences?.[P1] === 964 && cs.response?.players?.count === 1,
-  },
   "not-json-lobby": {
     why: "the solo answer, where the TS request fails on JSON.parse and never answers",
     holds: (ts, cs) => String(ts.status).startsWith("<no answer") && cs.status === 200 && cs.response?.template?.name === "party_lobby"

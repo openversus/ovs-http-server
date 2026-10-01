@@ -16,6 +16,7 @@ namespace OpenVersus.Server.Core.Tests.Perks;
 /// (tools/perks/perks_write_diff.mjs compares the rest with the TS server). Real Redis (database 15) and Mongo (a
 /// database of its own, dropped): OVS_TEST_REDIS, OVS_TEST_REDIS_USER, OVS_TEST_REDIS_PW, OVS_TEST_MONGO, as OpsTests.
 /// </summary>
+[Collection(RedisTestDatabase.Name)]
 public sealed class PerkPageWriteTests : IAsyncLifetime
 {
     private const int TestRedisDb = 15;

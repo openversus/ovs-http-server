@@ -7,6 +7,7 @@ using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Static;
+using OpenVersus.Server.Core.Preferences;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Rifts;
@@ -115,7 +116,8 @@ internal sealed class RiftLobbyService(IServiceProvider services, IRiftStateServ
             ["LeaderID"] = playerId,
             ["LobbyType"] = request?["LobbyType"]?.DeepClone() ?? 0,
             ["ReadyPlayers"] = new JsonObject(),
-            ["PlayerGameplayPreferences"] = new JsonObject { [playerId] = request?["GameplayPreferences"]?.DeepClone() ?? Preferences(connection) },
+            // The value the game sends (the player's current one), else the stored one.
+            ["PlayerGameplayPreferences"] = new JsonObject { [playerId] = GameplayPreferences.Parse(request?["GameplayPreferences"]) is { } sent ? JsonValue.Create(sent) : Preferences(connection) },
             ["PlayerAutoPartyPreferences"] = new JsonObject { [playerId] = request?["AutoPartyPreference"]?.DeepClone() ?? false },
             ["GameVersion"] = lobbies.CurrentValue.GameVersion,
             ["HissCrc"] = request?["HissCrc"]?.DeepClone() ?? 0,
@@ -211,9 +213,9 @@ internal sealed class RiftLobbyService(IServiceProvider services, IRiftStateServ
         return data;
     }
 
-    // Number(GameplayPreferences) || 964, as the party lobby answers.
+    // The player's stored value, 0 included; 964 only when there is none, as the party lobby answers.
     private static JsonNode Preferences(Dictionary<string, string> connection) =>
-        Js.Number(Get(connection, "GameplayPreferences")) is var n && n != 0 && double.IsFinite(n) ? JsonValue.Create(n) : 964;
+        JsonValue.Create(GameplayPreferences.Of(Get(connection, "GameplayPreferences")));
 
     private static string? Str(JsonObject? obj, string key) => obj?[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
 

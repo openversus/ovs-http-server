@@ -16,6 +16,7 @@ namespace OpenVersus.Server.Core.Tests;
 /// OVS_TEST_REDIS (host:port, plus OVS_TEST_REDIS_USER / OVS_TEST_REDIS_PW) and OVS_TEST_MONGO (a mongodb:// URI; its
 /// database name is replaced).
 /// </summary>
+[Collection(RedisTestDatabase.Name)]
 public sealed class OpsTests : IAsyncLifetime
 {
     private const int TestRedisDb = 15;

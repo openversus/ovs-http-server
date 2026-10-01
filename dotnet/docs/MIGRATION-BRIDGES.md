@@ -50,6 +50,13 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   cosmetics to the others in a match. `set_profile_icon` also writes `playertesters.profile_icon`, which `/access`,
   profiles and friends read. The Mongo writes keep mongoose's upsert shape (`$setOnInsert` with `__v` and the schema's
   defaults).
+- **GameplayPreferences** (the player's input settings: deadzones, input buffer, item pickup; they change how a match
+  feels): `playertesters.GameplayPreferences` (an int32) and `connections:{id}` `GameplayPreferences` (text), written by
+  both servers with the same rules (C# `Core/Preferences`, TS `utils/gameplayPreferences.ts` and
+  `services/gameplayPreferences.ts`): only a whole number is stored, never the default 964 over a player's value, and
+  0 is a value. The game sends its current value with every party-lobby request; both servers record it before the
+  handler (C# `GameplayPreferencesRecorder`, TS `recordGameplayPreferencesFromRequest`), and every lobby and match
+  reads the stored one. The TS websocket builds the match configs from `connections:{id}`.
 - **Asset sync:** `dataassets` and the `config` collection's `CRC` are written only by the TS server's `POST /syncAsset`
   (`dataAssetSync.ts`: the asset, then the CRC bumped). C# reads both (`HissService` builds its answer once per CRC;
   the inventory, cosmetics and hiss answers read the assets), so an asset sync goes through the TS server until

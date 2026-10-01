@@ -12,6 +12,7 @@ using OpenVersus.Server.Core.Layouts;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Perks;
+using OpenVersus.Server.Core.Preferences;
 using OpenVersus.Server.Core.Profiles;
 using OpenVersus.Server.Core.Rifts;
 using OpenVersus.Server.Core.Seasons;
@@ -42,6 +43,7 @@ builder.AddSeasons();
 builder.AddPerks();
 builder.AddRankedData();
 builder.AddCosmetics();
+builder.AddGameplayPreferences();
 builder.AddHiss();
 builder.AddRifts();
 builder.AddBatch();
@@ -70,6 +72,8 @@ app.Use((context, next) =>
 app.UseHydraToken();
 // Gameplay transitions only from a current, registered client, as the TS server's requireCurrentClientForGameplay.
 app.UseClientGameplayGate();
+// The player's input settings the game sends with party-lobby requests (Core/Preferences).
+app.UseGameplayPreferencesRecorder();
 app.UseFastEndpoints(c =>
 {
     // ASP.NET's authorization is not used: game endpoints require the session token through RequiresHydraToken

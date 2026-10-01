@@ -1,4 +1,5 @@
 import { logger, logwrapper, BE_VERBOSE } from "../config/logger";
+import { gameplayPreferencesOf } from "../utils/gameplayPreferences";
 import express, { Request, Response } from "express";
 import {
   redisClient,
@@ -204,8 +205,8 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
         LobbyType: 0,
         ReadyPlayers: {},
         PlayerGameplayPreferences: {
-          [existingLobby.ownerId]: Number(ownerConn?.GameplayPreferences) || 964,
-          [aID]: Number(rPlayerConnectionByID?.GameplayPreferences) || 964,
+          [existingLobby.ownerId]: gameplayPreferencesOf(ownerConn?.GameplayPreferences),
+          [aID]: gameplayPreferencesOf(rPlayerConnectionByID?.GameplayPreferences),
         },
         PlayerAutoPartyPreferences: { [existingLobby.ownerId]: false, [aID]: false },
         GameVersion: env.GAME_VERSION,
@@ -337,7 +338,7 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
         LobbyPlayerIndex: i,
         CrossplayPreference: 1,
       };
-      refreshGameplayPrefs[pid] = Number(pConn?.GameplayPreferences) || 964;
+      refreshGameplayPrefs[pid] = gameplayPreferencesOf(pConn?.GameplayPreferences);
       refreshAutoParty[pid] = false;
       refreshPlatforms[pid] = "PC";
       refreshLoadouts[pid] = {
@@ -482,7 +483,7 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
       LeaderID: aID,
       LobbyType: 0,
       ReadyPlayers: {},
-      PlayerGameplayPreferences: { [aID]: Number(rPlayerConnectionByID.GameplayPreferences) ?? 964 },
+      PlayerGameplayPreferences: { [aID]: gameplayPreferencesOf(rPlayerConnectionByID.GameplayPreferences) },
       PlayerAutoPartyPreferences: { [aID]: false },
       GameVersion: env.GAME_VERSION,
       HissCrc: 1167552915,

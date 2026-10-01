@@ -16,6 +16,7 @@ namespace OpenVersus.Server.Core.Tests.Cosmetics;
 /// (tools/cosmetics/equip_diff.mjs checks everything else against the TS server). Real Redis (database 15) and Mongo (a
 /// database of its own, dropped): OVS_TEST_REDIS, OVS_TEST_REDIS_USER, OVS_TEST_REDIS_PW, OVS_TEST_MONGO, as OpsTests.
 /// </summary>
+[Collection(RedisTestDatabase.Name)]
 public sealed class CosmeticsServiceTests : IAsyncLifetime
 {
     private const int TestRedisDb = 15;

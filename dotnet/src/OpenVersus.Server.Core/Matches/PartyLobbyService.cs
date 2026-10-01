@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Preferences;
 using OpenVersus.Server.Core.Settings;
 using StackExchange.Redis;
 
@@ -33,9 +34,10 @@ namespace OpenVersus.Server.Core.Matches;
 //   {"lobbyId", "ownerId", "ownerUsername", "mode" ("1v1", "2v2", "FFA", "1v1_ranked", "2v2_ranked"), "playerIds": [...],
 //    "createdAt" (ms)}; one with no playerIds (an older custom lobby) is not joined or refreshed.
 //
-// Differences from the TS server: the solo answer sends GameplayPreferences 964 when the player's session has none,
-// where the TS server sends NaN, which its Hydra encoder writes as a map entry with no value (the rest of the answer
-// then misparses), and 964 for an infinite one; a lobby:{id} that is not JSON is treated as no lobby (the TS request fails and never answers); a
+// GameplayPreferences: the player's stored value, 0 included, 964 only when there is none (Core/Preferences; the TS
+// server does the same since 2026-09-30, before which a 0 became 964 and a missing value NaN).
+//
+// Differences from the TS server: a lobby:{id} that is not JSON is treated as no lobby (the TS request fails and never answers); a
 // token with no id is refused (the TS server would build a lobby for the player "undefined"); a token claim that is
 // missing is sent as "" (the TS server sends undefined, a NaN double where the game expects a string); each player's
 // Steam entry carries their Steam id, else Epic id, else account id (the TS server sends 76561195177950873 for everyone).
@@ -215,12 +217,10 @@ internal sealed class PartyLobbyService(IServiceProvider services, IClientUpdate
     {
         string me = player.Id;
         var now = time.GetUtcNow();
-        // Number(GameplayPreferences) ?? 964: a stored 0 stays 0; a missing, unreadable or infinite value becomes 964.
-        double preferences = Js.Number(Get(connection, "GameplayPreferences"));
         return Lobby(
             updatedAt: 1742265244, createdAt: 1742265244, rand: 0.6975513760957894,
             new JsonObject { [me] = TeamPlayer(me, now.ToUnixTimeSeconds(), 0) }, teamLength: 1, leaderId: me,
-            gameplay: new JsonObject { [me] = double.IsFinite(preferences) ? JsonValue.Create(preferences) : 964 },
+            gameplay: new JsonObject { [me] = Preferences(connection) },
             autoParty: new JsonObject { [me] = false },
             platforms: new JsonObject { [me] = "PC" },
             loadouts: new JsonObject { [me] = Loadout("character_wonder_woman", "skin_wonder_woman_default") },
@@ -369,9 +369,10 @@ internal sealed class PartyLobbyService(IServiceProvider services, IClientUpdate
         },
     };
 
-    // Number(GameplayPreferences) || 964 (an infinite value too: JSON cannot carry it)
+    // The player's stored value, 0 included; 964 only when there is none (GameplayPreferences.Of, as the TS server's
+    // gameplayPreferencesOf).
     private static JsonNode Preferences(Dictionary<string, string> connection) =>
-        Js.Number(Get(connection, "GameplayPreferences")) is var n && n != 0 && double.IsFinite(n) ? JsonValue.Create(n) : 964;
+        JsonValue.Create(GameplayPreferences.Of(Get(connection, "GameplayPreferences")));
 
     // MVSTime(new Date(createdAt)): whole seconds; a createdAt that is not a number is the TS server's NaN date, which
     // its encoder writes as 0.

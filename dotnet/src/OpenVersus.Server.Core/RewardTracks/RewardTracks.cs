@@ -25,8 +25,10 @@ namespace OpenVersus.Server.Core.RewardTracks;
 //     tier of the battle passes and Fighter Roads. Their rewards are listed as claimed, so nothing can be claimed that
 //     was not earned (WB left them to claim);
 //   - stored states (Mongo rewardtracks {_id: the player's ObjectId, tracks: {slug: {CurrentScore, CurrentTier,
-//     CompletedTiers, ClaimedRewards, HighestClaimedInifiniteTier}}}, C# only) win; nothing writes them yet: scores
-//     come with mission and match progress (docs/MISSIONS.md).
+//     CompletedTiers, ClaimedRewards, HighestClaimedInifiniteTier}}, version}, C# only) win. Claimed missions add to
+//     them (AddScoreAsync): the score grows, and CurrentTier and CompletedTiers follow it (the tiers whose threshold it
+//     reached); ClaimedRewards changes only with a tier claim (not built yet). Not done yet: bResetWhenCompleted (the
+//     missions' bonus tracks start over once complete), the infinite last tier (bDoesLastTierRecurInfinitely).
 
 /// <summary>Reward track settings.</summary>
 public sealed class RewardTrackSettings
@@ -39,6 +41,9 @@ public interface IRewardTrackService
 {
     /// <summary>The get_milestone_reward_tracks answer for the player.</summary>
     Task<JsonObject> AnswerAsync(string accountId, CancellationToken ct);
+
+    /// <summary>Adds score to the player's tracks (slug to points); the tiers reached follow.</summary>
+    Task AddScoreAsync(string accountId, IReadOnlyDictionary<string, int> points, CancellationToken ct);
 }
 
 internal sealed class RewardTrackService(IServiceProvider services, ILogger<RewardTrackService> log) : IRewardTrackService
@@ -75,6 +80,69 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
 
         return new JsonObject { ["body"] = new JsonObject { ["RewardTrackStates"] = states }, ["metadata"] = null, ["return_code"] = 0 };
     }
+
+    public async Task AddScoreAsync(string accountId, IReadOnlyDictionary<string, int> points, CancellationToken ct)
+    {
+        if (points.Count == 0 || !ObjectId.TryParse(accountId, out var id))
+        {
+            return;
+        }
+
+        var collection = (services.GetService<IMongoDatabase>() ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)"))
+            .GetCollection<BsonDocument>(Collection);
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            var doc = await collection.Find(new BsonDocument("_id", id)).FirstOrDefaultAsync(ct);
+            long version = doc?.GetValue("version", 0).ToInt64() ?? 0;
+            var tracks = doc?.GetValue("tracks", BsonNull.Value) is BsonDocument stored
+                ? JsonNode.Parse(stored.ToJson(new JsonWriterSettings { OutputMode = JsonOutputMode.RelaxedExtendedJson }))!.AsObject()
+                : new JsonObject();
+            foreach (var (slug, add) in points)
+            {
+                var state = tracks[slug] as JsonObject ?? Initial(slug);
+                tracks[slug] = Scored(slug, state, Score(state) + add);
+            }
+
+            var next = new BsonDocument { { "_id", id }, { "tracks", BsonDocument.Parse(Compat.Js.Stringify(tracks)) }, { "version", version + 1 } };
+            try
+            {
+                if (doc is null)
+                {
+                    await collection.InsertOneAsync(next, cancellationToken: ct);
+                    return;
+                }
+
+                if ((await collection.ReplaceOneAsync(new BsonDocument { { "_id", id }, { "version", version } }, next, cancellationToken: ct)).MatchedCount == 1)
+                {
+                    return;
+                }
+            }
+            catch (MongoWriteException e) when (e.WriteError.Category == ServerErrorCategory.DuplicateKey)
+            {
+                // Created by another request meanwhile: add to that.
+            }
+        }
+
+        log.LogWarning("Reward track score for {Account} lost: the tracks kept changing under it ({Points})", accountId, string.Join(", ", points.Select(p => $"{p.Key} +{p.Value}")));
+    }
+
+    private static long Score(JsonObject state) => (long)(RiftsNumber(state["CurrentScore"]) ?? 0);
+
+    // The state at a new score: the tiers whose threshold it reached are completed (in the track's order); claims kept.
+    internal static JsonObject Scored(string slug, JsonObject state, long score)
+    {
+        var reached = (Hiss.HissTables.Data("milestone-reward-tracks", slug)?["Tiers"] as JsonArray ?? [])
+            .OfType<JsonObject>()
+            .Where(t => (RiftsNumber(t["ScoreThreshold"]) ?? double.MaxValue) <= score)
+            .ToList();
+        var next = (JsonObject)state.DeepClone();
+        next["CurrentScore"] = score;
+        next["CurrentTier"] = reached.Count;
+        next["CompletedTiers"] = new JsonArray(reached.Select(t => (JsonNode?)t["TierGuid"]?.DeepClone()).ToArray());
+        return next;
+    }
+
+    private static double? RiftsNumber(JsonNode? node) => Rifts.RiftMissions.Number(node);
 
     /// <summary>A track never earned: score 0, the tiers at threshold 0 reached and their rewards claimed.</summary>
     internal static JsonObject Initial(string slug)

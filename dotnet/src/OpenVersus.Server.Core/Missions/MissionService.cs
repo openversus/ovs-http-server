@@ -26,20 +26,35 @@ namespace OpenVersus.Server.Core.Missions;
 //     meaning is not known, so it is not acted on): Daily and Weekly containers roll again when read after a reset
 //     (MissionClock) passed since their last roll, once however many passed (bEventRefreshCatchup false); the others
 //     (RefreshRate None) roll once;
-//   - no bIsClaimable: WB's own object had finished missions without it, and the client works it out.
+//   - a finished mission is answered with bIsClaimable: true: the game offers the claim only then (bench, 2026-10-01),
+//     though WB's own object had finished missions without it.
 //
 // Mongo, C# only: missionobjects {_id: the player's ObjectId, object_id (the object's own id, as WB's had one),
 // server_data {MissionControllerContainers, ClaimLocks}, rolled {container: last roll (date)}, created_at, updated_at,
 // version}. The answer carries the live containers only (a container dropped from the setting keeps its stored state).
 // Two reads racing (the login batch) both roll; the first write wins and the other answers what was stored (version).
 //
-// Progress from match results: MissionProgress.cs. Not yet: claims, FTUE (the client treats miscon_ftue apart; its daily-login controller
+// Progress from match results: MissionProgress.cs.
+//
+// claim_mission_rewards {ContainerSlug, MissionsToClaim: [{MissionControllerSlug, MissionGuid, MissionSlug}]}: each named
+// mission that is finished (every objective at its Count, or any one when bAllObjectivesMustBeCompleted is false) leaves
+// its group (an emptied group goes), and the container's RewardTracksToAdvance gain: MissionScore the mission's
+// ScoreContribution (the XP the game shows on it), Incremental 1 per mission (ContainerOverrideValue, 1 on every
+// container), through IRewardTrackService. A mission not found or not finished is left as it is. The answer is the
+// player's server_data after it ({MissionControllerContainers, ClaimLocks}): the shape the TS server's fixed answer has,
+// and the client hands it to the routine that takes the whole mission object (docs/MISSIONS.md; a hypothesis until the
+// bench shows it). Not yet: the list entries' RewardData (item and reward-table rewards: the tables are client data).
+//
+// Not yet: FTUE (the client treats miscon_ftue apart; its daily-login controller
 // is not moved by matches), attempt_daily_refresh's PlayerMissionObject (sent empty, as before).
 
 public interface IMissionService
 {
     /// <summary>The get_or_create_mission_object answer for the player, rolling what is due first.</summary>
     Task<JsonObject> GetOrCreateAsync(string accountId, CancellationToken ct);
+
+    /// <summary>claim_mission_rewards: claims the finished missions named, answering the player's missions after it.</summary>
+    Task<JsonObject> ClaimAsync(string accountId, JsonObject body, CancellationToken ct);
 
     /// <summary>Moves the player's missions by a match result (MissionProgress), once per player and match.</summary>
     Task RecordMatchAsync(string matchId, string playerId, int? winningTeamIndex, JsonObject? counters, CancellationToken ct);
@@ -97,6 +112,132 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
             log.LogInformation("Missions for {Account} were rolled by another request: answering those", accountId);
         }
     }
+
+    public async Task<JsonObject> ClaimAsync(string accountId, JsonObject body, CancellationToken ct)
+    {
+        var current = settings.CurrentValue;
+        var live = LiveContainers(current.Containers);
+        string? containerSlug = Text(body["ContainerSlug"]);
+        if (!ObjectId.TryParse(accountId, out var id))
+        {
+            return ClaimAnswer(MissionState.New(time.GetUtcNow()), live);
+        }
+
+        var collection = (services.GetService<IMongoDatabase>() ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)"))
+            .GetCollection<BsonDocument>(Collection);
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            if (await collection.Find(new BsonDocument("_id", id)).FirstOrDefaultAsync(ct) is not { } stored)
+            {
+                return ClaimAnswer(MissionState.New(time.GetUtcNow()), live);
+            }
+
+            var state = MissionState.From(stored);
+            var claimed = containerSlug is not null && live.Contains(containerSlug)
+                ? Claim(state, containerSlug, body["MissionsToClaim"] as JsonArray ?? [])
+                : [];
+            if (claimed.Count == 0)
+            {
+                log.LogInformation("Mission claim by {Account} in {Container}: nothing finished to claim ({Body})", accountId, containerSlug, Js.Stringify(body));
+                return ClaimAnswer(state, live);
+            }
+
+            state.UpdatedAt = time.GetUtcNow();
+            var result = await collection.ReplaceOneAsync(
+                new BsonDocument { { "_id", id }, { "version", state.Version } }, state.Next().ToBson(id), cancellationToken: ct);
+            if (result.MatchedCount != 1)
+            {
+                continue;
+            }
+
+            var points = TrackPoints(containerSlug!, claimed);
+            log.LogInformation("Missions claimed by {Account} in {Container}: {Missions}; reward tracks {Points}", accountId, containerSlug,
+                string.Join(", ", claimed), string.Join(", ", points.Select(p => $"{p.Key} +{p.Value}")));
+            await services.GetRequiredService<RewardTracks.IRewardTrackService>().AddScoreAsync(accountId, points, ct);
+            return ClaimAnswer(state, live);
+        }
+
+        log.LogWarning("Mission claim by {Account} lost: the missions kept changing under it", accountId);
+        return ClaimAnswer(MissionState.From((await collection.Find(new BsonDocument("_id", id)).FirstOrDefaultAsync(ct))!), live);
+    }
+
+    /// <summary>Removes the finished missions named from the container; the slugs claimed.</summary>
+    internal static List<string> Claim(MissionState state, string containerSlug, JsonArray requested)
+    {
+        var claimed = new List<string>();
+        if (state.ServerData["MissionControllerContainers"]?[containerSlug]?["MissionControllers"] is not JsonObject controllers)
+        {
+            return claimed;
+        }
+
+        foreach (var request in requested.OfType<JsonObject>())
+        {
+            string? controllerSlug = Text(request["MissionControllerSlug"]), guid = Text(request["MissionGuid"]), slug = Text(request["MissionSlug"]);
+            if (controllerSlug is null || guid is null || slug is null || controllers[controllerSlug]?["Missions"] is not JsonArray groups)
+            {
+                continue;
+            }
+
+            var group = groups.OfType<JsonObject>().FirstOrDefault(g => g[slug] is JsonObject m && Text(m["MissionGuid"]) == guid);
+            if (group is null || !Finished(slug, group[slug]!.AsObject()))
+            {
+                continue;
+            }
+
+            group.Remove(slug);
+            if (group.Count == 0)
+            {
+                groups.Remove(group);
+            }
+
+            claimed.Add(slug);
+        }
+
+        return claimed;
+    }
+
+    // Every objective at its Count, or any one when the mission does not need them all.
+    internal static bool Finished(string slug, JsonObject mission)
+    {
+        var definition = HissTables.Data("missions", slug)?["MvsMissionData"] as JsonObject;
+        var counts = (definition?["MissionObjectives"] as JsonArray ?? []).OfType<JsonObject>().ToList();
+        var done = (mission["MissionObjectives"] as JsonArray ?? []).OfType<JsonObject>()
+            .Select(o => (RiftMissions.Number(o["Progress"]) ?? 0) >= (RiftMissions.Number(counts.FirstOrDefault(c => Text(c["ObjectivePtr"]) == Text(o["Slug"]))?["Count"]) ?? 1))
+            .ToList();
+        bool all = Bool(definition?["bAllObjectivesMustBeCompleted"]) ?? false;
+        return done.Count > 0 && (all ? done.All(d => d) : done.Any(d => d));
+    }
+
+    // What the claimed missions add to the container's reward tracks.
+    internal static Dictionary<string, int> TrackPoints(string containerSlug, IReadOnlyList<string> claimed)
+    {
+        var points = new Dictionary<string, int>();
+        var tracks = HissTables.Data("mission-containers", containerSlug)?["MvsMissionControllerContainerData"]?["RewardTracksToAdvance"] as JsonArray ?? [];
+        foreach (var track in tracks.OfType<JsonObject>())
+        {
+            string? slug = Text(track["RewardTrack"]);
+            if (slug is null)
+            {
+                continue;
+            }
+
+            int add = Text(track["ScoreGrantBehavior"]) switch
+            {
+                "MissionScore" => claimed.Sum(m => (int)(RiftMissions.Number(HissTables.Data("missions", m)?["MvsMissionData"]?["ScoreContribution"]) ?? 0)),
+                "Incremental" => claimed.Count * (int)(RiftMissions.Number(track["ContainerOverrideValue"]) ?? 1),
+                _ => 0,
+            };
+            if (add > 0)
+            {
+                points[slug] = points.GetValueOrDefault(slug) + add;
+            }
+        }
+
+        return points;
+    }
+
+    private static JsonObject ClaimAnswer(MissionState state, IReadOnlyList<string> live) =>
+        new() { ["body"] = Answer(state, "", live)["body"]!["server_data"]!.DeepClone(), ["metadata"] = null, ["return_code"] = 0 };
 
     public async Task RecordMatchAsync(string matchId, string playerId, int? winningTeamIndex, JsonObject? counters, CancellationToken ct)
     {
@@ -397,6 +538,24 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
     }
 
     // The fixed answer's envelope, in its key order, around the player's object.
+    // A finished mission is marked bIsClaimable: true (last), which the game needs to offer the claim (bench,
+    // 2026-10-01: a mission at 400/400 without it was not claimable). Worked out at every answer, not stored.
+    private static JsonNode Claimable(JsonNode container)
+    {
+        foreach (var (_, controller) in container["MissionControllers"] as JsonObject ?? [])
+        {
+            foreach (var (slug, mission) in (controller?["Missions"] as JsonArray ?? []).OfType<JsonObject>().SelectMany(g => g).ToList())
+            {
+                if (mission is JsonObject m && Finished(slug, m))
+                {
+                    m["bIsClaimable"] = true;
+                }
+            }
+        }
+
+        return container;
+    }
+
     private static JsonObject Answer(MissionState state, string accountId, IReadOnlyList<string> live)
     {
         var containers = new JsonObject();
@@ -405,7 +564,7 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
         {
             if (stored[slug] is { } container)
             {
-                containers[slug] = container.DeepClone();
+                containers[slug] = Claimable(container.DeepClone());
             }
         }
 

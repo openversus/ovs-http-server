@@ -1,13 +1,13 @@
 # Missions
 
-Status: **missions are rolled per player and moved by matches; claims do nothing yet.** With `Missions:Enabled` (off by
-default, as `MISSIONS_ENABLED` is on the TS server and prod), `get_or_create_mission_object` answers the player's own
-missions (C# `Core/Missions/MissionService.cs`, Mongo `missionobjects`), rolled from the game data for the containers in
-`Missions:Containers` and refreshed at the resets (`Missions:ResetHourUtc`, `ResetMinute`, `WeeklyResetDay`, which
-`attempt_daily_refresh` also reports), and the calendar the game is sent keeps those containers' events running
-(`Missions:EventEndYears`). Match results move them (step 2). Off, it answers as the TS server does: no containers.
-`claim_mission_rewards` grants nothing yet. Reward tracks are per player and start from nothing
-(`RewardTracks:PerPlayer`); nothing adds to them yet. This file is what is known so far and the plan.
+Status: **missions are rolled per player and moved by matches; claims work but item rewards.** With `Missions:Enabled`
+(off by default, as `MISSIONS_ENABLED` is on the TS server and prod), `get_or_create_mission_object` answers the
+player's own missions (C# `Core/Missions/MissionService.cs`, Mongo `missionobjects`), rolled from the game data for the
+containers in `Missions:Containers` and refreshed at the resets (`Missions:ResetHourUtc`, `ResetMinute`,
+`WeeklyResetDay`, which `attempt_daily_refresh` also reports), and the calendar the game is sent keeps those containers'
+events running (`Missions:EventEndYears`). Match results move them (step 2). Off, it answers as the TS server does: no
+containers. Claims (`claim_mission_rewards`) remove finished missions and add to the container's reward tracks, which
+are per player and start from nothing (`RewardTracks:PerPlayer`). This file is what is known so far and the plan.
 
 Sources, each item says which: the game data the servers already send (HISS, `hiss-amalgamation.json`; the calendar,
 `Static/ssc-get-hiss-calendar-events.json`), the client binary (build `f97148ff`; headers in the UHT and jmap dumps),
@@ -55,11 +55,11 @@ body: { updated_at, owner_id, unique_key "missions", object_type_slug "player-mi
 - Each element of `Missions` is a group: one mission each for battle pass dailies, all five in one group for a character
   container (client `FMvsMissionController.MissionGroups`).
 - `bIsClaimable`: both client mission readers (`0x14291ff00` for the object, `0x142928790` for the end-of-match delta)
-  test for the field and, when present, read it as a bool (the same has-field / get-field calls as `Progress`). WB did
-  not send it, though: the WB object in the TS literal has 8 finished, unclaimed weekly missions and none carries it.
-  So the client works out claimability from `Progress` itself, and the field is optional. Not sent here unless the
-  bench shows a finished mission that the client will not offer to claim. The client's states are `EMissionClaimState`
-  InProgress, CollectionConstraintBlocked, Claimable, Claimed.
+  test for the field and, when present, read it as a bool (the same has-field / get-field calls as `Progress`). The game
+  offers a claim only when it is true: on the bench (2026-10-01) a mission at 400/400 without it was not claimable. So
+  a finished mission is answered with `bIsClaimable: true`, worked out at every answer. (WB's object in the TS literal
+  has 8 finished, unclaimed weekly missions without it: either the copy dropped it, or WB set it some other way.) The
+  client's states are `EMissionClaimState` InProgress, CollectionConstraintBlocked, Claimable, Claimed.
 - **The lifecycle, read off the WB object** (strong inference, one account): `UsedMissions` is every mission ever granted
   to the controller, in grant order; `Missions` is the granted ones not yet claimed. Weekly: 48 used, 29 outstanding
   (6 weeks of 8; 19 claimed; 8 of the 29 finished and unclaimed). The FTUE login controller: 7 used, none outstanding.
@@ -123,13 +123,13 @@ tracks (battle pass progress) as well.
    (a `profile-notification`, the whole object) through `ws:send`. Custom games move nothing unless
    `Missions:CustomGamesProgress`. Not in `EndOfMatchPayload` (the TS websocket sends that; `ClientReturnData` stays
    empty).
-3. **Claims:** `claim_mission_rewards` marks the missions claimed and grants `RewardData`. Client side so far: the
-   claim request (`0x142924b30`) registers its answer callback through a delegate (vtable `0x146736d40`, thunk
-   `0x142927250`) to `0x1429219b0`, which ends either by setting a timer delegate or by calling `0x14292a030`, the routine
-   that handles the whole mission object (containers, `miscon_ftue`, `UsedMissions`). With the TS answer's own shape
-   (`{MissionControllerContainers, ClaimLocks}`, the `server_data` keys), **hypothesis:** WB answered a claim with the
-   updated `server_data`. To settle on the bench: answer with it, and watch whether the client shows the mission
-   claimed.
+3. **Done (but item rewards): claims.** `claim_mission_rewards` takes each named mission that is finished out of its
+   group and adds to the container's reward tracks (`MissionScore`: the mission's `ScoreContribution`; `Incremental`:
+   1 per mission); the answer is the player's `server_data` after it (a hypothesis: the shape of the TS fixed answer, which the client hands to its whole-object routine; for the bench to settle).
+   Not yet: a list entry's `RewardData` (items, and reward tables such as `reward_xp_fighter_road_300`, whose amounts
+   are client data the servers do not have). Client side for the record: the claim request (`0x142924b30`) registers its
+   answer callback through a delegate (vtable `0x146736d40`, thunk `0x142927250`) to `0x1429219b0`, which ends either by
+   setting a timer delegate or by calling `0x14292a030`, the routine that handles the whole mission object.
 4. **Reward tracks, started:** `get_milestone_reward_tracks` answers each player's own (C#
    `Core/RewardTracks/RewardTracks.cs`, `RewardTracks:PerPlayer`, on by default): the fixed answer's tracks, every one
    starting at score 0 (character and account levels, battle passes, the missions' bonus tracks), the threshold-0 tiers

@@ -1,18 +1,14 @@
-using FastEndpoints;
-using OpenVersus.Server.Http.Stubs;
+using System.Text.Json.Nodes;
+using OpenVersus.Server.Core.Matches;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 
 /// <summary>
-/// PUT /ssc/invoke/create_party.
-/// Seen in: binary ssc name; TS server: PUT /ssc/invoke/create_party.
-/// Ssc: binary.
+/// PUT /ssc/invoke/create_party: PartyManager::CreateParty: the player's lobby id, flat ({MatchID}). Seen in: binary ssc name; TS server.
 /// </summary>
-public sealed class PutCreateParty : StubEndpoint
+public sealed class PutCreateParty : PartyEndpoint
 {
-    public override void Configure()
-    {
-        Verbs(FastEndpoints.Http.PUT);
-        Routes("/ssc/invoke/create_party");
-    }
+    protected override string Route => "create_party";
+
+    protected override Task<JsonObject> AnswerAsync(IPartyService party, PartyRequest request, CancellationToken ct) => party.CreatePartyAsync(request, ct);
 }

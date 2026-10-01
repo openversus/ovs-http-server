@@ -100,6 +100,8 @@ app.UseOpenVersus();
 app.MapFallback(Stub.FallbackAsync).WithMetadata(RequiresHydraToken.Instance);
 app.Logger.LogWarning("MIGRATION BRIDGE: /batch sends the sub-requests C# has not ported to the TS server ({TsUrl}); see dotnet/docs/MIGRATION-BRIDGES.md (3)",
     app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<BatchSettings>>().CurrentValue.TsUrl);
+app.Logger.LogWarning("MIGRATION BRIDGE: the party routes send custom lobby requests to the TS server ({TsUrl}); see dotnet/docs/MIGRATION-BRIDGES.md (6)",
+    app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<BatchSettings>>().CurrentValue.TsUrl);
 
 app.Run();
 

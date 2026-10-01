@@ -18,6 +18,10 @@ written. Each needs a closer look before the TS server goes.
 | `PUT decline_party_invite` | not captured | `{body: {}}` | Same: the inviter is never told. |
 | `PUT perks_absent` | `{ContainerMatchId}` (3 captures, during a match's perk selection) | `{body: {message: "Early absent report"}, return_code: 2}` (as every captured answer) | The TS server's fixed answer; find out what an absent report should do (a player who never picked perks?) and what the game does with return code 2. Part of the match flow (`perks_lock`). |
 | `PUT update_party_game_modes` | not captured | `{body: {}}` | The party's chosen modes are not kept; check whether matchmaking or the lobby should use them. |
+| `PUT set_lobby_joinable` | `{LobbyId, ...}` (5 captures) | `{body: {}}` | Nothing is kept, as on the TS server, where `router.ts` answers first and shadows a second handler in `ssc/routes.ts` that would set the lobby's `joinable` back to true. `set_lobby_not_joinable` sets it false; neither server reads it. |
+| `PUT autoparty_join` | not captured | `{body: {}}` | The game's auto-party is not a feature here. |
+| `PUT set_mode_for_lobby` (ported 2026-10-01 with the party routes) | `{ModeString, ...}` | the lobby, or `{body: {}}` | Only the lobby's maker is told (`OnLobbyModeUpdated`); the other party member never hears of a mode change. The TS server did the same. |
+| `PUT invite_to_player_lobby` (ported 2026-10-01) | `{InviteeAccountID, LobbyId, IsSpectator, ...}` (not captured; names from the TS code) | `{body: {}}` | An invite with no lobby id is still sent, with an empty `MatchID`, as the TS server sends it. |
 
 ## Other notes
 

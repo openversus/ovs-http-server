@@ -1,18 +1,14 @@
-using FastEndpoints;
-using OpenVersus.Server.Http.Stubs;
+using System.Text.Json.Nodes;
+using OpenVersus.Server.Core.Matches;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 
 /// <summary>
-/// PUT /ssc/invoke/join_party_lobby.
-/// Seen in: binary ssc name; TS server: PUT /ssc/invoke/join_party_lobby.
-/// Ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it.
+/// PUT /ssc/invoke/join_party_lobby: joins the party the player was invited to (or their own). Seen in: binary ssc name; TS server.
 /// </summary>
-public sealed class PutJoinPartyLobby : StubEndpoint
+public sealed class PutJoinPartyLobby : PartyEndpoint
 {
-    public override void Configure()
-    {
-        Verbs(FastEndpoints.Http.PUT);
-        Routes("/ssc/invoke/join_party_lobby");
-    }
+    protected override string Route => "join_party_lobby";
+
+    protected override Task<JsonObject> AnswerAsync(IPartyService party, PartyRequest request, CancellationToken ct) => party.JoinAsync(request, ct);
 }

@@ -73,6 +73,13 @@ public interface ICosmeticsService
 
     /// <summary>set_profile_icon: false for an unknown icon, or when the TS server would fail.</summary>
     Task<bool> SetProfileIconAsync(string accountId, JsonNode? slug, CancellationToken ct);
+
+    /// <summary>
+    /// Writes the match's copy of <paramref name="cosmetics"/>, connections:{id}:cosmetics, as redisSetPlayerConnectionCosmetics
+    /// does (a field per key, each JSON.stringify'd, merged into what is there; made when missing). The lobby routes
+    /// write it for every player in the lobby; the match reads it.
+    /// </summary>
+    Task WriteMatchCopyAsync(string accountId, JsonObject cosmetics);
 }
 
 /// <summary>The single-value cosmetics.</summary>
@@ -308,6 +315,15 @@ internal sealed class CosmeticsService(IServiceProvider services, ILogger<Cosmet
             new BsonDocumentUpdateDefinition<BsonDocument>(update),
             new FindOneAndUpdateOptions<BsonDocument> { IsUpsert = true, ReturnDocument = ReturnDocument.After },
             ct);
+    }
+
+    public async Task WriteMatchCopyAsync(string accountId, JsonObject cosmetics)
+    {
+        var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase() ?? throw new InvalidOperationException("this service has no Redis (REDIS)");
+        if (cosmetics.Count > 0)
+        {
+            await redis.HashSetAsync($"connections:{accountId}:cosmetics", cosmetics.Select(f => new HashEntry(f.Key, Js.Stringify(f.Value))).ToArray());
+        }
     }
 
     private IMongoDatabase Mongo() => services.GetService<IMongoDatabase>() ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)");

@@ -25,6 +25,7 @@ public static class TsEnvironment
         ("MIN_CLIENT_VERSION", "Clients:MinimumVersion"),
         ("CLIENT_VERSION_CHECK", "Clients:VersionCheck"),
         ("GAME_VERSION", "Lobbies:GameVersion"),
+        ("LOCAL_PUBLIC_IP", "Lobbies:LocalPublicIp"),
         ("DEFAULT_ELO", "Ranked:DefaultElo"),
         ("ROLLBACK_UDP_PORT_LOW", "Rollback:UdpPortLow"),
         ("ROLLBACK_UDP_PORT_HIGH", "Rollback:UdpPortHigh"),

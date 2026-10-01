@@ -158,6 +158,22 @@ public sealed class GameplayPreferencesStoreTests : IAsyncLifetime
         Assert.Equal(owned ? "972" : "448", (string?)await Redis.HashGetAsync($"connections:{ip}", "GameplayPreferences"));
     }
 
+    // Two different ids that RedisValue equality reads as the same number (0e0001 and 0e0002 are both 0): the copy is
+    // still the other player's.
+    [SkippableFact]
+    public async Task TheIpCopyOfAPlayerWhoseIdReadsAsTheSameNumberIsLeftAlone()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        string id = "0000000000000000000e" + Random.Shared.Next(1000, 9999);
+        _ids.Add(id);
+        await Players.InsertOneAsync(new BsonDocument { { "_id", ObjectId.Parse(id) }, { "GameplayPreferences", 448 } });
+        await Redis.HashSetAsync($"connections:{id}", [new("id", id), new("GameplayPreferences", "448")]);
+        string ip = $"198.51.100.{_ids.IndexOf(id)}";
+        await Redis.HashSetAsync($"connections:{ip}", [new("id", "0000000000000000000e0000"), new("GameplayPreferences", "448")]);
+        await Store.SaveAsync(id, 972, ip, default);
+        Assert.Equal("448", (string?)await Redis.HashGetAsync($"connections:{ip}", "GameplayPreferences"));
+    }
+
     [SkippableFact]
     public async Task ASessionThatIsNotAPlayerWritesNothing()
     {

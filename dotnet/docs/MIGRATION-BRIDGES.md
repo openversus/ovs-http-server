@@ -25,8 +25,12 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 - **Why:** TS services (websocket, matchmaking, the website) still read what C# writes, and the other way round.
 - **Pub/sub channels too:** a message C# publishes is read by the TS websocket, which then tells the game. So far:
   `lobby:player_joined` (`PartyLobbyService`, a player joined someone's lobby: `{lobbyId, ownerId, joinedPlayerId,
-  joinedPlayerUsername, allPlayerIds, mode}`) and `client_update:modal` (`ClientUpdateGate`, show a player the update
-  toast: `{playerId, nonce}`). Their payloads are JSON exactly as the TS server writes them.
+  joinedPlayerUsername, allPlayerIds, mode}`), `client_update:modal` (`ClientUpdateGate`, show a player the update
+  toast: `{playerId, nonce}`) and `matchmaking:cancel` (`PartyService`, someone joined a party: `{playersIds,
+  matchmakingId: "party-changed"}`; the TS websocket keeps the queue ticket and its tick in memory, so it cancels them).
+  Their payloads are JSON exactly as the TS server writes them. The party routes' other messages to players
+  (`OnLobbyModeUpdated`, `InviteReceivedForLobby`, `PlayerJoinedLobby`, `PlayerLeftLobby`, `PlayerReadyForLobby`,
+  `OnPlayerLoadoutLocked`) are built in C# and go through `ws:send` (4), as the TS websocket would have built them.
 - **Starting a match:** `IMatchLauncher` (`Core/Matches/`, for rifts so far) writes what the TS custom lobby writes
   when a match starts (`match:{id}`, `match:{id}:perks:{bot}`, the notification at `{id}`, `rollback:current_port` on
   demand) and publishes `match:notifications` (the TS `MATCH_FOUND_NOTIFICATION`) and `matchmaking:complete`. The TS
@@ -36,8 +40,10 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   `gameplayConfigTemplate` / `gameplayConfigData` (the config sent under another template, with fields beside it: a
   rift retry's `RiftRetryNotification` and `PriorMatchId`). Delete
   them with the websocket's port.
-- **Lobby keys:** `lobby:{id}` (JSON written by the TS `ssc.ts` and `websocket.ts`; C# adds a player to it keeping every
-  other field as read), `player_lobby:{player}` and `lobby_redirect:{id}` (read only, for now). C# also creates rift
+- **Lobby keys:** `lobby:{id}` (JSON written by the TS `ssc.ts` and `websocket.ts`; C# keeps every field it does not
+  change as read), `player_lobby:{player}`, `pending_join_lobby:{player}`, `player:{player}:lobby:{id}`, `party_ready:{id}`
+  and `player:{player}` `character`/`skin`/`ip`/`profileIcon` (the matchmaker reads `ip`): written by the party routes
+  (`PartyService`) as the TS server writes them, TTLs included; `lobby_redirect:{id}` is read only. C# also creates rift
   lobbies (`RiftLobbyService`, `create_rift_lobby`): the same `lobby:{id}` JSON, `player_lobby:{player}`,
   `player:{player}:lobby:{id}` and `connections:{player}` `lobby_id` as the TS `create_party_lobby` writes, with a mode
   the TS server never writes (`"rift_lobby"`) and three more fields (`riftConfigSlug`, `chapterGuid`,
@@ -48,9 +54,10 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   `JSON.stringify` writes a lean read (`_id`, `account_id`, `__v` kept), with a taunt entry per character. The TS
   websocket and match handlers (`websocket.ts`, `handlers/matches.ts`, `ssc/ssc.ts`) read the key to show a player's
   cosmetics to the others in a match. They read `connections:{id}:cosmetics` first (a hash, a field per key, each
-  JSON-encoded; made by the TS lobby lock and match flow, deleted by the TS websocket at disconnect): the C# equips
-  refresh it when it exists and never create it (TS equips leave it stale until the game restarts). Whoever ports
-  `lock_lobby_loadout` and the match flow takes over creating it. `set_profile_icon` also writes `playertesters.profile_icon`, which `/access`,
+  JSON-encoded; deleted by the TS websocket at disconnect): the C# party routes make it (`create_party_lobby`, a party
+  join and rejoin, `lock_lobby_loadout`: `ICosmeticsService.WriteMatchCopyAsync`), as the TS ones did, and the C# equips
+  refresh it when it exists and never create it (TS equips leave it stale until the game restarts). The TS match flow
+  still makes it too. `set_profile_icon` also writes `playertesters.profile_icon`, which `/access`,
   profiles and friends read. The Mongo writes keep mongoose's upsert shape (`$setOnInsert` with `__v` and the schema's
   defaults).
 - **Rewards** (`RewardTracks/RewardGrants.cs`): `playercounters` `match_toasts` gets an atomic `$inc` for toast rewards,
@@ -121,6 +128,22 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 - **Why:** a client stuck on an unanswered call has no way out of the menu; this frees it without restarting the game
   or the websocket service.
 - **Delete when:** the websocket is ported: C# closes the socket itself; the channel and its TS handler go.
+
+### 6. Custom lobby requests on the party routes go to the TS server (`src/OpenVersus.Server.Http/Hosting/TsForwarder.cs`)
+
+- **What:** five party routes are also what the game calls inside a custom lobby: `create_party_lobby`,
+  `leave_player_lobby`, `invite_to_player_lobby`, `lock_lobby_loadout`, `set_ready_for_lobby`. The party lobby side is
+  ported (`Core/Matches/PartyService.cs`); the custom lobby side is not. A request that belongs to a custom lobby
+  (`PartyService.CustomLobbyAsync`: `custom_lobby_ssc:{LobbyId}` exists, or for `create_party_lobby` and
+  `leave_player_lobby` the player's `ssc_custom_lobby_player:{player}`, the same checks as the TS
+  `modules/lobby/shared.routes.ts`) is sent to the TS server unchanged: the Hydra bytes as the game sent them (the
+  JSON of a batch sub-request), the game's headers, its address in `X-Real-IP`; the answer comes back byte for byte.
+  The TS server is `Batch:TsUrl`, the wait `Batch:ForwardTimeoutSeconds` (then 504; unreachable 502); a request that
+  comes back (`X-OVS-Forwarded`) answers 508. The HTTP service logs a `MIGRATION BRIDGE` warning at startup.
+- **Why:** the party routes could move without the custom lobby (2,000 lines of TS and its game data) moving with them,
+  and be tried in game on their own.
+- **Delete when:** the custom lobby routes are ported. Then `CustomLobbyAsync` answers from C#, `TsForwarder`, its
+  warning, `HydraBodies.RawItemKey` and this entry go.
 
 ## Not bridges (kept after the migration)
 

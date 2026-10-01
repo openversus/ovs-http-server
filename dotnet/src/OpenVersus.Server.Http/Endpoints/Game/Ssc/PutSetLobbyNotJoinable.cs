@@ -1,18 +1,14 @@
-using FastEndpoints;
-using OpenVersus.Server.Http.Stubs;
+using System.Text.Json.Nodes;
+using OpenVersus.Server.Core.Matches;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 
 /// <summary>
-/// PUT /ssc/invoke/set_lobby_not_joinable.
-/// Seen in: binary ssc name; captured 1x; TS server: PUT /ssc/invoke/set_lobby_not_joinable.
-/// Ssc: server/capture.
+/// PUT /ssc/invoke/set_lobby_not_joinable: marks the lobby not joinable (matchmaking started). Seen in: binary ssc name; captured 1x; TS server.
 /// </summary>
-public sealed class PutSetLobbyNotJoinable : StubEndpoint
+public sealed class PutSetLobbyNotJoinable : PartyEndpoint
 {
-    public override void Configure()
-    {
-        Verbs(FastEndpoints.Http.PUT);
-        Routes("/ssc/invoke/set_lobby_not_joinable");
-    }
+    protected override string Route => "set_lobby_not_joinable";
+
+    protected override Task<JsonObject> AnswerAsync(IPartyService party, PartyRequest request, CancellationToken ct) => party.SetNotJoinableAsync(request, ct);
 }

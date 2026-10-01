@@ -90,7 +90,9 @@ internal sealed class GameplayPreferencesStore(IServiceProvider services, ILogge
         }
 
         // The legacy IP-keyed copy of the session, only while it is this player's (a household shares an IP).
-        if (!string.IsNullOrEmpty(ip) && await redis.HashGetAsync($"connections:{ip}", "id") == accountId)
+        // Compared as text: RedisValue == string compares numbers when both look like one, and two ids such as
+        // 0000000000000000000e0001 and ...0e0002 (both 0) or two long all-digit ids (the same double) would match.
+        if (!string.IsNullOrEmpty(ip) && (string?)await redis.HashGetAsync($"connections:{ip}", "id") == accountId)
         {
             await redis.HashSetAsync($"connections:{ip}", "GameplayPreferences", text);
         }

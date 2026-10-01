@@ -30,6 +30,9 @@ public static class HydraBodies
     /// <summary>Set on a request that came in as Hydra; its JSON response goes back as Hydra.</summary>
     public const string ItemKey = "ovs.hydra";
 
+    /// <summary>The Hydra request body as the game sent it (a byte[]), for a request handed on unchanged (<see cref="TsForwarder"/>).</summary>
+    public const string RawItemKey = "ovs.hydra.raw";
+
     // A decoded request can hold a NaN double, which plain JSON cannot; this writes it as NaN so the conversion never fails.
     private static readonly JsonSerializerOptions s_json = new() { NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals };
 
@@ -64,6 +67,7 @@ public static class HydraBodies
     {
         using var body = new MemoryStream();
         await context.Request.Body.CopyToAsync(body);
+        context.Items[RawItemKey] = body.ToArray();
         JsonNode? value;
         if (body.Length == 0)
         {

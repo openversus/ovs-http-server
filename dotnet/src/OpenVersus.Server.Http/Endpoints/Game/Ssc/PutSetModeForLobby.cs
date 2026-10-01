@@ -1,18 +1,14 @@
-using FastEndpoints;
-using OpenVersus.Server.Http.Stubs;
+using System.Text.Json.Nodes;
+using OpenVersus.Server.Core.Matches;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 
 /// <summary>
-/// PUT /ssc/invoke/set_mode_for_lobby.
-/// Seen in: binary ssc name; TS server: PUT /ssc/invoke/set_mode_for_lobby.
-/// Ssc: server/capture.
+/// PUT /ssc/invoke/set_mode_for_lobby: the lobby's mode (ModeString); the whole lobby when it has 2+ players. Seen in: binary ssc name; TS server.
 /// </summary>
-public sealed class PutSetModeForLobby : StubEndpoint
+public sealed class PutSetModeForLobby : PartyEndpoint
 {
-    public override void Configure()
-    {
-        Verbs(FastEndpoints.Http.PUT);
-        Routes("/ssc/invoke/set_mode_for_lobby");
-    }
+    protected override string Route => "set_mode_for_lobby";
+
+    protected override Task<JsonObject> AnswerAsync(IPartyService party, PartyRequest request, CancellationToken ct) => party.SetModeAsync(request, ct);
 }

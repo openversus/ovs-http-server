@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.FunFacts;
 using OpenVersus.Server.Core.Preferences;
 using OpenVersus.Server.Core.Settings;
 using StackExchange.Redis;
@@ -47,6 +48,9 @@ public sealed class LobbySettings
 {
     [Description("The game build the lobby answers state (GameVersion; GAME_VERSION).")]
     public string GameVersion { get; set; } = "195303.1.1";
+
+    [Description("The address a player on this machine (127.0.0.1) is given to the matchmaker as, as the TS server's LOCAL_PUBLIC_IP does. Empty: 127.0.0.1 stays as it is.")]
+    public string LocalPublicIp { get; set; } = "";
 }
 
 /// <summary>The player asking, from their session token.</summary>
@@ -86,7 +90,7 @@ internal sealed class PartyLobbyService(IServiceProvider services, IClientUpdate
             matchId = redirect!;
         }
 
-        if (await redis.StringGetAsync($"player_lobby:{me}") is { IsNullOrEmpty: false } assigned && assigned != matchId
+        if (await redis.StringGetAsync($"player_lobby:{me}") is { IsNullOrEmpty: false } assigned && (string?)assigned != matchId
             && await LobbyAsync(redis, assigned!) is { } assignedLobby && PlayerIds(assignedLobby) is { } assignedIds
             && assignedIds.Contains(me) && Str(assignedLobby, "ownerId") != me)
         {
@@ -419,6 +423,8 @@ public static class PartyLobbyHosting
     {
         builder.AddSetting<LobbySettings>("Lobbies");
         builder.Services.AddSingleton<IPartyLobbyService, PartyLobbyService>();
+        builder.Services.AddSingleton<IPartyService, PartyService>();
+        builder.Services.AddFunFacts();
         return builder;
     }
 }

@@ -4,13 +4,15 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using OpenVersus.Server.Core.Missions;
 using OpenVersus.Server.Core.Settings;
 
 namespace OpenVersus.Server.Core.Seasons;
 
 // POST /ssc/invoke/attempt_daily_refresh: the game asks at login which season is current and when the next daily and
 // weekly refreshes are. The answer is the TS server's (handlers/ssc.ts, handleSsc_invoke_attempt_daily_refresh) field for
-// field, with CurrentSeason from the setting Season:Current instead of its fixed "Season:SeasonFive". The game lists
+// field, with CurrentSeason from the setting Season:Current instead of its fixed "Season:SeasonFive", and with
+// Missions:Enabled the next resets the missions roll at (MissionClock) instead of a day and a week from now. The game lists
 // the rift seasons up to the current one (the Season 6 rogue rifts need Season:SeasonSix); other per-season data the
 // servers still key by Season 5 (ranked, leaderboards, the login's trackers) may need filling for Season 6: see
 // docs/SEASONS.md.
@@ -29,19 +31,24 @@ public interface ISeasonService
     JsonObject DailyRefresh();
 }
 
-internal sealed class SeasonService(IOptionsMonitor<SeasonSettings> settings, TimeProvider time) : ISeasonService
+internal sealed class SeasonService(IOptionsMonitor<SeasonSettings> settings, IOptionsMonitor<MissionSettings> missions, TimeProvider time) : ISeasonService
 {
     public JsonObject DailyRefresh()
     {
-        long now = time.GetUtcNow().ToUnixTimeSeconds();
+        var at = time.GetUtcNow();
+        long now = at.ToUnixTimeSeconds();
+        // With missions working, the resets they roll at (MissionClock); otherwise the TS server's day and week from now.
+        var mission = missions.CurrentValue;
+        long nextDaily = mission.Enabled ? MissionClock.NextDaily(mission, at).ToUnixTimeSeconds() : now + 86400;
+        long nextWeekly = mission.Enabled ? MissionClock.NextWeekly(mission, at).ToUnixTimeSeconds() : now + 604800;
         return new JsonObject
         {
             ["body"] = new JsonObject
             {
                 ["ServerTimeUtc"] = new JsonObject { ["_hydra_unix_date"] = now },
                 ["CurrentSeason"] = settings.CurrentValue.Current,
-                ["NextDailyRefreshTime"] = new JsonObject { ["_hydra_unix_date"] = now + 86400 },
-                ["NextWeeklyRefreshTime"] = new JsonObject { ["_hydra_unix_date"] = now + 604800 },
+                ["NextDailyRefreshTime"] = new JsonObject { ["_hydra_unix_date"] = nextDaily },
+                ["NextWeeklyRefreshTime"] = new JsonObject { ["_hydra_unix_date"] = nextWeekly },
                 ["FreeCharacterRotation"] = new JsonArray(),
                 ["ReturnData"] = new JsonObject(),
                 ["PlayerMissionObject"] = new JsonObject

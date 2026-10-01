@@ -1,10 +1,13 @@
 # Missions
 
-Status: **TS parity only.** `get_or_create_mission_object` answers the TS server's fixed object (C#
-`Core/Missions/Missions.cs`): one WB account's missions, never updated, and no containers at all unless
-`Missions:Enabled` (`MISSIONS_ENABLED` on the TS server; off by default and on prod). `claim_mission_rewards` grants
-nothing. No server tracks mission progress. The goal is missions that work again: rolled per player, moved by matches,
-claimable. This file is what is known so far and the plan.
+Status: **missions are rolled per player; nothing moves them yet.** With `Missions:Enabled` (off by default, as
+`MISSIONS_ENABLED` is on the TS server and prod), `get_or_create_mission_object` answers the player's own missions
+(C# `Core/Missions/MissionService.cs`, Mongo `missionobjects`), rolled from the game data for the containers in
+`Missions:Containers` and refreshed at the resets (`Missions:ResetHourUtc`, `ResetMinute`, `WeeklyResetDay`, which
+`attempt_daily_refresh` also reports), and the calendar the game is sent keeps those containers' events running
+(`Missions:EventEndYears`). Off, it answers as the TS server does: no containers. Match results do not move progress,
+`claim_mission_rewards` grants nothing, and no battle pass progress is kept yet. This file is what is known so far and
+the plan.
 
 Sources, each item says which: the game data the servers already send (HISS, `hiss-amalgamation.json`; the calendar,
 `Static/ssc-get-hiss-calendar-events.json`), the client binary (build `f97148ff`; headers in the UHT and jmap dumps),
@@ -27,7 +30,8 @@ Five tables, each `{_hydra_compressed: {slug: {data: ...}}}` under `body.Data`:
 
 Container families: battle pass daily and weekly per season (`miscon_battlepassdaily_s5`, `miscon_battlepassweekly_s5`;
 **no Season 6 containers exist**), events (all past), FTUE (`miscon_ftue`: three controllers, 14 + 7 + 7 missions), and
-36 character containers (`miscon_unlockable_c001` ... `c036`, GrantBehavior Unlockable, Count 50 over 5 missions).
+33 character containers (`miscon_unlockable_c001` ... `c036`, with numbers missing and `c023A` and `c023b` both there;
+GrantBehavior Unlockable, Count 50 over 5 missions).
 
 Which containers are live is decided by the calendar the servers serve (`get_hiss_calendar_events`, a fixed file):
 `evt_battlepass_season_five` runs 2025-02-04 to 2025-05-30, and `evt_season5_arenaevent3` is in it too. Both match the
@@ -50,11 +54,23 @@ body: { updated_at, owner_id, unique_key "missions", object_type_slug "player-mi
 
 - Each element of `Missions` is a group: one mission each for battle pass dailies, all five in one group for a character
   container (client `FMvsMissionController.MissionGroups`).
-- The client's mission code references `bIsClaimable` (`0x142920d40`, `0x142928fd1`) beside `MissionGuid`,
-  `MissionObjectives`, `Slug`, `Progress`; neither the TS literal nor the WB websocket shapes carry it. Hypothesis: the
-  client works out claimability from `Progress` against the mission's `Count` (its `FMvsMission.bIsClaimable`), and the
-  server may or may not send the flag; whether those references read or write it is unchecked. The client's states are
-  `EMissionClaimState` InProgress, CollectionConstraintBlocked, Claimable, Claimed.
+- `bIsClaimable`: both client mission readers (`0x14291ff00` for the object, `0x142928790` for the end-of-match delta)
+  test for the field and, when present, read it as a bool (the same has-field / get-field calls as `Progress`). WB did
+  not send it, though: the WB object in the TS literal has 8 finished, unclaimed weekly missions and none carries it.
+  So the client works out claimability from `Progress` itself, and the field is optional. Not sent here unless the
+  bench shows a finished mission that the client will not offer to claim. The client's states are `EMissionClaimState`
+  InProgress, CollectionConstraintBlocked, Claimable, Claimed.
+- **The lifecycle, read off the WB object** (strong inference, one account): `UsedMissions` is every mission ever granted
+  to the controller, in grant order; `Missions` is the granted ones not yet claimed. Weekly: 48 used, 29 outstanding
+  (6 weeks of 8; 19 claimed; 8 of the 29 finished and unclaimed). The FTUE login controller: 7 used, none outstanding.
+  A character controller: 5 used, 4 left in its one group. So a claim removes the mission (from its group; an empty
+  group goes), and a refresh adds new groups without clearing unfinished ones (`bCleanRefresh` false on every
+  container used). The dailies granted 24 in the season's first 6 weeks (7 at most per controller): one roll per day
+  the player came, not one per day passed (`bEventRefreshCatchup` false).
+- Roll rules, as far as the data shows: `DescendingOrderByWeight` takes the `Count` heaviest list entries and does not
+  skip used ones (the weekly history repeats the same slugs week after week); `RandomByWeight` draws `Count` by weight
+  (the daily history never repeats within a controller's list until it runs out); `Unlockable` grants the whole list
+  once (RefreshRate None).
 - `UsedMissions` repeats slugs heavily in the literal. **Hypothesis:** a history of missions granted, used to avoid
   repeats when rolling; not confirmed.
 - The HTTP answer writes dates as `{_hydra_unix_date}`; the websocket messages carry the same object with ISO text dates.
@@ -94,27 +110,45 @@ tracks (battle pass progress) as well.
 ## Plan
 
 0. **Done:** `get_or_create_mission_object` ported at TS parity (`Missions:Enabled`).
-1. **Per-player mission object** (C#, Mongo): rolled from HISS for the live containers (calendar-active battle pass and
-   events, FTUE, character containers by decision below), `Count` per controller by `GrantBehavior` and `Weight`,
-   `bForce` first, refreshed on `RefreshRate` (Daily/Weekly) at a fixed UTC hour, `UsedMissions` kept.
+1. **Done: per-player mission object** (C#, Mongo `missionobjects`): rolled for the live containers by the rules
+   above, rolled again on read after a reset, the calendar's events for those containers moved on. FTUE is left out
+   for now (the client handles `miscon_ftue` apart; its login controller is not moved by matches): to add after
+   reading what the client does with it. `attempt_daily_refresh`'s `PlayerMissionObject` stays empty (WB's carried
+   containers; whether the whole object or what the refresh granted is not known).
 2. **Progress:** from `match:end_of_match_stats` (as rift progress is, a migration bridge), objectives evaluated with
    the rift star rules (`RiftMissions.cs`, after checking them against the client's own `UMvsOfflineObjectiveProcessor`),
-   `Count` capped (whether to send `bIsClaimable`: RE its readers first); `EndOfMatchPayload` missions delta and `MissionUpdatesComplete` through
+   `Count` capped; `EndOfMatchPayload` missions delta and `MissionUpdatesComplete` through
    `ws:send`.
-3. **Claims:** `claim_mission_rewards` marks the missions claimed and grants `RewardData`; the answer's shape and what the
-   client expects after a claim come from RE of the client's claim callback first.
+3. **Claims:** `claim_mission_rewards` marks the missions claimed and grants `RewardData`. Client side so far: the
+   claim request (`0x142924b30`) registers its answer callback through a delegate (vtable `0x146736d40`, thunk
+   `0x142927250`) to `0x1429219b0`, which ends either by setting a timer delegate or by calling `0x14292a030`, the routine
+   that handles the whole mission object (containers, `miscon_ftue`, `UsedMissions`). With the TS answer's own shape
+   (`{MissionControllerContainers, ClaimLocks}`, the `server_data` keys), **hypothesis:** WB answered a claim with the
+   updated `server_data`. To settle on the bench: answer with it, and watch whether the client shows the mission
+   claimed.
 4. **Reward tracks** (if chosen): per-player battle pass and event tracks, `MissionScore` from claims, and
    `get_milestone_reward_tracks` answering the player's own.
 5. `send_frontend_mission_updates` (client objectives) once a body has been seen.
 
-Decisions open (the maintainer's):
+Decisions:
 
-- What "working" means: show, progress after a match, claim; rewards with or without battle pass progress (step 4).
-- Which containers are live: battle pass for which season (no Season 6 containers exist: re-use Season 5's under a
-  moved calendar, as the rifts did?), which events, FTUE for new players only, the 36 character containers (characters
-  are already unlocked: show them or not).
-- The daily and weekly reset time.
+- **Decided (2026-10-01):** rewards include per-player battle pass progress: step 4 is in scope. No reward track code
+  exists on any published branch (only fixed answers).
+- **Decided (2026-10-01):** live containers are the Season 5 battle pass daily and weekly under a moved calendar (as the
+  rifts were moved), FTUE, and the 33 character containers. The resets are settings: `Missions:ResetHourUtc`,
+  `ResetMinute`, `WeeklyResetDay` (default 11:00 UTC on Tuesdays: a guess from the calendar's 10:55 UTC event starts,
+  not a known WB reset).
+- **Decided (2026-10-01):** character levels start over at zero for everyone. The character mastery tracks
+  (`mrt_mastery_<character>`) are answered at tier 99 for everyone today (the fixed `get_milestone_reward_tracks`
+  answer), never earned, so per-player tracks start every character at 0.
 
-Open items: WB's `claim_mission_rewards` answer; what `ClaimLocks` holds; whether a claimed mission leaves `Missions`
+The character containers (`miscon_unlockable_c0NN`): GrantBehavior Unlockable, RefreshRate None, the controller
+unlocked by owning the character (`UnlockConstraints: misobj_ownsitem_c0NN`), each mission progressing only while that
+character is played (`ProgressConstraints: misobj_skintag_fixed_c0NN`), and each paying `reward_xp_fighter_road_300`
+(`RewardGrantMethod: RewardTableLookup`: Fighter Road XP, not character mastery). Count 50 over a list of 5: all five
+at once.
+
+Open items: what reaching a mastery tier again grants to a player who already owns that tier's items; WB's
+`claim_mission_rewards` answer; what `ClaimLocks` holds; whether a claimed mission leaves `Missions`
 or stays with a claimed state; whether WB rolled the five character missions for every character at once; the
 `send_frontend_mission_updates` body; whether raw WB-era websocket captures survive (the types file came from some).

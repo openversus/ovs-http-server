@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
 
+using OpenVersus.Server.Core.Hiss;
+
 namespace OpenVersus.Server.Core.Rifts;
 
 // A rift node's missions (the stars beside it on the map), judged from the counters the game reports with the match
@@ -32,20 +34,6 @@ internal sealed record RiftMissionContext(bool Won, string Character, string Ski
 
 internal static class RiftMissions
 {
-    private static readonly Lazy<JsonObject> s_hiss = new(() =>
-    {
-        using var stream = typeof(RiftMissions).Assembly.GetManifestResourceStream("OpenVersus.Server.Core.Hiss.hiss-amalgamation.json")
-            ?? throw new InvalidOperationException("hiss-amalgamation.json is not embedded");
-        var data = JsonNode.Parse(stream)!["body"]!["Data"]!.AsObject();
-        // Only the sections read here are kept.
-        return new JsonObject
-        {
-            ["rift-config"] = data["rift-config"]?["_hydra_compressed"]?.DeepClone(),
-            ["missions"] = data["missions"]?["_hydra_compressed"]?.DeepClone(),
-            ["mission-objectives"] = data["mission-objectives"]?["_hydra_compressed"]?.DeepClone(),
-        };
-    });
-
     private static readonly Lazy<JsonObject> s_itemTags = new(() =>
     {
         using var stream = typeof(RiftMissions).Assembly.GetManifestResourceStream("OpenVersus.Server.Core.Rifts.rift-item-tags.json")
@@ -55,14 +43,14 @@ internal static class RiftMissions
 
     /// <summary>The rift's configuration (RiftData, RiftChapterData, RiftMatchNodeData, ...) as the hiss rift-config holds
     /// it, which is what the game shows; null for an unknown rift.</summary>
-    internal static JsonObject? RiftConfig(string slug) => s_hiss.Value["rift-config"]?[slug]?["data"] as JsonObject;
+    internal static JsonObject? RiftConfig(string slug) => HissTables.Table("rift-config")[slug]?["data"] as JsonObject;
 
     /// <summary>Every rift of the hiss rift-config: slug to {slug, data}.</summary>
-    internal static IEnumerable<KeyValuePair<string, JsonNode?>> RiftConfigs() => s_hiss.Value["rift-config"] as JsonObject ?? [];
+    internal static IEnumerable<KeyValuePair<string, JsonNode?>> RiftConfigs() => HissTables.Table("rift-config");
 
     /// <summary>The node's mission slugs at <paramref name="difficulty"/>, in the order the game lists them.</summary>
     internal static IReadOnlyList<string> NodeMissions(string slug, string nodeId, int difficulty) =>
-        (s_hiss.Value["rift-config"]?[slug]?["data"]?["RiftMatchNodeData"]?[nodeId]?["Missions"] as JsonArray ?? [])
+        (HissTables.Table("rift-config")[slug]?["data"]?["RiftMatchNodeData"]?[nodeId]?["Missions"] as JsonArray ?? [])
             .OfType<JsonObject>()
             .Where(m => Num(m["ChapterDifficultyThreshold"]) == difficulty)
             .Select(m => Str(m["Mission"]))
@@ -76,7 +64,7 @@ internal static class RiftMissions
         var earned = new List<string>();
         foreach (string slug in missions)
         {
-            if (s_hiss.Value["missions"]?[slug]?["data"]?["MvsMissionData"] is not JsonObject mission)
+            if (HissTables.Table("missions")[slug]?["data"]?["MvsMissionData"] is not JsonObject mission)
             {
                 unknown.Add($"mission {slug} (not in the hiss)");
                 continue;
@@ -98,7 +86,7 @@ internal static class RiftMissions
 
     private static bool Objective(string? slug, double count, RiftMissionContext match, ICollection<string> unknown)
     {
-        if (slug is null || s_hiss.Value["mission-objectives"]?[slug]?["data"]?["ObjectiveFlags"] is not JsonArray flags || flags.Count == 0)
+        if (slug is null || HissTables.Table("mission-objectives")[slug]?["data"]?["ObjectiveFlags"] is not JsonArray flags || flags.Count == 0)
         {
             unknown.Add($"objective {slug ?? "(none)"} (not in the hiss)");
             return false;

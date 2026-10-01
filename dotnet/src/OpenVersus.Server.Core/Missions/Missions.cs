@@ -39,6 +39,9 @@ public sealed class MissionSettings
     [Description("The day of the weekly reset (at the daily reset's time): Weekly containers get new missions after it.")]
     public DayOfWeek WeeklyResetDay { get; set; } = DayOfWeek.Tuesday;
 
+    [Description("Custom games move missions too (off: only matchmade and rift matches do).")]
+    public bool CustomGamesProgress { get; set; }
+
     [Description("How many years later the events of the live containers (their AssociatedEvent, e.g. evt_battlepass_season_five) end, in the calendar the game is sent (get_hiss_calendar_events), so their missions and battle pass show as running. 0: as the calendar has them. Only while Missions:Enabled.")]
     [Range(0, 100)]
     public int EventEndYears { get; set; } = 20;
@@ -108,6 +111,7 @@ public static class MissionHosting
         builder.AddSetting<MissionSettings>("Missions");
         builder.Services.AddSingleton<MissionRandom>();
         builder.Services.AddSingleton<IMissionService, MissionService>();
+        builder.Services.AddHostedService<MissionResultSubscriber>();
         return builder;
     }
 }

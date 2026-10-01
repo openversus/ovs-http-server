@@ -9,7 +9,7 @@ namespace OpenVersus.Server.Core.Hiss;
 internal static class HissTables
 {
     private static readonly string[] s_sections =
-        ["rift-config", "missions", "mission-objectives", "mission-containers", "mission-controlers", "mission-list"];
+        ["rift-config", "missions", "mission-objectives", "mission-containers", "mission-controlers", "mission-list", "milestone-reward-tracks"];
 
     private static readonly Lazy<JsonObject> s_tables = new(() =>
     {

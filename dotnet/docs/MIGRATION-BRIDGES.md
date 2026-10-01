@@ -85,7 +85,7 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   forwarding code, `Batch:TsUrl`, `Batch:ForwardRoutes`, `Batch:ForwardTimeoutSeconds`, the startup warning and this
   entry go; `/batch` keeps running its sub-requests in C#.
 
-### 4. Rift progress from TS match results, pushed through the TS websocket
+### 4. Rift and mission progress from TS match results, pushed through the TS websocket
 
 - **Decided:** 2026-09-30, on the condition that it is recorded here: each piece has to be ported to C#.
 - **What:** the TS `submit_end_of_match_stats` (`src/handlers/ssc.ts`) publishes every result as it arrives on
@@ -94,7 +94,11 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   The C# `RiftResultSubscriber` (`Core/Rifts/RiftProgressService.cs`) records the progress of rift matches (known by
   `rift_match:{match}`) and tells the game by publishing on `ws:send` (`{playerIds, message}`), a generic channel the
   TS websocket (`src/websocket.ts`) answers by sending `message`, as it is, to each connected player named. The C#
-  service logs a `MIGRATION BRIDGE` warning at startup for this.
+  service logs a `MIGRATION BRIDGE` warning at startup for this. Missions (with `Missions:Enabled`) hear the same
+  channel: `MissionResultSubscriber` (`Core/Missions/MissionProgress.cs`) moves the player's missions, reading the
+  match as the game saw it from the TS match notification at `{matchId}` and the character from `rift_match:{match}`
+  or `player:{id}`, and pushes `MissionUpdatesComplete` (a `profile-notification`) on `ws:send`; it logs its own
+  `MIGRATION BRIDGE` warning.
 - **Why:** the client never asks for its rift progress; the server works it out from the match result and pushes it
   (`OnLobbyRuntimeDataUpdated`, `OnLobbyRiftStateUpdated`). The result reaches only the TS server, and only the TS
   websocket reaches the game. Taking over `submit_end_of_match_stats` instead would have put every ranked and casual

@@ -7,6 +7,8 @@ using MongoDB.Bson.IO;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Hiss;
+using OpenVersus.Server.Core.Rifts;
+using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Missions;
 
@@ -31,13 +33,16 @@ namespace OpenVersus.Server.Core.Missions;
 // version}. The answer carries the live containers only (a container dropped from the setting keeps its stored state).
 // Two reads racing (the login batch) both roll; the first write wins and the other answers what was stored (version).
 //
-// Not yet: progress (match results), claims, FTUE (the client treats miscon_ftue apart; its daily-login controller
+// Progress from match results: MissionProgress.cs. Not yet: claims, FTUE (the client treats miscon_ftue apart; its daily-login controller
 // is not moved by matches), attempt_daily_refresh's PlayerMissionObject (sent empty, as before).
 
 public interface IMissionService
 {
     /// <summary>The get_or_create_mission_object answer for the player, rolling what is due first.</summary>
     Task<JsonObject> GetOrCreateAsync(string accountId, CancellationToken ct);
+
+    /// <summary>Moves the player's missions by a match result (MissionProgress), once per player and match.</summary>
+    Task RecordMatchAsync(string matchId, string playerId, int? winningTeamIndex, JsonObject? counters, CancellationToken ct);
 }
 
 internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<MissionSettings> settings, TimeProvider time, MissionRandom random, ILogger<MissionService> log) : IMissionService
@@ -92,6 +97,131 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
             log.LogInformation("Missions for {Account} were rolled by another request: answering those", accountId);
         }
     }
+
+    public async Task RecordMatchAsync(string matchId, string playerId, int? winningTeamIndex, JsonObject? counters, CancellationToken ct)
+    {
+        if (!ObjectId.TryParse(playerId, out var id) || services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis)
+        {
+            return;
+        }
+
+        if (!await redis.StringSetAsync($"mission_match:{matchId}:{playerId}", "1", TimeSpan.FromHours(1), When.NotExists))
+        {
+            return;
+        }
+
+        if (await JsonAtAsync(redis, matchId) is not JsonObject notification)
+        {
+            log.LogWarning("Mission progress for {Player}: match {Match} is not known (no notification at its key)", playerId, matchId);
+            return;
+        }
+
+        var current = settings.CurrentValue;
+        var config = notification["gameplayConfigOverride"] as JsonObject;
+        bool custom = Bool(config?["bIsCustomGame"]) ?? Bool(notification["isCustomGame"]) ?? false;
+        if (custom && !current.CustomGamesProgress)
+        {
+            return;
+        }
+
+        var player = (notification["players"] as JsonArray ?? []).OfType<JsonObject>().FirstOrDefault(p => Text(p["playerId"]) == playerId);
+        bool won = player is not null && winningTeamIndex is { } w && RiftMissions.Number(player["teamIndex"]) == w;
+        string character = "", skin = "";
+        if (await JsonAtAsync(redis, $"rift_match:{matchId}") is JsonObject rift && Text(rift["playerId"]) == playerId)
+        {
+            character = Text(rift["character"]) ?? "";
+            skin = Text(rift["skin"]) ?? "";
+        }
+        else
+        {
+            var loadout = await redis.HashGetAsync($"player:{playerId}", ["character", "skin"]);
+            character = loadout[0].ToString();
+            skin = loadout[1].ToString();
+        }
+
+        var match = new MissionMatch(won, character, skin, Text(config?["ModeString"]) ?? Text(notification["mode"]) ?? "",
+            Text(config?["Map"]) ?? Text(notification["map"]) ?? "", Bool(config?["bIsPvP"]) ?? true, counters);
+        var live = LiveContainers(current.Containers);
+        var collection = (services.GetService<IMongoDatabase>() ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)"))
+            .GetCollection<BsonDocument>(Collection);
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            if (await collection.Find(new BsonDocument("_id", id)).FirstOrDefaultAsync(ct) is not { } stored)
+            {
+                return;
+            }
+
+            var state = MissionState.From(stored);
+            var unknown = new SortedSet<string>();
+            if (!MissionRules.Apply(state.ServerData, live, match, unknown))
+            {
+                Report(unknown, playerId, matchId);
+                return;
+            }
+
+            state.UpdatedAt = time.GetUtcNow();
+            var result = await collection.ReplaceOneAsync(
+                new BsonDocument { { "_id", id }, { "version", state.Version } }, state.Next().ToBson(id), cancellationToken: ct);
+            if (result.MatchedCount == 1)
+            {
+                Report(unknown, playerId, matchId);
+                log.LogInformation("Missions for {Player} moved by match {Match} ({Character}, {Mode}, {Map}, PvP {PvP})", playerId, matchId, character, match.Mode, match.Map, match.IsPvP);
+                await redis.PublishAsync(RedisChannel.Literal(RiftProgressService.WsSendChannel), Js.Stringify(new JsonObject
+                {
+                    ["playerIds"] = new JsonArray(playerId),
+                    ["message"] = UpdatesComplete(Answer(state, playerId, live)["body"]!.DeepClone().AsObject(), playerId),
+                }));
+                return;
+            }
+        }
+
+        log.LogWarning("Mission progress for {Player} from match {Match} lost: the missions kept changing under it", playerId, matchId);
+    }
+
+    // MissionUpdatesComplete as WB's websocket sent it (a profile notification; the object with ISO text dates).
+    private static JsonObject UpdatesComplete(JsonObject body, string playerId)
+    {
+        foreach (string date in new[] { "updated_at", "created_at" })
+        {
+            if (RiftMissions.Number(body[date]?["_hydra_unix_date"]) is { } seconds)
+            {
+                body[date] = DateTimeOffset.FromUnixTimeSeconds((long)seconds).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        return new JsonObject
+        {
+            ["data"] = new JsonObject { ["template_id"] = "MissionUpdatesComplete", ["data"] = body },
+            ["payload"] = new JsonObject
+            {
+                ["frm"] = new JsonObject { ["id"] = "internal-server", ["type"] = "server-api-key" },
+                ["template"] = "realtime",
+                ["account_id"] = playerId,
+                ["profile_id"] = playerId,
+            },
+            ["header"] = "",
+            ["cmd"] = "profile-notification",
+        };
+    }
+
+    private void Report(ICollection<string> unknown, string playerId, string matchId)
+    {
+        if (unknown.Count > 0)
+        {
+            log.LogWarning("Mission progress for {Player} from match {Match}: not judged: {Unknown}", playerId, matchId, string.Join("; ", unknown));
+        }
+    }
+
+    // The JSON at a key; null when the key is missing or empty.
+    private static async Task<JsonNode?> JsonAtAsync(IDatabase redis, string key)
+    {
+        var value = await redis.StringGetAsync(key);
+        return value.IsNullOrEmpty ? null : Js.Parse(value.ToString());
+    }
+
+    private static bool? Bool(JsonNode? node) => node is JsonValue v && v.TryGetValue(out bool b) ? b : null;
+
+    private static string? Text(JsonNode? node) => node is JsonValue v && v.TryGetValue(out string? s) ? s : null;
 
     /// <summary>The live container slugs, in the setting's order: those the hiss has and enables.</summary>
     internal static List<string> LiveContainers(string setting)

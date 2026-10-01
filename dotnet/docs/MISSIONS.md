@@ -1,13 +1,13 @@
 # Missions
 
-Status: **missions are rolled per player; nothing moves them yet.** With `Missions:Enabled` (off by default, as
-`MISSIONS_ENABLED` is on the TS server and prod), `get_or_create_mission_object` answers the player's own missions
-(C# `Core/Missions/MissionService.cs`, Mongo `missionobjects`), rolled from the game data for the containers in
+Status: **missions are rolled per player and moved by matches; claims do nothing yet.** With `Missions:Enabled` (off by
+default, as `MISSIONS_ENABLED` is on the TS server and prod), `get_or_create_mission_object` answers the player's own
+missions (C# `Core/Missions/MissionService.cs`, Mongo `missionobjects`), rolled from the game data for the containers in
 `Missions:Containers` and refreshed at the resets (`Missions:ResetHourUtc`, `ResetMinute`, `WeeklyResetDay`, which
 `attempt_daily_refresh` also reports), and the calendar the game is sent keeps those containers' events running
-(`Missions:EventEndYears`). Off, it answers as the TS server does: no containers. Match results do not move progress,
-`claim_mission_rewards` grants nothing, and no battle pass progress is kept yet. This file is what is known so far and
-the plan.
+(`Missions:EventEndYears`). Match results move them (step 2). Off, it answers as the TS server does: no containers.
+`claim_mission_rewards` grants nothing yet. Reward tracks are per player and start from nothing
+(`RewardTracks:PerPlayer`); nothing adds to them yet. This file is what is known so far and the plan.
 
 Sources, each item says which: the game data the servers already send (HISS, `hiss-amalgamation.json`; the calendar,
 `Static/ssc-get-hiss-calendar-events.json`), the client binary (build `f97148ff`; headers in the UHT and jmap dumps),
@@ -115,10 +115,14 @@ tracks (battle pass progress) as well.
    for now (the client handles `miscon_ftue` apart; its login controller is not moved by matches): to add after
    reading what the client does with it. `attempt_daily_refresh`'s `PlayerMissionObject` stays empty (WB's carried
    containers; whether the whole object or what the refresh granted is not known).
-2. **Progress:** from `match:end_of_match_stats` (as rift progress is, a migration bridge), objectives evaluated with
-   the rift star rules (`RiftMissions.cs`, after checking them against the client's own `UMvsOfflineObjectiveProcessor`),
-   `Count` capped; `EndOfMatchPayload` missions delta and `MissionUpdatesComplete` through
-   `ws:send`.
+2. **Done: progress** from `match:end_of_match_stats` (migration bridge 4, beside rift progress):
+   `Core/Missions/MissionProgress.cs`. The match as the game saw it from the TS notification at `{matchId}` (mode, map,
+   PvP or not, teams; a C# match's overrides), the character from `rift_match:{match}` or `player:{id}`; objectives
+   judged with their flags (counters added with `+=`, the rest as conditions; class and character tags as the rift
+   stars judge them), capped at `Count`, once per player and match; the game told with `MissionUpdatesComplete`
+   (a `profile-notification`, the whole object) through `ws:send`. Custom games move nothing unless
+   `Missions:CustomGamesProgress`. Not in `EndOfMatchPayload` (the TS websocket sends that; `ClientReturnData` stays
+   empty).
 3. **Claims:** `claim_mission_rewards` marks the missions claimed and grants `RewardData`. Client side so far: the
    claim request (`0x142924b30`) registers its answer callback through a delegate (vtable `0x146736d40`, thunk
    `0x142927250`) to `0x1429219b0`, which ends either by setting a timer delegate or by calling `0x14292a030`, the routine
@@ -126,8 +130,14 @@ tracks (battle pass progress) as well.
    (`{MissionControllerContainers, ClaimLocks}`, the `server_data` keys), **hypothesis:** WB answered a claim with the
    updated `server_data`. To settle on the bench: answer with it, and watch whether the client shows the mission
    claimed.
-4. **Reward tracks** (if chosen): per-player battle pass and event tracks, `MissionScore` from claims, and
-   `get_milestone_reward_tracks` answering the player's own.
+4. **Reward tracks, started:** `get_milestone_reward_tracks` answers each player's own (C#
+   `Core/RewardTracks/RewardTracks.cs`, `RewardTracks:PerPlayer`, on by default): the fixed answer's tracks, every one
+   starting at score 0 (character and account levels, battle passes, the missions' bonus tracks), the threshold-0 tiers
+   reached as WB counted them and their rewards marked claimed, so nothing is claimable that was not earned (the fixed
+   answer offered the daily bonus track's tier 1 to everyone). Stored states (Mongo `rewardtracks`) win; nothing
+   writes them yet. Next: `MissionScore` from claims, `Incremental` (+1 per finished mission) for the bonus tracks,
+   match XP (`EndOfMatchPayload.ClientReturnData.MilestoneRewardTracks`), and the tier claims
+   (`claim_all_milestone_reward_track_tiers`, `claim_milestone_reward_track_tiers`: the TS server answers neither).
 5. `send_frontend_mission_updates` (client objectives) once a body has been seen.
 
 Decisions:

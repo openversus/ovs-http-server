@@ -199,7 +199,7 @@ internal sealed class MissionResultSubscriber(IServiceProvider services, IOption
     {
         try
         {
-            if (!settings.CurrentValue.Enabled || JsonNode.Parse(message) is not JsonObject result
+            if (JsonNode.Parse(message) is not JsonObject result
                 || result["matchId"] is not JsonValue m || !m.TryGetValue(out string? matchId)
                 || result["playerId"] is not JsonValue p || !p.TryGetValue(out string? playerId))
             {
@@ -207,7 +207,11 @@ internal sealed class MissionResultSubscriber(IServiceProvider services, IOption
             }
 
             int? winning = result["winningTeamIndex"] is JsonValue w && w.TryGetValue(out double n) ? (int)n : null;
-            await missions.RecordMatchAsync(matchId, playerId, winning, result["missionUpdates"] as JsonObject, CancellationToken.None);
+            await missions.RecordMatchXpAsync(matchId, playerId, winning, CancellationToken.None);
+            if (settings.CurrentValue.Enabled)
+            {
+                await missions.RecordMatchAsync(matchId, playerId, winning, result["missionUpdates"] as JsonObject, CancellationToken.None);
+            }
         }
         catch (Exception e)
         {

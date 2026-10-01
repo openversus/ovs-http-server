@@ -37,6 +37,12 @@ public sealed class RewardTrackSettings
 {
     [Description("Each player has their own reward tracks (battle passes, character levels, the missions' bonus tracks), starting from nothing. Off: the TS server's fixed answer, the same for everyone (every track at tier 99, with tiers to claim nobody earned).")]
     public bool PerPlayer { get; set; } = true;
+
+    [Description("Matches add XP to the account and character mastery tracks (character and account levels): 150 for a win, 50 for a loss (the game's XPSRC_Base; custom games only with Missions:CustomGamesProgress).")]
+    public bool MatchXp { get; set; } = true;
+
+    [Description("Rift matches add that XP too. The client's offline rift backend marks rifts as granting no progress (bModeGrantsProgress false), which says nothing about WB's online rifts.")]
+    public bool RiftMatchXp { get; set; } = true;
 }
 
 public interface IRewardTrackService
@@ -206,7 +212,7 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
             .Where(t => (RiftsNumber(t["ScoreThreshold"]) ?? double.MaxValue) <= score)
             .ToList();
         var next = (JsonObject)state.DeepClone();
-        next["CurrentScore"] = score;
+        next["CurrentScore"] = score <= int.MaxValue ? JsonValue.Create((int)score) : JsonValue.Create(score);
         next["CurrentTier"] = reached.Count;
         next["CompletedTiers"] = new JsonArray(reached.Select(t => (JsonNode?)t["TierGuid"]?.DeepClone()).ToArray());
         return next;
@@ -277,6 +283,7 @@ public static class RewardTrackHosting
     {
         builder.AddSetting<RewardTrackSettings>("RewardTracks");
         builder.Services.AddSingleton<IRewardTrackService, RewardTrackService>();
+        builder.Services.AddSingleton<IRewardGrants, RewardGrants>();
         return builder;
     }
 }

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Hiss;
+using OpenVersus.Server.Core.Missions;
 using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.RewardTracks;
 using OpenVersus.Server.Http.Hosting;
@@ -15,9 +16,9 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 /// PUT /ssc/invoke/claim_all_milestone_reward_track_tiers {TrackSlug} (captured: {"TrackSlug":
 /// "mrt_battlepass_season_five"}): with RewardTracks:PerPlayer, every reward of the track's completed tiers is marked
 /// claimed (<see cref="IRewardTrackService.ClaimAllAsync"/>), the answer is {RewardTrackStates: [the track],
-/// RewardsGranted: []} (the fields of the client's OnMilestoneRewardTrackTiersClaimed; WB's answer was never captured)
-/// and the game is sent RewardTrackStatesUpdated (UpdateContext RewardTrackClaim). The rewards themselves are not
-/// granted yet (their tables are client data: docs/MISSIONS.md). Off: as the TS server answers, its catch-all.
+/// RewardsGranted: [the tier rewards paid]} (the fields of the client's OnMilestoneRewardTrackTiersClaimed; WB's answer
+/// was never captured), the rewards are paid (<see cref="IRewardGrants"/>) and the game is sent RewardTrackStatesUpdated
+/// (UpdateContext RewardTrackClaim). Off: as the TS server answers, its catch-all.
 /// Seen in: binary ssc name; captured 1x (answered by the TS catch-all).
 /// </summary>
 public sealed class PutClaimAllMilestoneRewardTrackTiers : JsonBodyEndpoint
@@ -41,17 +42,23 @@ public sealed class PutClaimAllMilestoneRewardTrackTiers : JsonBodyEndpoint
         }
 
         var states = new JsonArray();
+        var granted = new JsonArray();
         try
         {
             var (track, claimed) = await Resolve<IRewardTrackService>().ClaimAllAsync(accountId, trackSlug, ct);
             if (track is not null)
             {
-                states.Add(track.DeepClone());
-                Logger.LogInformation("Reward track {Track} tiers claimed by {Account}: {Rewards} (not granted: reward tables not known yet)",
-                    trackSlug, accountId, string.Join(", ", claimed.Select(r => Js.Stringify(r["InventoryHsda"] ?? r["RewardHsda"]))));
-                if (claimed.Count > 0 && Resolve<IServiceProvider>().GetService(typeof(IConnectionMultiplexer)) is IConnectionMultiplexer redis)
+                var live = MissionContainers.Live(Resolve<IOptionsMonitor<MissionSettings>>().CurrentValue.Containers);
+                var paid = await Resolve<IRewardGrants>().GrantAsync(accountId, claimed, live, ct);
+                granted = paid.RewardsGranted;
+                // The claimed track, as XP from its own rewards may have moved it, and any other track XP moved.
+                var changed = paid.ChangedTracks.ToDictionary(t => t["TrackSlug"]!.GetValue<string>());
+                var latest = changed.GetValueOrDefault(trackSlug) ?? track;
+                states.Add(latest.DeepClone());
+                changed[trackSlug] = latest;
+                if (claimed.Count > 0 && TryResolve<IConnectionMultiplexer>() is { } redis)
                 {
-                    await ProfileNotifications.SendAsync(redis.GetDatabase(), accountId, ProfileNotifications.RewardTrackStatesUpdated([track], 1));
+                    await ProfileNotifications.SendAsync(redis.GetDatabase(), accountId, ProfileNotifications.RewardTrackStatesUpdated(changed.Values, 1));
                 }
             }
         }
@@ -62,7 +69,7 @@ public sealed class PutClaimAllMilestoneRewardTrackTiers : JsonBodyEndpoint
 
         await SendJsonAsync(new JsonObject
         {
-            ["body"] = new JsonObject { ["RewardTrackStates"] = states, ["RewardsGranted"] = new JsonArray() },
+            ["body"] = new JsonObject { ["RewardTrackStates"] = states, ["RewardsGranted"] = granted },
             ["metadata"] = null,
             ["return_code"] = 0,
         }, ct);

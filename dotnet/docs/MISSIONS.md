@@ -169,13 +169,22 @@ character is played (`ProgressConstraints: misobj_skintag_fixed_c0NN`), and each
 (`RewardGrantMethod: RewardTableLookup`: Fighter Road XP, not character mastery). Count 50 over a list of 5: all five
 at once.
 
-Blocked on client data (the game's own assets; not in the hiss, `dataassets` or the archive): the reward tables a
-`RewardTableLookup` names (`reard_perk_currency_80` (sic), `reward_toast_10`, `reward_xp_fighter_road_300`,
-`reward_xp_battlepass_tiny`: the names suggest amounts, the tables hold them; an FModel JSON export of them is coming),
-and the match XP sources the mastery
-tracks name (`MatchData.MatchXpConfig`: `XPSRC_CharacterMastery`, `XPSRC_AccountMastery`, `XPSRC_SkinMastery`,
-`XPSRC_CyberEvent`; WB's one example: 50 for `Eog:Source:PlayMatch` on account and character mastery, 100 on
-`MRT_FighterRoadV2`). Character and account levels move only once these are known.
+**Rewards are paid** (2026-10-01, from an FModel JSON export of the game's assets: `tools/rewards/gen_reward_data.mjs`
+writes `Core/RewardTracks/reward-data.json`): the reward tables (`MvsRewardHsda` by Slug, e.g. `reard_perk_currency_80`
+(sic) = 80 `perk_currency`, `reward_toast_10` = 10 `match_toasts`, `reward_xp_battlepass_tiny` = 100 XP by the tag
+`XP:Event:MRT:Battlepass`), the match XP sources and each character's mastery track (`CharacterData.MrtSlug`). Every
+grant is recorded with its count, owned or not (content added later will not be owned): toasts on `playercounters`,
+the rest on `playeritems`, which the inventory lists when unlock-all does not (WB's inventory carried `perk_currency`
+so). XP goes to the tracks with its tag that a live container names (the Season 5 battle pass, not the earlier ones).
+Mission claims announce their rewards with `OnRewardsGranted` (as the TS websocket's daily toast bonus); tier claims
+answer them in `RewardsGranted`. Lootboxes are counted, not opened; gems (rift power progression) are counted only.
+
+**Character and account levels from matches** (`RewardTracks:MatchXp`, `RiftMatchXp`): each match a player submits
+adds `XPSRC_Base`'s 150 (win) or 50 (loss) to `mrt_mastery_account` and the character's mastery track, times the
+mastery sources' modifiers, which the export leaves at the class default (inferred 1.0: only 5.0, 2.5 and 0.0 are ever
+written; WB's one example message shows 50 on both tracks). Custom games only with `Missions:CustomGamesProgress`. Not
+in `EndOfMatchPayload` (the TS websocket's `ClientReturnData` stays empty); the game is told with
+`RewardTrackStatesUpdated` (`EndOfGameProcessing`). Skin mastery tracks (586, not in the answer's 111) are left out.
 
 **Decided (2026-10-01): Fighter Road is a dead feature.** Every character is unlocked for every player, and Fighter
 Road existed to unlock them. Nothing else reads it (`MRT_FighterRoadV2` takes no match XP and no track forwards to it),

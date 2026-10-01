@@ -44,7 +44,7 @@ namespace OpenVersus.Server.Core.Missions;
 // container), through IRewardTrackService. A mission not found or not finished is left as it is. The answer is the
 // player's server_data after it ({MissionControllerContainers, ClaimLocks}): the shape the TS server's fixed answer has,
 // and the client hands it to the routine that takes the whole mission object (docs/MISSIONS.md; a hypothesis until the
-// bench shows it). Not yet: the list entries' RewardData (item and reward-table rewards: the tables are client data).
+// bench shows it). The list entry's RewardData is paid (RewardTracks/RewardGrants.cs) and announced with OnRewardsGranted.
 //
 // Not yet: FTUE (the client treats miscon_ftue apart; its daily-login controller
 // is not moved by matches), attempt_daily_refresh's PlayerMissionObject (sent empty, as before).
@@ -56,6 +56,9 @@ public interface IMissionService
 
     /// <summary>claim_mission_rewards: claims the finished missions named, answering the player's missions after it.</summary>
     Task<JsonObject> ClaimAsync(string accountId, JsonObject body, CancellationToken ct);
+
+    /// <summary>Adds a match's XP to the account and character mastery tracks (RewardTracks:MatchXp), once per player and match.</summary>
+    Task RecordMatchXpAsync(string matchId, string playerId, int? winningTeamIndex, CancellationToken ct);
 
     /// <summary>Moves the player's missions by a match result (MissionProgress), once per player and match.</summary>
     Task RecordMatchAsync(string matchId, string playerId, int? winningTeamIndex, JsonObject? counters, CancellationToken ct);
@@ -151,13 +154,36 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
                 continue;
             }
 
-            var points = TrackPoints(containerSlug!, claimed);
+            var slugs = claimed.Select(c => c.Slug).ToList();
+            var points = TrackPoints(containerSlug!, slugs);
             log.LogInformation("Missions claimed by {Account} in {Container}: {Missions}; reward tracks {Points}", accountId, containerSlug,
-                string.Join(", ", claimed), string.Join(", ", points.Select(p => $"{p.Key} +{p.Value}")));
-            var changed = await services.GetRequiredService<RewardTracks.IRewardTrackService>().AddScoreAsync(accountId, points, ct);
-            if (changed.Count > 0 && services.GetService<IConnectionMultiplexer>()?.GetDatabase() is { } redis)
+                string.Join(", ", slugs), string.Join(", ", points.Select(p => $"{p.Key} +{p.Value}")));
+            var changed = (await services.GetRequiredService<RewardTracks.IRewardTrackService>().AddScoreAsync(accountId, points, ct))
+                .ToDictionary(t => Text(t["TrackSlug"]) ?? "");
+            var paid = await services.GetRequiredService<RewardTracks.IRewardGrants>().GrantAsync(
+                accountId, claimed.SelectMany(c => MissionRewards(c.Controller, c.Slug)).ToList(), live, ct);
+            foreach (var track in paid.ChangedTracks)
             {
-                await ProfileNotifications.SendAsync(redis, accountId, ProfileNotifications.RewardTrackStatesUpdated(changed, 2));
+                changed[Text(track["TrackSlug"]) ?? ""] = track;
+            }
+
+            if (services.GetService<IConnectionMultiplexer>()?.GetDatabase() is { } redis)
+            {
+                if (paid.RewardsGranted.Count > 0)
+                {
+                    // OnRewardsGranted {Context, RewardsGranted}, as the TS websocket sends its daily toast bonus.
+                    await ProfileNotifications.SendAsync(redis, accountId, new JsonObject
+                    {
+                        ["template_id"] = "OnRewardsGranted",
+                        ["Context"] = "Default",
+                        ["RewardsGranted"] = paid.RewardsGranted.DeepClone(),
+                    });
+                }
+
+                if (changed.Count > 0)
+                {
+                    await ProfileNotifications.SendAsync(redis, accountId, ProfileNotifications.RewardTrackStatesUpdated(changed.Values, 2));
+                }
             }
 
             return ClaimAnswer(state, live);
@@ -167,10 +193,10 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
         return ClaimAnswer(MissionState.From((await collection.Find(new BsonDocument("_id", id)).FirstOrDefaultAsync(ct))!), live);
     }
 
-    /// <summary>Removes the finished missions named from the container; the slugs claimed.</summary>
-    internal static List<string> Claim(MissionState state, string containerSlug, JsonArray requested)
+    /// <summary>Removes the finished missions named from the container; the missions claimed (controller, slug).</summary>
+    internal static List<(string Controller, string Slug)> Claim(MissionState state, string containerSlug, JsonArray requested)
     {
-        var claimed = new List<string>();
+        var claimed = new List<(string Controller, string Slug)>();
         if (state.ServerData["MissionControllerContainers"]?[containerSlug]?["MissionControllers"] is not JsonObject controllers)
         {
             return claimed;
@@ -196,11 +222,19 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
                 groups.Remove(group);
             }
 
-            claimed.Add(slug);
+            claimed.Add((controllerSlug, slug));
         }
 
         return claimed;
     }
+
+    // The rewards a claimed mission pays: its list entry's RewardData (the first entry for it in the controller's list).
+    internal static List<JsonObject> MissionRewards(string controllerSlug, string missionSlug) =>
+        (HissTables.Data("mission-list", Text(HissTables.Data("mission-controlers", controllerSlug)?["MvsMissionController"]?["MissionList"]))?["MvsMissionListData"]?["MissionList"] as JsonArray ?? [])
+            .OfType<JsonObject>()
+            .FirstOrDefault(e => Text(e["Mission"]) == missionSlug)?["RewardData"] is JsonArray data
+            ? data.OfType<JsonObject>().Select(r => (JsonObject)r.DeepClone()).ToList()
+            : [];
 
     // Every objective at its Count, or any one when the mission does not need them all.
     internal static bool Finished(string slug, JsonObject mission)
@@ -245,6 +279,94 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
     private static JsonObject ClaimAnswer(MissionState state, IReadOnlyList<string> live) =>
         new() { ["body"] = Answer(state, "", live)["body"]!["server_data"]!.DeepClone(), ["metadata"] = null, ["return_code"] = 0 };
 
+    /// <summary>The match as the player's game saw it (for missions and match XP), or null when it is not known.</summary>
+    internal static async Task<(MissionMatch Match, bool Custom, bool Rift)?> MatchAsync(IDatabase redis, string matchId, string playerId, int? winningTeamIndex, JsonObject? counters)
+    {
+        if (await JsonAtAsync(redis, matchId) is not JsonObject notification)
+        {
+            return null;
+        }
+
+        var config = notification["gameplayConfigOverride"] as JsonObject;
+        bool custom = Bool(config?["bIsCustomGame"]) ?? Bool(notification["isCustomGame"]) ?? false;
+        var player = (notification["players"] as JsonArray ?? []).OfType<JsonObject>().FirstOrDefault(p => Text(p["playerId"]) == playerId);
+        bool won = player is not null && winningTeamIndex is { } w && RiftMissions.Number(player["teamIndex"]) == w;
+        string character = "", skin = "";
+        bool rift = false;
+        if (await JsonAtAsync(redis, $"rift_match:{matchId}") is JsonObject riftMatch && Text(riftMatch["playerId"]) == playerId)
+        {
+            rift = true;
+            character = Text(riftMatch["character"]) ?? "";
+            skin = Text(riftMatch["skin"]) ?? "";
+        }
+        else
+        {
+            var loadout = await redis.HashGetAsync($"player:{playerId}", ["character", "skin"]);
+            character = loadout[0].ToString();
+            skin = loadout[1].ToString();
+        }
+
+        rift |= Bool(config?["bIsRift"]) ?? false;
+        var match = new MissionMatch(won, character, skin, Text(config?["ModeString"]) ?? Text(notification["mode"]) ?? "",
+            Text(config?["Map"]) ?? Text(notification["map"]) ?? "", Bool(config?["bIsPvP"]) ?? true, counters);
+        return (match, custom, rift);
+    }
+
+    public async Task RecordMatchXpAsync(string matchId, string playerId, int? winningTeamIndex, CancellationToken ct)
+    {
+        var rewards = services.GetService<Microsoft.Extensions.Options.IOptionsMonitor<RewardTracks.RewardTrackSettings>>()?.CurrentValue ?? new RewardTracks.RewardTrackSettings();
+        if (!rewards.PerPlayer || !rewards.MatchXp || !ObjectId.TryParse(playerId, out _)
+            || services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis
+            || !await redis.StringSetAsync($"match_xp:{matchId}:{playerId}", "1", TimeSpan.FromHours(1), When.NotExists))
+        {
+            return;
+        }
+
+        if (await MatchAsync(redis, matchId, playerId, winningTeamIndex, null) is not { } seen
+            || (seen.Custom && !settings.CurrentValue.CustomGamesProgress) || (seen.Rift && !rewards.RiftMatchXp))
+        {
+            return;
+        }
+
+        var points = MatchXp(seen.Match.Won, seen.Match.Character);
+        if (points.Count == 0)
+        {
+            return;
+        }
+
+        var changed = await services.GetRequiredService<RewardTracks.IRewardTrackService>().AddScoreAsync(playerId, points, ct);
+        log.LogInformation("Match XP for {Player} from match {Match} ({Character}, {Result}): {Points}", playerId, matchId, seen.Match.Character,
+            seen.Match.Won ? "win" : "loss", string.Join(", ", points.Select(p => $"{p.Key} +{p.Value}")));
+        if (changed.Count > 0)
+        {
+            await ProfileNotifications.SendAsync(redis, playerId, ProfileNotifications.RewardTrackStatesUpdated(changed, 3));
+        }
+    }
+
+    // What a match is worth to the account and character mastery tracks: the base XP for a win or a loss (XPSRC_Base)
+    // times each track's source modifier (XPSRC_AccountMastery, XPSRC_CharacterMastery: the class defaults, inferred to
+    // be 1.0 from what the asset export leaves out).
+    internal static Dictionary<string, int> MatchXp(bool won, string character)
+    {
+        var points = new Dictionary<string, int>();
+        var baseConfig = RewardTracks.RewardData.XpSource("xpsrc_base")?["base"];
+        double baseXp = RiftMissions.Number(baseConfig?[won ? "BaseXpForWin" : "BaseXpForLoss"]) ?? 0;
+        void Add(string? track, string source)
+        {
+            var config = RewardTracks.RewardData.XpSource(source);
+            double modifier = RiftMissions.Number(config?[won ? "winModifier" : "lossModifier"]) ?? 1.0;
+            int xp = (int)Math.Floor(baseXp * modifier);
+            if (track is not null && xp > 0 && HissTables.Data("milestone-reward-tracks", track) is not null)
+            {
+                points[track] = xp;
+            }
+        }
+
+        Add("mrt_mastery_account", "xpsrc_accountmastery");
+        Add(RewardTracks.RewardData.CharacterTrack(character), "xpsrc_charactermastery");
+        return points;
+    }
+
     public async Task RecordMatchAsync(string matchId, string playerId, int? winningTeamIndex, JsonObject? counters, CancellationToken ct)
     {
         if (!ObjectId.TryParse(playerId, out var id) || services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis)
@@ -257,37 +379,20 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
             return;
         }
 
-        if (await JsonAtAsync(redis, matchId) is not JsonObject notification)
+        var current = settings.CurrentValue;
+        if (await MatchAsync(redis, matchId, playerId, winningTeamIndex, counters) is not { } seen)
         {
             log.LogWarning("Mission progress for {Player}: match {Match} is not known (no notification at its key)", playerId, matchId);
             return;
         }
 
-        var current = settings.CurrentValue;
-        var config = notification["gameplayConfigOverride"] as JsonObject;
-        bool custom = Bool(config?["bIsCustomGame"]) ?? Bool(notification["isCustomGame"]) ?? false;
-        if (custom && !current.CustomGamesProgress)
+        if (seen.Custom && !current.CustomGamesProgress)
         {
             return;
         }
 
-        var player = (notification["players"] as JsonArray ?? []).OfType<JsonObject>().FirstOrDefault(p => Text(p["playerId"]) == playerId);
-        bool won = player is not null && winningTeamIndex is { } w && RiftMissions.Number(player["teamIndex"]) == w;
-        string character = "", skin = "";
-        if (await JsonAtAsync(redis, $"rift_match:{matchId}") is JsonObject rift && Text(rift["playerId"]) == playerId)
-        {
-            character = Text(rift["character"]) ?? "";
-            skin = Text(rift["skin"]) ?? "";
-        }
-        else
-        {
-            var loadout = await redis.HashGetAsync($"player:{playerId}", ["character", "skin"]);
-            character = loadout[0].ToString();
-            skin = loadout[1].ToString();
-        }
-
-        var match = new MissionMatch(won, character, skin, Text(config?["ModeString"]) ?? Text(notification["mode"]) ?? "",
-            Text(config?["Map"]) ?? Text(notification["map"]) ?? "", Bool(config?["bIsPvP"]) ?? true, counters);
+        var match = seen.Match;
+        string character = match.Character;
         var live = LiveContainers(current.Containers);
         var collection = (services.GetService<IMongoDatabase>() ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)"))
             .GetCollection<BsonDocument>(Collection);

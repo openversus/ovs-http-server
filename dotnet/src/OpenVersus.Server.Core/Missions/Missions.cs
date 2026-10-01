@@ -188,3 +188,9 @@ public static class MissionCalendar
         }
     }
 }
+
+public static class MissionContainers
+{
+    /// <summary>The live mission containers of a Missions:Containers value (those the hiss has and enables).</summary>
+    public static IReadOnlyList<string> Live(string setting) => MissionService.LiveContainers(setting);
+}

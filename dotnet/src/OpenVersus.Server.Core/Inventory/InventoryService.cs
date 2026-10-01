@@ -19,6 +19,7 @@ namespace OpenVersus.Server.Core.Inventory;
 // Mongo, read     dataassets (enabled), in the order Mongo returns them, test characters' assets left out
 // Mongo, written  playercounters: the player's document, created with 100 toasts on first use, updatedAt set on
 //                 every call (see DailyToastBonus.GetCountersAsync)
+// Mongo, read     playeritems (what rewards paid: AddGrantedAsync)
 //
 // Differences from the TS server: the assets are read per request, not from the TS server's startup cache; a request
 // whose player is not known (no id) gets 100 toasts without a counters document being written for the empty id; with
@@ -72,7 +73,48 @@ internal sealed class InventoryService(IServiceProvider services, TimeProvider t
 
         items.Add(JsonNode.Parse(s_gleamium.Value));
         items.Add(await ToastAsync(mongo, accountId, ct));
+        await AddGrantedAsync(items, accountId, ct);
         return items;
+    }
+
+    // What rewards paid the player (RewardTracks.RewardGrants) that the list above does not hold: a currency as the toast
+    // entry is written (WB's inventory had perk_currency so), anything else as an unlockAll item with its count. Items the
+    // list holds keep their entries as they are (every player owns them already).
+    private async Task AddGrantedAsync(JsonArray items, string accountId, CancellationToken ct)
+    {
+        if (services.GetService<RewardTracks.IRewardGrants>() is not { } grants)
+        {
+            return;
+        }
+
+        var listed = items.OfType<JsonObject>().Select(i => i["item_slug"]?.GetValue<string>()).OfType<string>().ToHashSet();
+        foreach (var (slug, count) in await grants.ItemsAsync(accountId, ct))
+        {
+            if (listed.Contains(slug) || count <= 0)
+            {
+                continue;
+            }
+
+            if (RewardTracks.RewardData.Currencies.Contains(slug))
+            {
+                var currency = JsonNode.Parse(s_toast.Value)!.AsObject();
+                currency["item_slug"] = slug;
+                currency["count"] = count;
+                currency["currency_sources"] = new JsonArray(new JsonObject
+                {
+                    ["source_slug"] = null, ["total_spent"] = 0, ["total_earned"] = count, ["total_refunded"] = 0,
+                    ["should_expire"] = false, ["expires_at"] = null, ["purchase_id"] = null, ["source_platform"] = null,
+                });
+                currency["updated_at"] = new JsonObject { ["_hydra_unix_date"] = time.GetUtcNow().ToUnixTimeSeconds() };
+                items.Add(currency);
+            }
+            else
+            {
+                var item = Item(accountId, slug, serverData: null, accountFirst: false);
+                item["count"] = count;
+                items.Add(item);
+            }
+        }
     }
 
     // {...ToastData, count: counters.match_toasts, updated_at: now}: the two fields keep their places.

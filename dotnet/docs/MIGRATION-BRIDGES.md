@@ -53,6 +53,10 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   `lock_lobby_loadout` and the match flow takes over creating it. `set_profile_icon` also writes `playertesters.profile_icon`, which `/access`,
   profiles and friends read. The Mongo writes keep mongoose's upsert shape (`$setOnInsert` with `__v` and the schema's
   defaults).
+- **Rewards** (`RewardTracks/RewardGrants.cs`): `playercounters` `match_toasts` gets an atomic `$inc` for toast rewards,
+  as the TS `adjustMatchToasts` writes it (the TS websocket reads and moves the same counter: toasts given and
+  received, the daily bonus). Everything else a reward pays is recorded in `playeritems` (C# only), which the C#
+  inventory answer reads.
 - **GameplayPreferences** (the player's input settings: deadzones, input buffer, item pickup; they change how a match
   feels): `playertesters.GameplayPreferences` (an int32) and `connections:{id}` `GameplayPreferences` (text), written by
   both servers with the same rules (C# `Core/Preferences`, TS `utils/gameplayPreferences.ts` and

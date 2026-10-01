@@ -194,6 +194,16 @@ public sealed class MissionProgressTests : IAsyncLifetime
         Assert.Equal(287, data["MissionControllerContainers"]!["miscon_unlockable_c001"]!["MissionControllers"]!["misctl_unlockable_c001"]!["Missions"]![0]!["mis_dealalldamage_c001"]!["MissionObjectives"]![0]!["Progress"]!.GetValue<int>());
     }
 
+    [Fact]
+    public void AMatchIsWorthTheGamesBaseXpToTheAccountAndTheCharacter()
+    {
+        // XPSRC_Base: 150 for a win, 50 for a loss; the mastery sources' modifiers at their defaults (1.0).
+        Assert.Equal(new Dictionary<string, int> { ["mrt_mastery_account"] = 150, ["mrt_mastery_wonder_woman"] = 150 }, MissionService.MatchXp(true, "character_wonder_woman"));
+        // A character whose track is not named after it (its CharacterData MrtSlug).
+        Assert.Equal(new Dictionary<string, int> { ["mrt_mastery_account"] = 50, ["mrt_mastery_c003"] = 50 }, MissionService.MatchXp(false, "character_superman"));
+        Assert.Equal(new Dictionary<string, int> { ["mrt_mastery_account"] = 50 }, MissionService.MatchXp(false, "character_nobody"));
+    }
+
     [SkippableFact]
     public async Task AResultIsRecordedOnceAndThePlayerIsTold()
     {

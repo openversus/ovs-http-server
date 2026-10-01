@@ -100,10 +100,11 @@ public sealed class HydraBodiesTests : IAsyncLifetime, IClassFixture<GameAppFact
     [Fact]
     public async Task TheRealServersStubsAnswerHydraRequestsUnchanged()
     {
-        // A stub the gameplay gate does not cover (the matchmaking requests are gated; see ClientGameplayGateTests).
-        var response = await _server.CreateGameClient().PostAsync("/ssc/invoke/get_or_create_mission_object", Hydra("""{ "a": 1 }"""));
+        // A stub the gameplay gate does not cover (the matchmaking requests are gated; see ClientGameplayGateTests), and a
+        // debug function no server answers, so it stays a stub.
+        var response = await _server.CreateGameClient().PostAsync("/ssc/invoke/debug_unlock_inventory_item", Hydra("""{ "a": 1 }"""));
         Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
-        Assert.Equal("PostGetOrCreateMissionObject", response.Headers.GetValues("X-OVS-Stub").Single());
+        Assert.Equal("AnyDebugUnlockInventoryItem", response.Headers.GetValues("X-OVS-Stub").Single());
     }
 
     [SkippableFact]

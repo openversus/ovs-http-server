@@ -50,7 +50,9 @@ namespace OpenVersus.Server.Core.Cosmetics;
 // (JS sets a property the array's JSON never shows); an unknown character, a non-ObjectId id, or a value mongoose cannot
 // cast fails (TS catches the throw and answers {}).
 //
-// Unlike there: a cached document without Taunts gets a copy of the default taunts (TS assigns its module-level
+// Unlike there: the same value also refreshes connections:{id}:cosmetics when it exists (the copy the TS lobby lock and
+// match start read first, kept until the websocket disconnects; TS equips never update it, so a pick reached the next
+// match only after a game restart); a cached document without Taunts gets a copy of the default taunts (TS assigns its module-level
 // defaultTaunts, which is also the schema default, and the slot write then changes the defaults of every later new
 // document in that process); a slot index past MaxSlotIndex fails instead of padding the array that far.
 
@@ -314,6 +316,15 @@ internal sealed class CosmeticsService(IServiceProvider services, ILogger<Cosmet
     {
         var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase() ?? throw new InvalidOperationException("this service has no Redis (REDIS)");
         await redis.StringSetAsync($"player:{accountId}:cosmetics", Js.Stringify(cosmetics));
+
+        // The match's copy, as redisSetPlayerConnectionCosmetics writes it (a field per key, each JSON.stringify'd), only
+        // when it is there: the TS lobby lock and match start read it before player:{id}:cosmetics, and the TS websocket
+        // deletes it at disconnect, so a new one here would outlive the session.
+        var refresh = redis.CreateTransaction();
+        refresh.AddCondition(Condition.KeyExists($"connections:{accountId}:cosmetics"));
+        _ = refresh.HashSetAsync($"connections:{accountId}:cosmetics",
+            cosmetics.Select(f => new HashEntry(f.Key, Js.Stringify(f.Value))).ToArray());
+        await refresh.ExecuteAsync();
     }
 
     private static JsonObject Stored(BsonDocument doc) => (JsonObject)JsonStringified(doc)!;

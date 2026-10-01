@@ -85,6 +85,7 @@ public sealed class CosmeticsServiceTests : IAsyncLifetime
             foreach (string id in _ids)
             {
                 await Redis.KeyDeleteAsync($"player:{id}:cosmetics");
+                await Redis.KeyDeleteAsync($"connections:{id}:cosmetics");
             }
 
             await _app.StopAsync();
@@ -174,5 +175,39 @@ public sealed class CosmeticsServiceTests : IAsyncLifetime
         Assert.Null(await DocumentAsync(id));
         Assert.True(await Cosmetics.SetProfileIconAsync(id, "profile_icon_bat", default));
         Assert.NotNull(await DocumentAsync(id));
+    }
+
+    [SkippableFact]
+    public async Task AnEquipRefreshesTheMatchCopy()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        // The TS lobby lock reads connections:{id}:cosmetics before anything else; TS equips leave it stale.
+        string id = NewPlayer();
+        await Redis.HashSetAsync($"connections:{id}:cosmetics", [new HashEntry("Banner", "\"banner_old\""), new HashEntry("Stale", "1")]);
+        Assert.True(await Cosmetics.EquipAsync(CosmeticSlot.Banner, id, "banner_new", true, default));
+
+        var copy = (await Redis.HashGetAllAsync($"connections:{id}:cosmetics")).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
+        var saved = (JsonObject)JsonNode.Parse((await Redis.StringGetAsync($"player:{id}:cosmetics")).ToString())!;
+        Assert.Equal("\"banner_new\"", copy["Banner"]);
+        // Every field of the saved value, each as JSON.stringify writes it (the TS readers JSON.parse each one).
+        foreach (var (name, value) in saved)
+        {
+            Assert.Equal(value!.ToJsonString(), JsonNode.Parse(copy[name])!.ToJsonString());
+        }
+
+        Assert.Equal($"\"{id}\"", copy["_id"]);
+        Assert.Equal("1", copy["Stale"]);
+    }
+
+    [SkippableFact]
+    public async Task AnEquipCreatesNoMatchCopy()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        // The TS websocket deletes the copy at disconnect; one made here would outlive the session.
+        string id = NewPlayer();
+        Assert.True(await Cosmetics.EquipAsync(CosmeticSlot.Banner, id, "banner_new", true, default));
+        Assert.True(await Cosmetics.EquipTauntAsync(id, "character_shaggy", 1, "taunt_mine", default));
+        Assert.True(await Redis.KeyExistsAsync($"player:{id}:cosmetics"));
+        Assert.False(await Redis.KeyExistsAsync($"connections:{id}:cosmetics"));
     }
 }

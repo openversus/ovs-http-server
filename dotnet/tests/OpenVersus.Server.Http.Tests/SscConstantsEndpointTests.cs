@@ -37,6 +37,17 @@ public sealed class SscConstantsEndpointTests(GameAppFactory factory) : IClassFi
     }
 
     [Fact]
+    public async Task TheMissionObjectIsThePlayersWithNoMissions()
+    {
+        // Missions:Enabled is off by default, as MISSIONS_ENABLED is on the TS server.
+        using var response = await SendHydraAsync(HttpMethod.Post, "get_or_create_mission_object");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var answer = System.Text.Json.Nodes.JsonNode.Parse(HydraCodec.DecodeToJson(await response.Content.ReadAsByteArrayAsync()))!;
+        Assert.Equal(GameAppFactory.AccountId, answer["body"]!["owner_id"]!.GetValue<string>());
+        Assert.Empty(answer["body"]!["server_data"]!["MissionControllerContainers"]!.AsObject());
+    }
+
+    [Fact]
     public async Task TheLaunchEventIsAnsweredWithNothing()
     {
         // The TS server's res.send(""): text/html and no body, even to a Hydra request.

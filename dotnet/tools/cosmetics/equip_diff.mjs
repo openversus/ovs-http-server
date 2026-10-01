@@ -10,9 +10,12 @@
 // (status and bytes, JSON or Hydra as asked) and the state of both stores after it; diff compares them and the Mongo
 // updates and findAndModify commands each server sent. Restart the TS server before each run (see the last step).
 //
-// One expected difference (2 lines), announcer-missing-slug-hydra: a Hydra request without AnnouncerPackSlug gets
+// Two expected differences. announcer-missing-slug-hydra (2 lines): a Hydra request without AnnouncerPackSlug gets
 // EquippedAnnouncerPack NaN from the TS server (its Hydra encoder's form of undefined) and no key from the C# port; the
 // JSON answers agree (JSON.stringify drops undefined). The game always sends the slug.
+//
+// banner-match-copy, by design: the C# port also refreshes connections:{id}:cosmetics when it
+// exists (every field of the saved cosmetics, JSON.stringify'd; the seeded extra field kept), where TS leaves it stale.
 import { require, need, openScratch, readProfile, dump, writeRun, diff, toPlain, reloadAssets } from "../refdiff/refdiff.mjs";
 
 const jwt = require(process.cwd() + "/node_modules/jsonwebtoken");
@@ -132,6 +135,12 @@ async function run(baseUrl, outFile) {
   await step("icon-disabled", "set_profile_icon", oid(3), { Slug: "profile_icon_off" });
   await step("icon-not-a-string", "set_profile_icon", oid(3), { Slug: 5 });
   await step("icon-bad-id", "set_profile_icon", "not-an-object-id", { Slug: "profile_icon_bat" });
+
+  // The match's copy (connections:{id}:cosmetics, made by the TS lobby lock, deleted at websocket disconnect): the C#
+  // port refreshes it when it exists, TS leaves it stale. Removed after the step so later steps compare clean.
+  await redis.hSet(`connections:${oid(3)}:cosmetics`, { Banner: JSON.stringify("banner_old"), Stale: "1" });
+  await step("banner-match-copy", "equip_banner", oid(3), { BannerSlug: "banner_d" });
+  await redis.del(`connections:${oid(3)}:cosmetics`);
 
   // Last: TS assigns its module-level defaultTaunts to a cache without Taunts, and the slot write then changes the
   // defaults of every later new document in that process (the C# port copies them). Restart the TS server before a run.

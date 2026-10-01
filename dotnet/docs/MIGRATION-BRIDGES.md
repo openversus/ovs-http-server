@@ -47,7 +47,10 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   `get_equipped_cosmetics` and written by the six equip routes (`CosmeticsService`): the stored document as
   `JSON.stringify` writes a lean read (`_id`, `account_id`, `__v` kept), with a taunt entry per character. The TS
   websocket and match handlers (`websocket.ts`, `handlers/matches.ts`, `ssc/ssc.ts`) read the key to show a player's
-  cosmetics to the others in a match. `set_profile_icon` also writes `playertesters.profile_icon`, which `/access`,
+  cosmetics to the others in a match. They read `connections:{id}:cosmetics` first (a hash, a field per key, each
+  JSON-encoded; made by the TS lobby lock and match flow, deleted by the TS websocket at disconnect): the C# equips
+  refresh it when it exists and never create it (TS equips leave it stale until the game restarts). Whoever ports
+  `lock_lobby_loadout` and the match flow takes over creating it. `set_profile_icon` also writes `playertesters.profile_icon`, which `/access`,
   profiles and friends read. The Mongo writes keep mongoose's upsert shape (`$setOnInsert` with `__v` and the schema's
   defaults).
 - **GameplayPreferences** (the player's input settings: deadzones, input buffer, item pickup; they change how a match

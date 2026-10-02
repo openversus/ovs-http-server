@@ -1,7 +1,7 @@
 using FastEndpoints;
 using OpenVersus.Server.Http.Shared.Stubs;
 
-namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
+namespace OpenVersus.Server.MatchFlow.Endpoints.Game.Ssc;
 
 /// <summary>
 /// PUT /ssc/invoke/toast_player.

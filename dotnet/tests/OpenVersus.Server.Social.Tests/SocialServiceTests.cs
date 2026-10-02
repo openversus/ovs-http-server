@@ -58,7 +58,7 @@ public sealed class SocialServiceTests : IClassFixture<ServiceFactory<Program>>
     [Fact]
     public void EveryServiceItsEndpointsLookUpIsRegistered()
     {
-        var problems = Registrations.UnresolvableLookups(_factory.Services, typeof(Program).Assembly);
+        var problems = Registrations.UnresolvableLookups(_factory.Services, typeof(Program).Assembly, _factory.Registered);
         Assert.True(problems.Count == 0, string.Join("\n", problems));
     }
 }

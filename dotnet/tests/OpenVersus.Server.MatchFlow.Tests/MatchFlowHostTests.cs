@@ -1,25 +1,49 @@
 using System.Net;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OpenVersus.Server.Core.Hosting;
+using OpenVersus.Server.TestSupport;
 
 namespace OpenVersus.Server.MatchFlow.Tests;
 
-public sealed class MatchFlowHostTests : IClassFixture<MatchFlowHostTests.Factory>
+public sealed class MatchFlowHostTests : IClassFixture<ServiceFactory<Program>>
 {
-    private readonly Factory _factory;
+    private readonly ServiceFactory<Program> _factory;
 
-    public MatchFlowHostTests(Factory factory)
+    public MatchFlowHostTests(ServiceFactory<Program> factory)
     {
         _factory = factory;
     }
 
-    /// <summary>Development: the container validates every registration when the host is built.</summary>
-    public sealed class Factory : WebApplicationFactory<Program>
+    [Fact]
+    public async Task AnswersExactlyTheRoutesItOwns()
     {
-        protected override void ConfigureWebHost(IWebHostBuilder builder) => builder.UseEnvironment(Environments.Development);
+        var problems = await RouteOwnership.ProblemsAsync(_factory.CreateGameClient(), KnownServices.MatchFlow.Name);
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    [Fact]
+    public void EverySettingItsServicesReadIsBound()
+    {
+        var problems = Registrations.UnboundOptions(_factory.Registered, _factory.Services);
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    [Fact]
+    public void EveryServiceItsEndpointsLookUpIsRegistered()
+    {
+        var problems = Registrations.UnresolvableLookups(_factory.Services, typeof(Program).Assembly, _factory.Registered);
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    // The TS server's fixed answer (tools/ssc/constants_diff.mjs compares it byte for byte).
+    [Fact]
+    public async Task PerksAbsentAnswersTheTsServersFixedAnswer()
+    {
+        using var response = await _factory.CreateGameClient().PutAsync("/ssc/invoke/perks_absent",
+            new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("""{"body":{"message":"Early absent report"},"metadata":null,"return_code":2}""", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]

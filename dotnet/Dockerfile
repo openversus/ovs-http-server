@@ -88,8 +88,10 @@ ENV OVS_SERVICE=matchmaking
 COPY --from=build /out/Matchmaking .
 ENTRYPOINT ["dotnet", "OpenVersus.Server.Matchmaking.dll"]
 
-# The match flow: no public port (yet: the rollback server's callbacks will be its).
+# The match flow: check-ins, concedes, match config, the rollback server's callbacks, and match results (MATCHFLOW_PORT,
+# 8005 by default).
 FROM runtime AS matchflow
 ENV OVS_SERVICE=matchflow
 COPY --from=build /out/MatchFlow .
+EXPOSE 8005
 ENTRYPOINT ["dotnet", "OpenVersus.Server.MatchFlow.dll"]

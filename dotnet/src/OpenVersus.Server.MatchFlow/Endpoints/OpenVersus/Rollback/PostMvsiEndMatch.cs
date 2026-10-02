@@ -1,7 +1,7 @@
 using FastEndpoints;
 using OpenVersus.Server.Http.Shared.Stubs;
 
-namespace OpenVersus.Server.Http.Endpoints.OpenVersus.Rollback;
+namespace OpenVersus.Server.MatchFlow.Endpoints.OpenVersus.Rollback;
 
 /// <summary>
 /// POST /mvsi_end_match.

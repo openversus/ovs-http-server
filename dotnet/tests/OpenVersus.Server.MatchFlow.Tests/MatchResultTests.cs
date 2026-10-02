@@ -45,6 +45,7 @@ public sealed class MatchResultTests : IAsyncLifetime
             builder.UseSetting("REDIS_DB", TestRedisDb.ToString());
             builder.UseSetting("MONGODB_URI", mongoUri);
             builder.UseSetting("RewardTracks:CharacterMastery", "true");
+            builder.UseSetting("Access:JwtSecret", TestSupport.ServiceFactory<Program>.Secret);
         }
     }
 

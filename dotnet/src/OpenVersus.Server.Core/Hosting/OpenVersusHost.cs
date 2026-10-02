@@ -52,8 +52,11 @@ public static class KnownServices
     public static readonly ServiceDefinition Matchmaking = new("matchmaking", PublicPortKey: null, DefaultPublicPort: 0, DefaultControlPort: 17803,
         ServiceStores.Redis);
 
-    /// <summary>What happens to a match once it is played: its results (missions, match XP, rift progress).</summary>
-    public static readonly ServiceDefinition MatchFlow = new("matchflow", PublicPortKey: null, DefaultPublicPort: 0, DefaultControlPort: 17805,
+    /// <summary>
+    /// A match from its start to what it changes once played (MATCHFLOW_PORT): check-ins, concedes and match config, the
+    /// rollback server's callbacks, and the results (missions, match XP, rift progress).
+    /// </summary>
+    public static readonly ServiceDefinition MatchFlow = new("matchflow", "MATCHFLOW_PORT", DefaultPublicPort: 8005, DefaultControlPort: 17805,
         ServiceStores.Redis | ServiceStores.Mongo);
 
     /// <summary>The game's login and sessions (ACCESS_PORT): /access, /sessions/*, and the bans they check.</summary>

@@ -18,7 +18,9 @@ public static class Registrations
 
     private static readonly Type[] s_optionsInterfaces = [typeof(IOptions<>), typeof(IOptionsMonitor<>), typeof(IOptionsSnapshot<>)];
 
-    private static readonly Regex s_lookup = new(@"(?<![\w.])(?:Resolve|GetRequiredService)<(?<type>[\w.]+(?:<[\w.]+>)?)>\(", RegexOptions.Compiled);
+    private static readonly Regex s_class = new(@"\bclass\s+(?<name>\w+)", RegexOptions.Compiled);
+
+    private static readonly Regex s_lookup = new(@"(?<!\w)(?:Resolve|GetRequiredService)<(?<type>[\w.]+(?:<[\w.]+>)?)>\(", RegexOptions.Compiled);
 
     /// <summary>
     /// Each options class a constructor of an OpenVersus service in <paramref name="services"/> takes that has no binding
@@ -48,24 +50,34 @@ public static class Registrations
     }
 
     /// <summary>
-    /// Each Resolve&lt;T&gt; or GetRequiredService&lt;T&gt; in the source of <paramref name="program"/>'s project that
-    /// <paramref name="provider"/> cannot answer (an unregistered service, or options nothing binds). The stores are left
-    /// out: whether a service has them is configuration. TryResolve is left out: it is written for an absent service.
+    /// Each Resolve&lt;T&gt; or GetRequiredService&lt;T&gt; that <paramref name="provider"/> cannot answer (an unregistered
+    /// service, or options nothing binds), in the code this service runs: its own project's source; Http.Shared's, whose
+    /// pipeline every game HTTP service runs; and the Core files that declare a class <paramref name="registered"/> names.
+    /// The stores are left out: whether a service has them is configuration. TryResolve is left out: it is written for an
+    /// absent service.
     /// </summary>
-    public static IReadOnlyList<string> UnresolvableLookups(IServiceProvider provider, Assembly program)
+    public static IReadOnlyList<string> UnresolvableLookups(IServiceProvider provider, Assembly program, IServiceCollection registered)
     {
         var isService = provider.GetRequiredService<IServiceProviderIsService>();
         var problems = new SortedSet<string>(StringComparer.Ordinal);
-        string root = ProjectDirectory(program);
-        foreach (string file in Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
+        var registeredNames = registered.Select(d => d.IsKeyedService ? d.KeyedImplementationType : d.ImplementationType)
+            .OfType<Type>().Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
+        string own = ProjectDirectory(program.GetName().Name!);
+        var sources = SourceFiles(own).Select(f => (Root: own, File: f));
+        if (program.GetReferencedAssemblies().Any(a => a.Name == "OpenVersus.Server.Http.Shared"))
         {
-            string relative = Path.GetRelativePath(root, file);
-            if (relative.StartsWith("obj" + Path.DirectorySeparatorChar, StringComparison.Ordinal)
-                || relative.StartsWith("bin" + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-            {
-                continue;
-            }
+            string shared = ProjectDirectory("OpenVersus.Server.Http.Shared");
+            sources = sources.Concat(SourceFiles(shared).Select(f => (Root: shared, File: f)));
+        }
 
+        string core = ProjectDirectory("OpenVersus.Server.Core");
+        sources = sources.Concat(SourceFiles(core)
+            .Where(f => s_class.Matches(File.ReadAllText(f)).Any(m => registeredNames.Contains(m.Groups["name"].Value)))
+            .Select(f => (Root: core, File: f)));
+
+        foreach (var (root, file) in sources)
+        {
+            string relative = Path.Combine(Path.GetFileName(root), Path.GetRelativePath(root, file));
             foreach (Match match in s_lookup.Matches(File.ReadAllText(file)))
             {
                 string text = match.Groups["type"].Value;
@@ -89,6 +101,15 @@ public static class Registrations
                     : options.Any(t => IsBound(provider, t)) ? null : "nothing binds it";
             }
 
+            // Any other generic (ILogger<T>): the open type closed over the argument, as the container would build it.
+            var closed = Regex.Match(text, @"^(?:[\w.]+\.)?(?<outer>\w+)<(?:[\w.]+\.)?(?<inner>\w+)>$");
+            if (closed.Success)
+            {
+                var built = Find(closed.Groups["outer"].Value + "`1", definitions: true)
+                    .SelectMany(o => Find(closed.Groups["inner"].Value).Select(i => o.MakeGenericType(i))).ToList();
+                return built.Count == 0 ? "no such type is loaded" : built.Any(isService.IsService) ? null : "not registered";
+            }
+
             string name = text[(text.LastIndexOf('.') + 1)..];
             if (s_stores.Contains(name))
             {
@@ -110,9 +131,9 @@ public static class Registrations
     private static string Name(Type type) =>
         type.IsGenericType ? $"{type.Name[..type.Name.IndexOf('`')]}<{string.Join(", ", type.GetGenericArguments().Select(Name))}>" : type.Name;
 
-    private static List<Type> Find(string name) =>
+    private static List<Type> Find(string name, bool definitions = false) =>
         AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic).SelectMany(Types)
-            .Where(t => t.Name == name && !t.IsGenericTypeDefinition).ToList();
+            .Where(t => t.Name == name && t.IsGenericTypeDefinition == definitions).ToList();
 
     private static IEnumerable<Type> Types(Assembly assembly)
     {
@@ -126,10 +147,17 @@ public static class Registrations
         }
     }
 
-    // src/{assembly name}, found from the test's output directory upwards.
-    private static string ProjectDirectory(Assembly program)
+    private static IEnumerable<string> SourceFiles(string root) =>
+        Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories).Where(f =>
+        {
+            string relative = Path.GetRelativePath(root, f);
+            return !relative.StartsWith("obj" + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                && !relative.StartsWith("bin" + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+        });
+
+    // src/{project}, found from the test's output directory upwards.
+    private static string ProjectDirectory(string name)
     {
-        string name = program.GetName().Name!;
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {
             string candidate = Path.Combine(dir.FullName, "src", name);

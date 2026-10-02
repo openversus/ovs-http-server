@@ -6,7 +6,7 @@ namespace OpenVersus.Server.Http.Tests;
 
 /// <summary>
 /// The SSC functions the TS server answers with a fixed answer and nothing written (tools/ssc/constants_diff.mjs
-/// compares them with the TS server's, byte for byte); the lobbies service's: OpenVersus.Server.Lobbies.Tests.
+/// compares them with the TS server's, byte for byte); the lobbies and match flow services': their own tests.
 /// </summary>
 public sealed class SscConstantsEndpointTests(GameAppFactory factory) : IClassFixture<GameAppFactory>
 {
@@ -24,7 +24,6 @@ public sealed class SscConstantsEndpointTests(GameAppFactory factory) : IClassFi
     [Theory]
     [InlineData("PUT", "game_install", Empty)]
     [InlineData("POST", "claim_mission_rewards", """{"body":{"MissionControllerContainers":{},"ClaimLocks":{}},"metadata":null,"return_code":0}""")]
-    [InlineData("PUT", "perks_absent", """{"body":{"message":"Early absent report"},"metadata":null,"return_code":2}""")]
     public async Task AnswersTheTsServersFixedAnswer(string method, string route, string json)
     {
         using var response = await SendHydraAsync(new HttpMethod(method), route);

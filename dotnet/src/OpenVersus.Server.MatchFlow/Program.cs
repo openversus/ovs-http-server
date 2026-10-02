@@ -1,5 +1,7 @@
 using OpenVersus.Server.Core.Hosting;
+using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Missions;
+using OpenVersus.Server.Core.Perks;
 using OpenVersus.Server.Core.RewardTracks;
 using OpenVersus.Server.Core.Rifts;
 using OpenVersus.Server.Http.Shared;
@@ -14,6 +16,8 @@ builder.AddGameHttp(typeof(Program).Assembly);
 builder.AddRewardTracks();
 builder.AddMissionResults();
 builder.AddRiftResults();
+builder.AddPerksLock();
+builder.AddMatchToasts();
 
 var app = builder.Build();
 app.UseGameHttp();

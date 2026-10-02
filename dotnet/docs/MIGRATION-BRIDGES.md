@@ -30,7 +30,11 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   matchmakingId: "party-changed"}`; `MatchmakingRequestService`, the game's cancel: `{playersIds, matchmakingId}`; the TS
   websocket keeps the queue ticket and its tick in memory, so it cancels them) and `party:queued`
   (`MatchmakingRequestService`, the matchmaking request's ticket, as queueMatch builds it; the TS websocket sends the game
-  OnMatchmakerStarted and pushes the ticket onto the `1v1` or `2v2` list, which the matchmaker reads).
+  OnMatchmakerStarted and pushes the ticket onto the `1v1` or `2v2` list, which the matchmaker reads),
+  `perks:notifications` (`PerksLock`, every player of a match has locked their perks: `{containerMatchId, playerIds}`;
+  the TS websocket puts the perks into each player's match config, which it holds in memory, and sends it again) and
+  `toast:received` (`MatchToasts`, a toast after a match: `{toasterAccountId, toasterUsername, toasteeAccountId,
+  containerMatchId}`; the TS websocket grants the toastee 2 match_toasts and shows them the toast).
   Their payloads are JSON exactly as the TS server writes them. The party routes' other messages to players
   (`OnLobbyModeUpdated`, `InviteReceivedForLobby`, `PlayerJoinedLobby`, `PlayerLeftLobby`, `PlayerReadyForLobby`,
   `OnPlayerLoadoutLocked`) are built in C# and go through `ws:send` (4), as the TS websocket would have built them; so

@@ -46,6 +46,39 @@ public sealed class MatchFlowHostTests : IClassFixture<ServiceFactory<Program>>
         Assert.Equal("""{"body":{"message":"Early absent report"},"metadata":null,"return_code":2}""", await response.Content.ReadAsStringAsync());
     }
 
+    // Routes the TS server never handled: what the game always got (its catch-all; without Mongo the default CRC), with
+    // any method.
+    [Theory]
+    [InlineData("GET", "check_training_server_ready")]
+    [InlineData("PUT", "get_or_create_my_match_config")]
+    [InlineData("POST", "sync_match_config")]
+    [InlineData("DELETE", "sync_match_config")]
+    public async Task RoutesNeverSeenAnswerTheTsCatchAll(string method, string route)
+    {
+        using var request = new HttpRequestMessage(new HttpMethod(method), $"/ssc/invoke/{route}");
+        if (method != "GET")
+        {
+            request.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+        }
+
+        using var response = await _factory.CreateGameClient().SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(response.Headers.Contains("X-OVS-Stub"));
+        Assert.Equal("""{"body":{"Crc":1267552956,"MatchmakingCrc":1},"metadata":null,"return_code":200}""", await response.Content.ReadAsStringAsync());
+    }
+
+    // Answered whatever happened (here: no Redis, no Mongo), as the TS server answered.
+    [Theory]
+    [InlineData("perks_lock", """{"ContainerMatchId":"m","Perks":[]}""")]
+    [InlineData("toast_player", """{"ContainerMatchId":"m","ToasteeId":"t"}""")]
+    public async Task PerksLockAndToastAnswerEmpty(string route, string body)
+    {
+        using var response = await _factory.CreateGameClient().PutAsync($"/ssc/invoke/{route}",
+            new StringContent(body, System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("""{"body":{},"metadata":null,"return_code":0}""", await response.Content.ReadAsStringAsync());
+    }
+
     [Fact]
     public void Runs_the_match_result_subscribers_and_nothing_else_of_its_own()
     {

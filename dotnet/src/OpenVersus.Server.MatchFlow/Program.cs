@@ -18,6 +18,7 @@ builder.AddMissionResults();
 builder.AddRiftResults();
 builder.AddPerksLock();
 builder.AddMatchToasts();
+builder.AddMatchInputs();
 
 var app = builder.Build();
 app.UseGameHttp();

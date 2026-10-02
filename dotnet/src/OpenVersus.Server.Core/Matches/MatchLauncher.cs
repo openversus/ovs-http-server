@@ -93,6 +93,10 @@ public sealed class RollbackSettings
 
     [Description("The OpenVersus server a deployed rollback server reports to (OVS_SERVER).")]
     public string OvsServer { get; set; } = "http://localhost:8000";
+
+    [Description("The key a rollback server's calls carry in their MatchUpdateKey header (MATCHUPDATEKEY; the rollback server's Server__MatchUpdateKey). Unset, or the TS placeholder MisconfiguredMatchUpdateKey: every such call is refused.")]
+    [Secret]
+    public string MatchUpdateKey { get; set; } = "";
 }
 
 /// <summary>

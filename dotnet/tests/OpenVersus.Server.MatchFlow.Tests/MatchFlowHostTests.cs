@@ -79,6 +79,20 @@ public sealed class MatchFlowHostTests : IClassFixture<ServiceFactory<Program>>
         Assert.Equal("""{"body":{},"metadata":null,"return_code":0}""", await response.Content.ReadAsStringAsync());
     }
 
+    // A rollback server's recording: no token needed (a rollback route), the MatchUpdateKey is; none is configured here.
+    [Fact]
+    public async Task MatchInputsWithoutAConfiguredKeyAreRefused()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/ovs_match_inputs")
+        {
+            Content = new StringContent("""{"matchId":"m","players":[]}""", System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("MatchUpdateKey", "anything");
+        using var response = await _factory.CreateClient().SendAsync(request);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("""{"error":"Invalid signature"}""", await response.Content.ReadAsStringAsync());
+    }
+
     [Fact]
     public void Runs_the_match_result_subscribers_and_nothing_else_of_its_own()
     {

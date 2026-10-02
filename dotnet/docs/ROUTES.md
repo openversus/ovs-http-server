@@ -17,9 +17,9 @@ override header, not on the wire method. `?` means the method is not known yet.
 **Websockets** (not in the tables): the Hydra realtime socket (the ws service; binary Hydra messages; the
 server pings `0x0c` every 20 s and the game answers `0x0a`).
 
-**Totals.** 249 routes. The game can call 210 Hydra/engine/social routes and SSC functions; the TS
+**Totals.** 250 routes. The game can call 210 Hydra/engine/social routes and SSC functions; the TS
 server answers 115. Not answered: 33 routes and 62 SSC functions.
-OpenVersus's own, not the game: openversus client mod 10, rollback server 7, website (browser) 18, admin and data sync 4.
+OpenVersus's own, not the game: openversus client mod 10, rollback server 8, website (browser) 18, admin and data sync 4.
 
 Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ovs-client`,
 `ovs-rollback`, `ovs-web`, `ovs-admin`). The skeleton's endpoint folders follow the same split.
@@ -152,6 +152,7 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 | POST | `/mvsi_end_match` | matchflow | — | yes | server only |
 | POST | `/mvsi_register` | matchflow | — | yes | server only |
 | POST | `/ovs_end_match` | matchflow | — | yes | server only |
+| POST | `/ovs_match_inputs` | matchflow | — | **no** | C# only: the rollback server's recording of a match's inputs (its InputRecording settings) |
 | POST | `/ovs_match_started` | matchflow | — | yes | server only |
 | POST | `/ovs_match_status` | matchflow | — | yes | server only |
 | POST | `/ovs_register` | matchflow | — | yes | server only |

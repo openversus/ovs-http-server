@@ -37,6 +37,7 @@ public static class TsEnvironment
         ("WEBHOOK_DEPLOY_PATH", "Rollback:WebhookDeployPath"),
         ("WEBHOOK_HMAC_SECRET", "Rollback:WebhookHmacSecret"),
         ("OVS_SERVER", "Rollback:OvsServer"),
+        ("MATCHUPDATEKEY", "Rollback:MatchUpdateKey"),
     ];
 
     // Values the TS server reads with envalid's bool (true/t/1, false/f/0), which .NET's binding does not; anything else

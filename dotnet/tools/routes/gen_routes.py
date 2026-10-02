@@ -123,6 +123,9 @@ upgrade_track_to_premium retry_current_rift_node""".split()
 SSC_BENCH = {"retry_current_rift_node": ("PUT", "bench proxy log 2026-09-30 (Retry on a rift match's results)"),
              "casual_queue": ("PUT", "bench proxy log 2026-10-02 (the Casual queue's fall back to bots)")}
 
+# Routes only the C# server has (no TS route, capture or binary string): method, path, note.
+CSHARP_ONLY = [("POST", "/ovs_match_inputs", "C# only: the rollback server's recording of a match's inputs (its InputRecording settings)")]
+
 
 EXE = pathlib.Path.home() / ".local/share/Steam/steamapps/common/MultiVersus/MultiVersus/Binaries/Win64/MultiVersus-Win64-Shipping.exe"
 
@@ -133,7 +136,7 @@ ENGINE = [("POST", "/datarouter/api/v1/public/data/clients", "string", "Unreal D
 # 2026-09-28). Order matters: the first match wins.
 OVS_KINDS = [
     ("ovs-client", re.compile(r"^/(api/identify|ovs/client-version|ovs/notifications|ovs/friends|ovs/all-players)(/|$)")),
-    ("ovs-rollback", re.compile(r"^/(ovs_register|ovs_match_started|ovs_end_match|ovs_match_status|api/ovs_match_status|mvsi_register|mvsi_end_match)$")),
+    ("ovs-rollback", re.compile(r"^/(ovs_register|ovs_match_started|ovs_end_match|ovs_match_status|api/ovs_match_status|mvsi_register|mvsi_end_match|ovs_match_inputs)$")),
     ("ovs-admin", re.compile(r"^/(admin|api/admin|syncAsset)(/|$)")),
     ("ovs-web", re.compile(r"^/(matches$|api/matches|stats|leaderboard$|api/leaderboard|namechange|account/|home|theme\.|favicon|images/|assets/)")),
 ]
@@ -250,6 +253,9 @@ def main():
     for f in FRAGMENTS:
         if not any(r["path"] == f for r in routes.values()):
             add("?", f, binary="fragment", note="binary fragment; no builder found yet")
+
+    for m, p, note in CSHARP_ONLY:
+        add(m, p, note=note)
 
     # Attach captures and server routes to the templates they match; anything left becomes its own row.
     templates = list(routes.values())

@@ -1565,6 +1565,21 @@
   },
   {
     "method": "POST",
+    "path": "/ovs_match_inputs",
+    "area": "ovs_match_inputs",
+    "binary": null,
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "C# only: the rollback server's recording of a match's inputs (its InputRecording settings)"
+    ],
+    "kind": "ovs-rollback",
+    "in_game": false,
+    "in_server": false,
+    "owner": "matchflow"
+  },
+  {
+    "method": "POST",
     "path": "/ovs_match_started",
     "area": "ovs_match_started",
     "binary": null,

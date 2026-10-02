@@ -97,6 +97,7 @@ PUT	/ovs/friends/send-request/{targetId}	social
 DELETE	/ovs/friends/{friendId}	social
 GET	/ovs/notifications	web
 POST	/ovs_end_match	matchflow
+POST	/ovs_match_inputs	matchflow
 POST	/ovs_match_started	matchflow
 POST	/ovs_match_status	matchflow
 POST	/ovs_register	matchflow

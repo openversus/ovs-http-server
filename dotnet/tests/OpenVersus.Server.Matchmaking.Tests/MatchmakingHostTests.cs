@@ -1,25 +1,32 @@
 using System.Net;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OpenVersus.Server.Core.Hosting;
+using OpenVersus.Server.TestSupport;
 
 namespace OpenVersus.Server.Matchmaking.Tests;
 
-public sealed class MatchmakingHostTests : IClassFixture<MatchmakingHostTests.Factory>
+public sealed class MatchmakingHostTests : IClassFixture<ServiceFactory<Program>>
 {
-    private readonly Factory _factory;
+    private readonly ServiceFactory<Program> _factory;
 
-    public MatchmakingHostTests(Factory factory)
+    public MatchmakingHostTests(ServiceFactory<Program> factory)
     {
         _factory = factory;
     }
 
-    /// <summary>Development: the container validates every registration when the host is built.</summary>
-    public sealed class Factory : WebApplicationFactory<Program>
+    [Fact]
+    public void EverySettingItsServicesReadIsBound()
     {
-        protected override void ConfigureWebHost(IWebHostBuilder builder) => builder.UseEnvironment(Environments.Development);
+        var problems = Registrations.UnboundOptions(_factory.Registered, _factory.Services);
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    [Fact]
+    public void EveryServiceItLooksUpIsRegistered()
+    {
+        var problems = Registrations.UnresolvableLookups(_factory.Services, typeof(Program).Assembly, _factory.Registered);
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
     }
 
     [Fact]

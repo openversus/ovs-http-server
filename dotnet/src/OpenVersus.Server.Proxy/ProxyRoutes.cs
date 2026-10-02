@@ -6,7 +6,7 @@ using Yarp.ReverseProxy.Configuration;
 
 namespace OpenVersus.Server.Proxy;
 
-/// <summary>Where the proxy sends what, changeable while it runs (ovs-ctl -s proxy settings set ...).</summary>
+/// <summary>Where the proxy sends what, changeable while it runs (ovsctl -s proxy settings set ...).</summary>
 public sealed class ProxySettings : IValidatableObject
 {
     [Description("The C# http service the ported routes go to.")]

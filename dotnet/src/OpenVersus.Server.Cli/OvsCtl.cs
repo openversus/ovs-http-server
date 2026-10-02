@@ -9,7 +9,7 @@ using Spectre.Console.Cli;
 namespace OpenVersus.Server.Cli;
 
 /// <summary>
-/// ovs-ctl: status and settings of a running OpenVersus service, through its control API. Exit codes: 0 done,
+/// ovsctl: status and settings of a running OpenVersus service, through its control API. Exit codes: 0 done,
 /// 1 refused or not found, 2 the service could not be reached.
 /// </summary>
 public static class OvsCtl
@@ -25,7 +25,7 @@ public static class OvsCtl
         var app = new CommandApp(new TypeRegistrar(services));
         app.Configure(config =>
         {
-            config.SetApplicationName("ovs-ctl");
+            config.SetApplicationName("ovsctl");
             config.ConfigureConsole(console);
             config.AddCommand<HealthCommand>("health")
                 .WithDescription("Every instance of every service: ready or not, version, uptime, last heard from. With a service or instance: its checks. --probe: this service only, for a container's health check.")

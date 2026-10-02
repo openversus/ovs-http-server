@@ -139,7 +139,7 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   acknowledges it, and a result appended while no replica runs (a restart, a deploy) waits instead of being lost, as a
   pub/sub message is. It cannot change before then: the TS publisher only knows the channel.
 
-### 5. `ovs-ctl player disconnect` closes the connection through the TS websocket
+### 5. `ovsctl player disconnect` closes the connection through the TS websocket
 
 - **What:** the control API (`POST /control/ops/players/{who}/disconnect`, `OpsService.DisconnectPlayerAsync`)
   publishes `ws:disconnect` (`{playerId}`); the TS websocket (`src/websocket.ts`) closes that player's socket with

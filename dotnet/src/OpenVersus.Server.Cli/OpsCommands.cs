@@ -66,7 +66,7 @@ public sealed class OnlineCommand : AsyncCommand<OnlineSettings>
     }
 }
 
-/// <summary>ovs-ctl player online: who is connected, with every handle the player commands take.</summary>
+/// <summary>ovsctl player online: who is connected, with every handle the player commands take.</summary>
 public sealed class PlayerOnlineCommand : AsyncCommand<ConnectionSettings>
 {
     private readonly IAnsiConsole _console;

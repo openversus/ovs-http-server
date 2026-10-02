@@ -10,7 +10,7 @@ using StackExchange.Redis;
 namespace OpenVersus.Server.Core.Tests.Hosting;
 
 /// <summary>
-/// Instances announce themselves in Redis and any one of them lists them all (ovs-ctl health). Real Redis, database 15:
+/// Instances announce themselves in Redis and any one of them lists them all (ovsctl health). Real Redis, database 15:
 /// OVS_TEST_REDIS, OVS_TEST_REDIS_USER, OVS_TEST_REDIS_PW, as OpsTests.
 /// </summary>
 [Collection(RedisTestDatabase.Name)]

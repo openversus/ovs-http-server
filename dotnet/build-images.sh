@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the C# services' images, one per service: ovs-http, ovs-matchmaking, ovs-matchflow, tagged $1 (default: latest).
-# The commit goes into each image's version (ovs-ctl status); "-dirty" when the working tree has uncommitted changes.
+# The commit goes into each image's version (ovsctl status); "-dirty" when the working tree has uncommitted changes.
 set -euo pipefail
 cd "$(dirname "$0")"
 tag=${1:-latest}

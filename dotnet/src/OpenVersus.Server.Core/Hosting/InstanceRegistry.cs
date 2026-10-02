@@ -8,7 +8,7 @@ using StackExchange.Redis;
 namespace OpenVersus.Server.Core.Hosting;
 
 // Every instance of every service announces itself in Redis, so that any one of them can show the whole cluster
-// (ovs-ctl health): ovs:instance:{id} (an InstanceReport as JSON, EX 20 s) rewritten every 5 s, and ovs:instances (a
+// (ovsctl health): ovs:instance:{id} (an InstanceReport as JSON, EX 20 s) rewritten every 5 s, and ovs:instances (a
 // sorted set of "{service}/{id}" by last heartbeat, ms) to list them. An instance that stops cleanly says so (Stopped,
 // kept 10 minutes). One that dies stops writing: its key expires and the listing shows it Missing, with its last
 // heartbeat, for 10 minutes. Its readiness is its own /health/ready checks (stores only, ServiceStores), run at each

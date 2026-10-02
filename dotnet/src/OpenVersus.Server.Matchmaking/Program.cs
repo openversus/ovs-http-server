@@ -4,7 +4,7 @@ using OpenVersus.Server.Core.Matchmaking;
 
 // The matchmaker (the TS server's worker service, src/matchmaking-worker.ts): every Matchmaking:IntervalMs it makes
 // matches from the 1v1 and 2v2 queues and launches them (Core/Matchmaking/MatchmakingWorker.cs). No public port: it
-// only reads and writes Redis, and answers on its control listeners (ovs-ctl -s matchmaking, /health/*). Any number of
+// only reads and writes Redis, and answers on its control listeners (ovsctl -s matchmaking, /health/*). Any number of
 // replicas: each queue is worked under a lock.
 var builder = OpenVersusHost.CreateBuilder(KnownServices.Matchmaking, args);
 builder.AddMatchLauncher();

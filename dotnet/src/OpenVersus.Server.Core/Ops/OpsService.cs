@@ -31,7 +31,7 @@ namespace OpenVersus.Server.Core.Ops;
 //   playertesters                one document per player: _id (ObjectId; its hex is the player id above), name,
 //                                hydraUsername, steamId, public_id, profile_id
 
-/// <summary>A queued player, as ovs-ctl shows it.</summary>
+/// <summary>A queued player, as ovsctl shows it.</summary>
 public sealed record QueuedPlayer(string Id, string Name, double? Skill);
 
 /// <summary>A matchmaking ticket: one party waiting in a queue.</summary>

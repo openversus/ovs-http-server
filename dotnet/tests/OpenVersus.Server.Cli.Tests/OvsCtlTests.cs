@@ -8,7 +8,7 @@ using Spectre.Console.Testing;
 
 namespace OpenVersus.Server.Cli.Tests;
 
-/// <summary>ovs-ctl against a real service (a Core host on free ports), run in-process with a test console.</summary>
+/// <summary>ovsctl against a real service (a Core host on free ports), run in-process with a test console.</summary>
 public sealed class OvsCtlTests : IAsyncLifetime
 {
     private WebApplication _app = null!;

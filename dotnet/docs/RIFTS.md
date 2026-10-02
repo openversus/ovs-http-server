@@ -156,7 +156,7 @@ The rift season dropdown lists the seasons up to the current one, which the game
 season from the setting `Season:Current`, `Season:SeasonSix` since 2026-09-30 so the Season 6 rogue rifts show.
 Answers still keyed by Season 5 (ranked data, `ranked_season5_*` leaderboards, the login's `season5` trackers,
 per-season profile data, missions, milestones) may need filling for Season 6 where the game looks them up by the
-current season; switch back with `ovs-ctl settings set Season:Current Season:SeasonFive`. Everything still tied to
+current season; switch back with `ovsctl settings set Season:Current Season:SeasonFive`. Everything still tied to
 Season 5, the end-of-season screen and its open items: `docs/SEASONS.md`.
 
 ## Decided

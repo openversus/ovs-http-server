@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- ovs-ctl: the companion CLI. Talks to a service's control API over its Unix socket or its loopback port. -->
+  <!-- ovsctl: the companion CLI. Talks to a service's control API over its Unix socket or its loopback port. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <AssemblyName>ovs-ctl</AssemblyName>
+    <AssemblyName>ovsctl</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>

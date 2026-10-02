@@ -27,9 +27,9 @@ public sealed class HostedServicesTests : IClassFixture<GameAppFactory>
             .Order()
             .ToList();
 
-        // Each per process by nature: the bans this process checks, its share of the cluster settings, its hiss tables,
-        // its heartbeat into the instance registry.
-        Assert.Equal(["BanLoader", "ClusterSettingsSync", "HissWarmup", "InstanceHeartbeat"], hosted);
+        // Each per process by nature: its share of the cluster settings, its hiss tables, its heartbeat into the instance
+        // registry. (The bans went with the login, to the access service.)
+        Assert.Equal(["ClusterSettingsSync", "HissWarmup", "InstanceHeartbeat"], hosted);
     }
 
     [Fact]

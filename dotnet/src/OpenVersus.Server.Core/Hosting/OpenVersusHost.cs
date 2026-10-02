@@ -56,6 +56,10 @@ public static class KnownServices
     public static readonly ServiceDefinition MatchFlow = new("matchflow", PublicPortKey: null, DefaultPublicPort: 0, DefaultControlPort: 17805,
         ServiceStores.Redis | ServiceStores.Mongo);
 
+    /// <summary>The game's login and sessions (ACCESS_PORT): /access, /sessions/*, and the bans they check.</summary>
+    public static readonly ServiceDefinition Access = new("access", "ACCESS_PORT", DefaultPublicPort: 8001, DefaultControlPort: 17806,
+        ServiceStores.Redis | ServiceStores.Mongo);
+
     /// <summary>The website and the OpenVersus client's API (WEB_PORT), and the admin pages until the control plane takes them.</summary>
     public static readonly ServiceDefinition Web = new("web", "WEB_PORT", DefaultPublicPort: 8004, DefaultControlPort: 17809,
         ServiceStores.Redis | ServiceStores.Mongo);
@@ -63,7 +67,7 @@ public static class KnownServices
     /// <summary>The migration's reverse proxy: ported routes to the C# services, the rest to the TS server.</summary>
     public static readonly ServiceDefinition Proxy = new("proxy", "PROXY_PORT", DefaultPublicPort: 8080, DefaultControlPort: 17804);
 
-    public static IReadOnlyList<ServiceDefinition> All { get; } = [Http, Realtime, Matchmaking, MatchFlow, Web, Proxy];
+    public static IReadOnlyList<ServiceDefinition> All { get; } = [Http, Access, Web, Realtime, Matchmaking, MatchFlow, Proxy];
 
     public static ServiceDefinition? Find(string name) => All.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
 }

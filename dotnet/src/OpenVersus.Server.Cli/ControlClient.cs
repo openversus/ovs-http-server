@@ -16,7 +16,7 @@ namespace OpenVersus.Server.Cli;
 public class ConnectionSettings : CommandSettings
 {
     [CommandOption("-s|--service <SERVICE>")]
-    [Description("The service: http, web, ws, matchmaking, matchflow or proxy (default: OVS_SERVICE, else http). Picks the default socket and port.")]
+    [Description("The service: http, access, web, ws, matchmaking, matchflow or proxy (default: OVS_SERVICE, else http). Picks the default socket and port.")]
     public string Service { get; set; } = Environment.GetEnvironmentVariable(ServiceVariable) is { Length: > 0 } service ? service : "http";
 
     /// <summary>The default service: each service's container image sets it to its own.</summary>

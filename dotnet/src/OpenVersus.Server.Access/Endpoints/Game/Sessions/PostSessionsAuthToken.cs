@@ -5,7 +5,7 @@ using OpenVersus.Server.Http.Shared.Hosting;
 using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Access;
 
-namespace OpenVersus.Server.Http.Endpoints.Game.Sessions;
+namespace OpenVersus.Server.Access.Endpoints.Game.Sessions;
 
 /// <summary>
 /// POST /sessions/auth/token: the WB network SDK trades the /access token (the body's code) for its own. JSON, not

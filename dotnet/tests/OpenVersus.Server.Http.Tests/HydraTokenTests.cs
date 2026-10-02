@@ -66,9 +66,6 @@ public sealed class HydraTokenTests(GameAppFactory factory) : IClassFixture<Game
 
     [Theory]
     // The routes the TS server registers before its token check.
-    [InlineData("POST", "/access")]
-    [InlineData("DELETE", "/access")]
-    [InlineData("POST", "/sessions/auth/token")]
     [InlineData("GET", "/leaderboards/x/show")]
     [InlineData("GET", "/leaderboards/x/around/me")]
     [InlineData("GET", "/leaderboards/x/around/0000000000000000000a0002")]

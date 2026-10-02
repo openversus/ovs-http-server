@@ -12,6 +12,7 @@
   <Project Path="src/OpenVersus.Server.MatchFlow/OpenVersus.Server.MatchFlow.csproj" />
   <Project Path="src/OpenVersus.Server.Matchmaking/OpenVersus.Server.Matchmaking.csproj" />
   <Project Path="src/OpenVersus.Server.Web/OpenVersus.Server.Web.csproj" />
+  <Project Path="src/OpenVersus.Server.Access/OpenVersus.Server.Access.csproj" />
   <Project Path="tests/OpenVersus.Server.Cli.Tests/OpenVersus.Server.Cli.Tests.csproj" />
   <Project Path="tests/OpenVersus.Server.Core.Tests/OpenVersus.Server.Core.Tests.csproj" />
   <Project Path="tests/OpenVersus.Server.Http.Tests/OpenVersus.Server.Http.Tests.csproj" />
@@ -19,4 +20,5 @@
   <Project Path="tests/OpenVersus.Server.Matchmaking.Tests/OpenVersus.Server.Matchmaking.Tests.csproj" />
   <Project Path="tests/OpenVersus.Server.TestSupport/OpenVersus.Server.TestSupport.csproj" />
   <Project Path="tests/OpenVersus.Server.Web.Tests/OpenVersus.Server.Web.Tests.csproj" />
+  <Project Path="tests/OpenVersus.Server.Access.Tests/OpenVersus.Server.Access.Tests.csproj" />
 </Solution>

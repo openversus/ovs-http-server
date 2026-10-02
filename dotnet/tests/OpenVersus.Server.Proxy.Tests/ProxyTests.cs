@@ -16,7 +16,7 @@ namespace OpenVersus.Server.Proxy.Tests;
 /// </summary>
 public sealed class ProxyTests : IAsyncLifetime
 {
-    private WebApplication? _csharp, _ts;
+    private WebApplication? _csharp, _ts, _access;
     private WebApplicationFactory<Program>? _proxy;
     private HttpClient _client = null!;
 
@@ -24,10 +24,13 @@ public sealed class ProxyTests : IAsyncLifetime
     {
         (_csharp, string csharpUrl) = await BackendAsync("csharp");
         (_ts, string tsUrl) = await BackendAsync("ts");
+        (_access, string accessUrl) = await BackendAsync("access");
         _proxy = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b
             .UseSetting("Proxy:CSharpUrl", csharpUrl)
             .UseSetting("Proxy:TsUrl", tsUrl)
             .UseSetting("Proxy:PortedRoutes", "POST /access, GET /profiles/bulk, PUT /profiles/{id}/inventory")
+            // POST /access is the access service's (docs/routes.json); the profiles routes are the http service's.
+            .UseSetting("Proxy:Services", $"access={accessUrl}")
             .UseSetting("Control:Socket", "off"));
         _client = _proxy.CreateClient();
     }
@@ -35,7 +38,7 @@ public sealed class ProxyTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         _proxy?.Dispose();
-        foreach (var app in new[] { _csharp, _ts })
+        foreach (var app in new[] { _csharp, _ts, _access })
         {
             if (app is not null)
             {
@@ -73,7 +76,7 @@ public sealed class ProxyTests : IAsyncLifetime
     }
 
     [Theory]
-    [InlineData("POST", "/access", null, "csharp")]
+    [InlineData("POST", "/access", null, "access")]
     [InlineData("DELETE", "/access", null, "ts")]
     [InlineData("GET", "/profiles/bulk", null, "csharp")]
     // The Hydra SDK's GET as PUT: the header names the real method.
@@ -87,6 +90,15 @@ public sealed class ProxyTests : IAsyncLifetime
     public async Task RoutesByWhatIsPorted(string method, string path, string? hydraMethod, string backend)
     {
         Assert.Equal(backend, (await SendAsync(method, path, hydraMethod))[0]);
+    }
+
+    [Theory]
+    [InlineData("nosuchservice=http://127.0.0.1:1")]
+    [InlineData("access")]
+    [InlineData("access=not a url")]
+    public void AServicesEntryThatIsNotAKnownServiceAndAUrlIsRefused(string services)
+    {
+        Assert.Throws<FormatException>(() => ProxyRoutes.ParseServices(services));
     }
 
     [Fact]

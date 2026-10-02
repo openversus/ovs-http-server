@@ -1,7 +1,7 @@
 using FastEndpoints;
 using OpenVersus.Server.Http.Shared.Stubs;
 
-namespace OpenVersus.Server.Http.Endpoints.Game.Sessions;
+namespace OpenVersus.Server.Access.Endpoints.Game.Sessions;
 
 /// <summary>
 /// Any method /sessions/auth/password.

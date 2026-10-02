@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using OpenVersus.Server.Core.Access;
 using OpenVersus.Server.Http.Shared.Stubs;
 
-namespace OpenVersus.Server.Http.Tests;
+namespace OpenVersus.Server.Access.Tests;
 
 /// <summary>POST /sessions/auth/token over HTTP: JSON in, the Express-shaped JSON out.</summary>
 public sealed class SessionTokenEndpointTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>

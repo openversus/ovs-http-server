@@ -34,8 +34,8 @@ public sealed class RouteMapTests : IClassFixture<GameAppFactory>
     /// <summary>The services that answer routes (owners.tsv, copied into routes.json by gen_routes.py).</summary>
     internal static readonly string[] Owners = ["http", "access", "social", "lobbies", "matchflow", "web"];
 
-    /// <summary>Owners whose routes still live in this service: each moves out to its own executable (web has).</summary>
-    internal static readonly string[] StillHere = ["http", "access", "social", "lobbies", "matchflow"];
+    /// <summary>Owners whose routes still live in this service: each moves out to its own executable (web and access have).</summary>
+    internal static readonly string[] StillHere = ["http", "social", "lobbies", "matchflow"];
 
     internal static IReadOnlyList<Route> LoadRoutes()
     {

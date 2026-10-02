@@ -2,7 +2,7 @@ using FastEndpoints;
 using OpenVersus.Server.Core.Access;
 using OpenVersus.Server.Http.Shared.Hosting;
 
-namespace OpenVersus.Server.Http.Endpoints.Game.Access;
+namespace OpenVersus.Server.Access.Endpoints.Game.Access;
 
 /// <summary>
 /// POST /access: the game's login. Seen in: binary 0x144f9f5b0; captured 11x; TS server: POST /access.

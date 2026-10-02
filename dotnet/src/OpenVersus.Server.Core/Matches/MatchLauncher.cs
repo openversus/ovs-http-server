@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
@@ -337,6 +338,7 @@ public static class MatchLauncherHosting
     public static WebApplicationBuilder AddMatchLauncher(this WebApplicationBuilder builder)
     {
         builder.AddSetting<RollbackSettings>("Rollback");
+        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IMatchLauncher, MatchLauncher>();
         builder.Services.AddHttpClient(MatchLauncher.DeployClient, c => c.Timeout = TimeSpan.FromSeconds(30));
         return builder;

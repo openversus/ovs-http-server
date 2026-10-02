@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The matchmaker: makes matches from the queues, as the TS server's worker service. Its own executable and image,
+       so a deploy of the HTTP service never restarts matchmaking, and the other way round. -->
+  <ItemGroup>
+    <ProjectReference Include="..\OpenVersus.Server.Core\OpenVersus.Server.Core.csproj" />
+  </ItemGroup>
+
+</Project>

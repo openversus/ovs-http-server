@@ -57,7 +57,7 @@ they listen to as the TS server does (`matchmaking:cancel` from a party join, `m
 
 Done so far: rift progress, missions and reward tracks (MIGRATION-BRIDGES.md 4), the party lobby routes (invite,
 join, leave, mode, ready, loadout lock) and the custom lobby (its routes, its messages, the match start; its match end
-and rematch vote stay with the match flow), and the matchmaking worker (on by default, `Matchmaking:Enabled`; the queue side, the
+and rematch vote stay with the match flow), and the matchmaking worker (its own executable, `OpenVersus.Server.Matchmaking`; on by default, `Matchmaking:Enabled`; the queue side, the
 tickets and their tick, stays with the websocket).
 
 ## A node restart without disconnecting anyone

@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,11 +17,11 @@ using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Matchmaking;
 
-// The matchmaking worker, ported from the TS server's src/matchmaking-worker.ts (its own process there; on by default
-// here, Matchmaking:Enabled): every 2 s it
+// The matchmaking worker, ported from the TS server's src/matchmaking-worker.ts. Its own executable, as there
+// (OpenVersus.Server.Matchmaking; never hosted in the HTTP service). On by default, Matchmaking:Enabled. Every 2 s it
 // looks at the 1v1 queue, then the 2v2 queue, and makes at most one match from each. The queues are Redis lists the
 // TS websocket fills (a party's ticket, when it queues) and empties (a cancel, a disconnect); this only reads them and
-// takes out the tickets it matches, so it can run beside the TS worker or in several C# servers at once: each queue is
+// takes out the tickets it matches, so it can run beside the TS worker or as several replicas at once: each queue is
 // worked under a lock (matchmaking:lock:{queue}, SET NX EX 10), as the TS worker does.
 //
 // Per queue: drop a ticket whose player has a newer one in the queue; drop the tickets of a player whose game stopped
@@ -47,7 +48,7 @@ namespace OpenVersus.Server.Core.Matchmaking;
 /// <summary>Matchmaking settings.</summary>
 public sealed class MatchmakingSettings
 {
-    [Description("This server makes matches from the queues (1v1, 2v2), as the TS matchmaking worker did. Several servers can do it at once (each queue is worked under a lock), the TS worker included, but then either may make a given match.")]
+    [Description("This matchmaker makes matches from the queues (1v1, 2v2). Off: it keeps running and makes none. Several replicas can work at once (each queue is worked under a lock), the TS worker included, but then either may make a given match.")]
     public bool Enabled { get; set; } = true;
 
     [Description("Milliseconds between two looks at the queues (the TS worker's 2000).")]
@@ -65,6 +66,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
     private static readonly TimeSpan s_setTtl = TimeSpan.FromMinutes(10);
     private readonly string _workerId = $"worker_{Environment.ProcessId}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
     private bool _announced;
+    private bool _warnedNoRedis;
 
     /// <summary>A ticket as read from its queue: the text (to take it out by), the parsed ticket, and what matching reads.</summary>
     internal sealed record Ticket(string Raw, JsonObject Json, double CreatedAt, double PartySize, IReadOnlyList<(string Id, double Skill)> Players)
@@ -95,6 +97,12 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
                 {
                     log.LogError("Matchmaking tick failed: {Error}", e.Message);
                 }
+            }
+            else if (current.Enabled && !_warnedNoRedis)
+            {
+                // Matchmaking is all this executable does: say why it does nothing.
+                log.LogWarning("Matchmaking is on but no Redis is configured (REDIS): no matches will be made");
+                _warnedNoRedis = true;
             }
 
             try
@@ -561,6 +569,7 @@ public static class MatchmakingHosting
     public static WebApplicationBuilder AddMatchmaking(this WebApplicationBuilder builder)
     {
         builder.AddSetting<MatchmakingSettings>("Matchmaking");
+        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddHostedService<MatchmakingWorker>();
         return builder;
     }

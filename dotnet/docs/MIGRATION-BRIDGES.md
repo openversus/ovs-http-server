@@ -58,7 +58,7 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   it), `ssc_custom_lobby_player:{player}`, `lobby_code:{code}`, `ssc_custom_lobby_match:{match}` (the TS match end and
   rematch read it) and `bot_config:{bot}` (the TS websocket builds a bot's match config from it), TTLs as the TS
   server's. `rematch_accept`, `rematch_decline` and the match end stay on the TS server until the match flow moves.
-- **Matchmaking** (`MatchmakingWorker`, on unless `Matchmaking:Enabled` is false): the queues `1v1` and `2v2` (ticket JSON lists the TS
+- **Matchmaking** (`MatchmakingWorker` in its own executable, `OpenVersus.Server.Matchmaking`; on unless `Matchmaking:Enabled` is false): the queues `1v1` and `2v2` (ticket JSON lists the TS
   websocket fills when a party queues and empties on a cancel or disconnect), `player_heartbeats`,
   `player:{id}:blocked` and `player:{id}` `ip` are read as the TS worker reads them; a match writes what the TS worker
   writes (`match:{id}` with the tickets as queued, the notification at `{id}`, `ranked_set:{id}`,

@@ -8,7 +8,7 @@
 //
 // Environment: REF_REDIS_URL (the scratch Redis, wiped before every scenario), REF_PORT_LOW / REF_PORT_HIGH (the fixed
 // rollback ports, [low, high)). Exactly one worker must run against REF_REDIS_URL (the TS one: npm run worker; or the
-// C# server with Matchmaking__Enabled=true), and nothing else that reacts to the published channels (stop the TS
+// C# matchmaker, OpenVersus.Server.Matchmaking), and nothing else that reacts to the published channels (stop the TS
 // websocket). The worker's lock (matchmaking:lock:*) is left out: it is taken every tick, matched or not.
 //
 // What is random is checked, then replaced: every party on one team, teams of half the players each, player indexes

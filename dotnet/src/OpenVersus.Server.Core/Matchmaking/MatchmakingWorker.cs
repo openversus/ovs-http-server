@@ -32,11 +32,16 @@ namespace OpenVersus.Server.Core.Matchmaking;
 //   2v2  from the oldest ticket, add tickets (parties whole) whose average skill is within the range of the longest
 //        wait among them, until 4 players.
 //   Either way, a group with a player who blocked another in it (player:{id}:blocked, a JSON list) is passed over.
+//   casual1v1, casual2v2  the Casual queue (MatchmakingRequestService): as 1v1 and 2v2, with no skill range at all
+//        (anyone not blocked); a player who waits too long gets bots from the game's casual_queue instead.
 // A match (createMatch): match:{id} (the tickets as queued) EX 20 min; teams (parties shuffled, team 0 filled first,
 // player index = place * 2 + team, a random index hosts, each player's ip from player:{id}); a map (Matchmaking/maps.json:
 // an enabled one for the mode; 1v1: 1 in 999 PVE_03); the notification at {id} EX 20 min and on match:notifications;
-// ranked_set:{id} and player_ranked_set:{player} EX 10 min (every match: game 1 of a set); matchmaking:complete once per
-// ticket (its own request id and players). The TS websocket does the rest (it tells the game, MIGRATION-BRIDGES.md 2).
+// ranked_set:{id} and player_ranked_set:{player} EX 10 min (every regular match: game 1 of a set); matchmaking:complete
+// once per ticket (its own request id and players). A Casual match is never rated: match:{id} has isPasswordMatch (the
+// TS match result skips those) and queue "casual" (for a Casual rating of its own, later), it starts no ranked set, and
+// its notification is unranked (BotDefaults.UnrankedNotificationFields: isCustomGame, with bIsCustomGame set back to false
+// in the game's config), so the TS websocket opens no set at its end either and no TS rating path rates it. The TS websocket does the rest (it tells the game, MIGRATION-BRIDGES.md 2).
 //
 // Differences from the TS worker (tools/matches/matchmaker_diff.mjs asserts them):
 //   - the rollback port is IMatchLauncher's (fixed servers: a random one of theirs; on demand: the next port, deployed).
@@ -116,14 +121,19 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
         }
     }
 
-    /// <summary>One look at both queues: at most one match from each.</summary>
+    /// <summary>The Casual queue's lists (the tickets' matchType).</summary>
+    public const string Casual1v1 = "casual1v1", Casual2v2 = "casual2v2";
+
+    /// <summary>One look at every queue: at most one match from each.</summary>
     internal async Task TickAsync(IDatabase redis)
     {
-        bool oneVsOne = await WithLockAsync(redis, "1v1", () => OneVsOneAsync(redis, "1v1"));
-        bool twoVsTwo = await WithLockAsync(redis, "2v2", () => TwoVsTwoAsync(redis, "2v2"));
-        if (oneVsOne || twoVsTwo)
+        bool oneVsOne = await WithLockAsync(redis, "1v1", () => OneVsOneAsync(redis, "1v1", "1v1", skilled: true));
+        bool twoVsTwo = await WithLockAsync(redis, "2v2", () => TwoVsTwoAsync(redis, "2v2", "2v2", skilled: true));
+        bool casual1 = await WithLockAsync(redis, Casual1v1, () => OneVsOneAsync(redis, Casual1v1, "1v1", skilled: false));
+        bool casual2 = await WithLockAsync(redis, Casual2v2, () => TwoVsTwoAsync(redis, Casual2v2, "2v2", skilled: false));
+        if (oneVsOne || twoVsTwo || casual1 || casual2)
         {
-            log.LogInformation("Matches made this tick: 1v1={OneVsOne} 2v2={TwoVsTwo}", oneVsOne, twoVsTwo);
+            log.LogInformation("Matches made this tick: 1v1={OneVsOne} 2v2={TwoVsTwo} casual1v1={Casual1} casual2v2={Casual2}", oneVsOne, twoVsTwo, casual1, casual2);
         }
     }
 
@@ -146,7 +156,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
     }
 
     // ── 1v1 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-    private async Task<bool> OneVsOneAsync(IDatabase redis, string queue)
+    private async Task<bool> OneVsOneAsync(IDatabase redis, string queue, string mode, bool skilled)
     {
         var tickets = await TicketsAsync(redis, queue);
         if (tickets.Count < 2)
@@ -174,7 +184,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
                 }
 
                 // Both must be in range: the stricter (shorter wait) range of the two.
-                double range = Math.Min(SkillRange(now - a.CreatedAt), SkillRange(now - b.CreatedAt));
+                double range = skilled ? Math.Min(SkillRange(now - a.CreatedAt), SkillRange(now - b.CreatedAt)) : double.PositiveInfinity;
                 if (Math.Abs(a.AverageSkill - b.AverageSkill) > range)
                 {
                     continue;
@@ -187,7 +197,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
                 }
 
                 await RemoveAsync(redis, queue, [a, b]);
-                await CreateMatchAsync(redis, [a, b], queue);
+                await CreateMatchAsync(redis, [a, b], mode, queue);
                 log.LogInformation("Skill matched in {Queue}: {First} vs {Second}", queue, a.AverageSkill, b.AverageSkill);
                 return true;
             }
@@ -197,7 +207,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
     }
 
     // ── 2v2 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-    private async Task<bool> TwoVsTwoAsync(IDatabase redis, string queue)
+    private async Task<bool> TwoVsTwoAsync(IDatabase redis, string queue, string mode, bool skilled)
     {
         var tickets = await TicketsAsync(redis, queue);
         tickets = await DropDuplicatesAsync(redis, queue, tickets);
@@ -223,7 +233,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
                 // The candidates' average against this ticket's, within the range of the longest wait among them all.
                 double existing = candidates.Average(t => t.AverageSkill);
                 double longest = Math.Max(candidates.Max(t => now - t.CreatedAt), now - sorted[j].CreatedAt);
-                if (Math.Abs(existing - sorted[j].AverageSkill) <= SkillRange(longest) && players + sorted[j].Players.Count <= 4)
+                if ((!skilled || Math.Abs(existing - sorted[j].AverageSkill) <= SkillRange(longest)) && players + sorted[j].Players.Count <= 4)
                 {
                     candidates.Add(sorted[j]);
                     players += sorted[j].Players.Count;
@@ -244,7 +254,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
             log.LogInformation("Skill matched in {Queue} ({Composition}): skills [{Skills}]", queue, string.Join("+", candidates.Select(c => c.Players.Count)),
                 string.Join(", ", candidates.Select(c => Math.Round(c.AverageSkill))));
             await RemoveAsync(redis, queue, candidates);
-            await CreateMatchAsync(redis, candidates, queue);
+            await CreateMatchAsync(redis, candidates, mode, queue);
             return true;
         }
 
@@ -387,8 +397,9 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
 
     // ── The match ───────────────────────────────────────────────────────────────────────────────────────────────────
 
-    private async Task CreateMatchAsync(IDatabase redis, List<Ticket> tickets, string mode)
+    private async Task CreateMatchAsync(IDatabase redis, List<Ticket> tickets, string mode, string queue)
     {
+        bool casual = queue is Casual1v1 or Casual2v2;
         int total = tickets.Sum(t => t.Players.Count);
         string matchId = ObjectId.GenerateNewId().ToString();
         string resultId = ObjectId.GenerateNewId().ToString();
@@ -405,10 +416,17 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
             ["tickets"] = new JsonArray([.. tickets.Select(t => (JsonNode)t.Json.DeepClone())]),
             ["status"] = "pending",
             ["createdAt"] = time.GetUtcNow().ToUnixTimeMilliseconds(),
-            ["matchType"] = mode,
+            ["matchType"] = queue,
             ["totalPlayers"] = total,
             ["rollbackPort"] = port,
         };
+        if (casual)
+        {
+            // Never rated (the TS match result skips a password match); the queue, for a Casual rating of its own later.
+            match["isPasswordMatch"] = true;
+            match["queue"] = "casual";
+        }
+
         await redis.StringSetAsync($"match:{matchId}", Js.Stringify(match), s_matchTtl);
 
         var players = await TeamsAsync(redis, tickets);
@@ -421,25 +439,40 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
             ["mode"] = mode,
             ["rollbackPort"] = port,
         };
+        if (casual)
+        {
+            // Unranked for the TS websocket and match end (no set, no ratings, the unranked config).
+            foreach (var (key, value) in Matches.BotDefaults.UnrankedNotificationFields())
+            {
+                notification[key] = value?.DeepClone();
+            }
+
+            notification["gameplayConfigOverride"] = Matches.BotDefaults.UnrankedConfigOverride();
+        }
+
         launcher.DeployIfOnDemand(port, matchId);
 
         string json = Js.Stringify(notification);
         await redis.StringSetAsync(matchId, json, s_matchTtl);
         await redis.PublishAsync(RedisChannel.Literal(MatchLauncher.NotificationChannel), json);
 
-        // Every match is game 1 of a set: its state from the start, so a disconnect in game 1 is already a ranked one.
+        // Every regular match is game 1 of a set: its state from the start, so a disconnect in game 1 is already a ranked
+        // one. A Casual match has no set: sets are what the TS server rates.
         var ids = tickets.SelectMany(t => t.Players.Select(p => p.Id)).ToList();
-        await redis.StringSetAsync($"ranked_set:{matchId}", Js.Stringify(new JsonObject
+        if (!casual)
         {
-            ["players"] = players.DeepClone(),
-            ["mode"] = mode,
-            ["gamesPlayed"] = 0,
-            ["scores"] = new JsonArray(0, 0),
-            ["checkins"] = new JsonArray(),
-        }), s_setTtl);
-        foreach (var id in ids)
-        {
-            await redis.StringSetAsync($"player_ranked_set:{id}", matchId, s_setTtl);
+            await redis.StringSetAsync($"ranked_set:{matchId}", Js.Stringify(new JsonObject
+            {
+                ["players"] = players.DeepClone(),
+                ["mode"] = mode,
+                ["gamesPlayed"] = 0,
+                ["scores"] = new JsonArray(0, 0),
+                ["checkins"] = new JsonArray(),
+            }), s_setTtl);
+            foreach (var id in ids)
+            {
+                await redis.StringSetAsync($"player_ranked_set:{id}", matchId, s_setTtl);
+            }
         }
 
         // One per ticket: each party's own request.
@@ -455,7 +488,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
             await redis.PublishAsync(RedisChannel.Literal(MatchLauncher.MatchmakingCompleteChannel), Js.Stringify(complete));
         }
 
-        log.LogInformation("Created {Mode} match {Match} with {Players} players across {Tickets} tickets on rollback port {Port}", mode, matchId, total, tickets.Count, port);
+        log.LogInformation("Created {Mode} match {Match} from {Queue} with {Players} players across {Tickets} tickets on rollback port {Port}", mode, matchId, queue, total, tickets.Count, port);
     }
 
     /// <summary>

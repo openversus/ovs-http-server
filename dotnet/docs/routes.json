@@ -1965,14 +1965,15 @@
     "owner": "lobbies"
   },
   {
-    "method": "?",
+    "method": "PUT",
     "path": "/ssc/invoke/casual_queue",
     "area": "ssc",
     "binary": "ssc name",
     "capture": 0,
     "server": [],
     "notes": [
-      "ssc: binary"
+      "ssc: binary",
+      "method from the bench proxy log 2026-10-02 (the Casual queue's fall back to bots)"
     ],
     "kind": "game",
     "in_game": true,

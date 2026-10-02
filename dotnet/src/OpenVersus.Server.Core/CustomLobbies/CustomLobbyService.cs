@@ -117,8 +117,6 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
     ];
 
     // Bots (data/botDefaults.ts): the perks locked for them at the start, and each setting's difficulty.
-    private static readonly string[] s_botPerks = ["perk_gen_boxer", "perk_team_speed_force_assist", "perk_purest_of_motivations", "perk_gen_well_rounded"];
-    private static readonly Dictionary<string, int> s_botDifficulty = new() { ["VeryEasy"] = 0, ["Easy"] = 1, ["Medium"] = 2, ["Hard"] = 3 };
 
     private static readonly Lazy<Dictionary<string, string>> s_scripts = new(() =>
     {
@@ -762,7 +760,7 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
 
                     // The websocket builds a bot's match config from this (bots have no session or record).
                     var bot = player as JsonObject;
-                    int difficulty = s_botDifficulty.TryGetValue(Str(bot, "BotSettingSlug") ?? "", out int d) ? d : s_botDifficulty["Medium"];
+                    int difficulty = BotDefaults.Difficulty.TryGetValue(Str(bot, "BotSettingSlug") ?? "", out int d) ? d : BotDefaults.Difficulty["Medium"];
                     await redis.HashSetAsync($"bot_config:{id}",
                     [
                         new("character", Str(bot?["Fighter"] as JsonObject, "Slug") ?? "character_jason"),
@@ -789,7 +787,7 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
 
         var all = entries.Concat(spectatorEntries).ToList();
         var launched = await launcher.LaunchAsync(new MatchLaunch(mode, map, mode, all,
-            BotPerks: new JsonArray([.. s_botPerks.Select(p => (JsonNode)p)]), NotificationFields: fields), ct);
+            BotPerks: BotDefaults.PerksArray(), NotificationFields: fields), ct);
         if (launched is null)
         {
             return LobbyDocuments.Ssc([], 1);

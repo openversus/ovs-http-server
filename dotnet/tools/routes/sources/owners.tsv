@@ -122,7 +122,7 @@ POST	/ssc/invoke/attempt_daily_refresh	http
 PUT	/ssc/invoke/autoparty_join	lobbies
 PUT	/ssc/invoke/bot_queue	lobbies
 PUT	/ssc/invoke/cancel_party_invite	lobbies
-?	/ssc/invoke/casual_queue	lobbies
+PUT	/ssc/invoke/casual_queue	lobbies
 ?	/ssc/invoke/check_leaver_punishment	http
 ?	/ssc/invoke/check_server_grants	http
 ?	/ssc/invoke/check_training_server_ready	matchflow

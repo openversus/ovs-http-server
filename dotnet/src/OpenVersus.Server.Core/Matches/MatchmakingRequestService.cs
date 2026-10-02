@@ -8,6 +8,7 @@ using MongoDB.Bson;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Cosmetics;
+using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Leaderboards;
 using StackExchange.Redis;
 
@@ -19,6 +20,17 @@ namespace OpenVersus.Server.Core.Matches;
 //
 // Criteria: 1v1-retail and ranked-1v1-retail are both the 1v1 request (the answer says 1v1-retail, the ticket 1v1: the
 // TS server has no ranked queue); 2v2-retail the 2v2 one. A 1v1 request from a lobby of two or more is the 2v2 request.
+// casual-retail (the Casual queue, which the TS server never answered): the same requests on their own lists, casual1v1
+// for a player alone in their lobby and casual2v2 for a lobby of two or more; the matchmaker pairs those with anyone not
+// blocked (no skill), and never rates the match. Their tickets' skill is 0 and the regular ratings are not read (a Casual
+// rating of its own would go in SkillAsync). When nobody turns up, the game itself cancels after 45-65 s and asks for a
+// match against bots: PUT /ssc/invoke/casual_queue (CasualBotsAsync). Its players: the requester's lobby (two at most)
+// on team 0, as many bots on team 1, each a different fighter (Matchmaking/bot-fighters.json) in a random skin, at Medium
+// (bot_config:{bot}, which the TS websocket builds a bot's config from: character, skin, difficultyMin/Max, settingSlug;
+// EX 1 day), with the default bot perks; an enabled map for the mode; started by IMatchLauncher (so isPasswordMatch:
+// never rated, MIGRATION-BRIDGES.md 6), unranked as Casual matches are (BotDefaults.UnrankedNotificationFields). The
+// answer is the TS catch-all's, which is what the game was always given and
+// which it takes as "match found"; the match itself reaches it over the websocket.
 //
 // The request, in the TS server's order:
 //   1v1: the requester's client must be current (else the update modal and the gate's failure body, 200)
@@ -59,9 +71,12 @@ public interface IMatchmakingRequestService
 
     /// <summary>Cancels matchmaking request <paramref name="requestId"/> for the requester's lobby.</summary>
     Task<JsonObject> CancelAsync(string requestId, PartyRequest request, CancellationToken ct);
+
+    /// <summary>casual_queue: the game stopped waiting in the Casual queue; its lobby plays bots instead.</summary>
+    Task<JsonObject> CasualBotsAsync(PartyRequest request, CancellationToken ct);
 }
 
-internal sealed class MatchmakingRequestService(IServiceProvider services, IClientUpdateGate gate, ICosmeticsService cosmetics, EloRatings ratings,
+internal sealed class MatchmakingRequestService(IServiceProvider services, IClientUpdateGate gate, ICosmeticsService cosmetics, EloRatings ratings, IMatchLauncher launcher,
     IOptionsMonitor<LobbySettings> settings, TimeProvider time, ILogger<MatchmakingRequestService> log) : IMatchmakingRequestService
 {
     public const string QueuedChannel = "party:queued";
@@ -81,19 +96,30 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         switch (criteria)
         {
             case "1v1-retail" or "ranked-1v1-retail":
-                return await OneVersusOneAsync(request, ct);
+                return await OneVersusOneAsync(request, Regular, ct);
             case "2v2-retail":
-                return await TwoVersusTwoAsync(request, ct);
+                return await TwoVersusTwoAsync(request, Regular, ct);
+            case "casual-retail":
+                return await OneVersusOneAsync(request, Casual, ct);
             default:
                 return null;
         }
     }
 
-    private async Task<MatchmakingAnswer> OneVersusOneAsync(PartyRequest request, CancellationToken ct)
+    /// <summary>A queue's names: the answer's criteria_slug for 1v1 and 2v2, and the ticket's matchType (its list) for each.</summary>
+    private sealed record Queue(string Criteria1v1, string Criteria2v2, string List1v1, string List2v2)
+    {
+        public bool IsCasual => List1v1 == Matchmaking.MatchmakingWorker.Casual1v1;
+    }
+
+    private static readonly Queue Regular = new("1v1-retail", "2v2-retail", "1v1", "2v2");
+    private static readonly Queue Casual = new("casual-retail", "casual-retail", Matchmaking.MatchmakingWorker.Casual1v1, Matchmaking.MatchmakingWorker.Casual2v2);
+
+    private async Task<MatchmakingAnswer> OneVersusOneAsync(PartyRequest request, Queue queue, CancellationToken ct)
     {
         var redis = Redis();
         string me = request.AccountId;
-        log.LogInformation("Received 1v1 retail matchmaking request");
+        log.LogInformation("Received 1v1 {Criteria} matchmaking request", queue.Criteria1v1);
 
         var outdated = await gate.RequiringUpdateAsync([me]);
         if (outdated.Count > 0)
@@ -103,13 +129,13 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             return new MatchmakingAnswer(200, gate.FailureBody());
         }
 
-        await RemoveTicketsAsync(redis, me);
+        await RemoveTicketsAsync(redis, me, s_allLists);
         await EndRankedSetAsync(redis, me);
 
         if (await LobbyPlayersAsync(redis, me) is { Count: >= 2 } players)
         {
             log.LogInformation("Lobby of {Player} has {Count} players, redirecting 1v1 request to 2v2 handler", me, players.Count);
-            return await TwoVersusTwoAsync(request, ct);
+            return await TwoVersusTwoAsync(request, queue, ct);
         }
 
         var (id, profile, failure) = await PrepareRequesterAsync(redis, request, ct);
@@ -118,22 +144,22 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             return failure;
         }
 
-        var answer = Answer(request, id, "1v1-retail", 1, 606.406234735998, "character_wonder_woman", s_founders.DeepClone(),
+        var answer = Answer(request, id, queue.Criteria1v1, 1, 606.406234735998, "character_wonder_woman", s_founders.DeepClone(),
             new JsonObject { [id] = Region(0.04239736124873161) },
             new JsonObject { [id] = new JsonArray(Guid.NewGuid().ToString()) },
             new JsonObject { [id] = OneVersusOnePlayer(id, profile) },
             new JsonObject { [id] = new JsonArray() },
             partyId: null, profileId: "1252922", idFirst: false);
-        return new MatchmakingAnswer(200, answer, () => QueueAsync(redis, id, [id], request.Body?["match"], (string)answer["id"]!, "1v1"));
+        return new MatchmakingAnswer(200, answer, () => QueueAsync(redis, id, [id], request.Body?["match"], (string)answer["id"]!, queue.List1v1));
     }
 
-    private async Task<MatchmakingAnswer> TwoVersusTwoAsync(PartyRequest request, CancellationToken ct)
+    private async Task<MatchmakingAnswer> TwoVersusTwoAsync(PartyRequest request, Queue queue, CancellationToken ct)
     {
         var redis = Redis();
         string me = request.AccountId;
-        log.LogInformation("Received 2v2 retail matchmaking request");
+        log.LogInformation("Received 2v2 {Criteria} matchmaking request", queue.Criteria2v2);
 
-        await RemoveTicketsAsync(redis, me);
+        await RemoveTicketsAsync(redis, me, s_allLists);
         await EndRankedSetAsync(redis, me);
 
         var (id, profile, failure) = await PrepareRequesterAsync(redis, request, ct);
@@ -193,9 +219,9 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             recentlyPlayed[pid] = new JsonArray();
         }
 
-        var answer = Answer(request, id, "2v2-retail", all.Count, 724.7928014055103, "character_TODO_SAME_CHAR_IN_SAME_TEAM", null,
+        var answer = Answer(request, id, queue.Criteria2v2, all.Count, 724.7928014055103, "character_TODO_SAME_CHAR_IN_SAME_TEAM", null,
             connectionInfo, connections, players, recentlyPlayed, partyId: lobbyId, profileId: "1252928", idFirst: true);
-        return new MatchmakingAnswer(200, answer, () => QueueAsync(redis, id, all, request.Body?["match"], (string)answer["id"]!, "2v2"));
+        return new MatchmakingAnswer(200, answer, () => QueueAsync(redis, id, all, request.Body?["match"], (string)answer["id"]!, queue.List2v2));
     }
 
     // The requester's part of both requests: their session, cosmetics and loadout.
@@ -416,6 +442,13 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
     // cannot be read.
     private async Task<JsonNode> SkillAsync(string playerId, string character, string matchType, CancellationToken ct)
     {
+        if (matchType is not ("1v1" or "2v2"))
+        {
+            // The Casual queue: the regular ratings are for the regular queues only, never read (or made) here. A Casual
+            // rating of its own would be read here; until then the matchmaker pairs Casual players without skill.
+            return 0;
+        }
+
         try
         {
             if (await ratings.GetOrCreateAsync(playerId, "", ct) is not { } rating)
@@ -451,6 +484,12 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
 
         await PublishCancelAsync(redis, players, requestId);
         log.LogInformation("Canceling matchmaking {Request} for all players: {Players}", requestId, string.Join(", ", players));
+        // The TS websocket takes a cancelled ticket out of the 1v1 and 2v2 lists only: the Casual ones go here.
+        foreach (string pid in players)
+        {
+            await RemoveTicketsAsync(redis, pid, [Casual.List1v1, Casual.List2v2]);
+        }
+
         foreach (string pid in players)
         {
             if ((string?)await redis.StringGetAsync($"player_lobby:{pid}") is { Length: > 0 } theirs)
@@ -462,17 +501,82 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         return new JsonObject { ["body"] = new JsonObject(), ["metadata"] = null, ["return_code"] = 0 };
     }
 
+    public async Task<JsonObject> CasualBotsAsync(PartyRequest request, CancellationToken ct)
+    {
+        var redis = Redis();
+        string me = request.AccountId;
+        var lobby = await LobbyPlayersAsync(redis, me);
+        List<string> humans = lobby is { Count: >= 2 } && lobby.Contains(me) ? [me, .. lobby.Where(p => p != me).Take(1)] : [me];
+        string mode = humans.Count == 2 ? "2v2" : "1v1";
+        log.LogInformation("casual_queue from {Player}: a {Mode} against bots for {Players}", me, mode, string.Join(", ", humans));
+
+        foreach (string pid in humans)
+        {
+            await RemoveTicketsAsync(redis, pid, [Casual.List1v1, Casual.List2v2]);
+        }
+
+        var outdated = await gate.RequiringUpdateAsync(humans);
+        if (outdated.Count > 0)
+        {
+            await gate.RequestModalsAsync(outdated.Select(o => o.AccountId));
+            log.LogWarning("Blocked a Casual bot match: update required for {Players}", string.Join(", ", outdated.Select(o => o.AccountId)));
+            return gate.FailureBody();
+        }
+
+        var players = new List<MatchPlayer>();
+        for (int i = 0; i < humans.Count; i++)
+        {
+            var loadout = await HashAsync(redis, $"player:{humans[i]}");
+            if (Get(loadout, "character") is { Length: > 0 } character && Get(loadout, "skin") is { Length: > 0 } skin)
+            {
+                await PlayedLoadout.RecordAsync(redis, humans[i], character, skin, Get(loadout, "profileIcon"));
+            }
+
+            players.Add(new MatchPlayer(humans[i], i * 2, 0, IsHost: i == 0, Get(loadout, "ip") ?? "", IsBot: false));
+        }
+
+        var fighters = BotFighters.Pick(humans.Count, Random.Shared);
+        for (int i = 0; i < fighters.Count; i++)
+        {
+            string bot = "Bot" + Guid.NewGuid().ToString("N").ToUpperInvariant();
+            string difficulty = BotDefaults.Difficulty["Medium"].ToString(System.Globalization.CultureInfo.InvariantCulture);
+            await redis.HashSetAsync($"bot_config:{bot}",
+            [
+                new("character", fighters[i].Character),
+                new("skin", fighters[i].Skin),
+                new("difficultyMin", difficulty),
+                new("difficultyMax", difficulty),
+                new("settingSlug", "Medium"),
+            ]);
+            await redis.KeyExpireAsync($"bot_config:{bot}", TimeSpan.FromDays(1));
+            players.Add(new MatchPlayer(bot, i * 2 + 1, 1, IsHost: false, "", IsBot: true));
+        }
+
+        var launched = await launcher.LaunchAsync(new MatchLaunch(mode, Matchmaking.MatchmakingMaps.Pick(mode, "casual", log), mode, players,
+            GameplayConfigOverride: BotDefaults.UnrankedConfigOverride(), BotPerks: BotDefaults.PerksArray(),
+            NotificationFields: BotDefaults.UnrankedNotificationFields()), ct);
+        if (launched is null)
+        {
+            log.LogError("casual_queue from {Player}: no match was started", me);
+        }
+
+        return await TsCatchAll.AnswerAsync(services.GetService<MongoDB.Driver.IMongoDatabase>(), ct);
+    }
+
     private static Task PublishCancelAsync(IDatabase redis, IReadOnlyList<string> players, string requestId) =>
         redis.PublishAsync(RedisChannel.Literal(PartyService.CancelMatchmakingChannel),
             Js.Stringify(new JsonObject { ["playersIds"] = new JsonArray([.. players.Select(p => (JsonNode?)p)]), ["matchmakingId"] = requestId }));
 
-    // redisRemoveExistingTicketsForPlayer: any ticket of the player's leaves the 1v1 and 2v2 lists, with no notice.
-    private async Task RemoveTicketsAsync(IDatabase redis, string playerId)
+    // Every queue's list: a player queueing anywhere leaves all of them.
+    private static readonly string[] s_allLists = [Regular.List1v1, Regular.List2v2, Casual.List1v1, Casual.List2v2];
+
+    // redisRemoveExistingTicketsForPlayer: any ticket of the player's leaves the lists (TS: 1v1 and 2v2), with no notice.
+    private async Task RemoveTicketsAsync(IDatabase redis, string playerId, IReadOnlyList<string> lists)
     {
         try
         {
             int removed = 0;
-            foreach (string queue in new[] { "1v1", "2v2" })
+            foreach (string queue in lists)
             {
                 foreach (var raw in await redis.ListRangeAsync(queue))
                 {

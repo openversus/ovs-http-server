@@ -156,6 +156,39 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   or the websocket service.
 - **Delete when:** the websocket is ported: C# closes the socket itself; the channel and its TS handler go.
 
+### 6. Ratings (ELO) are still the TS server's, and only one of its three paths knows C#'s matches
+
+- **What:** ratings change in three TS places: the match result (`processMatchResult`, services/eloService.ts, from
+  `/ovs_end_match`), a pre-game dodge (`handlers/match_status.ts`) and a disconnect after the start (`websocket.ts`).
+  The match result skips a match whose `match:{id}` has `isPasswordMatch`; the other two skip only a match config with
+  `isCustomGame`, and neither leaves bots out. Every match C# starts (`MatchLauncher`: rift nodes, custom lobbies; the
+  Casual queue's matches too) has `isPasswordMatch` and a mode of 1v1 or 2v2; a custom lobby's and the Casual queue's
+  (human or bots: `BotDefaults.UnrankedNotificationFields`) also have `isCustomGame`, which keeps them out of all three
+  and out of the TS best-of-3 sets. A rift match has not: a player who leaves one before or during it is charged on their
+  regular 1v1/2v2 rating, and the bot gets a rating document. Read in the code, not seen yet: the bench's eloratings had no bot ids
+  (2026-10-02). TS is not changed for it (it is going away).
+- **Rule (for the port):** ratings count for the regular 1v1/2v2 queues only (ranked sets included); never rifts, custom
+  lobbies or Casual (Casual may get a rating of its own, kept apart). The C# port of these three paths decides "does this
+  match count" in one place, used by all three, and never rates a bot.
+- **Until then:** do not ship rift matches to prod before these paths are ported, or accept the leak there (giving rift
+  matches `isCustomGame` would close it, untested: it also changes what the TS websocket does at a rift match's end).
+- **Delete when:** match results, dodges and disconnects are ported (match flow) with that one check.
+
+### 7. A Casual match ends with no rematch: the TS websocket declines it for everyone
+
+- **What:** a Casual queue match (people or bots) is unranked, marked `isCustomGame` for the TS websocket
+  (`BotDefaults.UnrankedNotificationFields`). At an unranked match's end that is not a custom lobby's, the TS websocket
+  (`handleOnMatchEnd`, websocket.ts) sends every player `RematchDeclinedNotification` one second later
+  (`sendRematchDeclinedToPlayers`): the game shows the rematch option, which then disappears as if the opponent (a bot
+  too) had declined, and everyone goes back to the menus. Seen on the bench, 2026-10-02.
+- **What it must do (the requirement for the port):** unranked is single games with an optional rematch (no best-of-3
+  set; that is ranked only). At a Casual match's end the rematch option stays up for its timer; a bot always accepts
+  (at the latest when the timer runs out); when every player has accepted (`rematch_accept`, or the game's timer), a new
+  single game starts against the same opponents (bots: the same fighters), never rated; any decline (`rematch_decline`)
+  sends everyone back to the menus.
+- **Why:** match end is still the TS websocket's; C# cannot stop its decline without changing TS, which is going away.
+- **Delete when:** match end moves to C# (the match flow lifecycle and the realtime gateway), with the rematch above.
+
 ## Not bridges (kept after the migration)
 
 - `TsEnvironment`: the TS server's environment variable names (`JWT_SECRET`, `WB_DOMAIN`, ...) fill C# settings, so the

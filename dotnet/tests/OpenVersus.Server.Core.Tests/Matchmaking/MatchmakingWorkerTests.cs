@@ -64,7 +64,7 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
             await db.KeyDeleteAsync(key);
         }
 
-        await db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.HeartbeatsKey, "matchmaking:lock:1v1", "matchmaking:lock:2v2"]);
+        await db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, "matchmaking:lock:casual1v1", "matchmaking:lock:casual2v2", MatchmakingWorker.HeartbeatsKey, "matchmaking:lock:1v1", "matchmaking:lock:2v2"]);
     }
 
     private IDatabase Db => _redis!.GetDatabase();
@@ -225,5 +225,88 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
         await QueueAsync("2v2", [4], age: 1);
         await Worker().TickAsync(Db);
         Assert.Empty(await QueuedAsync("2v2"));
+    }
+
+    // The match records this test's tick made (the cleanup leaves none from before).
+    private async Task<List<JsonObject>> MatchesAsync()
+    {
+        var server = _redis!.GetServer(_redis.GetEndPoints()[0]);
+        var matches = new List<JsonObject>();
+        foreach (var key in server.Keys(15, "match:*"))
+        {
+            matches.Add(JsonNode.Parse((await Db.StringGetAsync(key)).ToString())!.AsObject());
+        }
+
+        return matches;
+    }
+
+    [Fact]
+    // Casual: anyone not blocked, whatever their skill or wait; never rated (no set, a password match) but a 1v1 to play.
+    public async Task CasualPairsAnyoneNotBlockedAndIsNeverRated()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await QueueAsync(MatchmakingWorker.Casual1v1, [1], age: 1, skill: 0);
+        await QueueAsync(MatchmakingWorker.Casual1v1, [2], age: 1, skill: 5000);
+        await Worker().TickAsync(Db);
+
+        Assert.Empty(await QueuedAsync(MatchmakingWorker.Casual1v1));
+        var match = Assert.Single(await MatchesAsync());
+        Assert.Equal((MatchmakingWorker.Casual1v1, true, "casual"), ((string?)match["matchType"], (bool?)match["isPasswordMatch"], (string?)match["queue"]));
+        string matchId = (string)match["matchId"]!;
+        var notification = JsonNode.Parse((await Db.StringGetAsync(matchId)).ToString())!;
+        Assert.Equal("1v1", (string?)notification["mode"]);
+        // Unranked for the TS websocket: no set at its end, the unranked config, not a custom lobby's match.
+        Assert.Equal((true, false), ((bool)notification["isCustomGame"]!, (bool)notification["gameplayConfigOverride"]!["bIsCustomGame"]!));
+        Assert.False(await Db.KeyExistsAsync($"ranked_set:{matchId}"));
+        Assert.False(await Db.KeyExistsAsync($"player_ranked_set:{Id(1)}"));
+    }
+
+    [Fact]
+    public async Task CasualStillPassesOverABlockedPairAndKeepsItsQueuesApart()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await QueueAsync(MatchmakingWorker.Casual1v1, [1], age: 2);
+        await QueueAsync(MatchmakingWorker.Casual1v1, [2], age: 1);
+        await QueueAsync("1v1", [3], age: 1);
+        await Db.StringSetAsync($"player:{Id(2)}:blocked", Js.Stringify(new JsonArray(Id(1))));
+        await Worker().TickAsync(Db);
+
+        Assert.Equal(2, (await QueuedAsync(MatchmakingWorker.Casual1v1)).Count);
+        Assert.Single(await QueuedAsync("1v1"));
+        Assert.Empty(await MatchesAsync());
+    }
+
+    [Fact]
+    public async Task ACasual2v2FillsFromPartiesWithoutSkillAndARegularMatchStillStartsASet()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await QueueAsync(MatchmakingWorker.Casual2v2, [1, 2], age: 1, skill: 0);
+        await QueueAsync(MatchmakingWorker.Casual2v2, [3, 4], age: 1, skill: 4000);
+        await QueueAsync("1v1", [5], age: 1);
+        await QueueAsync("1v1", [6], age: 1);
+        await Worker().TickAsync(Db);
+
+        Assert.Empty(await QueuedAsync(MatchmakingWorker.Casual2v2));
+        var matches = await MatchesAsync();
+        Assert.Equal(2, matches.Count);
+        var casual = matches.Single(m => (string?)m["matchType"] == MatchmakingWorker.Casual2v2);
+        var regular = matches.Single(m => (string?)m["matchType"] == "1v1");
+        Assert.False(await Db.KeyExistsAsync($"ranked_set:{(string)casual["matchId"]!}"));
+        Assert.True(await Db.KeyExistsAsync($"ranked_set:{(string)regular["matchId"]!}"));
+        Assert.Null(regular["isPasswordMatch"]);
+        var regularNotification = JsonNode.Parse((await Db.StringGetAsync((string)regular["matchId"]!)).ToString())!;
+        Assert.Null(regularNotification["isCustomGame"]);
     }
 }

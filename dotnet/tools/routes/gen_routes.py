@@ -120,7 +120,8 @@ rift_unlock_chapter_cauldron_tiers select_rift_loadout set_chapter_difficulty sk
 upgrade_track_to_premium retry_current_rift_node""".split()
 
 # SSC methods seen only on the local bench (the proxy log), in none of the captures above: name -> (method, where).
-SSC_BENCH = {"retry_current_rift_node": ("PUT", "bench proxy log 2026-09-30 (Retry on a rift match's results)")}
+SSC_BENCH = {"retry_current_rift_node": ("PUT", "bench proxy log 2026-09-30 (Retry on a rift match's results)"),
+             "casual_queue": ("PUT", "bench proxy log 2026-10-02 (the Casual queue's fall back to bots)")}
 
 
 EXE = pathlib.Path.home() / ".local/share/Steam/steamapps/common/MultiVersus/MultiVersus/Binaries/Win64/MultiVersus-Win64-Shipping.exe"

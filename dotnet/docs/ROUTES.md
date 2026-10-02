@@ -68,7 +68,7 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 |---|---|---|---|---|---|
 | ? | `/ssc/invoke/activate_timed_boost` | http | binary `ssc name` | **no** | ssc: binary |
 | PUT | `/ssc/invoke/bot_queue` | lobbies | binary `ssc name`, capture ×1 | **no** | ssc: binary |
-| ? | `/ssc/invoke/casual_queue` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/casual_queue` | lobbies | binary `ssc name` | **no** | ssc: binary; method from the bench proxy log 2026-10-02 (the Casual queue's fall back to bots) |
 | ? | `/ssc/invoke/check_leaver_punishment` | http | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/check_server_grants` | http | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/check_training_server_ready` | matchflow | binary `ssc name` | **no** | ssc: binary |
@@ -285,7 +285,7 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 | PUT | `/ssc/invoke/autoparty_join` | lobbies | binary `ssc name` | yes | ssc: server/capture |
 | PUT | `/ssc/invoke/bot_queue` | lobbies | binary `ssc name`, capture ×1 | **no** | ssc: binary |
 | PUT | `/ssc/invoke/cancel_party_invite` | lobbies | binary `ssc name` | yes | ssc: binary |
-| ? | `/ssc/invoke/casual_queue` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/casual_queue` | lobbies | binary `ssc name` | **no** | ssc: binary; method from the bench proxy log 2026-10-02 (the Casual queue's fall back to bots) |
 | ? | `/ssc/invoke/check_leaver_punishment` | http | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/check_server_grants` | http | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/check_training_server_ready` | matchflow | binary `ssc name` | **no** | ssc: binary |

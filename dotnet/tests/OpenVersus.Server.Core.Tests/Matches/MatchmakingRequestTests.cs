@@ -8,6 +8,7 @@ using OpenVersus.Server.Core.Cosmetics;
 using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Matches;
+using OpenVersus.Server.Core.Matchmaking;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Tests.Matches;
@@ -66,6 +67,25 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
 
     private readonly Cosmetics _cosmetics = new();
 
+    private sealed class Launcher : IMatchLauncher
+    {
+        public MatchLaunch? Launched { get; private set; }
+
+        public Task<LaunchedMatch?> LaunchAsync(MatchLaunch launch, CancellationToken ct)
+        {
+            Launched = launch;
+            return Task.FromResult<LaunchedMatch?>(new LaunchedMatch("0000000000000000000b0999", 57000));
+        }
+
+        public Task<int?> RollbackPortAsync(IDatabase redis) => Task.FromResult<int?>(57000);
+
+        public void DeployIfOnDemand(int port, string matchId)
+        {
+        }
+    }
+
+    private readonly Launcher _launcher = new();
+
     public async Task InitializeAsync()
     {
         if (string.IsNullOrEmpty(s_redis))
@@ -102,16 +122,22 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
             await Db.KeyDeleteAsync(key);
         }
 
-        await Db.KeyDeleteAsync(["1v1", "2v2", $"connections:{Ip}"]);
+        await Db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, $"connections:{Ip}"]);
     }
 
     private IDatabase Db => _redis!.GetDatabase();
 
-    private MatchmakingRequestService Service()
+    private MatchmakingRequestService Service(MongoDB.Driver.IMongoDatabase? mongo = null)
     {
-        var services = new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider();
+        var collection = new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!);
+        if (mongo is not null)
+        {
+            collection.AddSingleton(mongo);
+        }
+
+        var services = collection.BuildServiceProvider();
         return new MatchmakingRequestService(services, _gate, _cosmetics,
-            new EloRatings(services, new TestOptions<RankedSettings>(new RankedSettings()), TimeProvider.System, NullLogger<EloRatings>.Instance),
+            new EloRatings(services, new TestOptions<RankedSettings>(new RankedSettings()), TimeProvider.System, NullLogger<EloRatings>.Instance), _launcher,
             new TestOptions<LobbySettings>(new LobbySettings { GameVersion = "195303.1.1" }), TimeProvider.System, NullLogger<MatchmakingRequestService>.Instance);
     }
 
@@ -282,5 +308,176 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         Assert.Equal("""{"playersIds":["0000000000000000000b0001","0000000000000000000b0002"],"matchmakingId":"0000000000000000000b0800"}""",
             await PublishedAsync(PartyService.CancelMatchmakingChannel));
         Assert.False(await Db.KeyExistsAsync($"party_ready:{Lobby}"));
+    }
+
+    [SkippableFact]
+    // Casual: alone, the casual1v1 list; skill 0 and the regular ratings never read (Mongo is not even configured here).
+    public async Task ACasualRequestAloneIsACasual1v1Ticket()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await PlayerAsync(Me);
+        await Db.ListRightPushAsync(MatchmakingWorker.Casual1v1, """{"players":[{"id":"0000000000000000000b0001"}]}""");
+
+        var answer = (await Service().RequestAsync("casual-retail", Asking(Me), CancellationToken.None))!;
+
+        Assert.Equal("casual-retail", (string?)answer.Body["criteria_slug"]);
+        // The stale Casual ticket went when the player queued again.
+        Assert.Empty(await Db.ListRangeAsync(MatchmakingWorker.Casual1v1));
+        await answer.After!();
+        var ticket = Js.Parse(await PublishedAsync(MatchmakingRequestService.QueuedChannel))!;
+        Assert.Equal((MatchmakingWorker.Casual1v1, 0), ((string?)ticket["matchType"], (int)ticket["players"]![0]!["skill"]!));
+    }
+
+    [SkippableFact]
+    public async Task ACasualRequestFromALobbyOfTwoIsACasual2v2Ticket()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await PlayerAsync(Me);
+        await PlayerAsync(Mate);
+        await LobbyAsync(Me, Mate);
+
+        var answer = (await Service().RequestAsync("casual-retail", Asking(Me), CancellationToken.None))!;
+
+        Assert.Equal(("casual-retail", Lobby), ((string?)answer.Body["criteria_slug"], (string?)answer.Body["party_id"]));
+        await answer.After!();
+        Assert.Equal(MatchmakingWorker.Casual2v2, (string?)Js.Parse(await PublishedAsync(MatchmakingRequestService.QueuedChannel))!["matchType"]);
+    }
+
+    [SkippableFact]
+    // The TS websocket takes cancelled tickets out of 1v1 and 2v2 only: the Casual ones are this service's to remove.
+    public async Task ACancelTakesTheLobbysCasualTicketsOut()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await LobbyAsync(Me, Mate);
+        await Db.ListRightPushAsync(MatchmakingWorker.Casual2v2, """{"players":[{"id":"0000000000000000000b0001"},{"id":"0000000000000000000b0002"}]}""");
+        await Db.ListRightPushAsync(MatchmakingWorker.Casual2v2, """{"players":[{"id":"someone_else"}]}""");
+
+        await Service().CancelAsync("0000000000000000000b0800", Asking(Mate), CancellationToken.None);
+
+        Assert.Equal(["""{"players":[{"id":"someone_else"}]}"""], (await Db.ListRangeAsync(MatchmakingWorker.Casual2v2)).Select(v => v.ToString()));
+    }
+
+    [SkippableFact]
+    // The regular ratings are for the regular queues only: a Casual ticket never reads them (nor makes one). The control:
+    // the same rating is the skill of a regular request.
+    public async Task CasualNeverTouchesTheRegularRatings()
+    {
+        string? mongoUri = Environment.GetEnvironmentVariable("OVS_TEST_MONGO");
+        Skip.If(_redis is null || string.IsNullOrEmpty(mongoUri), "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        var client = new MongoDB.Driver.MongoClient(mongoUri);
+        const string database = "ovs_matchmaking_request_tests";
+        await client.DropDatabaseAsync(database);
+        var mongo = client.GetDatabase(database);
+        var ratings = mongo.GetCollection<MongoDB.Bson.BsonDocument>("eloratings");
+        try
+        {
+            await PlayerAsync(Me);
+            await PlayerAsync(Mate);
+            // The character rated in both modes, so a Casual ticket would show either field it read.
+            var jason = new MongoDB.Bson.BsonDocument("character_jason", new MongoDB.Bson.BsonDocument("elo", 1500));
+            await ratings.InsertOneAsync(new MongoDB.Bson.BsonDocument { ["account_id"] = Me, ["elo_1v1"] = 1000, ["characters_1v1"] = jason, ["characters_2v2"] = jason.DeepClone() });
+
+            // Mate has no rating at all: a Casual ticket must not make one.
+            foreach (string player in new[] { Me, Mate })
+            {
+                var casual = (await Service(mongo).RequestAsync("casual-retail", Asking(player), CancellationToken.None))!;
+                await casual.After!();
+                var casualTicket = Js.Parse(await PublishedAsync(MatchmakingRequestService.QueuedChannel))!;
+                Assert.Equal(0, (int)casualTicket["players"]![0]!["skill"]!);
+                _published.Clear();
+            }
+
+            Assert.Equal(1, await ratings.CountDocumentsAsync(MongoDB.Driver.FilterDefinition<MongoDB.Bson.BsonDocument>.Empty));
+
+            var regular = (await Service(mongo).RequestAsync("1v1-retail", Asking(Me), CancellationToken.None))!;
+            await regular.After!();
+            var regularTicket = Js.Parse(await PublishedAsync(MatchmakingRequestService.QueuedChannel))!;
+            Assert.Equal(1500, (double)regularTicket["players"]![0]!["skill"]!);
+            Assert.Equal(1, await ratings.CountDocumentsAsync(MongoDB.Driver.FilterDefinition<MongoDB.Bson.BsonDocument>.Empty));
+        }
+        finally
+        {
+            await client.DropDatabaseAsync(database);
+        }
+    }
+
+    [SkippableFact]
+    // Alone: a 1v1 against one bot at Medium, a roster fighter in one of its skins, the default perks; the answer is the
+    // TS catch-all the game takes as "match found".
+    public async Task CasualBotsForAPlayerAloneIsA1v1AgainstOneBot()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await PlayerAsync(Me);
+        await Db.ListRightPushAsync(MatchmakingWorker.Casual1v1, """{"players":[{"id":"0000000000000000000b0001"}]}""");
+
+        var answer = await Service().CasualBotsAsync(Asking(Me), CancellationToken.None);
+
+        Assert.Equal((1, 200), ((int)answer["body"]!["MatchmakingCrc"]!, (int)answer["return_code"]!));
+        var launch = _launcher.Launched!;
+        Assert.Equal(("1v1", "1v1"), (launch.Mode, launch.MatchType));
+        // Unranked for the TS websocket (the unranked config, no best-of-3 set, never rated), not a custom lobby's match.
+        Assert.Equal("""{"isCustomGame":true}""", Js.Stringify(launch.NotificationFields));
+        Assert.Equal("""{"bIsCustomGame":false}""", Js.Stringify(launch.GameplayConfigOverride));
+        Assert.Equal(BotDefaults.Perks, launch.BotPerks!.Select(p => (string)p!));
+        var human = Assert.Single(launch.Players, p => !p.IsBot);
+        var bot = Assert.Single(launch.Players, p => p.IsBot);
+        Assert.Equal((Me, 0, 0, true, "198.51.100.31"), (human.PlayerId, human.PlayerIndex, human.TeamIndex, human.IsHost, human.Ip));
+        Assert.Matches("^Bot[0-9A-F]{32}$", bot.PlayerId);
+        Assert.Equal((1, 1, false), (bot.PlayerIndex, bot.TeamIndex, bot.IsHost));
+        var config = (await Db.HashGetAllAsync($"bot_config:{bot.PlayerId}")).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
+        Assert.Contains(BotFighters.All, f => f.Character == config["character"] && f.Skins.Contains(config["skin"]));
+        Assert.Equal(("2", "2", "Medium"), (config["difficultyMin"], config["difficultyMax"], config["settingSlug"]));
+        Assert.True(await Db.KeyTimeToLiveAsync($"bot_config:{bot.PlayerId}") > TimeSpan.FromHours(23));
+        Assert.Empty(await Db.ListRangeAsync(MatchmakingWorker.Casual1v1));
+        Assert.Equal("character_jason", (string?)await Db.HashGetAsync($"connections:{Me}", "character"));
+        await Db.KeyDeleteAsync($"bot_config:{bot.PlayerId}");
+    }
+
+    [SkippableFact]
+    public async Task CasualBotsForAPartyIsA2v2AgainstTwoDifferentBots()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await PlayerAsync(Me);
+        await PlayerAsync(Mate);
+        await LobbyAsync(Mate, Me);
+
+        await Service().CasualBotsAsync(Asking(Me), CancellationToken.None);
+
+        var launch = _launcher.Launched!;
+        Assert.Equal("2v2", launch.Mode);
+        Assert.Equal([(Me, 0, 0, true), (Mate, 2, 0, false)], launch.Players.Where(p => !p.IsBot).Select(p => (p.PlayerId, p.PlayerIndex, p.TeamIndex, p.IsHost)));
+        var bots = launch.Players.Where(p => p.IsBot).ToList();
+        Assert.Equal([(1, 1), (3, 1)], bots.Select(b => (b.PlayerIndex, b.TeamIndex)));
+        var characters = new List<string>();
+        foreach (var bot in bots)
+        {
+            characters.Add((string)(await Db.HashGetAsync($"bot_config:{bot.PlayerId}", "character"))!);
+            await Db.KeyDeleteAsync($"bot_config:{bot.PlayerId}");
+        }
+
+        Assert.Equal(2, characters.Distinct().Count());
+    }
+
+    [SkippableFact]
+    public async Task CasualBotsWaitForEveryClientToBeCurrent()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await PlayerAsync(Me);
+        _gate.Outdated.Add(Me);
+
+        var answer = await Service().CasualBotsAsync(Asking(Me), CancellationToken.None);
+
+        Assert.Equal("client_update_required", (string?)answer["body"]!["error"]);
+        Assert.Null(_launcher.Launched);
+        Assert.Equal([Me], _gate.Modals);
+    }
+
+    [Fact]
+    // Every bot fighter has skins to wear, and none is one the lobbies refuse (PartyService's disabled characters).
+    public void TheBotRosterIsPlayable()
+    {
+        Assert.True(BotFighters.All.Count >= 30, $"{BotFighters.All.Count} fighters");
+        Assert.All(BotFighters.All, f => Assert.NotEmpty(f.Skins));
+        Assert.DoesNotContain(BotFighters.All, f => f.Character is "character_Meeseeks" or "character_supershaggy" or "character_c022" or "character_C022");
     }
 }

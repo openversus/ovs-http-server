@@ -21,6 +21,9 @@ public static class ClientGameplayGate
         "/matches/matchmaking/1v1-retail/request",
         "/matches/matchmaking/ranked-1v1-retail/request",
         "/matches/matchmaking/2v2-retail/request",
+        // The Casual queue, which the TS server never answered (its gate list had no entry for it).
+        "/matches/matchmaking/casual-retail/request",
+        "/ssc/invoke/casual_queue",
         "/ssc/invoke/create_custom_game_lobby",
         "/ssc/invoke/join_custom_game_lobby",
         "/ssc/invoke/start_custom_match",

@@ -28,7 +28,6 @@ using OpenVersus.Server.Http.Shared.Stubs;
 // The game's HTTP API (the TS server's index service). The public port is HTTP_PORT, as in the TS server's .env.
 var builder = OpenVersusHost.CreateBuilder(KnownServices.Http, args);
 builder.AddGameHttp(typeof(Program).Assembly);
-builder.AddFriends();
 builder.AddProfiles();
 builder.AddLayouts();
 builder.AddFileStorage();

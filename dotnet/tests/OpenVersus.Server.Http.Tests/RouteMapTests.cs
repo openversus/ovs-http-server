@@ -34,8 +34,8 @@ public sealed class RouteMapTests : IClassFixture<GameAppFactory>
     /// <summary>The services that answer routes (owners.tsv, copied into routes.json by gen_routes.py).</summary>
     internal static readonly string[] Owners = ["http", "access", "social", "lobbies", "matchflow", "web"];
 
-    /// <summary>Owners whose routes still live in this service: each moves out to its own executable (web and access have).</summary>
-    internal static readonly string[] StillHere = ["http", "social", "lobbies", "matchflow"];
+    /// <summary>Owners whose routes still live in this service: each moves out to its own executable (web, access and social have).</summary>
+    internal static readonly string[] StillHere = ["http", "lobbies", "matchflow"];
 
     internal static IReadOnlyList<Route> LoadRoutes()
     {
@@ -82,7 +82,7 @@ public sealed class RouteMapTests : IClassFixture<GameAppFactory>
     [Fact]
     public async Task AnswersExactlyTheRoutesItOwnsAndSendsTheRestToTheFallback()
     {
-        var problems = await RouteOwnership.ProblemsAsync(_client, KnownServices.Http.Name, fallback: true, stillHere: StillHere);
+        var problems = await RouteOwnership.ProblemsAsync(_client, KnownServices.Http.Name, fallback: true, stillHere: StillHere, catchAlls: ["SscUnlisted"]);
         Assert.True(problems.Count == 0, string.Join("\n", problems));
     }
 
@@ -92,7 +92,8 @@ public sealed class RouteMapTests : IClassFixture<GameAppFactory>
         var owners = new Dictionary<string, string>();
         var problems = new List<string>();
         var routes = LoadRoutes().Where(r => StillHere.Contains(r.Owner)).ToList();
-        Assert.True(routes.Count > 200, $"routes.json has only {routes.Count} routes here");
+        // Not a count to keep in step with the moves: only a guard against reading an empty or wrong file.
+        Assert.True(routes.Count > 100, $"routes.json has only {routes.Count} routes here");
         foreach (var route in routes)
         {
             // A route with an unknown method may share its path with routes whose methods are known; it only owns

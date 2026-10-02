@@ -13,45 +13,59 @@ namespace OpenVersus.Server.TestSupport;
 public static class RouteOwnership
 {
     /// <param name="stillHere">Owners whose routes have not moved out of this service yet (the HTTP service's).</param>
+    /// <param name="catchAlls">Endpoints here that answer what no route names (the HTTP service's SSC catch-all).</param>
+    /// <remarks>
+    /// Another service's route may still reach an endpoint here through a broader template of this service's own
+    /// (<c>/accounts/{id}/{sub}</c> catches <c>/accounts/me/relationships</c>): the router never sends it here, the most
+    /// literal route wins. What may not answer it is an endpoint no route of this service's reaches: one left behind.
+    /// </remarks>
     public static async Task<IReadOnlyList<string>> ProblemsAsync(HttpClient client, string service, bool fallback = false, int stubStatus = 501,
-        IReadOnlyCollection<string>? stillHere = null)
+        IReadOnlyCollection<string>? stillHere = null, IReadOnlyCollection<string>? catchAlls = null)
     {
         var problems = new List<string>();
+        var own = new HashSet<string>(catchAlls ?? []);
+        var others = new List<(Route Route, string Path)>();
         foreach (var route in RouteTable.Load())
         {
             string path = RouteTable.Concrete(route.Path);
             // Where templates overlap, the concrete path may belong to a more literal route of another service's.
             string owner = RouteOwners.Routes.OwnerOf(route.Method is "?" ? "GET" : route.Method, new PathString(path));
-            bool mine = owner == service || stillHere?.Contains(owner) == true;
-            if (mine)
+            if (owner != service && stillHere?.Contains(owner) != true)
             {
-                // A route whose method is not known owns whichever verbs another route of its path leaves: one is enough.
-                string? missed = null;
-                foreach (string verb in route.Method is "?" ? RouteTable.AllVerbs : [route.Method])
-                {
-                    var (status, endpoint, stub) = await SendAsync(client, verb, path);
-                    if (endpoint != "" && (stub == "" || status == stubStatus))
-                    {
-                        missed = null;
-                        break;
-                    }
-
-                    missed ??= $"{verb} {route.Path} ({route.Owner}): status {status}, endpoint '{endpoint}', stub '{stub}'";
-                }
-
-                if (missed is not null)
-                {
-                    problems.Add(missed);
-                }
+                others.Add((route, path));
+                continue;
             }
-            else
+
+            // A route whose method is not known owns whichever verbs another route of its path leaves: one is enough.
+            string? missed = null;
+            foreach (string verb in route.Method is "?" ? RouteTable.AllVerbs : [route.Method])
             {
-                string verb = route.Method is "?" ? "GET" : route.Method;
                 var (status, endpoint, stub) = await SendAsync(client, verb, path);
-                if (endpoint != "" || (fallback ? stub != Stub.FallbackName : status != (int)HttpStatusCode.NotFound))
+                if (endpoint != "" && (stub == "" || status == stubStatus))
                 {
-                    problems.Add($"{verb} {route.Path} is {route.Owner}'s, but {service} answers it: status {status}, endpoint '{endpoint}', stub '{stub}'");
+                    own.Add(endpoint);
+                    missed = null;
+                    break;
                 }
+
+                missed ??= $"{verb} {route.Path} ({route.Owner}): status {status}, endpoint '{endpoint}', stub '{stub}'";
+            }
+
+            if (missed is not null)
+            {
+                problems.Add(missed);
+            }
+        }
+
+        foreach (var (route, path) in others)
+        {
+            string verb = route.Method is "?" ? "GET" : route.Method;
+            var (status, endpoint, stub) = await SendAsync(client, verb, path);
+            bool answered = endpoint != "" ? !own.Contains(endpoint)
+                : fallback ? stub != Stub.FallbackName : status != (int)HttpStatusCode.NotFound;
+            if (answered)
+            {
+                problems.Add($"{verb} {route.Path} is {route.Owner}'s, but {service} answers it: status {status}, endpoint '{endpoint}', stub '{stub}'");
             }
         }
 

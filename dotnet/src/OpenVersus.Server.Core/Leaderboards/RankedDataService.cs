@@ -62,7 +62,7 @@ public interface IRankedDataService
     Task<JsonNode> ClaimRewardsAsync(string accountId, JsonNode? season, CancellationToken ct);
 }
 
-internal sealed class RankedDataService(IServiceProvider services, IOptionsMonitor<RankedSettings> settings, IOptionsMonitor<SeasonSettings> seasons, TimeProvider time, ILogger<RankedDataService> log) : IRankedDataService
+internal sealed class RankedDataService(IServiceProvider services, EloRatings ratingsService, IOptionsMonitor<SeasonSettings> seasons, TimeProvider time, ILogger<RankedDataService> log) : IRankedDataService
 {
     private const string DefaultCharacter = "character_wonder_woman";
     private const string Season = "Season:SeasonFive";
@@ -82,7 +82,7 @@ internal sealed class RankedDataService(IServiceProvider services, IOptionsMonit
             string? playerId = claims?["id"] is JsonValue v && v.TryGetValue(out string? id) && id.Length > 0 ? id : null;
             string username = claims?["username"] is JsonValue u && u.TryGetValue(out string? name) ? name : "";
 
-            var rating = playerId is null ? null : await GetOrCreateAsync(ratings, playerId, username, ct);
+            var rating = playerId is null ? null : await ratingsService.GetOrCreateAsync(ratings, playerId, username, ct);
             string character = playerId is null ? "" : await ConnectionCharacterAsync(playerId);
             if (character.Length == 0 && playerId is not null)
             {
@@ -239,41 +239,6 @@ internal sealed class RankedDataService(IServiceProvider services, IOptionsMonit
         };
     }
 
-    private async Task<BsonDocument> GetOrCreateAsync(IMongoCollection<BsonDocument> ratings, string playerId, string username, CancellationToken ct)
-    {
-        var filter = new BsonDocument("account_id", playerId);
-        var rating = await ratings.Find(filter).FirstOrDefaultAsync(ct);
-        if (rating is null)
-        {
-            var elo = JsNumber(settings.CurrentValue.DefaultElo);
-            rating = new BsonDocument
-            {
-                { "_id", ObjectId.GenerateNewId() },
-                { "account_id", playerId },
-                { "username", username },
-                { "elo_1v1", elo },
-                { "elo_2v2", elo },
-                { "wins_1v1", 0 },
-                { "losses_1v1", 0 },
-                { "wins_2v2", 0 },
-                { "losses_2v2", 0 },
-                { "win_streak_1v1", 0 },
-                { "win_streak_2v2", 0 },
-                { "updated_at", (double)time.GetUtcNow().ToUnixTimeMilliseconds() },
-                { "__v", 0 },
-            };
-            // Two first requests at once: the unique index refuses the second, which falls back, as there.
-            await ratings.InsertOneAsync(rating, cancellationToken: ct);
-            log.LogInformation("Created new ELO rating for player {Player} ({Username})", playerId, username);
-        }
-        else if (username.Length > 0 && username != (rating.GetValue("username", "") is BsonString stored ? stored.Value : ""))
-        {
-            await ratings.UpdateOneAsync(filter, new BsonDocument("$set", new BsonDocument("username", username)), cancellationToken: ct);
-        }
-
-        return rating;
-    }
-
     private async Task<string> ConnectionCharacterAsync(string playerId)
     {
         if (services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis)
@@ -340,16 +305,13 @@ internal sealed class RankedDataService(IServiceProvider services, IOptionsMonit
     };
 
     // A JS number as the TS server's driver stores it: an int32 when it is whole and fits, else a double.
-    private static BsonValue JsNumber(double value) =>
-        value == Math.Floor(value) && value is >= int.MinValue and <= int.MaxValue && !(value == 0 && double.IsNegative(value)) ? new BsonInt32((int)value) : new BsonDouble(value);
 }
 
 public static class RankedDataHosting
 {
     public static WebApplicationBuilder AddRankedData(this WebApplicationBuilder builder)
     {
-        builder.AddSetting<RankedSettings>("Ranked");
-        builder.Services.TryAddSingleton(TimeProvider.System);
+        builder.AddEloRatings();
         builder.Services.AddSingleton<IRankedDataService, RankedDataService>();
         return builder;
     }

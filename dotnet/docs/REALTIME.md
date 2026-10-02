@@ -52,7 +52,8 @@ the sockets.
 
 The exception is the part that shares the in-memory state above: queueing, match configs, perks, match end, disconnect
 and rejoin. Those handlers move together with the gateway and the matchmaker. Until then, C# publishes the TS channels
-they listen to as the TS server does (`matchmaking:cancel` from a party join, `match:notifications` and
+they listen to as the TS server does (`matchmaking:cancel` from a party join and the game's cancel, `party:queued` from
+the matchmaking request, `match:notifications` and
 `matchmaking:complete` from a rift start; MIGRATION-BRIDGES.md 2).
 
 Done so far: rift progress, missions and reward tracks (MIGRATION-BRIDGES.md 4), the party lobby routes (invite,

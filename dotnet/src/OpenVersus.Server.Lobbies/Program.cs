@@ -13,6 +13,7 @@ builder.AddPartyLobbies();
 builder.AddCustomLobbies();
 builder.AddRiftLobbies();
 builder.AddMatchHistory();
+builder.AddMatchmakingRequests();
 // A player's equipped cosmetics are copied for their match when they join a lobby.
 builder.AddCosmetics();
 // Custom matches start here.

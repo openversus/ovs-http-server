@@ -26,8 +26,11 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 - **Pub/sub channels too:** a message C# publishes is read by the TS websocket, which then tells the game. So far:
   `lobby:player_joined` (`PartyLobbyService`, a player joined someone's lobby: `{lobbyId, ownerId, joinedPlayerId,
   joinedPlayerUsername, allPlayerIds, mode}`), `client_update:modal` (`ClientUpdateGate`, show a player the update
-  toast: `{playerId, nonce}`) and `matchmaking:cancel` (`PartyService`, someone joined a party: `{playersIds,
-  matchmakingId: "party-changed"}`; the TS websocket keeps the queue ticket and its tick in memory, so it cancels them).
+  toast: `{playerId, nonce}`), `matchmaking:cancel` (`PartyService`, someone joined a party: `{playersIds,
+  matchmakingId: "party-changed"}`; `MatchmakingRequestService`, the game's cancel: `{playersIds, matchmakingId}`; the TS
+  websocket keeps the queue ticket and its tick in memory, so it cancels them) and `party:queued`
+  (`MatchmakingRequestService`, the matchmaking request's ticket, as queueMatch builds it; the TS websocket sends the game
+  OnMatchmakerStarted and pushes the ticket onto the `1v1` or `2v2` list, which the matchmaker reads).
   Their payloads are JSON exactly as the TS server writes them. The party routes' other messages to players
   (`OnLobbyModeUpdated`, `InviteReceivedForLobby`, `PlayerJoinedLobby`, `PlayerLeftLobby`, `PlayerReadyForLobby`,
   `OnPlayerLoadoutLocked`) are built in C# and go through `ws:send` (4), as the TS websocket would have built them; so

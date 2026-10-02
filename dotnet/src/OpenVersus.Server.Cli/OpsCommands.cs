@@ -199,8 +199,18 @@ public sealed class PlayerDisconnectCommand : AsyncCommand<PlayerSettings>
     protected override async Task<int> ExecuteAsync(CommandContext context, PlayerSettings settings, CancellationToken cancellation)
     {
         using var client = ControlClient.For(settings);
+        // Markup only in the format string: what is interpolated is escaped, markup included.
         return OvsCtl.Report(_console, settings, await client.DisconnectAsync(settings.Who), d =>
-            _console.MarkupLineInterpolated($"Disconnect sent for [bold]{d.Name}[/] ({d.Id}) to {d.Websockets} websocket service(s); {(d.WasOnline ? "they were online" : "[yellow]they were not online[/]")}."));
+        {
+            if (d.WasOnline)
+            {
+                _console.MarkupLineInterpolated($"Disconnect sent for [bold]{d.Name}[/] ({d.Id}) to {d.Websockets} websocket service(s); they were online.");
+            }
+            else
+            {
+                _console.MarkupLineInterpolated($"Disconnect sent for [bold]{d.Name}[/] ({d.Id}) to {d.Websockets} websocket service(s); [yellow]they were not online[/].");
+            }
+        });
     }
 }
 

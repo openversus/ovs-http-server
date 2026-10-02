@@ -1084,19 +1084,6 @@ export async function redisPublishLobbyReturn(notification: RedisLobbyReturnNoti
   logger.info(`${logPrefix} Published lobby return (RematchDeclined) for player ${notification.playerId}`);
 }
 
-// --- Party Member Join Notification (AccelByte text-format via Hydra WS) ---
-export const PARTY_MEMBER_JOIN_CHANNEL = "party:member_joined";
-
-export interface RedisPartyMemberJoinNotification {
-  targetPlayerId: string;  // who to send to (the inviter)
-  joinedUserId: string;    // who joined (the invitee)
-}
-
-export async function redisPublishPartyMemberJoin(notification: RedisPartyMemberJoinNotification): Promise<void> {
-  await redisClient.publish(PARTY_MEMBER_JOIN_CHANNEL, JSON.stringify(notification));
-  logger.info(`${logPrefix} Published partyMemberJoinNotif: ${notification.joinedUserId} joined → notify ${notification.targetPlayerId}`);
-}
-
 // --- Lobby Redirects ---
 // When player B is force-joined into player A's lobby, we store a redirect
 // so that when player B's client fetches their lobby, they get player A's lobby instead

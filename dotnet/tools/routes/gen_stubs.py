@@ -13,7 +13,6 @@ ENDPOINTS = ROOT / "src/OpenVersus.Server.Http/Endpoints"
 ALL_VERBS = ["GET", "PUT", "POST", "DELETE"]
 KIND_DIRS = {
     "game": "Game",
-    "accelbyte": "AccelByte",
     "ovs-client": "OpenVersus/Client",
     "ovs-rollback": "OpenVersus/Rollback",
     "ovs-web": "OpenVersus/Web",

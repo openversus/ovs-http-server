@@ -31,7 +31,7 @@ public sealed class FriendsEndpointTests(GameAppFactory factory) : IClassFixture
 
     [Theory]
     [MemberData(nameof(Paths))]
-    // /social/me/* is the game's own social layer on the OpenVersus host, not AccelByte: it needs the token too.
+    // /social/me/* is the game's own social layer on the OpenVersus host: it needs the token too.
     public async Task NeedsTheSessionToken(string path)
     {
         using var response = await factory.CreateClient().GetAsync(path);

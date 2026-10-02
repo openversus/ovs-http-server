@@ -88,9 +88,9 @@ closes. Two ways to close that gap:
 
 ## Not ported
 
-- `src/accelByteLobbyWs.ts`, the AccelByte text websocket on `/lobby`: added with the web party system (2026-02-23),
-  before the in-game custom lobby (2026-03-21). The bench has never seen a connection to it. It goes with the TS HTTP
-  server unless the production logs show the game using it.
+- AccelByte (the text websocket on `/lobby` and the IAM endpoints): removed on 2026-10-02. It came with the web party
+  system (2026-02-23), before the in-game custom lobby; production logs showed a single use ever, and the game itself
+  never calls it.
 - The website's custom lobby and party pages were retired on 2026-09-26; their server code (`services/customLobbyService.ts`,
   party keys) has no way in any more.
-- `lobby:transition` (no publisher) and `party:member_join` (its publisher is never called): dead in the TS server.
+- `lobby:transition` (no publisher): dead in the TS server. (`party:member_joined` went with AccelByte.)

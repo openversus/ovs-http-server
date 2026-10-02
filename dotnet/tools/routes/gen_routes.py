@@ -125,24 +125,19 @@ EXE = pathlib.Path.home() / ".local/share/Steam/steamapps/common/MultiVersus/Mul
 # Unreal's own routes (engine, not Hydra): the DataRouter string is in the exe as UTF-16.
 ENGINE = [("POST", "/datarouter/api/v1/public/data/clients", "string", "Unreal DataRouter (engine telemetry); exe holds 'datarouter/api/v1/public/data?SessionID='")]
 
-# AccelByte: the Custom Lobbies use it and it is live, though no AccelByte string was
-# found in the exe or its DLLs; these routes come from the TS server.
-ACCELBYTE = re.compile(r"^/(iam|basic|lobby|agreement|platform|social)(/|\*|$)")
-# ...except the game's own social layer: /social/me/* goes to the OpenVersus host with the Hydra token (captured).
-SOCIAL_LAYER = re.compile(r"^/social/me/")
 # OpenVersus's own routes, by caller (checked against the handlers' comments and the rollback server's source,
 # 2026-09-28). Order matters: the first match wins.
 OVS_KINDS = [
     ("ovs-client", re.compile(r"^/(api/identify|ovs/client-version|ovs/notifications|ovs/friends|ovs/all-players)(/|$)")),
     ("ovs-rollback", re.compile(r"^/(ovs_register|ovs_match_started|ovs_end_match|ovs_match_status|api/ovs_match_status|mvsi_register|mvsi_end_match)$")),
-    ("ovs-admin", re.compile(r"^/(admin|api/admin|api/testing|syncAsset)(/|$)")),
+    ("ovs-admin", re.compile(r"^/(admin|api/admin|syncAsset)(/|$)")),
     ("ovs-web", re.compile(r"^/(matches$|api/matches|stats|leaderboard$|api/leaderboard|namechange|account/|home|theme\.|favicon|images/|assets/)")),
 ]
 KIND_TITLES = {
     "ovs-client": "OpenVersus client mod",
     "ovs-rollback": "Rollback server",
     "ovs-web": "Website (browser)",
-    "ovs-admin": "Admin, testing and data sync",
+    "ovs-admin": "Admin and data sync",
 }
 
 
@@ -267,8 +262,8 @@ def main():
 
     rows = sorted(routes.values(), key=lambda r: (r["area"], r["path"], r["method"]))
     for r in rows:
-        r["kind"] = "accelbyte" if ACCELBYTE.match(r["path"]) and not SOCIAL_LAYER.match(r["path"]) else next((k for k, rx in OVS_KINDS if rx.match(r["path"])), "game")
-        r["in_game"] = r["kind"] in ("game", "accelbyte") and (bool(r["binary"]) or r["capture"] > 0 or r["kind"] == "accelbyte" or r["path"].endswith("/access"))
+        r["kind"] = next((k for k, rx in OVS_KINDS if rx.match(r["path"])), "game")
+        r["in_game"] = r["kind"] == "game" and (bool(r["binary"]) or r["capture"] > 0 or r["path"].endswith("/access"))
         r["in_server"] = bool(r["server"])
     DOCS.mkdir(exist_ok=True)
     (DOCS / "routes.json").write_text(json.dumps(rows, indent=2) + "\n")
@@ -295,7 +290,6 @@ def write_markdown(rows):
     missing = [r for r in game if not r["in_server"] and r["area"] != "ssc"]
     ssc_missing = [r for r in ssc if not r["in_server"]]
     ovs = {k: [r for r in rows if r["kind"] == k] for k in KIND_TITLES}
-    accelbyte = [r for r in rows if r["kind"] == "accelbyte"]
     head = "| Method | Route | Game source | TS server | Notes |\n|---|---|---|---|---|"
     out = [
         "# Routes",
@@ -315,22 +309,19 @@ def write_markdown(rows):
         "`/ssc/invoke/{name}` that logs unknown names, beside one endpoint per name listed here.",
         "",
         "**Websockets** (not in the tables): the Hydra realtime socket (the ws service; binary Hydra messages; the",
-        "server pings `0x0c` every 20 s and the game answers `0x0a`), and the AccelByte lobby socket at `/lobby/`",
-        "(text `type: …` messages; Custom Lobbies).",
+        "server pings `0x0c` every 20 s and the game answers `0x0a`).",
         "",
         f"**Totals.** {len(rows)} routes. The game can call {len(game)} Hydra/engine/social routes and SSC functions; the TS",
         f"server answers {sum(r['in_server'] for r in game)}. Not answered: {len(missing)} routes and {len(ssc_missing)} SSC functions.",
-        f"AccelByte: {len(accelbyte)}. OpenVersus's own, not the game: " + ", ".join(f"{KIND_TITLES[k].lower()} {len(v)}" for k, v in ovs.items()) + ".",
+        f"OpenVersus's own, not the game: " + ", ".join(f"{KIND_TITLES[k].lower()} {len(v)}" for k, v in ovs.items()) + ".",
         "",
-        "Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVersus's own (`ovs-client`,",
+        "Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ovs-client`,",
         "`ovs-rollback`, `ovs-web`, `ovs-admin`). The skeleton's endpoint folders follow the same split.",
         "",
         "## Game routes the TS server does not answer",
         "", head, *map(line, missing), "",
         "## SSC functions the TS server does not answer",
         "", head, *map(line, ssc_missing), "",
-        "## AccelByte routes (Custom Lobbies; from the TS server)",
-        "", head, *map(line, accelbyte), "",
         *[x for k, v in ovs.items() for x in (f"## OpenVersus's own: {KIND_TITLES[k]}", "", head, *map(line, v), "")],
         "## All game routes (not SSC)",
         "", head, *map(line, [r for r in game if r["area"] != "ssc"]), "",

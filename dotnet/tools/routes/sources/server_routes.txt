@@ -12,7 +12,6 @@ PUT	/accounts/me/relationships/:blockid/unblock	1
 GET	/accounts/wb_network/:id	2
 PUT	/accounts/wb_network/bulk	2
 GET	/admin/banner	1
-GET	/agreement/public/policies/namespaces/:namespace	1
 POST	/api/admin/banner	1
 GET	/api/admin/banner/online-count	1
 POST	/api/identify	1
@@ -20,12 +19,8 @@ GET	/api/leaderboard/:mode	1
 GET	/api/leaderboard/:mode/me	1
 GET	/api/matches	1
 POST	/api/ovs_match_status	1
-POST	/api/testing/deploy-rollback-server	1
-POST	/api/testing/destroy-rollback-server	1
 GET	/assets/openversus-update-required-keyart.png	1
 GET	/assets/openversus-update-required-thumbnail.png	1
-ALL	/basic/*	1
-GET	/basic/v1/public/namespaces/:namespace/misc/input/validation	1
 PUT	/batch	1
 GET	/commerce/products	1
 GET	/commerce/purchases/me	1
@@ -58,13 +53,6 @@ GET	/global_configuration_types/calendarflags/global_configurations	1
 GET	/global_configuration_types/eula/global_configurations/*	1
 GET	/global_configuration_types/wwshopconfiguration/global_configurations	1
 GET	/home	1
-ALL	/iam/*	1
-POST	/iam/v3/oauth/platforms/:platform/token	1
-POST	/iam/v3/oauth/revoke	1
-POST	/iam/v3/oauth/token	1
-POST	/iam/v3/oauth/verify	1
-GET	/iam/v3/public/namespaces/:namespace	1
-GET	/iam/v3/public/users/me	1
 GET	/images/:image	1
 GET	/layout/dokken-layout-type/personalized/account-cosmetics-variant/:id	1
 GET	/layout/dokken-layout-type/personalized/battlepass-variant/:id	1
@@ -79,7 +67,6 @@ GET	/leaderboard	1
 GET	/leaderboards/:slug/around/:playerId	1
 GET	/leaderboards/:slug/show	1
 PUT	/leaderboards/bulk/score-and-rank/:playerId	1
-ALL	/lobby/*	1
 GET	/matches	1
 GET	/matches/:id	1
 PUT	/matches/:id	1
@@ -107,13 +94,11 @@ POST	/ovs_end_match	1
 POST	/ovs_match_started	1
 POST	/ovs_match_status	1
 POST	/ovs_register	1
-ALL	/platform/*	1
 GET	/profiles/:id	1
 PUT	/profiles/:id/inventory	1
 PUT	/profiles/bulk	2
 GET	/profiles/search_queries/get-by-username/run	1
 POST	/sessions/auth/token	1
-ALL	/social/*	1
 PUT	/social/me/block/:blockid	1
 GET	/social/me/blocked	1
 PUT	/social/me/unblock/:blockid	1

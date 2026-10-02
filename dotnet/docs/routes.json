@@ -342,22 +342,6 @@
     "in_server": true
   },
   {
-    "method": "GET",
-    "path": "/agreement/public/policies/namespaces/{namespace}",
-    "area": "agreement",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "GET /agreement/public/policies/namespaces/{namespace}"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "accelbyte",
-    "in_game": true,
-    "in_server": true
-  },
-  {
     "method": "POST",
     "path": "/api/admin/banner",
     "area": "api",
@@ -471,38 +455,6 @@
     "in_server": true
   },
   {
-    "method": "POST",
-    "path": "/api/testing/deploy-rollback-server",
-    "area": "api",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "POST /api/testing/deploy-rollback-server"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "ovs-admin",
-    "in_game": false,
-    "in_server": true
-  },
-  {
-    "method": "POST",
-    "path": "/api/testing/destroy-rollback-server",
-    "area": "api",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "POST /api/testing/destroy-rollback-server"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "ovs-admin",
-    "in_game": false,
-    "in_server": true
-  },
-  {
     "method": "GET",
     "path": "/arenas/{id}/groups/{group}/participants",
     "area": "arenas",
@@ -568,38 +520,6 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
-  },
-  {
-    "method": "ALL",
-    "path": "/basic/*",
-    "area": "basic",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "ALL /basic/*"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "accelbyte",
-    "in_game": true,
-    "in_server": true
-  },
-  {
-    "method": "GET",
-    "path": "/basic/v1/public/namespaces/{namespace}/misc/input/validation",
-    "area": "basic",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "GET /basic/v1/public/namespaces/{namespace}/misc/input/validation"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "accelbyte",
-    "in_game": true,
     "in_server": true
   },
   {
@@ -1028,118 +948,6 @@
     "in_server": true
   },
   {
-    "method": "ALL",
-    "path": "/iam/*",
-    "area": "iam",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "ALL /iam/*"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "accelbyte",
-    "in_game": true,
-    "in_server": true
-  },
-  {
-    "method": "POST",
-    "path": "/iam/v3/oauth/platforms/{platform}/token",
-    "area": "iam",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "POST /iam/v3/oauth/platforms/{platform}/token"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "accelbyte",
-    "in_game": true,
-    "in_server": true
-  },
-  {
-    "method": "POST",
-    "path": "/iam/v3/oauth/revoke",
-    "area": "iam",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "POST /iam/v3/oauth/revoke"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "accelbyte",
-    "in_game": true,
-    "in_server": true
-  },
-  {
-    "method": "POST",
-    "path": "/iam/v3/oauth/token",
-    "area": "iam",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "POST /iam/v3/oauth/token"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "accelbyte",
-    "in_game": true,
-    "in_server": true
-  },
-  {
-    "method": "POST",
-    "path": "/iam/v3/oauth/verify",
-    "area": "iam",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "POST /iam/v3/oauth/verify"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "accelbyte",
-    "in_game": true,
-    "in_server": true
-  },
-  {
-    "method": "GET",
-    "path": "/iam/v3/public/namespaces/{namespace}",
-    "area": "iam",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "GET /iam/v3/public/namespaces/{namespace}"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "accelbyte",
-    "in_game": true,
-    "in_server": true
-  },
-  {
-    "method": "GET",
-    "path": "/iam/v3/public/users/me",
-    "area": "iam",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "GET /iam/v3/public/users/me"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "accelbyte",
-    "in_game": true,
-    "in_server": true
-  },
-  {
     "method": "GET",
     "path": "/images/{image}",
     "area": "images",
@@ -1282,22 +1090,6 @@
     ],
     "notes": [],
     "kind": "game",
-    "in_game": true,
-    "in_server": true
-  },
-  {
-    "method": "ALL",
-    "path": "/lobby/*",
-    "area": "lobby",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "ALL /lobby/*"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "accelbyte",
     "in_game": true,
     "in_server": true
   },
@@ -1724,22 +1516,6 @@
     "in_server": true
   },
   {
-    "method": "ALL",
-    "path": "/platform/*",
-    "area": "platform",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "ALL /platform/*"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "accelbyte",
-    "in_game": true,
-    "in_server": true
-  },
-  {
     "method": "GET",
     "path": "/profiles/bulk",
     "area": "profiles",
@@ -1926,22 +1702,6 @@
     "kind": "game",
     "in_game": true,
     "in_server": false
-  },
-  {
-    "method": "ALL",
-    "path": "/social/*",
-    "area": "social",
-    "binary": null,
-    "capture": 0,
-    "server": [
-      "ALL /social/*"
-    ],
-    "notes": [
-      "server only"
-    ],
-    "kind": "accelbyte",
-    "in_game": true,
-    "in_server": true
   },
   {
     "method": "PUT",

@@ -15,14 +15,13 @@ override header, not on the wire method. `?` means the method is not known yet.
 `/ssc/invoke/{name}` that logs unknown names, beside one endpoint per name listed here.
 
 **Websockets** (not in the tables): the Hydra realtime socket (the ws service; binary Hydra messages; the
-server pings `0x0c` every 20 s and the game answers `0x0a`), and the AccelByte lobby socket at `/lobby/`
-(text `type: …` messages; Custom Lobbies).
+server pings `0x0c` every 20 s and the game answers `0x0a`).
 
-**Totals.** 263 routes. The game can call 209 Hydra/engine/social routes and SSC functions; the TS
+**Totals.** 248 routes. The game can call 209 Hydra/engine/social routes and SSC functions; the TS
 server answers 115. Not answered: 33 routes and 61 SSC functions.
-AccelByte: 13. OpenVersus's own, not the game: openversus client mod 10, rollback server 7, website (browser) 18, admin, testing and data sync 6.
+OpenVersus's own, not the game: openversus client mod 10, rollback server 7, website (browser) 18, admin and data sync 4.
 
-Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVersus's own (`ovs-client`,
+Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ovs-client`,
 `ovs-rollback`, `ovs-web`, `ovs-admin`). The skeleton's endpoint folders follow the same split.
 
 ## Game routes the TS server does not answer
@@ -129,24 +128,6 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | ? | `/ssc/invoke/upgrade_track_to_premium` | binary `ssc name` | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/zd_ticket_submit` | binary `ssc name` | **no** | ssc: binary |
 
-## AccelByte routes (Custom Lobbies; from the TS server)
-
-| Method | Route | Game source | TS server | Notes |
-|---|---|---|---|---|
-| GET | `/agreement/public/policies/namespaces/{namespace}` | — | yes | server only |
-| ALL | `/basic/*` | — | yes | server only |
-| GET | `/basic/v1/public/namespaces/{namespace}/misc/input/validation` | — | yes | server only |
-| ALL | `/iam/*` | — | yes | server only |
-| POST | `/iam/v3/oauth/platforms/{platform}/token` | — | yes | server only |
-| POST | `/iam/v3/oauth/revoke` | — | yes | server only |
-| POST | `/iam/v3/oauth/token` | — | yes | server only |
-| POST | `/iam/v3/oauth/verify` | — | yes | server only |
-| GET | `/iam/v3/public/namespaces/{namespace}` | — | yes | server only |
-| GET | `/iam/v3/public/users/me` | — | yes | server only |
-| ALL | `/lobby/*` | — | yes | server only |
-| ALL | `/platform/*` | — | yes | server only |
-| ALL | `/social/*` | — | yes | server only |
-
 ## OpenVersus's own: OpenVersus client mod
 
 | Method | Route | Game source | TS server | Notes |
@@ -197,15 +178,13 @@ Every row in `routes.json` has a `kind`: `game`, `accelbyte`, or one of OpenVers
 | GET | `/theme.css` | — | yes | server only |
 | GET | `/theme.js` | — | yes | server only |
 
-## OpenVersus's own: Admin, testing and data sync
+## OpenVersus's own: Admin and data sync
 
 | Method | Route | Game source | TS server | Notes |
 |---|---|---|---|---|
 | GET | `/admin/banner` | — | yes | server only |
 | POST | `/api/admin/banner` | — | yes | server only |
 | GET | `/api/admin/banner/online-count` | — | yes | server only |
-| POST | `/api/testing/deploy-rollback-server` | — | yes | server only |
-| POST | `/api/testing/destroy-rollback-server` | — | yes | server only |
 | POST | `/syncAsset` | — | yes | server only |
 
 ## All game routes (not SSC)

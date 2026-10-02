@@ -87,7 +87,6 @@ import {
   redisRecordPlayerHeartbeat,
   redisRemovePlayerHeartbeat,
   DISCONNECT_HEARTBEAT_TIMEOUT_MS,
-  // PARTY_MEMBER_JOIN_CHANNEL — moved to AccelByteLobbyWsService
 } from "./config/redis";
 import { Server } from "https";
 import { Server as HttpServer } from "http";
@@ -150,16 +149,6 @@ export class WebSocketPlayer {
   sendRaw(data: Buffer<ArrayBuffer>) {
     if (!this.deleted) {
       this.ws.send(data);
-    }
-  }
-
-  /**
-   * Send a text-format message (AccelByte YAML-like format) through the Hydra WS.
-   * Some games check both binary and text messages on the same connection.
-   */
-  sendText(text: string) {
-    if (!this.deleted) {
-      this.ws.send(text);
     }
   }
 }
@@ -3105,11 +3094,6 @@ export class WebSocketService {
         client.send(data);
       }
     });
-
-    // NOTE: partyMemberJoinNotif subscription MOVED to AccelByteLobbyWsService.
-    // The game processes AccelByte text-format messages on the AccelByte Lobby WS
-    // (/lobby/ path), NOT on the Hydra WS. Sending it here had no effect because
-    // the game ignores AccelByte-format text on this connection.
 
     // Friend request WS notification — sends native WBPNFriendRequestReceivedNotification
     this.redisSub.subscribe(FRIEND_REQUEST_WS_CHANNEL, (message) => {

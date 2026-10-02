@@ -83,7 +83,7 @@ app.UseGameplayPreferencesRecorder();
 app.UseFastEndpoints(c =>
 {
     // ASP.NET's authorization is not used: game endpoints require the session token through RequiresHydraToken
-    // (see HydraToken), unless they carry NoHydraToken; the other kinds (OpenVersus client, website, AccelByte) do
+    // (see HydraToken), unless they carry NoHydraToken; the other kinds (OpenVersus client, website) do
     // their own checks, as in the TS server.
     c.Endpoints.Configurator = ep =>
     {

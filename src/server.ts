@@ -3,7 +3,6 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import router from "./router";
 import { hydraDecoderMiddleware } from "./middleware/hydraParser";
-import * as https from "https";
 import * as http from "http";
 import * as fs from "fs";
 import * as path from "path";
@@ -45,7 +44,6 @@ import * as KitchenSink from "./utils/garbagecan";
 import * as AuthUtils from "./utils/auth";
 import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
-import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
 import { handleMatchStatusUpdate } from "./handlers/match_status";
 import { normalizeHardwareSignal, normalizeIdentity, refreshIpIdentityFromToken, resolveAccountWithSource } from "./services/identityService";
 import { mergeIpIdentity } from "./services/identityNormalization";
@@ -56,7 +54,6 @@ import {
 } from "./services/clientVersion";
 import { buildClientReleaseManifest, DEFAULT_RELEASE_REPO, flattenClientReleaseManifest, isReleaseRepo } from "./services/clientReleaseManifest";
 import { requireCurrentClientForGameplay } from "./services/clientUpdateGate";
-import { initAccelByteLobbyWs, accelByteLobbyWs } from "./accelByteLobbyWs";
 import { IMatchStatus } from "./interfaces/IMatchStatus";
 import { REAL_IP_HEADER, getRealIP, tryGetRealIP } from "./middleware/auth";
 
@@ -1558,111 +1555,6 @@ app.post("/account/verify", async (req, res) => {
   }
 });
 
-app.post("/api/testing/deploy-rollback-server", async (req, res) => {
-  await handleDeployRollbackServer(req, res);
-});
-
-app.post("/api/testing/destroy-rollback-server", async (req, res) => {
-  await handleDestroyRollbackServer(req, res);
-});
-
-// ============================================================================
-// AccelByte IAM Fake Endpoints (MUST be BEFORE hydraTokenMiddleware)
-//
-// The game's AccelByte SDK hits these HTTPS endpoints during initialization.
-// We return minimal valid responses so the SDK proceeds to connect to the
-// Lobby WebSocket at /lobby/ — which is our actual target for partyMemberJoinNotif.
-//
-// The game uses DNS redirect (accelbyte.io → our IP) so these requests arrive
-// here on port 443 (HTTPS). They also work on port 8000 (HTTP) as fallback.
-// ============================================================================
-
-// OAuth2 token endpoint — client credentials or platform login
-app.post("/iam/v3/oauth/token", (req, res) => {
-  logger.info(`${logPrefix} [AccelByte-IAM] POST /iam/v3/oauth/token — grant_type=${req.body?.grant_type || "unknown"}`);
-  res.json({
-    access_token: "ovs_fake_token_" + Date.now(),
-    token_type: "Bearer",
-    expires_in: 86400,
-    refresh_token: "ovs_fake_refresh_" + Date.now(),
-    refresh_expires_in: 86400 * 30,
-    namespace: "multiversus",
-    display_name: "OpenVersusPlayer",
-    user_id: "ovs_fake_user_" + Date.now(),
-    platform_id: "",
-    platform_user_id: "",
-    jflgs: 0,
-    is_comply: true,
-  });
-});
-
-// Platform-specific token exchange (Steam, Epic, etc.)
-app.post("/iam/v3/oauth/platforms/:platform/token", (req, res) => {
-  logger.info(`${logPrefix} [AccelByte-IAM] POST /iam/v3/oauth/platforms/${req.params.platform}/token`);
-  res.json({
-    access_token: "ovs_fake_platform_token_" + Date.now(),
-    token_type: "Bearer",
-    expires_in: 86400,
-    refresh_token: "ovs_fake_refresh_" + Date.now(),
-    refresh_expires_in: 86400 * 30,
-    namespace: "multiversus",
-    display_name: "OpenVersusPlayer",
-    user_id: "ovs_fake_user_" + Date.now(),
-    platform_id: req.params.platform,
-    platform_user_id: "",
-    jflgs: 0,
-    is_comply: true,
-  });
-});
-
-// Token verification/revocation
-app.post("/iam/v3/oauth/revoke", (req, res) => {
-  logger.info(`${logPrefix} [AccelByte-IAM] POST /iam/v3/oauth/revoke`);
-  res.status(200).send();
-});
-
-app.post("/iam/v3/oauth/verify", (req, res) => {
-  logger.info(`${logPrefix} [AccelByte-IAM] POST /iam/v3/oauth/verify`);
-  res.json({ exp: Math.floor(Date.now() / 1000) + 86400, namespace: "multiversus" });
-});
-
-// User info
-app.get("/iam/v3/public/users/me", (req, res) => {
-  logger.info(`${logPrefix} [AccelByte-IAM] GET /iam/v3/public/users/me`);
-  res.json({
-    userId: "ovs_fake_user",
-    displayName: "OpenVersusPlayer",
-    namespace: "multiversus",
-    emailVerified: true,
-    platformId: "steam",
-    country: "US",
-  });
-});
-
-// Namespace config (SDK might check this during init)
-app.get("/iam/v3/public/namespaces/:namespace", (req, res) => {
-  logger.info(`${logPrefix} [AccelByte-IAM] GET /iam/v3/public/namespaces/${req.params.namespace}`);
-  res.json({
-    namespace: req.params.namespace,
-    displayName: "MultiVersus",
-    status: "ACTIVE",
-  });
-});
-
-// AccelByte Basic service — input validation config
-app.get("/basic/v1/public/namespaces/:namespace/misc/input/validation", (req, res) => {
-  logger.info(`${logPrefix} [AccelByte-Basic] GET input validation config`);
-  res.json({ data: [] });
-});
-
-// AccelByte config/discovery endpoints the SDK might check
-app.get("/agreement/public/policies/namespaces/:namespace", (req, res) => {
-  logger.info(`${logPrefix} [AccelByte-Agreement] GET policies for ${req.params.namespace}`);
-  res.json([]);
-});
-
-// ============================================================================
-
 app.use(hydraDecoderMiddleware);
 app.use(hydraTokenMiddleware);
 
@@ -1701,27 +1593,6 @@ app.use(friendsRouter);
 app.use(router);
 app.use(sscRouter);
 
-// Catch-all for AccelByte endpoints — AFTER router
-app.all("/iam/*", (req, res) => {
-  logger.warn(`${logPrefix} [AccelByte-IAM] UNHANDLED: ${req.method} ${req.url}`);
-  res.json({ status: "ok" });
-});
-app.all("/basic/*", (req, res) => {
-  logger.warn(`${logPrefix} [AccelByte-Basic] UNHANDLED: ${req.method} ${req.url}`);
-  res.json({ status: "ok" });
-});
-app.all("/platform/*", (req, res) => {
-  logger.warn(`${logPrefix} [AccelByte-Platform] UNHANDLED: ${req.method} ${req.url}`);
-  res.json({ status: "ok" });
-});
-app.all("/social/*", (req, res) => {
-  logger.warn(`${logPrefix} [AccelByte-Social] UNHANDLED: ${req.method} ${req.url}`);
-  res.json({ status: "ok" });
-});
-app.all("/lobby/*", (req, res) => {
-  logger.warn(`${logPrefix} [AccelByte-Lobby] UNHANDLED HTTP: ${req.method} ${req.url}`);
-  res.json({ status: "ok" });
-});
 app.get("/ssc/invoke/hiss_amalgamation", (req, res, next) => {
   logger.info(`${logPrefix} Missing Crc, sending fresh one`);
   res.send(generate_hiss());
@@ -1807,36 +1678,6 @@ app.use((req, res, next) => {
 
 export const MVSHTTPServer = http.createServer(app);
 
-// HTTPS server for AccelByte SDK (port 443)
-// The game's AccelByte SDK connects via HTTPS to IAM endpoints and WSS to /lobby/.
-// DNS redirect (accelbyte.io → our IP) routes these requests here.
-let MVSHTTPSServer: https.Server | null = null;
-
-function createHTTPSServer(): https.Server | null {
-  const certDir = path.join(__dirname, "..", "certs");
-  const certPath = path.join(certDir, "server-cert.pem");
-  const keyPath = path.join(certDir, "server-key.pem");
-
-  if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
-    logger.warn(`${logPrefix} TLS certs not found at ${certDir} — HTTPS/WSS on port 443 will be DISABLED`);
-    logger.warn(`${logPrefix} AccelByte Lobby WS (partyMemberJoinNotif) will not work without HTTPS`);
-    return null;
-  }
-
-  try {
-    const options: https.ServerOptions = {
-      cert: fs.readFileSync(certPath),
-      key: fs.readFileSync(keyPath),
-    };
-    const server = https.createServer(options, app);
-    logger.info(`${logPrefix} HTTPS server created with certs from ${certDir}`);
-    return server;
-  } catch (e) {
-    logger.error(`${logPrefix} Failed to create HTTPS server: ${e}`);
-    return null;
-  }
-}
-
 export async function start() {
   await connect();
   await loadAssets();
@@ -1856,31 +1697,4 @@ export async function start() {
   MVSHTTPServer.listen(port, "0.0.0.0", () => {
     logger.info(`${logPrefix} OVS Server running on ${port}`);
   });
-
-  // Initialize AccelByte Lobby WebSocket service on the HTTP server (port 8000)
-  const lobbyWs = initAccelByteLobbyWs(MVSHTTPServer);
-  logger.info(`${logPrefix} AccelByte Lobby WebSocket initialized on HTTP server (port ${port})`);
-
-  // Start HTTPS server on port 443 for AccelByte SDK (IAM + Lobby WSS)
-  MVSHTTPSServer = createHTTPSServer();
-  if (MVSHTTPSServer) {
-    MVSHTTPSServer.listen(443, "0.0.0.0", () => {
-      logger.info(`${logPrefix} HTTPS server running on port 443 (AccelByte IAM + Lobby WSS)`);
-    });
-
-    // Attach AccelByte Lobby WS upgrade handler to HTTPS server too
-    // This way /lobby/ WebSocket upgrades work on both HTTP (8000) and HTTPS (443)
-    lobbyWs.attachToServer(MVSHTTPSServer);
-    logger.info(`${logPrefix} AccelByte Lobby WebSocket attached to HTTPS server (port 443)`);
-
-    MVSHTTPSServer.on("error", (err: NodeJS.ErrnoException) => {
-      if (err.code === "EADDRINUSE") {
-        logger.error(`${logPrefix} Port 443 already in use — HTTPS disabled. Kill the process using port 443.`);
-      } else if (err.code === "EACCES") {
-        logger.error(`${logPrefix} Port 443 access denied — run as administrator or use a non-privileged port.`);
-      } else {
-        logger.error(`${logPrefix} HTTPS server error: ${err.message}`);
-      }
-    });
-  }
 }

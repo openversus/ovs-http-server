@@ -123,6 +123,12 @@ public interface IMatchLauncher
 {
     /// <summary>Starts <paramref name="launch"/>; null when it cannot (no Redis, no rollback port).</summary>
     Task<LaunchedMatch?> LaunchAsync(MatchLaunch launch, CancellationToken ct = default);
+
+    /// <summary>A rollback port for a new match (see the header); null when there is none.</summary>
+    Task<int?> RollbackPortAsync(IDatabase redis);
+
+    /// <summary>Asks for a rollback server on <paramref name="port"/> when servers are deployed per match (on demand), without waiting.</summary>
+    void DeployIfOnDemand(int port, string matchId);
 }
 
 internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<RollbackSettings> settings, IHttpClientFactory http,
@@ -143,8 +149,7 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
         }
 
         var rollback = settings.CurrentValue;
-        int? port = rollback.OnDemand ? await NextOnDemandPortAsync(redis, rollback) : RollbackPort(rollback);
-        if (port is not { } rollbackPort)
+        if (await RollbackPortAsync(redis) is not { } rollbackPort)
         {
             log.LogError("A {Mode} match was not started: no rollback port (on demand {OnDemand}; fixed range {Low}..{High} exclusive, on-demand range {DemandLow}..{DemandHigh})",
                 launch.Mode, rollback.OnDemand, rollback.UdpPortLow, rollback.UdpPortHigh, rollback.OnDemandPortLow, rollback.OnDemandPortHigh);
@@ -232,10 +237,7 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
             notification["gameplayConfigData"] = launch.ConfigData.DeepClone();
         }
 
-        if (rollback.OnDemand)
-        {
-            _ = DeployAsync(DeployRequest(rollback, rollbackPort), matchId);
-        }
+        DeployIfOnDemand(rollbackPort, matchId);
 
         string json = Js.Stringify(notification);
         await redis.StringSetAsync(matchId, json, s_ttl);
@@ -251,6 +253,21 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
         log.LogInformation("Started {Mode} match {Match} on rollback port {Port}: {Players}", launch.Mode, matchId, rollbackPort,
             string.Join(", ", launch.Players.Select(p => $"{p.PlayerId} (team {p.TeamIndex}, index {p.PlayerIndex}{(p.IsBot ? ", bot" : "")})")));
         return new LaunchedMatch(matchId, rollbackPort);
+    }
+
+    public Task<int?> RollbackPortAsync(IDatabase redis)
+    {
+        var rollback = settings.CurrentValue;
+        return rollback.OnDemand ? NextOnDemandPortAsync(redis, rollback) : Task.FromResult(RollbackPort(rollback));
+    }
+
+    public void DeployIfOnDemand(int port, string matchId)
+    {
+        var rollback = settings.CurrentValue;
+        if (rollback.OnDemand)
+        {
+            _ = DeployAsync(DeployRequest(rollback, port), matchId);
+        }
     }
 
     /// <summary>The next on-demand port: INCR rollback:current_port, wrapped to OnDemandPortLow outside the range.</summary>

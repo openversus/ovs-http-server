@@ -35,6 +35,12 @@ public sealed class CustomLobbyServiceTests : IAsyncLifetime
             Launched = launch;
             return Task.FromResult<LaunchedMatch?>(new LaunchedMatch("0000000000000000000e0900", 57001));
         }
+
+        public Task<int?> RollbackPortAsync(IDatabase redis) => Task.FromResult<int?>(57001);
+
+        public void DeployIfOnDemand(int port, string matchId)
+        {
+        }
     }
 
     private sealed class CurrentClients : IClientUpdateGate

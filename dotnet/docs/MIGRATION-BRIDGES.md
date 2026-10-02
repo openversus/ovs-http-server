@@ -58,6 +58,15 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   it), `ssc_custom_lobby_player:{player}`, `lobby_code:{code}`, `ssc_custom_lobby_match:{match}` (the TS match end and
   rematch read it) and `bot_config:{bot}` (the TS websocket builds a bot's match config from it), TTLs as the TS
   server's. `rematch_accept`, `rematch_decline` and the match end stay on the TS server until the match flow moves.
+- **Matchmaking** (`MatchmakingWorker`, on unless `Matchmaking:Enabled` is false): the queues `1v1` and `2v2` (ticket JSON lists the TS
+  websocket fills when a party queues and empties on a cancel or disconnect), `player_heartbeats`,
+  `player:{id}:blocked` and `player:{id}` `ip` are read as the TS worker reads them; a match writes what the TS worker
+  writes (`match:{id}` with the tickets as queued, the notification at `{id}`, `ranked_set:{id}`,
+  `player_ranked_set:{player}`) and publishes `match:notifications` and one `matchmaking:complete` per ticket. Each
+  queue is worked under the TS lock (`matchmaking:lock:{queue}`), so the C# and TS workers can run side by side. The
+  maps it picks from are a copy of the TS `src/data/maps1v1.json` / `maps2v2.json` (`Matchmaking/maps.json`,
+  `tools/matchmaking/gen_maps.mjs`): a map change goes to the TS files and is generated again (`--check` tells) until
+  the TS worker and websocket (which reads those files for hazards) are gone.
 - **Cosmetics:** `player:{id}:cosmetics` (JSON, no TTL) and the `cosmetics` collection, read by
   `get_equipped_cosmetics` and written by the six equip routes (`CosmeticsService`): the stored document as
   `JSON.stringify` writes a lean read (`_id`, `account_id`, `__v` kept), with a taunt entry per character. The TS

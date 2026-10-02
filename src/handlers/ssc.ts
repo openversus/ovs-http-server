@@ -353,13 +353,6 @@ export async function handleSsc_invoke_get_calendar_events(req: Request<{}, {}, 
       (event) => event.data.slug !== "ovs-required-update",
     );
   }
-  logger.info(
-    `[HalloweenThemeDiag] get_calendar_events ${JSON.stringify({
-      accountId: req.token?.id || "unresolved",
-      eventTypes: response.body.Events.map((event) => event.event_type),
-      note: "carousel endpoint; frontend theme is served by get_hiss_calendar_events",
-    })}`,
-  );
   res.send(response);
 }
 
@@ -481,36 +474,17 @@ export async function handleSsc_invoke_get_hiss_calendar_events(req: Request<{},
             slug: "evt_ovs_halloween_2026",
             bIsEnabled: true,
             FrontendTheme: halloweenTheme,
-            UiData: {},
             TimeSpan: {
               StartTime: { Year: 2026, Month: 10, Day: 1, Hour: 0, Minute: 0 },
               EndTime: { Year: 2026, Month: 11, Day: 1, Hour: 0, Minute: 0 },
               bHasFiniteEndTime: true,
             },
-            GracePeriodInHours: 0,
-            DeepLinkingUrl: "",
-            StoreDeepLinkingUrl: "",
-            AnalyticsId: "ovs_halloween_2026",
-            AnalyticsType: 0,
-            AnalyticsSubType: 0,
-            AnalyticsContext: 0,
-            MatchRewards: { LossRewards: [], MatchTypes: ["PvP", "Ranked", "Rift"], WinRewards: [], bGrantMatchRewards: false },
-            EventComponents: [],
-            ResetComponentCadence: 0,
-            DisplayLocation: 0,
-            Recurrence: 0,
-            bDebugResetAtEnd: false,
           },
-          private_data: {},
-          controlled_data: [],
-          created_at: { _hydra_unix_date: 1790812800 },
-          updated_at: { _hydra_unix_date: 1790812800 },
           entry_options: {
             start_at: { _hydra_unix_date: 1790812800 },
             task_start_at: { _hydra_unix_date: 1790812800 },
             end_at: { _hydra_unix_date: 1793491200 },
           },
-          controlled_features: [],
           id: "68ddc8000000000000000001",
           bIsCurrentlyActive: true,
         },
@@ -1371,16 +1345,6 @@ export async function handleSsc_invoke_get_hiss_calendar_events(req: Request<{},
     metadata: null,
     return_code: 0,
   };
-  logger.info(
-    `[HalloweenThemeDiag] get_hiss_calendar_events ${JSON.stringify({
-      accountId: req.token?.id || "unresolved",
-      slug: "evt_ovs_halloween_2026",
-      frontendTheme: halloweenTheme,
-      active: true,
-      start: "2026-10-01T00:00:00Z",
-      end: "2026-11-01T00:00:00Z",
-    })}`,
-  );
   res.send(response);
 }
 

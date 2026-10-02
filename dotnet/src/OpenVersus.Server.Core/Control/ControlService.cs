@@ -1,5 +1,6 @@
 using System.Reflection;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Settings;
 
@@ -49,6 +50,9 @@ public interface IControlService
     Task<ControlResult<SettingView>> SetSettingAsync(string key, string value, SettingScope scope);
 
     Task<ControlResult<SettingView>> RemoveSettingAsync(string key, SettingScope scope);
+
+    /// <summary>Every instance of every service, from the registry in Redis (<see cref="InstanceRegistry"/>).</summary>
+    Task<ControlResult<ClusterView>> ClusterAsync();
 }
 
 internal sealed class ControlService : IControlService
@@ -57,23 +61,30 @@ internal sealed class ControlService : IControlService
     private readonly ServiceDefinition _service;
     private readonly ServiceInstance _instance;
     private readonly RuntimeSettings _settings;
+    private readonly IServiceProvider _services;
 
-    public ControlService(ServiceDefinition service, ServiceInstance instance, RuntimeSettings settings)
+    public ControlService(ServiceDefinition service, ServiceInstance instance, RuntimeSettings settings, IServiceProvider services)
     {
         _service = service;
         _instance = instance;
         _settings = settings;
+        _services = services;
     }
 
     public ServiceStatus Status() => new(
         _service.Name,
         _instance.Id,
-        Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion,
+        _instance.Version,
         _instance.Started,
         (long)(DateTimeOffset.UtcNow - _instance.Started).TotalSeconds,
         _settings.ClusterShared);
 
     public IEnumerable<SettingView> ListSettings() => _settings.List();
+
+    public async Task<ControlResult<ClusterView>> ClusterAsync() =>
+        _services.GetService<StackExchange.Redis.IConnectionMultiplexer>()?.GetDatabase() is { } redis
+            ? ControlResult<ClusterView>.Ok(await InstanceRegistry.ReadAsync(redis, DateTimeOffset.UtcNow))
+            : ControlResult<ClusterView>.Refused("this service has no Redis (REDIS), where the instances register: it knows only itself");
 
     public ControlResult<SettingView> GetSetting(string key) =>
         _settings.Get(key) is { } view ? ControlResult<SettingView>.Ok(view) : ControlResult<SettingView>.Missing($"unknown setting '{key}'");

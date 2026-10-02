@@ -5,13 +5,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OpenVersus.Server.Core.Hosting;
 
-namespace OpenVersus.Server.Matchmaking.Tests;
+namespace OpenVersus.Server.MatchFlow.Tests;
 
-public sealed class MatchmakingHostTests : IClassFixture<MatchmakingHostTests.Factory>
+public sealed class MatchFlowHostTests : IClassFixture<MatchFlowHostTests.Factory>
 {
     private readonly Factory _factory;
 
-    public MatchmakingHostTests(Factory factory)
+    public MatchFlowHostTests(Factory factory)
     {
         _factory = factory;
     }
@@ -23,7 +23,7 @@ public sealed class MatchmakingHostTests : IClassFixture<MatchmakingHostTests.Fa
     }
 
     [Fact]
-    public void Runs_the_matchmaking_worker_and_nothing_else_of_its_own()
+    public void Runs_the_match_result_subscribers_and_nothing_else_of_its_own()
     {
         var hosted = _factory.Services.GetServices<IHostedService>()
             .Select(s => s.GetType())
@@ -32,13 +32,13 @@ public sealed class MatchmakingHostTests : IClassFixture<MatchmakingHostTests.Fa
             .Order()
             .ToList();
 
-        Assert.Equal(["ClusterSettingsSync", "InstanceHeartbeat", "MatchmakingWorker"], hosted);
+        Assert.Equal(["ClusterSettingsSync", "InstanceHeartbeat", "MissionResultSubscriber", "RiftResultSubscriber"], hosted);
     }
 
     [Fact]
-    public void Is_the_matchmaking_service()
+    public void Is_the_match_flow_service()
     {
-        Assert.Same(KnownServices.Matchmaking, _factory.Services.GetRequiredService<ServiceDefinition>());
+        Assert.Same(KnownServices.MatchFlow, _factory.Services.GetRequiredService<ServiceDefinition>());
     }
 
     [Fact]

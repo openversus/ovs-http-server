@@ -16,9 +16,11 @@ namespace OpenVersus.Server.Cli;
 public class ConnectionSettings : CommandSettings
 {
     [CommandOption("-s|--service <SERVICE>")]
-    [Description("The service: http, ws or matchmaking. Picks the default socket and port.")]
-    [DefaultValue("http")]
-    public string Service { get; set; } = "http";
+    [Description("The service: http, ws, matchmaking, matchflow or proxy (default: OVS_SERVICE, else http). Picks the default socket and port.")]
+    public string Service { get; set; } = Environment.GetEnvironmentVariable(ServiceVariable) is { Length: > 0 } service ? service : "http";
+
+    /// <summary>The default service: each service's container image sets it to its own.</summary>
+    public const string ServiceVariable = "OVS_SERVICE";
 
     [CommandOption("--socket <PATH>")]
     [Description("The control socket to use instead of the service's default.")]
@@ -37,6 +39,14 @@ public class ConnectionSettings : CommandSettings
             ? ValidationResult.Error($"unknown service '{Service}'; one of: {string.Join(", ", KnownServices.All.Select(s => s.Name))}")
             : ValidationResult.Success();
 }
+
+/// <summary>A service's readiness (<c>/health/ready</c>): the overall status, and each check's with why it failed.</summary>
+public sealed record HealthView(string Status, Dictionary<string, HealthCheckView> Checks)
+{
+    public bool Ready => Status == "Healthy";
+}
+
+public sealed record HealthCheckView(string Status, string? Description);
 
 /// <summary>The control API's answer to a request: the value, or why there is none.</summary>
 public sealed record ControlReply<T>(T? Value, string? Error, bool Unreachable = false);
@@ -97,6 +107,32 @@ public sealed class ControlClient : IDisposable
                 }
             },
         }) { BaseAddress = new Uri("http://localhost"), Timeout = TimeSpan.FromSeconds(10) }, path);
+
+    /// <summary>The readiness answer, ready or not (503 is an answer here, not a failure).</summary>
+    public async Task<ControlReply<HealthView>> HealthAsync()
+    {
+        try
+        {
+            using var response = await _http.GetAsync("/health/ready");
+            if (response.StatusCode is HttpStatusCode.OK or HttpStatusCode.ServiceUnavailable
+                && await response.Content.ReadFromJsonAsync<HealthView>(JsonSerializerOptions.Web) is { } health)
+            {
+                return new ControlReply<HealthView>(health, null);
+            }
+
+            return new ControlReply<HealthView>(default, $"the service answered {(int)response.StatusCode} {response.ReasonPhrase}");
+        }
+        catch (Exception e) when (e is HttpRequestException or SocketException or TaskCanceledException)
+        {
+            return new ControlReply<HealthView>(default, $"cannot reach the control API at {Where}: {e.InnerException?.Message ?? e.Message}", Unreachable: true);
+        }
+        catch (JsonException)
+        {
+            return new ControlReply<HealthView>(default, $"the readiness answer at {Where} is not the expected JSON");
+        }
+    }
+
+    public Task<ControlReply<ClusterView>> ClusterAsync() => SendAsync<ClusterView>(HttpMethod.Get, "/control/cluster");
 
     public Task<ControlReply<ServiceStatus>> StatusAsync() => SendAsync<ServiceStatus>(HttpMethod.Get, "/control/status");
 

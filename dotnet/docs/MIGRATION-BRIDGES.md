@@ -120,6 +120,7 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 - **What:** the TS `submit_end_of_match_stats` (`src/handlers/ssc.ts`) publishes every result as it arrives on
   `match:end_of_match_stats` (`{matchId, playerId, winningTeamIndex, missionUpdates}`, the last being the
   submitter's own counters from `EndOfMatchStats.PlayerMissionUpdates`, which the rift stars are judged from), before its own processing, which is unchanged.
+  Both C# subscribers run in the match flow executable (`OpenVersus.Server.MatchFlow`), not the HTTP service.
   The C# `RiftResultSubscriber` (`Core/Rifts/RiftProgressService.cs`) records the progress of rift matches (known by
   `rift_match:{match}`) and tells the game by publishing on `ws:send` (`{playerIds, message}`), a generic channel the
   TS websocket (`src/websocket.ts`) answers by sending `message`, as it is, to each connected player named. The C#
@@ -132,9 +133,11 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   (`OnLobbyRuntimeDataUpdated`, `OnLobbyRiftStateUpdated`). The result reaches only the TS server, and only the TS
   websocket reaches the game. Taking over `submit_end_of_match_stats` instead would have put every ranked and casual
   match's stats through new forwarding code for the sake of rifts.
-- **Delete when:** `submit_end_of_match_stats` is ported to C# (it records rift progress itself; the publish, the
-  channel constant and the subscriber go) and the websocket is ported (C# sends the notifications itself; `ws:send`
-  and its handler go).
+- **Delete when:** `submit_end_of_match_stats` is ported to C# and the websocket is ported (`ws:send` is then answered
+  by the C# gateway). The hand-off itself stays, as a Redis Stream with a consumer group instead of this channel
+  (decided 2026-10-02): the HTTP service that receives a result appends it, one match flow replica records and
+  acknowledges it, and a result appended while no replica runs (a restart, a deploy) waits instead of being lost, as a
+  pub/sub message is. It cannot change before then: the TS publisher only knows the channel.
 
 ### 5. `ovs-ctl player disconnect` closes the connection through the TS websocket
 

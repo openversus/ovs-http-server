@@ -8,9 +8,11 @@
   </Folder>
   <Project Path="src/OpenVersus.Server.Cli/OpenVersus.Server.Cli.csproj" />
   <Project Path="src/OpenVersus.Server.Http/OpenVersus.Server.Http.csproj" />
+  <Project Path="src/OpenVersus.Server.MatchFlow/OpenVersus.Server.MatchFlow.csproj" />
   <Project Path="src/OpenVersus.Server.Matchmaking/OpenVersus.Server.Matchmaking.csproj" />
   <Project Path="tests/OpenVersus.Server.Cli.Tests/OpenVersus.Server.Cli.Tests.csproj" />
   <Project Path="tests/OpenVersus.Server.Core.Tests/OpenVersus.Server.Core.Tests.csproj" />
   <Project Path="tests/OpenVersus.Server.Http.Tests/OpenVersus.Server.Http.Tests.csproj" />
+  <Project Path="tests/OpenVersus.Server.MatchFlow.Tests/OpenVersus.Server.MatchFlow.Tests.csproj" />
   <Project Path="tests/OpenVersus.Server.Matchmaking.Tests/OpenVersus.Server.Matchmaking.Tests.csproj" />
 </Solution>

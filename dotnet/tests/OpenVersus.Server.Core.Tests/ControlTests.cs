@@ -57,13 +57,15 @@ public sealed class ControlTests
     // real deployment, so the layers win over them the same way.
     private static Task<Host> StartAsync(params string[] extra) => StartAsync(null, extra);
 
-    private static async Task<Host> StartAsync(Action<WebApplicationBuilder>? configure, params string[] extra)
+    private static Task<Host> StartAsync(Action<WebApplicationBuilder>? configure, params string[] extra) => StartAsync(ServiceStores.None, configure, extra);
+
+    private static async Task<Host> StartAsync(ServiceStores needs, Action<WebApplicationBuilder>? configure, params string[] extra)
     {
         int publicPort = FreePort(), controlPort = FreePort();
         string socket = Path.Combine(Path.GetTempPath(), "ovs-tests", $"{Guid.NewGuid():N}.sock");
         // REDIS is empty unless a test sets it, whatever the environment says: arguments win over the environment.
         string[] args = [$"--TEST_PORT={publicPort}", $"--Control:Port={controlPort}", $"--Control:Socket={socket}", "--REDIS=", .. extra];
-        var builder = OpenVersusHost.CreateBuilder(new ServiceDefinition("test", "TEST_PORT", DefaultPublicPort: 1, DefaultControlPort: 1), args);
+        var builder = OpenVersusHost.CreateBuilder(new ServiceDefinition("test", "TEST_PORT", DefaultPublicPort: 1, DefaultControlPort: 1, needs), args);
         configure?.Invoke(builder);
         var app = builder.Build();
         app.UseOpenVersus();
@@ -129,6 +131,39 @@ public sealed class ControlTests
         await using var host = await StartAsync("--REDIS=127.0.0.1", "--REDIS_PORT=1");
         Assert.Equal(HttpStatusCode.OK, (await host.Public.GetAsync("/health/live")).StatusCode);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, (await host.Public.GetAsync("/health/ready")).StatusCode);
+    }
+
+    [Fact]
+    public async Task AServiceThatNeedsAStoreItHasNoSettingForIsAliveButNotReadyAndSaysWhy()
+    {
+        await using var host = await StartAsync(ServiceStores.Redis | ServiceStores.Mongo, null, "--MONGODB_URI=");
+        Assert.Equal(HttpStatusCode.OK, (await host.Public.GetAsync("/health/live")).StatusCode);
+        var ready = await host.Public.GetAsync("/health/ready");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, ready.StatusCode);
+        var checks = (await ready.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("checks");
+        Assert.Contains("REDIS is not set", checks.GetProperty("redis").GetProperty("description").GetString());
+        Assert.Contains("MONGODB_URI is not set", checks.GetProperty("mongo").GetProperty("description").GetString());
+    }
+
+    [Fact]
+    public async Task WithMongoUnreachableTheReplicaIsNotReadyAndSaysSoQuickly()
+    {
+        // Nothing listens on port 1. The driver would look for a server for 30 s; the check gives up after 2.
+        await using var host = await StartAsync(ServiceStores.Mongo, null, "--MONGODB_URI=mongodb://127.0.0.1:1/ovs_unreachable");
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var ready = await host.Public.GetAsync("/health/ready");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, ready.StatusCode);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"took {watch.Elapsed}");
+        Assert.Equal("Unhealthy", (await ready.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("checks").GetProperty("mongo").GetProperty("status").GetString());
+    }
+
+    [SkippableFact]
+    public async Task WithMongoReachableTheReplicaIsReady()
+    {
+        string? mongo = Environment.GetEnvironmentVariable("OVS_TEST_MONGO");
+        Skip.If(string.IsNullOrEmpty(mongo), "set OVS_TEST_MONGO to run");
+        await using var host = await StartAsync(ServiceStores.Mongo, null, $"--MONGODB_URI={mongo}");
+        Assert.Equal(HttpStatusCode.OK, (await host.Public.GetAsync("/health/ready")).StatusCode);
     }
 
     private sealed class AllowEveryone : IControlAccessPolicy
@@ -198,6 +233,9 @@ public sealed class ControlTests
             $"--REDIS={parts[0]}", $"--REDIS_PORT={(parts.Length > 1 ? parts[1] : "6379")}",
             $"--REDIS_USERNAME={Environment.GetEnvironmentVariable("OVS_TEST_REDIS_USER") ?? ""}",
             $"--REDIS_PW={Environment.GetEnvironmentVariable("OVS_TEST_REDIS_PW") ?? ""}",
+            // A database of its own: the default (0) is a live one's, and this changes a cluster setting there. Not 15,
+            // which OpsTests empties while other test classes run.
+            "--REDIS_DB=12",
         ];
         await using var a = await StartAsync(redisArgs);
         await using var b = await StartAsync(redisArgs);

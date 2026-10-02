@@ -104,6 +104,7 @@ public static class ControlApi
 
         control.MapGet("/status", (IControlService service) => Results.Ok(service.Status()));
         control.MapGet("/settings", (IControlService service) => Results.Ok(service.ListSettings()));
+        control.MapGet("/cluster", async (IControlService service) => ToResult(await service.ClusterAsync()));
         control.MapGet("/settings/{key}", (string key, IControlService service) => ToResult(service.GetSetting(key)));
 
         // The value is the request body, as plain text, so the CLI can send any string without escaping it into JSON.

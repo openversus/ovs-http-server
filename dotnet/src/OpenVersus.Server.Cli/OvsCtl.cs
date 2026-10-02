@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Settings;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -26,6 +27,9 @@ public static class OvsCtl
         {
             config.SetApplicationName("ovs-ctl");
             config.ConfigureConsole(console);
+            config.AddCommand<HealthCommand>("health")
+                .WithDescription("Every instance of every service: ready or not, version, uptime, last heard from. With a service or instance: its checks. --probe: this service only, for a container's health check.")
+                .WithExample("health").WithExample("health", "matchmaking").WithExample("health", "--probe");
             config.AddCommand<StatusCommand>("status").WithDescription("The service's status: instance, version, uptime, whether settings are shared.");
             config.AddCommand<QueuesCommand>("queues").WithDescription("Who is waiting in each matchmaking queue, and for how long.");
             config.AddCommand<OnlineCommand>("online").WithDescription("How many players are connected (--players: who).");
@@ -86,6 +90,210 @@ public static class OvsCtl
     }
 
     private static Markup Cell(string? value) => value is null ? new Markup("[grey]-[/]") : new Markup(Markup.Escape(value));
+}
+
+public sealed class HealthSettings : ConnectionSettings
+{
+    [CommandArgument(0, "[target]")]
+    [Description("A service (its instances and their checks) or an instance (all it reported; a unique part of its id is enough).")]
+    public string? Target { get; set; }
+
+    [CommandOption("--probe")]
+    [Description("Only the service this connects to: one line, exit 0 ready, 1 not ready, 2 unreachable. What a container's health check runs.")]
+    public bool Probe { get; set; }
+}
+
+/// <summary>
+/// The cluster's health from the instance registry (any service's control API reads it from Redis), or with --probe
+/// the readiness of the one service reached. Exit 0 when everything shown is ready (a stopped instance aside), 1 when
+/// something is not, 2 when no service could be reached.
+/// </summary>
+public sealed class HealthCommand : AsyncCommand<HealthSettings>
+{
+    private readonly IAnsiConsole _console;
+
+    public HealthCommand(IAnsiConsole console)
+    {
+        _console = console;
+    }
+
+    protected override async Task<int> ExecuteAsync(CommandContext context, HealthSettings settings, CancellationToken cancellation)
+    {
+        using var client = ControlClient.For(settings);
+        if (settings.Probe)
+        {
+            return await ProbeAsync(client, settings);
+        }
+
+        var cluster = await client.ClusterAsync();
+        if (cluster.Error is not null && !cluster.Unreachable)
+        {
+            // No registry to read (no Redis): the one service reached is all there is to show.
+            _console.MarkupLineInterpolated($"[yellow]No cluster view: {cluster.Error}.[/]");
+            return await ProbeAsync(client, settings, everyCheck: true);
+        }
+
+        int done = OvsCtl.Report(_console, settings, cluster, view =>
+        {
+            if (settings.Target is null)
+            {
+                Overview(view);
+            }
+            else
+            {
+                Detail(view, settings.Target);
+            }
+        });
+        if (done != OvsCtl.Done)
+        {
+            return done;
+        }
+
+        var shown = settings.Target is null ? cluster.Value!.Instances : Matching(cluster.Value!, settings.Target);
+        if (settings.Target is not null && shown.Count == 0)
+        {
+            return OvsCtl.Refused;
+        }
+
+        return shown.All(i => i.State is "Ready" or "Stopped") ? OvsCtl.Done : OvsCtl.Refused;
+    }
+
+    private async Task<int> ProbeAsync(ControlClient client, ConnectionSettings settings, bool everyCheck = false)
+    {
+        var reply = await client.HealthAsync();
+        int done = OvsCtl.Report(_console, settings, reply, health =>
+        {
+            var failing = health.Checks.Where(c => c.Value.Status != "Healthy").ToList();
+            _console.MarkupLine(health.Ready ? $"[green]{Markup.Escape(settings.Service)}: ready[/]" : $"[red]{Markup.Escape(settings.Service)}: not ready[/]");
+            foreach (var (name, check) in everyCheck ? health.Checks.ToList() : failing)
+            {
+                _console.MarkupLineInterpolated($"  {name}: {check.Status}{(check.Description is null ? "" : $" ({check.Description})")}");
+            }
+        });
+        return done == OvsCtl.Done && !reply.Value!.Ready ? OvsCtl.Refused : done;
+    }
+
+    private void Overview(ClusterView view)
+    {
+        int ready = view.Instances.Count(i => i.State == "Ready");
+        int live = view.Instances.Count(i => i.State != "Stopped");
+        _console.MarkupLine(view.Instances.Count == 0
+            ? "[yellow]No instance has registered (none running against this Redis, or all gone for more than 10 minutes).[/]"
+            : $"{(ready == live ? "[green]" : "[red]")}{ready} of {live} running instances ready[/] in {view.Instances.Select(i => i.Service).Distinct().Count()} services");
+        if (view.Instances.Count > 0)
+        {
+            var table = new Table().Border(TableBorder.Rounded)
+                .AddColumn("Service").AddColumn("Instance").AddColumn("State").AddColumn("Version").AddColumn("Up").AddColumn("Last heartbeat");
+            foreach (var group in view.Instances.GroupBy(i => i.Service))
+            {
+                // Replicas of one service on different builds: worth seeing at a glance.
+                bool skew = group.Where(i => i.Version is not null).Select(i => i.Version).Distinct().Count() > 1;
+                foreach (var i in group)
+                {
+                    table.AddRow(new Markup(Markup.Escape(i.Service)), new Markup(Markup.Escape(i.Instance)), State(i),
+                        new Markup(skew ? $"[yellow]{Markup.Escape(ShortVersion(i.Version))}[/]" : Markup.Escape(ShortVersion(i.Version))),
+                        new Markup(i.Started == default || i.State is "Stopped" or "Missing" ? "[grey]-[/]" : Markup.Escape(Ago(view.At - i.Started))),
+                        new Markup(Markup.Escape(Ago(view.At - i.Seen) + " ago")));
+                }
+            }
+
+            _console.Write(table);
+        }
+
+        var none = view.Services.Except(view.Instances.Select(i => i.Service)).ToList();
+        if (none.Count > 0)
+        {
+            _console.MarkupLineInterpolated($"[grey]No instances: {string.Join(", ", none)}[/]");
+        }
+    }
+
+    private void Detail(ClusterView view, string target)
+    {
+        var shown = Matching(view, target);
+        if (shown.Count == 0)
+        {
+            _console.MarkupLineInterpolated($"[red]No service or instance '{target}' in the registry.[/]");
+            return;
+        }
+
+        foreach (var i in shown)
+        {
+            var grid = new Grid().AddColumn().AddColumn();
+            grid.AddRow(new Markup("[grey]Service[/]"), new Markup(Markup.Escape(i.Service)));
+            grid.AddRow(new Markup("[grey]Instance[/]"), new Markup(Markup.Escape(i.Instance)));
+            grid.AddRow(new Markup("[grey]State[/]"), State(i));
+            grid.AddRow(new Markup("[grey]Version[/]"), new Markup(Markup.Escape(i.Version ?? "?")));
+            grid.AddRow(new Markup("[grey]Started[/]"), new Markup(i.Started == default ? "[grey]-[/]" : Markup.Escape($"{i.Started:u} ({Ago(view.At - i.Started)} ago)")));
+            grid.AddRow(new Markup("[grey]Last heartbeat[/]"), new Markup(Markup.Escape($"{i.Seen:u} ({Ago(view.At - i.Seen)} ago)")));
+            foreach (var (name, check) in i.Checks.OrderBy(c => c.Key, StringComparer.Ordinal))
+            {
+                string colour = check.Status == "Healthy" ? "green" : "red";
+                grid.AddRow(new Markup($"[grey]Check {Markup.Escape(name)}[/]"),
+                    new Markup($"[{colour}]{Markup.Escape(check.Status)}[/]{(check.Description is null ? "" : " " + Markup.Escape(check.Description))}"));
+            }
+
+            if (i.Checks.Count == 0 && i.State is "Ready" or "NotReady")
+            {
+                grid.AddRow(new Markup("[grey]Checks[/]"), new Markup("[grey]none: this service needs no store[/]"));
+            }
+
+            _console.Write(grid);
+            _console.WriteLine();
+        }
+    }
+
+    // A service's instances, or the instances whose id contains the target (an id, or a unique part of one).
+    private static IReadOnlyList<InstanceReport> Matching(ClusterView view, string target)
+    {
+        var service = view.Instances.Where(i => string.Equals(i.Service, target, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (service.Count > 0)
+        {
+            return service;
+        }
+
+        var exact = view.Instances.Where(i => i.Instance == target).ToList();
+        return exact.Count > 0 ? exact : view.Instances.Where(i => i.Instance.Contains(target, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    private static Markup State(InstanceReport i) => i.State switch
+    {
+        "Ready" => new Markup("[green]ready[/]"),
+        "NotReady" => new Markup($"[red]not ready[/]{Markup.Escape(Failing(i))}"),
+        "Stopped" => new Markup("[grey]stopped[/]"),
+        "Missing" => new Markup("[red]missing[/] [grey](no heartbeat)[/]"),
+        _ => new Markup(Markup.Escape(i.State)),
+    };
+
+    private static string Failing(InstanceReport i)
+    {
+        var names = i.Checks.Where(c => c.Value.Status != "Healthy").Select(c => c.Key).ToList();
+        return names.Count == 0 ? "" : $" ({string.Join(", ", names)})";
+    }
+
+    // "1.0.0+<40-hex commit>[-dirty]" -> "1.0.0+<7>[-dirty]".
+    private static string ShortVersion(string? version)
+    {
+        if (version is null)
+        {
+            return "?";
+        }
+
+        int plus = version.IndexOf('+');
+        if (plus < 0 || version.Length - plus - 1 < 7)
+        {
+            return version;
+        }
+
+        string commit = version[(plus + 1)..];
+        string suffix = commit.EndsWith("-dirty", StringComparison.Ordinal) ? "-dirty" : "";
+        return $"{version[..plus]}+{commit[..7]}{suffix}";
+    }
+
+    private static string Ago(TimeSpan span) => span.TotalSeconds < 0 ? "0s"
+        : span.TotalMinutes < 1 ? $"{(int)span.TotalSeconds}s"
+        : span.TotalHours < 1 ? $"{(int)span.TotalMinutes}m{span.Seconds:00}s"
+        : span.TotalDays < 1 ? $"{(int)span.TotalHours}h{span.Minutes:00}m"
+        : $"{(int)span.TotalDays}d{span.Hours:00}h";
 }
 
 public sealed class StatusCommand : AsyncCommand<ConnectionSettings>

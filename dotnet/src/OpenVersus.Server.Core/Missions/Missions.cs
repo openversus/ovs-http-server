@@ -3,6 +3,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenVersus.Server.Core.Settings;
 
 namespace OpenVersus.Server.Core.Missions;
@@ -106,11 +107,23 @@ public static class MissionObject
 
 public static class MissionHosting
 {
+    /// <summary>The missions (<see cref="IMissionService"/>), for their routes. Needs AddRewardTracks.</summary>
     public static WebApplicationBuilder AddMissions(this WebApplicationBuilder builder)
     {
         builder.AddSetting<MissionSettings>("Missions");
+        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<MissionRandom>();
         builder.Services.AddSingleton<IMissionService, MissionService>();
+        return builder;
+    }
+
+    /// <summary>
+    /// What a match's result changes in missions and match XP (<see cref="MissionResultSubscriber"/>), for the match flow
+    /// service. Needs AddRewardTracks.
+    /// </summary>
+    public static WebApplicationBuilder AddMissionResults(this WebApplicationBuilder builder)
+    {
+        builder.AddMissions();
         builder.Services.AddHostedService<MissionResultSubscriber>();
         return builder;
     }

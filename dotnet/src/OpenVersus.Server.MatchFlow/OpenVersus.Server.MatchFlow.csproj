@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The match flow: what happens to a match once it is played. Its own executable and image, beside the HTTP service
+       and the matchmaker. -->
+  <ItemGroup>
+    <ProjectReference Include="..\OpenVersus.Server.Core\OpenVersus.Server.Core.csproj" />
+  </ItemGroup>
+
+</Project>

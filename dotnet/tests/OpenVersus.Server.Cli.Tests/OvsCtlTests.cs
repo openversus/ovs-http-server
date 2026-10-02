@@ -129,6 +129,49 @@ public sealed class OvsCtlTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TheProbeOfAReadyServiceExitsWithZero()
+    {
+        var (exit, output) = await Run("health", "--probe", "--port", Port);
+        Assert.Equal(OvsCtl.Done, exit);
+        Assert.Contains("ready", output);
+    }
+
+    [Fact]
+    public async Task TheProbeOfAServiceThatIsNotReadyExitsWithOneAndSaysWhy()
+    {
+        int controlPort = FreePort();
+        var builder = OpenVersusHost.CreateBuilder(new ServiceDefinition("clitestredis", "TEST_PORT", DefaultPublicPort: 1, DefaultControlPort: 1, ServiceStores.Redis),
+            [$"--TEST_PORT={FreePort()}", $"--Control:Port={controlPort}", "--Control:Socket=off", "--REDIS="]);
+        await using var app = builder.Build();
+        app.UseOpenVersus();
+        await app.StartAsync();
+
+        var (exit, output) = await Run("health", "--probe", "--port", controlPort.ToString());
+        Assert.Equal(OvsCtl.Refused, exit);
+        Assert.Contains("not ready", output);
+        Assert.Contains("REDIS is not set", output);
+        await app.StopAsync();
+    }
+
+    [Fact]
+    public async Task HealthWithoutARegistryShowsTheServiceItReachedAndSaysSo()
+    {
+        var (exit, output) = await Run("health", "--port", Port);
+        Assert.Equal(OvsCtl.Done, exit);
+        Assert.Contains("No cluster view", output);
+        Assert.Contains("ready", output);
+    }
+
+    [Fact]
+    public async Task HealthOfAnUnreachableServiceExitsWithTwo()
+    {
+        var (exit, _) = await Run("health", "--port", FreePort().ToString());
+        Assert.Equal(OvsCtl.Unreachable, exit);
+        (exit, _) = await Run("health", "--probe", "--port", FreePort().ToString());
+        Assert.Equal(OvsCtl.Unreachable, exit);
+    }
+
+    [Fact]
     public async Task AnUnknownServiceIsRejected()
     {
         var (exit, output) = await Run("status", "--service", "nope");

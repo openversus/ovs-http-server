@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
@@ -422,6 +423,7 @@ public static class PartyLobbyHosting
     public static WebApplicationBuilder AddPartyLobbies(this WebApplicationBuilder builder)
     {
         builder.AddSetting<LobbySettings>("Lobbies");
+        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IPartyLobbyService, PartyLobbyService>();
         builder.Services.AddSingleton<IPartyService, PartyService>();
         builder.Services.AddFunFacts();

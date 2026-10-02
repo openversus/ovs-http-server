@@ -300,6 +300,9 @@ public sealed class CustomLobbyServiceTests : IAsyncLifetime
             (1, Guest, Player(Guest, "2026-10-01T10:00:01.000Z")),
             (4, Third, Player(Third, "2026-10-01T10:00:02.000Z")));
         await Db.HashSetAsync($"connections:{Guest}", [new("current_ip", "198.51.100.9"), new("character", "character_taz"), new("skin", "skin_taz_default")]);
+        // The leader locked Wonder Woman; the session still has the character of before.
+        await Db.HashSetAsync($"player:{Leader}", [new("character", "character_wonder_woman"), new("skin", "skin_c001_s01")]);
+        await Db.HashSetAsync($"connections:{Leader}", [new("character", "character_shaggy"), new("skin", "skin_shaggy_default")]);
 
         var answer = await Service(launcher).AnswerAsync("start_custom_match", Asking(Leader, new JsonObject { ["LobbyId"] = Lobby }));
 
@@ -318,6 +321,7 @@ public sealed class CustomLobbyServiceTests : IAsyncLifetime
         Assert.Equal(Lobby, (string?)await Db.StringGetAsync($"ssc_custom_lobby_player:{Third}"));
         // The loadout the websocket's match config reads.
         Assert.Equal("character_taz", (string?)await Db.HashGetAsync($"connections:{Guest}", "character"));
+        Assert.Equal("character_wonder_woman", (string?)await Db.HashGetAsync($"connections:{Leader}", "character"));
     }
 
     [Fact]

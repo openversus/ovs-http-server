@@ -11,7 +11,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 # Each route's stub goes into the project of the service that owns it (routes.json, owner); owners not listed here still
 # live in the HTTP service.
-OWNER_PROJECTS = {"web": "OpenVersus.Server.Web", "access": "OpenVersus.Server.Access", "social": "OpenVersus.Server.Social"}
+OWNER_PROJECTS = {"web": "OpenVersus.Server.Web", "access": "OpenVersus.Server.Access", "social": "OpenVersus.Server.Social",
+                  "lobbies": "OpenVersus.Server.Lobbies"}
 
 
 def project(row):

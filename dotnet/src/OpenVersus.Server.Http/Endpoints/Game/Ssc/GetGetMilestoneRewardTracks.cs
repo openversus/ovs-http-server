@@ -1,6 +1,7 @@
 using FastEndpoints;
 using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.RewardTracks;
+using OpenVersus.Server.Http.Shared.Endpoints;
 using OpenVersus.Server.Http.Shared.Hosting;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;

@@ -11,7 +11,7 @@ Sources (inputs in tools/routes/sources/, with the scanners that made them; made
            calls of 2 bench captures (2026-09-30, rifts-0930 and rifts-state-0930), which the others never reach.
   server   every express route registration in src/ (server_routes.txt).
   ssc      /ssc/invoke/<name> names from the server, the captures and the binary (ssc_names.py,
-           static_fstrings.py).
+           static_fstrings.py); a method seen only on the bench is listed in SSC_BENCH.
 """
 import json, re, collections, pathlib
 
@@ -117,7 +117,10 @@ equip_banner equip_gems equip_profile_icon equip_ringout_vfx equip_stat_tracker 
 get_equipped_cosmetics get_milestone_reward_tracks load_gameplay_config load_rifts local_leaderboard_claim_rewards
 local_leaderboard_has_unclaimed_rewards purchase_stocks rift_reset_all_chapters rift_reset_all_player_data
 rift_unlock_chapter_cauldron_tiers select_rift_loadout set_chapter_difficulty skip_rift_node start_rift_node
-upgrade_track_to_premium""".split()
+upgrade_track_to_premium retry_current_rift_node""".split()
+
+# SSC methods seen only on the local bench (the proxy log), in none of the captures above: name -> (method, where).
+SSC_BENCH = {"retry_current_rift_node": ("PUT", "bench proxy log 2026-09-30 (Retry on a rift match's results)")}
 
 
 EXE = pathlib.Path.home() / ".local/share/Steam/steamapps/common/MultiVersus/MultiVersus/Binaries/Win64/MultiVersus-Win64-Shipping.exe"
@@ -229,6 +232,8 @@ def main():
         if u.startswith("/ssc/invoke/"): ssc_methods[u[12:]].add(m)
     for m, p in server:
         if p.startswith("/ssc/invoke/"): ssc_methods[p[12:]].add(m)
+    for name, (m, where) in SSC_BENCH.items():
+        if not ssc_methods.get(name): ssc_methods[name].add(m)
     ssc_names = set(ssc_methods) | set(SSC_BINARY) | set(SSC_PROBABLE)
     for name in sorted(ssc_names):
         how = "binary" if name in SSC_BINARY else "binary (probable)" if name in SSC_PROBABLE else "server/capture"
@@ -238,6 +243,7 @@ def main():
             in_exe = True
         for m in sorted(ssc_methods.get(name) or {"?"}):
             r = add(m, f"/ssc/invoke/{name}", binary="ssc name" if in_exe else None, note=f"ssc: {how}")
+            if name in SSC_BENCH: r["notes"].append(f"method from the {SSC_BENCH[name][1]}")
             r["area"] = "ssc"
 
     for f in FRAGMENTS:

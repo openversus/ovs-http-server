@@ -209,6 +209,7 @@ PUT	/ssc/invoke/rematch_accept	lobbies
 PUT	/ssc/invoke/rematch_decline	lobbies
 PUT	/ssc/invoke/reset_custom_lobby_to_defaults	lobbies
 ?	/ssc/invoke/reset_inventory	http
+PUT	/ssc/invoke/retry_current_rift_node	http
 ?	/ssc/invoke/rift_reset_all_chapters	http
 ?	/ssc/invoke/rift_reset_all_player_data	http
 ?	/ssc/invoke/rift_unlock_chapter_cauldron_tiers	http

@@ -17,8 +17,8 @@ override header, not on the wire method. `?` means the method is not known yet.
 **Websockets** (not in the tables): the Hydra realtime socket (the ws service; binary Hydra messages; the
 server pings `0x0c` every 20 s and the game answers `0x0a`).
 
-**Totals.** 248 routes. The game can call 209 Hydra/engine/social routes and SSC functions; the TS
-server answers 115. Not answered: 33 routes and 61 SSC functions.
+**Totals.** 249 routes. The game can call 210 Hydra/engine/social routes and SSC functions; the TS
+server answers 115. Not answered: 33 routes and 62 SSC functions.
 OpenVersus's own, not the game: openversus client mod 10, rollback server 7, website (browser) 18, admin and data sync 4.
 
 Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ovs-client`,
@@ -112,6 +112,7 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 | PUT | `/ssc/invoke/ranked_claim_end_of_season_rewards` | http | binary `ssc name`, capture ×3 | **no** | ssc: server/capture |
 | ? | `/ssc/invoke/read_cached_configs` | http | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/reset_inventory` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/retry_current_rift_node` | http | binary `ssc name` | **no** | ssc: binary (probable); method from the bench proxy log 2026-09-30 (Retry on a rift match's results) |
 | ? | `/ssc/invoke/rift_reset_all_chapters` | http | binary `ssc name` | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/rift_reset_all_player_data` | http | binary `ssc name` | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/rift_unlock_chapter_cauldron_tiers` | http | binary `ssc name` | **no** | ssc: binary (probable) |
@@ -371,6 +372,7 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 | PUT | `/ssc/invoke/rematch_decline` | lobbies | binary `ssc name` | yes | ssc: server/capture |
 | PUT | `/ssc/invoke/reset_custom_lobby_to_defaults` | lobbies | binary `ssc name` | yes | ssc: server/capture |
 | ? | `/ssc/invoke/reset_inventory` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/retry_current_rift_node` | http | binary `ssc name` | **no** | ssc: binary (probable); method from the bench proxy log 2026-09-30 (Retry on a rift match's results) |
 | ? | `/ssc/invoke/rift_reset_all_chapters` | http | binary `ssc name` | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/rift_reset_all_player_data` | http | binary `ssc name` | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/rift_unlock_chapter_cauldron_tiers` | http | binary `ssc name` | **no** | ssc: binary (probable) |

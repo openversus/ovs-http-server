@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OpenVersus.Server.Core.Access;
 using OpenVersus.Server.Http.Shared.Hosting;
@@ -16,8 +17,21 @@ public class ServiceFactory<TProgram> : WebApplicationFactory<TProgram> where TP
     public const string Secret = "test-secret-0123456789abcdef0123456789abcdef";
     public const string AccountId = "0000000000000000000a0001";
 
+    /// <summary>The service's registrations as its program made them, for <see cref="Registrations.UnboundOptions"/>.</summary>
+    public IServiceCollection Registered
+    {
+        get
+        {
+            _ = Services;
+            return _registered!;
+        }
+    }
+
+    private IServiceCollection? _registered;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.ConfigureServices(services => _registered = services);
         builder.UseEnvironment(Environments.Development);
         builder.UseSetting("Access:JwtSecret", Secret);
         builder.UseSetting("Batch:EdgeUrl", "http://127.0.0.1:1");

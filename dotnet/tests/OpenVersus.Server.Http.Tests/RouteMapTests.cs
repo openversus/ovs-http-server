@@ -35,7 +35,7 @@ public sealed class RouteMapTests : IClassFixture<GameAppFactory>
     internal static readonly string[] Owners = ["http", "access", "social", "lobbies", "matchflow", "web"];
 
     /// <summary>Owners whose routes still live in this service: each moves out to its own executable (web, access and social have).</summary>
-    internal static readonly string[] StillHere = ["http", "lobbies", "matchflow"];
+    internal static readonly string[] StillHere = ["http", "matchflow"];
 
     internal static IReadOnlyList<Route> LoadRoutes()
     {

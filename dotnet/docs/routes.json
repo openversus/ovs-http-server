@@ -3356,6 +3356,22 @@
     "owner": "http"
   },
   {
+    "method": "PUT",
+    "path": "/ssc/invoke/retry_current_rift_node",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: binary (probable)",
+      "method from the bench proxy log 2026-09-30 (Retry on a rift match's results)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false,
+    "owner": "http"
+  },
+  {
     "method": "?",
     "path": "/ssc/invoke/rift_reset_all_chapters",
     "area": "ssc",

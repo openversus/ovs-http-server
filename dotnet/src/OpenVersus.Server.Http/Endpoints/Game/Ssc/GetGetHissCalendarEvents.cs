@@ -3,6 +3,7 @@ using FastEndpoints;
 using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Missions;
 using OpenVersus.Server.Core.Static;
+using OpenVersus.Server.Http.Shared.Endpoints;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 

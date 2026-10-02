@@ -126,10 +126,7 @@ internal sealed class RiftMatchService(IServiceProvider services, IRiftStateServ
             return;
         }
 
-        var player = (await redis.HashGetAllAsync($"player:{playerId}")).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
-        var connection = (await redis.HashGetAllAsync($"connections:{playerId}")).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
-        var human = new RiftHuman(playerId, Get(connection, "current_ip") ?? "",
-            Or(Get(player, "character"), "character_shaggy"), Or(Get(player, "skin"), "skin_shaggy_default"));
+        var human = await HumanAsync(redis, playerId);
 
         var runtimeNode = RiftLobbyService.RuntimeData((await progress.InstanceAsync(playerId, ct)).Dynamic, slug)["RuntimeNodeData"]?[nodeId] as JsonObject;
         var chapterAttrition = config["RiftChapterData"]?[chapterId]?["Attrition"] as JsonObject;
@@ -166,6 +163,18 @@ internal sealed class RiftMatchService(IServiceProvider services, IRiftStateServ
 
     /// <summary>The player starting the node.</summary>
     internal sealed record RiftHuman(string PlayerId, string Ip, string Character, string Skin);
+
+    // The player as they go into the node's match: the loadout they locked (player:{id}), which becomes their session's
+    // (PlayedLoadout), so the lobby they get on leaving the rift shows the character they played.
+    internal static async Task<RiftHuman> HumanAsync(IDatabase redis, string playerId)
+    {
+        var player = (await redis.HashGetAllAsync($"player:{playerId}")).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
+        var connection = (await redis.HashGetAllAsync($"connections:{playerId}")).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
+        var human = new RiftHuman(playerId, Get(connection, "current_ip") ?? "",
+            Or(Get(player, "character"), "character_shaggy"), Or(Get(player, "skin"), "skin_shaggy_default"));
+        await PlayedLoadout.RecordAsync(redis, playerId, human.Character, human.Skin, Get(player, "profileIcon"));
+        return human;
+    }
 
     /// <summary>The match for a rift node: see the comment at the top of this file.</summary>
     internal static MatchLaunch Build(RiftHuman human, string nodeId, JsonObject matchData, JsonObject? runtimeNode, int difficulty, int? poolStocks)

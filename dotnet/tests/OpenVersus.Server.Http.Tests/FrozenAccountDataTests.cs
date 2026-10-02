@@ -14,7 +14,6 @@ public sealed class FrozenAccountDataTests(GameAppFactory factory) : IClassFixtu
         [
             "GET /layout/dokken-layout-type/personalized/{variant}/{id}",
             "GET /ssc/invoke/load_rifts",
-            "PUT /ssc/invoke/create_rift_lobby",
             "PUT /ssc/invoke/start_rift_node",
         ], responses);
     }

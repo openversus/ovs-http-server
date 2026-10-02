@@ -7,6 +7,7 @@ using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Missions;
 using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.RewardTracks;
+using OpenVersus.Server.Http.Shared.Endpoints;
 using OpenVersus.Server.Http.Shared.Hosting;
 using StackExchange.Redis;
 

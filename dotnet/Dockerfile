@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# The C# services' images: one image per service (http, access, social, web, matchmaking, matchflow), each with only its own executable and
+# The C# services' images: one image per service (http, access, social, lobbies, web, matchmaking, matchflow), each with only its own executable and
 # ovsctl, built from one shared build of the solution. From this directory:
 #   docker build --target matchmaking --build-arg SOURCE_REVISION=$(git rev-parse HEAD) -t ovs-matchmaking .
 # build-images.sh builds them all. The proxy has no image: it exists only for the migration bench.
@@ -19,14 +19,15 @@ COPY src/OpenVersus.Server.Http.Shared/OpenVersus.Server.Http.Shared.csproj src/
 COPY src/OpenVersus.Server.Web/OpenVersus.Server.Web.csproj src/OpenVersus.Server.Web/
 COPY src/OpenVersus.Server.Access/OpenVersus.Server.Access.csproj src/OpenVersus.Server.Access/
 COPY src/OpenVersus.Server.Social/OpenVersus.Server.Social.csproj src/OpenVersus.Server.Social/
+COPY src/OpenVersus.Server.Lobbies/OpenVersus.Server.Lobbies.csproj src/OpenVersus.Server.Lobbies/
 COPY src/OpenVersus.Server.Matchmaking/OpenVersus.Server.Matchmaking.csproj src/OpenVersus.Server.Matchmaking/
 COPY src/OpenVersus.Server.MatchFlow/OpenVersus.Server.MatchFlow.csproj src/OpenVersus.Server.MatchFlow/
 COPY src/OpenVersus.Server.Cli/OpenVersus.Server.Cli.csproj src/OpenVersus.Server.Cli/
-RUN for project in Http Access Social Web Matchmaking MatchFlow Cli; do \
+RUN for project in Http Access Social Lobbies Web Matchmaking MatchFlow Cli; do \
       dotnet restore src/OpenVersus.Server.$project/OpenVersus.Server.$project.csproj || exit 1; \
     done
 COPY src/ src/
-RUN for project in Http Access Social Web Matchmaking MatchFlow Cli; do \
+RUN for project in Http Access Social Lobbies Web Matchmaking MatchFlow Cli; do \
       dotnet publish src/OpenVersus.Server.$project/OpenVersus.Server.$project.csproj -c Release --no-restore \
         -p:SourceRevisionId=$SOURCE_REVISION -o /out/$project || exit 1; \
     done
@@ -66,6 +67,13 @@ ENV OVS_SERVICE=social
 COPY --from=build /out/Social .
 EXPOSE 8002
 ENTRYPOINT ["dotnet", "OpenVersus.Server.Social.dll"]
+
+# Parties, lobbies, queueing and the game's /matches routes (LOBBIES_PORT, 8003 by default).
+FROM runtime AS lobbies
+ENV OVS_SERVICE=lobbies
+COPY --from=build /out/Lobbies .
+EXPOSE 8003
+ENTRYPOINT ["dotnet", "OpenVersus.Server.Lobbies.dll"]
 
 # The website, the OpenVersus client's API and the admin pages (WEB_PORT, 8004 by default).
 FROM runtime AS web

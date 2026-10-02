@@ -5,6 +5,7 @@ using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Hydra;
 using OpenVersus.Server.Core.Rifts;
 using OpenVersus.Server.Core.Static;
+using OpenVersus.Server.Http.Shared.Endpoints;
 using OpenVersus.Server.Http.Shared.Hosting;
 using StackExchange.Redis;
 

@@ -33,6 +33,17 @@ public static class RouteTable
             .ToList();
     }
 
+    /// <summary>
+    /// The owner of the routes <paramref name="path"/> is, whatever their method (as a middleware that matches paths only
+    /// sees them); null when it is no route, "mixed" when they disagree.
+    /// </summary>
+    public static string? OwnerOfPath(string path)
+    {
+        var owners = Load().Where(r => Regex.IsMatch(path, "^" + Regex.Replace(Regex.Escape(r.Path), @"\\\{[^}]+\}", "[^/]+") + "$"))
+            .Select(r => r.Owner).Distinct().ToList();
+        return owners.Count switch { 0 => null, 1 => owners[0], _ => "mixed" };
+    }
+
     /// <summary>A concrete path for a template: each parameter becomes a value, a trailing * one more segment.</summary>
     public static string Concrete(string template) =>
         Regex.Replace(template.EndsWith("/*", StringComparison.Ordinal) ? template[..^1] + "x9/y9" : template, @"\{[^}]+\}", "x1");

@@ -128,7 +128,7 @@ public static partial class ClientVersions
         checkEnabled && (!identityRegistered || UpdateRequired(version, minimum));
 }
 
-internal sealed class ClientUpdateGate(IServiceProvider services, IOptionsMonitor<ClientSettings> settings) : IClientUpdateGate
+internal sealed class ClientUpdateGate(IServiceProvider services, IAccountResolver resolver, IOptionsMonitor<ClientSettings> settings) : IClientUpdateGate
 {
     private static readonly TimeSpan s_cooldown = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan s_nonceLifetime = TimeSpan.FromDays(1);
@@ -153,7 +153,7 @@ internal sealed class ClientUpdateGate(IServiceProvider services, IOptionsMonito
 
     public async Task<ClientUpdateState> ForRequestAsync(AccountLookup lookup, JsonObject? claims)
     {
-        var connection = await services.GetRequiredService<IAccountResolver>().ResolveAsync(lookup);
+        var connection = await resolver.ResolveAsync(lookup);
         string Field(string name) => connection?.Connection.FirstOrDefault(e => e.Name == name).Value is { HasValue: true } v ? v.ToString() : "";
         JsonNode? Claim(string name) => claims?[name];
         string ClaimText(string name) => Claim(name) is JsonValue v && v.TryGetValue(out string? text) ? text : "";
@@ -222,6 +222,8 @@ public static class ClientUpdateGateHosting
     public static WebApplicationBuilder AddClientUpdateGate(this WebApplicationBuilder builder)
     {
         builder.AddSetting<ClientSettings>("Clients");
+        // ForRequestAsync finds the player's connection through it.
+        builder.AddAccountResolver();
         builder.Services.AddSingleton<IClientUpdateGate, ClientUpdateGate>();
         return builder;
     }

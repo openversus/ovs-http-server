@@ -1,5 +1,6 @@
 using FastEndpoints;
 using OpenVersus.Server.Core.Layouts;
+using OpenVersus.Server.Http.Shared.Endpoints;
 using OpenVersus.Server.Http.Shared.Hosting;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Layout;

@@ -1,5 +1,6 @@
 using FastEndpoints;
 using OpenVersus.Server.Core.Leaderboards;
+using OpenVersus.Server.Http.Shared.Endpoints;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Leaderboards;
 

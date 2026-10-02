@@ -3,6 +3,7 @@ using FastEndpoints;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Cosmetics;
 using OpenVersus.Server.Core.Identity;
+using OpenVersus.Server.Http.Shared.Endpoints;
 using OpenVersus.Server.Http.Shared.Hosting;
 using StackExchange.Redis;
 

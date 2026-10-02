@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -455,6 +456,7 @@ public static class MatchHistoryHosting
 {
     public static WebApplicationBuilder AddMatchHistory(this WebApplicationBuilder builder)
     {
+        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IMatchHistoryService, MatchHistoryService>();
         return builder;
     }

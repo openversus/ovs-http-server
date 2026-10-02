@@ -6,7 +6,7 @@ namespace OpenVersus.Server.Http.Tests;
 
 /// <summary>
 /// The SSC functions the TS server answers with a fixed answer and nothing written (tools/ssc/constants_diff.mjs
-/// compares them with the TS server's, byte for byte).
+/// compares them with the TS server's, byte for byte); the lobbies service's: OpenVersus.Server.Lobbies.Tests.
 /// </summary>
 public sealed class SscConstantsEndpointTests(GameAppFactory factory) : IClassFixture<GameAppFactory>
 {
@@ -23,9 +23,6 @@ public sealed class SscConstantsEndpointTests(GameAppFactory factory) : IClassFi
 
     [Theory]
     [InlineData("PUT", "game_install", Empty)]
-    [InlineData("PUT", "cancel_party_invite", Empty)]
-    [InlineData("PUT", "decline_party_invite", Empty)]
-    [InlineData("PUT", "update_party_game_modes", Empty)]
     [InlineData("POST", "claim_mission_rewards", """{"body":{"MissionControllerContainers":{},"ClaimLocks":{}},"metadata":null,"return_code":0}""")]
     [InlineData("PUT", "perks_absent", """{"body":{"message":"Early absent report"},"metadata":null,"return_code":2}""")]
     public async Task AnswersTheTsServersFixedAnswer(string method, string route, string json)

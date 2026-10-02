@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Cosmetics;
+using OpenVersus.Server.Http.Shared.Endpoints;
 using OpenVersus.Server.Http.Shared.Hosting;
 using StackExchange.Redis;
 

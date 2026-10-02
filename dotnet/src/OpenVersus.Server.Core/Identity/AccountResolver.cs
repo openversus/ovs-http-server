@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenVersus.Server.Core.Access;
 using StackExchange.Redis;
 
@@ -92,7 +93,8 @@ public static class AccountResolverHosting
 {
     public static WebApplicationBuilder AddAccountResolver(this WebApplicationBuilder builder)
     {
-        builder.Services.AddSingleton<IAccountResolver, AccountResolver>();
+        builder.Services.TryAddSingleton(TimeProvider.System);
+        builder.Services.TryAddSingleton<IAccountResolver, AccountResolver>();
         return builder;
     }
 }

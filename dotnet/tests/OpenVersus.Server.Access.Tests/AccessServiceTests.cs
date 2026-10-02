@@ -78,4 +78,18 @@ public sealed class AccessServiceTests : IClassFixture<ServiceFactory<Program>>
         Assert.NotEmpty(ready);
         Assert.All(ready, name => Assert.Contains(name, new[] { "redis", "mongo" }));
     }
+
+    [Fact]
+    public void EverySettingItsServicesReadIsBound()
+    {
+        var problems = Registrations.UnboundOptions(_factory.Registered, _factory.Services);
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    [Fact]
+    public void EveryServiceItsEndpointsLookUpIsRegistered()
+    {
+        var problems = Registrations.UnresolvableLookups(_factory.Services, typeof(Program).Assembly);
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
 }

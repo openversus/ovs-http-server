@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FastEndpoints;
+using OpenVersus.Server.Http.Shared.Endpoints;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 

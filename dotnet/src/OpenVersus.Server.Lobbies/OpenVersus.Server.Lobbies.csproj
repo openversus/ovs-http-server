@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- Parties, lobbies and queueing, what happens before a match starts: its own executable and image, so a lobby change
+       never restarts anything else and the rest never restarts it. -->
+  <ItemGroup>
+    <PackageReference Include="FastEndpoints" Version="8.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenVersus.Server.Core\OpenVersus.Server.Core.csproj" />
+    <ProjectReference Include="..\OpenVersus.Server.Http.Shared\OpenVersus.Server.Http.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

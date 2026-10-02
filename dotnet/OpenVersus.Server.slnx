@@ -14,6 +14,7 @@
   <Project Path="src/OpenVersus.Server.Web/OpenVersus.Server.Web.csproj" />
   <Project Path="src/OpenVersus.Server.Access/OpenVersus.Server.Access.csproj" />
   <Project Path="src/OpenVersus.Server.Social/OpenVersus.Server.Social.csproj" />
+  <Project Path="src/OpenVersus.Server.Lobbies/OpenVersus.Server.Lobbies.csproj" />
   <Project Path="tests/OpenVersus.Server.Cli.Tests/OpenVersus.Server.Cli.Tests.csproj" />
   <Project Path="tests/OpenVersus.Server.Core.Tests/OpenVersus.Server.Core.Tests.csproj" />
   <Project Path="tests/OpenVersus.Server.Http.Tests/OpenVersus.Server.Http.Tests.csproj" />
@@ -23,4 +24,5 @@
   <Project Path="tests/OpenVersus.Server.Web.Tests/OpenVersus.Server.Web.Tests.csproj" />
   <Project Path="tests/OpenVersus.Server.Access.Tests/OpenVersus.Server.Access.Tests.csproj" />
   <Project Path="tests/OpenVersus.Server.Social.Tests/OpenVersus.Server.Social.Tests.csproj" />
+  <Project Path="tests/OpenVersus.Server.Lobbies.Tests/OpenVersus.Server.Lobbies.Tests.csproj" />
 </Solution>

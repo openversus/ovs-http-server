@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using FastEndpoints;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Rifts;
+using OpenVersus.Server.Http.Shared.Endpoints;
 using OpenVersus.Server.Http.Shared.Hosting;
 using StackExchange.Redis;
 

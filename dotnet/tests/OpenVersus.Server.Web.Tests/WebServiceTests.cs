@@ -68,4 +68,18 @@ public sealed class WebServiceTests : IClassFixture<ServiceFactory<Program>>
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/live")).StatusCode);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.GetAsync("/health/ready")).StatusCode);
     }
+
+    [Fact]
+    public void EverySettingItsServicesReadIsBound()
+    {
+        var problems = Registrations.UnboundOptions(_factory.Registered, _factory.Services);
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    [Fact]
+    public void EveryServiceItsEndpointsLookUpIsRegistered()
+    {
+        var problems = Registrations.UnresolvableLookups(_factory.Services, typeof(Program).Assembly);
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
 }

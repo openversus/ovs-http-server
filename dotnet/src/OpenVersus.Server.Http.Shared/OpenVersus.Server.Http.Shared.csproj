@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- What every service that answers the game's HTTP shares: the Hydra method override and bodies, the session token
-       check, the client gate, the gameplay preferences recorder, the stub base and the request pipeline (GameHttpHost).
+       check, the client gate, the gameplay preferences recorder, the stub and endpoint bases and the request pipeline (GameHttpHost).
        Each service keeps its own endpoints; this holds none. -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

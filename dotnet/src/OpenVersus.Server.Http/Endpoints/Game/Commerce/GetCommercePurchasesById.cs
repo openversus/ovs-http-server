@@ -1,4 +1,5 @@
 using FastEndpoints;
+using OpenVersus.Server.Http.Shared.Endpoints;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Commerce;
 

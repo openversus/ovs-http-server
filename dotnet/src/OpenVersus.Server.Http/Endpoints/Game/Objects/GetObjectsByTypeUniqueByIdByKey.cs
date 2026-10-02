@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using FastEndpoints;
 using OpenVersus.Server.Core.Static;
+using OpenVersus.Server.Http.Shared.Endpoints;
 using OpenVersus.Server.Http.Shared.Hosting;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Objects;

@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
@@ -705,11 +706,7 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
                     string skin = Or(Get(fresh, "skin"), Get(session, "skin"), Str(locked as JsonObject, "Skin"), known.Skin);
                     if (character.Length > 0 && skin.Length > 0)
                     {
-                        await redis.HashSetAsync($"connections:{id}", [new("character", character), new("skin", skin)]);
-                        if (Get(session, "current_ip") is { Length: > 0 } sessionIp && (string?)await redis.HashGetAsync($"connections:{sessionIp}", "id") == id)
-                        {
-                            await redis.HashSetAsync($"connections:{sessionIp}", [new("character", character), new("skin", skin)]);
-                        }
+                        await PlayedLoadout.RecordAsync(redis, id, character, skin);
                     }
                 }
 
@@ -1234,6 +1231,7 @@ public static class CustomLobbyHosting
     public static WebApplicationBuilder AddCustomLobbies(this WebApplicationBuilder builder)
     {
         builder.AddSetting<CustomLobbySettings>("CustomLobbies");
+        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<ICustomLobbyService, CustomLobbyService>();
         return builder;
     }

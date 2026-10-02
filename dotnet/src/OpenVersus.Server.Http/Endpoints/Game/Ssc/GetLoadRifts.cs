@@ -5,7 +5,7 @@ using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Hydra;
 using OpenVersus.Server.Core.Rifts;
 using OpenVersus.Server.Core.Static;
-using OpenVersus.Server.Http.Hosting;
+using OpenVersus.Server.Http.Shared.Hosting;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;

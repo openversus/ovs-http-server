@@ -13,7 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OpenVersus.Server.Core.Hydra;
 using OpenVersus.Server.Core.Static;
 using OpenVersus.Server.Http.Batch;
-using OpenVersus.Server.Http.Hosting;
+using OpenVersus.Server.Http.Shared.Hosting;
 using HydraCodec = OpenVersus.Server.Core.Hydra.Hydra;
 
 namespace OpenVersus.Server.Http.Tests;
@@ -58,6 +58,8 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
         var app = factory.WithWebHostBuilder(b =>
         {
             b.UseSetting("Batch:TsUrl", tsUrl);
+            // The fake answers the routed sub-requests too.
+            b.UseSetting("Batch:EdgeUrl", tsUrl);
             foreach (var (key, value) in settings)
             {
                 b.UseSetting(key, value);
@@ -81,6 +83,56 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
     // The unported sub-request these tests send on: an SSC name no endpoint has, so the catch-all stub (SscUnlisted)
     // answers it however many functions get ported.
     private const string Unported = "/ssc/invoke/no_such_function";
+
+    [Fact]
+    public async Task AnItemAnotherServiceOwnsGoesThroughTheRouterAsARequestOfItsOwn()
+    {
+        await using var ts = await FakeTs.StartAsync();
+        var client = Client(ts.Url);
+        string token = GameAppFactory.Token();
+        // /friends/me is the social service's, /accounts/{id}/relationships/followers too (more literal than the HTTP
+        // service's /accounts/{id}/{sub}), the custom lobby's SSC the lobbies service's; the unported one is this
+        // service's own, for the TS server.
+        using var response = await PutAsync(client, Batch(
+            Get("/friends/me?page=2", new JsonObject { ["x-hydra-http-method"] = "GET", ["x-custom"] = "kept" }),
+            Get(Unported),
+            Get("/accounts/abc/relationships/followers"),
+            new JsonObject { ["verb"] = "PUT", ["url"] = "/ssc/invoke/create_custom_game_lobby", ["body"] = new JsonObject { ["Mode"] = "1v1" } },
+            Get("/friends/me/invitations/incoming?teapot=1")),
+            r => r.Headers.Add("x-real-ip", "203.0.113.9"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var responses = HydraDecoder.Decode(await response.Content.ReadAsByteArrayAsync())!["responses"]!.AsArray();
+        Assert.Equal("GET /friends/me?page=2", (string)responses[0]!["body"]!["routed"]!);
+        Assert.Equal(Unported, (string)responses[1]!["body"]!["url"]!);
+        Assert.Equal("GET /accounts/abc/relationships/followers", (string)responses[2]!["body"]!["routed"]!);
+        Assert.Equal("PUT /ssc/invoke/create_custom_game_lobby", (string)responses[3]!["body"]!["routed"]!);
+        // The owner's status is passed on as it came.
+        Assert.Equal(418, Status(responses[4]));
+
+        Assert.Equal(4, ts.Routed.Count);
+        var friends = ts.Routed.Single(r => r.Target == "/friends/me?page=2");
+        Assert.Equal(token, (string?)friends.Headers[HydraToken.Header]);
+        Assert.Equal("203.0.113.9", (string?)friends.Headers["x-real-ip"]);
+        Assert.Equal("kept", (string?)friends.Headers["x-custom"]);
+        var lobby = ts.Routed.Single(r => r.Target == "/ssc/invoke/create_custom_game_lobby");
+        Assert.Equal("1v1", (string)HydraDecoder.Decode(lobby.Body)!["Mode"]!);
+        // Only this service's unported item went to the TS server.
+        Assert.Equal([Unported], HydraDecoder.Decode(Assert.Single(ts.Requests).Body)!["requests"]!.AsArray().Select(r => (string)r!["url"]!));
+    }
+
+    [Fact]
+    public async Task AnItemTheRouterCannotTakeAnswers502AndTheRestStillAnswers()
+    {
+        await using var ts = await FakeTs.StartAsync();
+        // Nothing listens on port 1.
+        var client = Client(ts.Url, ("Batch:EdgeUrl", "http://127.0.0.1:1"));
+        using var response = await PutAsync(client, Batch(Get("/friends/me"), Get(Unported)));
+
+        var responses = HydraDecoder.Decode(await response.Content.ReadAsByteArrayAsync())!["responses"]!.AsArray();
+        Assert.Equal(502, Status(responses[0]));
+        Assert.Equal(Unported, (string)responses[1]!["body"]!["url"]!);
+    }
 
     [Fact]
     public async Task PortedItemsAnswerHereAndTheOthersGoToTheTsServerAsOneBatchInTheGamesOrder()
@@ -246,6 +298,9 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
 
         public List<(IHeaderDictionary Headers, byte[] Body)> Requests { get; } = [];
 
+        /// <summary>What came as a plain request, as the router would pass it to another service.</summary>
+        public List<(string Method, string Target, IHeaderDictionary Headers, byte[] Body)> Routed { get; } = [];
+
         public static byte[] ItemFor(string url) => url == "/ssc/invoke/compressed"
             ? HydraEncoder.Encode(new JsonObject { ["status_code"] = 200, ["headers"] = new JsonObject(), ["body"] = HydraRaw.Node(s_compressed) })
             : HydraEncoder.Encode(new JsonObject { ["status_code"] = 200, ["headers"] = new JsonObject(), ["body"] = new JsonObject { ["url"] = url } });
@@ -274,6 +329,21 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
                 byte[] answer = HydraEncoder.Encode(new JsonObject { ["responses"] = new JsonArray(items) });
                 context.Response.ContentType = HydraBodies.ContentType;
                 await context.Response.Body.WriteAsync(answer);
+            });
+            // Anything else: a sub-request of another service's, through the router. Answers which request it was.
+            app.MapFallback(async (HttpContext context) =>
+            {
+                using var body = new MemoryStream();
+                await context.Request.Body.CopyToAsync(body);
+                string target = context.Request.Path + context.Request.QueryString;
+                lock (self!.Routed)
+                {
+                    self.Routed.Add((context.Request.Method, target, new HeaderDictionary(context.Request.Headers.ToDictionary(h => h.Key, h => h.Value)), body.ToArray()));
+                }
+
+                context.Response.StatusCode = target.Contains("teapot", StringComparison.Ordinal) ? 418 : 200;
+                context.Response.ContentType = HydraBodies.ContentType;
+                await context.Response.Body.WriteAsync(HydraEncoder.Encode(new JsonObject { ["routed"] = context.Request.Method + " " + target }));
             });
             await app.StartAsync();
             string url = app.Services.GetRequiredService<IServer>().Features.GetRequiredFeature<IServerAddressesFeature>().Addresses.First();

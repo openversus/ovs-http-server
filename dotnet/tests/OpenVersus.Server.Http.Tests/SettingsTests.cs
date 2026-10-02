@@ -2,7 +2,7 @@ using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using OpenVersus.Server.Core.Settings;
-using OpenVersus.Server.Http.Stubs;
+using OpenVersus.Server.Http.Shared.Stubs;
 
 namespace OpenVersus.Server.Http.Tests;
 

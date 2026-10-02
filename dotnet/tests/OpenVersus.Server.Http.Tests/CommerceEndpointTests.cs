@@ -1,8 +1,8 @@
 using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
 using OpenVersus.Server.Core.Static;
-using OpenVersus.Server.Http.Hosting;
-using OpenVersus.Server.Http.Stubs;
+using OpenVersus.Server.Http.Shared.Hosting;
+using OpenVersus.Server.Http.Shared.Stubs;
 using HydraCodec = OpenVersus.Server.Core.Hydra.Hydra;
 
 namespace OpenVersus.Server.Http.Tests;

@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using OpenVersus.Server.Core.Preferences;
-using OpenVersus.Server.Http.Hosting;
+using OpenVersus.Server.Http.Shared.Hosting;
 using HydraCodec = OpenVersus.Server.Core.Hydra.Hydra;
 
 namespace OpenVersus.Server.Http.Tests;

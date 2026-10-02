@@ -2,7 +2,7 @@ using FastEndpoints;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Missions;
-using OpenVersus.Server.Http.Hosting;
+using OpenVersus.Server.Http.Shared.Hosting;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 

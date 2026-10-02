@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using OpenVersus.Server.Core.Static;
-using OpenVersus.Server.Http.Stubs;
+using OpenVersus.Server.Http.Shared.Stubs;
 
 namespace OpenVersus.Server.Http.Tests;
 

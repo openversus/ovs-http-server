@@ -26,382 +26,382 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 
 ## Game routes the TS server does not answer
 
-| Method | Route | Game source | TS server | Notes |
-|---|---|---|---|---|
-| GET | `/accounts/bulk` | binary `0x144fd7550` | **no** | method inferred: sibling of the {network} variant; sent as PUT + override |
-| ? | `/accounts/me` | binary `0x140f9b8d0` | **no** | social layer; method from unknown |
-| ? | `/accounts/me/age_information` | binary `0x140fa1bd0` | **no** | social layer; method from unknown |
-| ? | `/accounts/me/identity` | binary `fragment` | **no** | binary fragment; no builder found yet |
-| ? | `/accounts/me/link` | binary `fragment` | **no** | binary fragment; no builder found yet |
-| ? | `/accounts/me/relationships` | binary `fragment` | **no** | binary fragment; no builder found yet |
-| PUT | `/accounts/me/relationships/{id}/unfollow` | binary `0x144ff4a20` | **no** |  |
-| PUT | `/accounts/{id}` | binary `0x144fddd00` | **no** | also 0x144fddeb0 |
-| GET | `/accounts/{id}/relationships/followers` | binary `0x144fed800` | **no** |  |
-| GET | `/arenas/{id}/groups/{group}/participants` | binary `0x145053b10` | **no** |  |
-| GET | `/arenas/{id}/instances` | binary `0x145053920` | **no** |  |
-| GET | `/arenas/{id}/instances/{instance}/participants/{participant}` | binary `0x1450535f0` | **no** |  |
-| GET | `/clans/{id}/{sub}` | binary `0x145059f00` | **no** | second segment's name not read yet |
-| GET | `/commerce/catalog/{id}/products` | binary `0x144fdb040` | **no** |  |
-| ? | `/commerce/catalog/{id}/products/{product}/purchase` | binary `0x144fdbda0` | **no** | method not read yet; body has price_slug |
-| ? | `/commerce/purchases/{id}/finalize` | binary `0x144fd91b0` | **no** | method not read yet; a bare '/' piece may mean one more segment |
-| ? | `/commerce/sales` | binary `fragment` | **no** | binary fragment; no builder found yet |
-| ? | `/configuration/sdk` | binary `fragment` | **no** | binary fragment; no builder found yet |
-| ? | `/friends/me/invitations/{id}/cancel` | binary `0x140f943c0` | **no** | social layer; method from unknown |
-| GET | `/leaderboards/{id}` | binary `0x145065df0` | **no** |  |
-| GET | `/leaderboards/{id}/around/me` | binary `0x145066ac0` | **no** |  |
-| GET | `/leaderboards/{id}/friends` | binary `0x145066cb0` | **no** |  |
-| GET | `/leaderboards/{id}/score-and-rank/{account}` | binary `0x1450654c0` | **no** |  |
-| PUT | `/objects/{type}/unique/{id}/upsert` | binary `0x145061a20` | **no** |  |
-| PUT | `/objects/{type}/unique/{id}/{key}/upsert` | binary `0x1450617e0` | **no** | pieces include a bare '/': one more segment |
-| PUT | `/profiles/{id}` | binary `0x145066ea0` | **no** |  |
-| ? | `/realtime/config` | binary `0x140f9abc0` | **no** | social layer; method from unknown |
-| ? | `/relationships/followers` | binary `fragment` | **no** | binary fragment; no builder found yet |
-| GET | `/seasons/types/{type}/participant_leaderboards/{id}/score-and-rank/{account}` | binary `0x1450679d0` | **no** | segment order inferred |
-| GET | `/seasons/{id}/instances/{instance}/participants/{participant}` | binary `0x145067d00` | **no** |  |
-| ? | `/sessions/auth/password` | binary `0x140f9baf0` | **no** | social layer; method from unknown |
-| ? | `/sessions/device` | binary `0x140f99970` | **no** | social layer; method from unknown |
-| GET | `/store/store_products/{id}/my_products` | binary `0x144feb090` | **no** | segment order inferred |
+| Method | Route | Owner | Game source | TS server | Notes |
+|---|---|---|---|---|---|
+| GET | `/accounts/bulk` | http | binary `0x144fd7550` | **no** | method inferred: sibling of the {network} variant; sent as PUT + override |
+| ? | `/accounts/me` | http | binary `0x140f9b8d0` | **no** | social layer; method from unknown |
+| ? | `/accounts/me/age_information` | http | binary `0x140fa1bd0` | **no** | social layer; method from unknown |
+| ? | `/accounts/me/identity` | http | binary `fragment` | **no** | binary fragment; no builder found yet |
+| ? | `/accounts/me/link` | http | binary `fragment` | **no** | binary fragment; no builder found yet |
+| ? | `/accounts/me/relationships` | social | binary `fragment` | **no** | binary fragment; no builder found yet |
+| PUT | `/accounts/me/relationships/{id}/unfollow` | social | binary `0x144ff4a20` | **no** |  |
+| PUT | `/accounts/{id}` | http | binary `0x144fddd00` | **no** | also 0x144fddeb0 |
+| GET | `/accounts/{id}/relationships/followers` | social | binary `0x144fed800` | **no** |  |
+| GET | `/arenas/{id}/groups/{group}/participants` | http | binary `0x145053b10` | **no** |  |
+| GET | `/arenas/{id}/instances` | http | binary `0x145053920` | **no** |  |
+| GET | `/arenas/{id}/instances/{instance}/participants/{participant}` | http | binary `0x1450535f0` | **no** |  |
+| GET | `/clans/{id}/{sub}` | http | binary `0x145059f00` | **no** | second segment's name not read yet |
+| GET | `/commerce/catalog/{id}/products` | http | binary `0x144fdb040` | **no** |  |
+| ? | `/commerce/catalog/{id}/products/{product}/purchase` | http | binary `0x144fdbda0` | **no** | method not read yet; body has price_slug |
+| ? | `/commerce/purchases/{id}/finalize` | http | binary `0x144fd91b0` | **no** | method not read yet; a bare '/' piece may mean one more segment |
+| ? | `/commerce/sales` | http | binary `fragment` | **no** | binary fragment; no builder found yet |
+| ? | `/configuration/sdk` | http | binary `fragment` | **no** | binary fragment; no builder found yet |
+| ? | `/friends/me/invitations/{id}/cancel` | social | binary `0x140f943c0` | **no** | social layer; method from unknown |
+| GET | `/leaderboards/{id}` | http | binary `0x145065df0` | **no** |  |
+| GET | `/leaderboards/{id}/around/me` | http | binary `0x145066ac0` | **no** |  |
+| GET | `/leaderboards/{id}/friends` | http | binary `0x145066cb0` | **no** |  |
+| GET | `/leaderboards/{id}/score-and-rank/{account}` | http | binary `0x1450654c0` | **no** |  |
+| PUT | `/objects/{type}/unique/{id}/upsert` | http | binary `0x145061a20` | **no** |  |
+| PUT | `/objects/{type}/unique/{id}/{key}/upsert` | http | binary `0x1450617e0` | **no** | pieces include a bare '/': one more segment |
+| PUT | `/profiles/{id}` | http | binary `0x145066ea0` | **no** |  |
+| ? | `/realtime/config` | http | binary `0x140f9abc0` | **no** | social layer; method from unknown |
+| ? | `/relationships/followers` | social | binary `fragment` | **no** | binary fragment; no builder found yet |
+| GET | `/seasons/types/{type}/participant_leaderboards/{id}/score-and-rank/{account}` | http | binary `0x1450679d0` | **no** | segment order inferred |
+| GET | `/seasons/{id}/instances/{instance}/participants/{participant}` | http | binary `0x145067d00` | **no** |  |
+| ? | `/sessions/auth/password` | access | binary `0x140f9baf0` | **no** | social layer; method from unknown |
+| ? | `/sessions/device` | access | binary `0x140f99970` | **no** | social layer; method from unknown |
+| GET | `/store/store_products/{id}/my_products` | http | binary `0x144feb090` | **no** | segment order inferred |
 
 ## SSC functions the TS server does not answer
 
-| Method | Route | Game source | TS server | Notes |
-|---|---|---|---|---|
-| ? | `/ssc/invoke/activate_timed_boost` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/bot_queue` | binary `ssc name`, capture ×1 | **no** | ssc: binary |
-| ? | `/ssc/invoke/casual_queue` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/check_leaver_punishment` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/check_server_grants` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/check_training_server_ready` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/claim_all_milestone_reward_track_tiers` | binary `ssc name`, capture ×1 | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/claim_cauldron` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/claim_competition_points` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/claim_milestone_reward_track_tiers` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/claim_server_grants` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/claim_voting_competition_rewards` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/consumable_event` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/consume_character_xp_boost` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/convert_candy_to_gold` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/create_rift_lobby` | binary `ssc name`, capture ×5 | **no** | ssc: server/capture |
-| ? | `/ssc/invoke/debug_lock_inventory_item` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/debug_unlock_inventory_item` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/deduct_guild_dungeon_ticket` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/dlc_event` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/equip_gems` | binary `ssc name`, capture ×3 | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/equip_profile_icon` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/finish_rift_chapter` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/follow_account` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/get_active_ranked_seasons` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/get_current_ftue_step` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/get_or_create_my_match_config` | binary `ssc name` | **no** | ssc: binary |
-| GET | `/ssc/invoke/get_or_create_rift_state` | binary `ssc name`, capture ×5 | **no** | ssc: server/capture |
-| ? | `/ssc/invoke/get_preferred_currency` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/grant_character_gift` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/grant_currency` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/grant_gold` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/ingame_purchase_event` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/invite_to_party` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/join_party` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/join_voting_competition` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/leave_party` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/local_leaderboard_claim_rewards` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/local_leaderboard_has_unclaimed_rewards` | binary `ssc name` | **no** | ssc: binary (probable) |
-| PUT | `/ssc/invoke/lock_rift_lobby_loadout` | binary `ssc name`, capture ×3 | **no** | ssc: server/capture |
-| ? | `/ssc/invoke/notify_changing_modes` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/post_login_bonuses` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/purchase_stocks` | binary `ssc name` | **no** | ssc: binary (probable) |
-| PUT | `/ssc/invoke/ranked_claim_end_of_season_rewards` | binary `ssc name`, capture ×3 | **no** | ssc: server/capture |
-| ? | `/ssc/invoke/read_cached_configs` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/reset_inventory` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/rift_reset_all_chapters` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/rift_reset_all_player_data` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/rift_unlock_chapter_cauldron_tiers` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/save_current_ftue_step` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/select_rift_loadout` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/send_frontend_mission_updates` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/set_chapter_difficulty` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/set_joinable` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/skip_rift_node` | binary `ssc name` | **no** | ssc: binary (probable) |
-| PUT | `/ssc/invoke/start_rift_node` | binary `ssc name`, capture ×1 | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/sync_match_config` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/unlock_ftue_character` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/update_member_data` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/upgrade_track_to_premium` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/zd_ticket_submit` | binary `ssc name` | **no** | ssc: binary |
+| Method | Route | Owner | Game source | TS server | Notes |
+|---|---|---|---|---|---|
+| ? | `/ssc/invoke/activate_timed_boost` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/bot_queue` | lobbies | binary `ssc name`, capture ×1 | **no** | ssc: binary |
+| ? | `/ssc/invoke/casual_queue` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/check_leaver_punishment` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/check_server_grants` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/check_training_server_ready` | matchflow | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/claim_all_milestone_reward_track_tiers` | http | binary `ssc name`, capture ×1 | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/claim_cauldron` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/claim_competition_points` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/claim_milestone_reward_track_tiers` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/claim_server_grants` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/claim_voting_competition_rewards` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/consumable_event` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/consume_character_xp_boost` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/convert_candy_to_gold` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/create_rift_lobby` | lobbies | binary `ssc name`, capture ×5 | **no** | ssc: server/capture |
+| ? | `/ssc/invoke/debug_lock_inventory_item` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/debug_unlock_inventory_item` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/deduct_guild_dungeon_ticket` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/dlc_event` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/equip_gems` | http | binary `ssc name`, capture ×3 | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/equip_profile_icon` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/finish_rift_chapter` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/follow_account` | social | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/get_active_ranked_seasons` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/get_current_ftue_step` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/get_or_create_my_match_config` | matchflow | binary `ssc name` | **no** | ssc: binary |
+| GET | `/ssc/invoke/get_or_create_rift_state` | http | binary `ssc name`, capture ×5 | **no** | ssc: server/capture |
+| ? | `/ssc/invoke/get_preferred_currency` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/grant_character_gift` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/grant_currency` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/grant_gold` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/ingame_purchase_event` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/invite_to_party` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/join_party` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/join_voting_competition` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/leave_party` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/local_leaderboard_claim_rewards` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/local_leaderboard_has_unclaimed_rewards` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/lock_rift_lobby_loadout` | lobbies | binary `ssc name`, capture ×3 | **no** | ssc: server/capture |
+| ? | `/ssc/invoke/notify_changing_modes` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/post_login_bonuses` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/purchase_stocks` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/ranked_claim_end_of_season_rewards` | http | binary `ssc name`, capture ×3 | **no** | ssc: server/capture |
+| ? | `/ssc/invoke/read_cached_configs` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/reset_inventory` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/rift_reset_all_chapters` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/rift_reset_all_player_data` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/rift_unlock_chapter_cauldron_tiers` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/save_current_ftue_step` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/select_rift_loadout` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/send_frontend_mission_updates` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/set_chapter_difficulty` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/set_joinable` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/skip_rift_node` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/start_rift_node` | http | binary `ssc name`, capture ×1 | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/sync_match_config` | matchflow | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/unlock_ftue_character` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/update_member_data` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/upgrade_track_to_premium` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/zd_ticket_submit` | http | binary `ssc name` | **no** | ssc: binary |
 
 ## OpenVersus's own: OpenVersus client mod
 
-| Method | Route | Game source | TS server | Notes |
-|---|---|---|---|---|
-| POST | `/api/identify` | capture ×10 | yes | capture only; server only |
-| GET | `/ovs/all-players` | — | yes | server only |
-| GET | `/ovs/client-version` | capture ×10 | yes | capture only; server only |
-| POST | `/ovs/friends/accept` | — | yes | server only |
-| POST | `/ovs/friends/block` | — | yes | server only |
-| POST | `/ovs/friends/decline` | — | yes | server only |
-| POST | `/ovs/friends/request` | — | yes | server only |
-| PUT | `/ovs/friends/send-request/{targetId}` | — | yes | server only |
-| DELETE | `/ovs/friends/{friendId}` | — | yes | server only |
-| GET | `/ovs/notifications` | capture ×2299 | yes | capture only; server only |
+| Method | Route | Owner | Game source | TS server | Notes |
+|---|---|---|---|---|---|
+| POST | `/api/identify` | web | capture ×10 | yes | capture only; server only |
+| GET | `/ovs/all-players` | web | — | yes | server only |
+| GET | `/ovs/client-version` | web | capture ×10 | yes | capture only; server only |
+| POST | `/ovs/friends/accept` | social | — | yes | server only |
+| POST | `/ovs/friends/block` | social | — | yes | server only |
+| POST | `/ovs/friends/decline` | social | — | yes | server only |
+| POST | `/ovs/friends/request` | social | — | yes | server only |
+| PUT | `/ovs/friends/send-request/{targetId}` | social | — | yes | server only |
+| DELETE | `/ovs/friends/{friendId}` | social | — | yes | server only |
+| GET | `/ovs/notifications` | web | capture ×2299 | yes | capture only; server only |
 
 ## OpenVersus's own: Rollback server
 
-| Method | Route | Game source | TS server | Notes |
-|---|---|---|---|---|
-| POST | `/api/ovs_match_status` | — | yes | server only |
-| POST | `/mvsi_end_match` | — | yes | server only |
-| POST | `/mvsi_register` | — | yes | server only |
-| POST | `/ovs_end_match` | — | yes | server only |
-| POST | `/ovs_match_started` | — | yes | server only |
-| POST | `/ovs_match_status` | — | yes | server only |
-| POST | `/ovs_register` | — | yes | server only |
+| Method | Route | Owner | Game source | TS server | Notes |
+|---|---|---|---|---|---|
+| POST | `/api/ovs_match_status` | matchflow | — | yes | server only |
+| POST | `/mvsi_end_match` | matchflow | — | yes | server only |
+| POST | `/mvsi_register` | matchflow | — | yes | server only |
+| POST | `/ovs_end_match` | matchflow | — | yes | server only |
+| POST | `/ovs_match_started` | matchflow | — | yes | server only |
+| POST | `/ovs_match_status` | matchflow | — | yes | server only |
+| POST | `/ovs_register` | matchflow | — | yes | server only |
 
 ## OpenVersus's own: Website (browser)
 
-| Method | Route | Game source | TS server | Notes |
-|---|---|---|---|---|
-| POST | `/account/switch` | — | yes | server only |
-| POST | `/account/verify` | — | yes | server only |
-| GET | `/api/leaderboard/{mode}` | — | yes | server only |
-| GET | `/api/leaderboard/{mode}/me` | — | yes | server only |
-| GET | `/api/matches` | — | yes | server only |
-| GET | `/assets/openversus-update-required-keyart.png` | — | yes | server only |
-| GET | `/assets/openversus-update-required-thumbnail.png` | — | yes | server only |
-| GET | `/favicon/{image}` | — | yes | server only |
-| GET | `/favicon.ico` | — | yes | server only |
-| GET | `/home` | — | yes | server only |
-| GET | `/images/{image}` | — | yes | server only |
-| GET | `/leaderboard` | — | yes | server only |
-| GET | `/matches` | — | yes | server only |
-| GET | `/namechange` | — | yes | server only |
-| POST | `/namechange` | — | yes | server only |
-| GET | `/stats` | — | yes | server only |
-| GET | `/theme.css` | — | yes | server only |
-| GET | `/theme.js` | — | yes | server only |
+| Method | Route | Owner | Game source | TS server | Notes |
+|---|---|---|---|---|---|
+| POST | `/account/switch` | web | — | yes | server only |
+| POST | `/account/verify` | web | — | yes | server only |
+| GET | `/api/leaderboard/{mode}` | web | — | yes | server only |
+| GET | `/api/leaderboard/{mode}/me` | web | — | yes | server only |
+| GET | `/api/matches` | web | — | yes | server only |
+| GET | `/assets/openversus-update-required-keyart.png` | web | — | yes | server only |
+| GET | `/assets/openversus-update-required-thumbnail.png` | web | — | yes | server only |
+| GET | `/favicon/{image}` | web | — | yes | server only |
+| GET | `/favicon.ico` | web | — | yes | server only |
+| GET | `/home` | web | — | yes | server only |
+| GET | `/images/{image}` | web | — | yes | server only |
+| GET | `/leaderboard` | web | — | yes | server only |
+| GET | `/matches` | web | — | yes | server only |
+| GET | `/namechange` | web | — | yes | server only |
+| POST | `/namechange` | web | — | yes | server only |
+| GET | `/stats` | web | — | yes | server only |
+| GET | `/theme.css` | web | — | yes | server only |
+| GET | `/theme.js` | web | — | yes | server only |
 
 ## OpenVersus's own: Admin and data sync
 
-| Method | Route | Game source | TS server | Notes |
-|---|---|---|---|---|
-| GET | `/admin/banner` | — | yes | server only |
-| POST | `/api/admin/banner` | — | yes | server only |
-| GET | `/api/admin/banner/online-count` | — | yes | server only |
-| POST | `/syncAsset` | — | yes | server only |
+| Method | Route | Owner | Game source | TS server | Notes |
+|---|---|---|---|---|---|
+| GET | `/admin/banner` | web | — | yes | server only |
+| POST | `/api/admin/banner` | web | — | yes | server only |
+| GET | `/api/admin/banner/online-count` | web | — | yes | server only |
+| POST | `/syncAsset` | web | — | yes | server only |
 
 ## All game routes (not SSC)
 
-| Method | Route | Game source | TS server | Notes |
-|---|---|---|---|---|
-| POST | `/.*/access` | — | yes | server only |
-| DELETE | `/access` | binary `0x144fab980`, capture ×9 | yes | method from capture (no enum call) |
-| POST | `/access` | binary `0x144f9f5b0`, capture ×11 | yes | method from capture (no enum call) |
-| GET | `/accounts/bulk` | binary `0x144fd7550` | **no** | method inferred: sibling of the {network} variant; sent as PUT + override |
-| ? | `/accounts/me` | binary `0x140f9b8d0` | **no** | social layer; method from unknown |
-| ? | `/accounts/me/age_information` | binary `0x140fa1bd0` | **no** | social layer; method from unknown |
-| ? | `/accounts/me/identity` | binary `fragment` | **no** | binary fragment; no builder found yet |
-| ? | `/accounts/me/link` | binary `fragment` | **no** | binary fragment; no builder found yet |
-| ? | `/accounts/me/notifications` | binary `0x145060180` | yes | method not read yet |
-| ? | `/accounts/me/notifications/bulk/{id}` | binary `fragment` | yes | binary fragment; no builder found yet |
-| ? | `/accounts/me/notifications/{id}` | binary `0x145060de0` | yes | method not read yet |
-| ? | `/accounts/me/relationships` | binary `fragment` | **no** | binary fragment; no builder found yet |
-| PUT | `/accounts/me/relationships/{id}/block` | binary `0x144fe81e0` | yes |  |
-| PUT | `/accounts/me/relationships/{id}/unblock` | binary `0x144ff4890` | yes |  |
-| PUT | `/accounts/me/relationships/{id}/unfollow` | binary `0x144ff4a20` | **no** |  |
-| GET | `/accounts/{id}` | binary `0x144fda420` | yes | also 0x144fda5f0 |
-| PUT | `/accounts/{id}` | binary `0x144fddd00` | **no** | also 0x144fddeb0 |
-| GET | `/accounts/{id}/relationships/followers` | binary `0x144fed800` | **no** |  |
-| GET | `/accounts/{id}/{sub}` | binary `0x144fda790` | yes | second segment's name not read yet |
-| GET | `/accounts/{network}/bulk` | binary `0x144fd76d0`, capture ×9 | yes | sent as PUT + x-hydra-http-method: GET (capture: wb_network) |
-| GET | `/arenas/{id}/groups/{group}/participants` | binary `0x145053b10` | **no** |  |
-| GET | `/arenas/{id}/instances` | binary `0x145053920` | **no** |  |
-| GET | `/arenas/{id}/instances/{instance}/participants/{participant}` | binary `0x1450535f0` | **no** |  |
-| PUT | `/batch` | binary `0x145054730`, capture ×26 | yes | runs sub-requests |
-| GET | `/clans/{id}/{sub}` | binary `0x145059f00` | **no** | second segment's name not read yet |
-| GET | `/commerce/catalog/{id}/products` | binary `0x144fdb040` | **no** |  |
-| ? | `/commerce/catalog/{id}/products/{product}/purchase` | binary `0x144fdbda0` | **no** | method not read yet; body has price_slug |
-| GET | `/commerce/products` | capture ×22 | yes | capture only; server only |
-| GET | `/commerce/purchases/{id}` | binary `0x144fdb4d0`, capture ×22 | yes | id is 'me' in captures |
-| ? | `/commerce/purchases/{id}/finalize` | binary `0x144fd91b0` | **no** | method not read yet; a bare '/' piece may mean one more segment |
-| ? | `/commerce/sales` | binary `fragment` | **no** | binary fragment; no builder found yet |
-| GET | `/commerce/steam/mtx_user_info/{id}` | binary `0x144fd98d0`, capture ×11 | yes | id is 'me' in captures |
-| ? | `/configuration/sdk` | binary `fragment` | **no** | binary fragment; no builder found yet |
-| POST | `/datarouter/api/v1/public/data/clients` | binary `string` | yes | Unreal DataRouter (engine telemetry); exe holds 'datarouter/api/v1/public/data?SessionID=' |
-| PUT | `/drives/{id}/sync` | binary `0x144fdd810`, capture ×11 | yes | method from capture (id: multiversus) |
-| GET | `/file_storage` | binary `0x14505b5d0`, capture ×11 | yes | method from capture |
-| GET | `/file_storage/{slug}` | binary `0x14505b5d0`, capture ×44 | yes | method from capture |
-| GET | `/friends/me` | binary `0x140f9a310`, capture ×14 | yes | social layer; method from capture |
-| POST | `/friends/me/invitations` | binary `0x140f9b5e0` | yes | social layer; method from server |
-| GET | `/friends/me/invitations/incoming` | binary `0x140f99fb0`, capture ×14 | yes | social layer; method from capture |
-| GET | `/friends/me/invitations/outgoing` | binary `0x140f9a160`, capture ×14 | yes | social layer; method from capture |
-| PUT | `/friends/me/invitations/{id}/accept` | binary `0x140f932a0` | yes | social layer; method from server |
-| ? | `/friends/me/invitations/{id}/cancel` | binary `0x140f943c0` | **no** | social layer; method from unknown |
-| PUT | `/friends/me/invitations/{id}/decline` | binary `0x140f97d00` | yes | social layer; method from server |
-| PUT | `/friends/me/unfriend/{id}` | binary `0x140fa3780` | yes | social layer; method from server |
-| GET | `/global_configuration_types/{type}/global_configurations` | binary `0x14505caf0` | yes |  |
-| GET | `/global_configuration_types/{type}/global_configurations/{id}` | binary `0x14505c830` | yes |  |
-| GET | `/layout/{layout_type}/personalized/{variant}/{id}` | binary `0x144fd9620`, capture ×96 | yes |  |
-| GET | `/leaderboards/bulk/score-and-rank/{id}` | binary `0x145065780`, capture ×84 | yes | sent as PUT + x-hydra-http-method: GET |
-| GET | `/leaderboards/{id}` | binary `0x145065df0` | **no** |  |
-| GET | `/leaderboards/{id}/around/me` | binary `0x145066ac0` | **no** |  |
-| GET | `/leaderboards/{id}/around/{account}` | binary `0x1450668b0`, capture ×4 | yes |  |
-| GET | `/leaderboards/{id}/friends` | binary `0x145066cb0` | **no** |  |
-| GET | `/leaderboards/{id}/score-and-rank/{account}` | binary `0x1450654c0` | **no** |  |
-| GET | `/leaderboards/{id}/show` | binary `0x1450666c0`, capture ×2 | yes |  |
-| GET | `/matches/all/{id}` | binary `0x144fdab70`, capture ×8 | yes |  |
-| POST | `/matches/matchmaking/request/{id}/cancel` | binary `0x144fd78f0`, capture ×5 | yes | method from capture |
-| POST | `/matches/matchmaking/{criteria}/request` | binary `0x144fdd630`, capture ×10 | yes | criteria e.g. 1v1-retail |
-| GET | `/matches/{id}` | binary `0x144fda970` | yes |  |
-| PUT | `/matches/{id}` | binary `0x144fde060`, capture ×11 | yes |  |
-| PUT | `/matches/{id}/leave` | binary `0x144fd9f20` | yes |  |
-| PUT | `/objects/{type}/unique/{id}/upsert` | binary `0x145061a20` | **no** |  |
-| GET | `/objects/{type}/unique/{id}/{key}` | binary `0x1450615d0` | yes | pieces include a bare '/': one more segment |
-| PUT | `/objects/{type}/unique/{id}/{key}/upsert` | binary `0x1450617e0` | **no** | pieces include a bare '/': one more segment |
-| GET | `/profiles/bulk` | binary `0x145065060`, capture ×48 | yes | sent as PUT + x-hydra-http-method: GET |
-| GET | `/profiles/search_queries/{id}/run` | binary `0x145066420` | yes |  |
-| GET | `/profiles/{id}` | binary `0x145065a80` | yes | also 0x145065c50 |
-| PUT | `/profiles/{id}` | binary `0x145066ea0` | **no** |  |
-| GET | `/profiles/{id}/inventory` | binary `0x14505dbe0`, capture ×11 | yes | sent as PUT + x-hydra-http-method: GET |
-| PUT | `/profiles/{id}/inventory` | binary `0x14505dd70`, capture ×11 | yes | body: modifications. Same wire request as GET /profiles/{id}/inventory (a PUT with x-hydra-http-method: GET); only that header tells them apart |
-| ? | `/realtime/config` | binary `0x140f9abc0` | **no** | social layer; method from unknown |
-| ? | `/relationships/followers` | binary `fragment` | **no** | binary fragment; no builder found yet |
-| GET | `/seasons/types/{type}/participant_leaderboards/{id}/score-and-rank/{account}` | binary `0x1450679d0` | **no** | segment order inferred |
-| GET | `/seasons/{id}/instances/{instance}/participants/{participant}` | binary `0x145067d00` | **no** |  |
-| ? | `/sessions/auth/password` | binary `0x140f9baf0` | **no** | social layer; method from unknown |
-| POST | `/sessions/auth/token` | binary `0x140f9be40`, capture ×11 | yes | social layer; method from capture |
-| ? | `/sessions/device` | binary `0x140f99970` | **no** | social layer; method from unknown |
-| PUT | `/social/me/block/{id}` | binary `0x140f93530` | yes | social layer; method from server |
-| GET | `/social/me/blocked` | binary `0x140f99e00`, capture ×14 | yes | social layer; method from capture |
-| PUT | `/social/me/unblock/{id}` | binary `0x140fa3540` | yes | social layer; method from server |
-| GET | `/store/store_products/{id}/my_products` | binary `0x144feb090` | **no** | segment order inferred |
-| POST | `/virtual_commerce/purchases/{id}/{item}` | binary `0x145069300` | yes | item e.g. toasts_gleamium |
+| Method | Route | Owner | Game source | TS server | Notes |
+|---|---|---|---|---|---|
+| POST | `/.*/access` | access | — | yes | server only |
+| DELETE | `/access` | access | binary `0x144fab980`, capture ×9 | yes | method from capture (no enum call) |
+| POST | `/access` | access | binary `0x144f9f5b0`, capture ×11 | yes | method from capture (no enum call) |
+| GET | `/accounts/bulk` | http | binary `0x144fd7550` | **no** | method inferred: sibling of the {network} variant; sent as PUT + override |
+| ? | `/accounts/me` | http | binary `0x140f9b8d0` | **no** | social layer; method from unknown |
+| ? | `/accounts/me/age_information` | http | binary `0x140fa1bd0` | **no** | social layer; method from unknown |
+| ? | `/accounts/me/identity` | http | binary `fragment` | **no** | binary fragment; no builder found yet |
+| ? | `/accounts/me/link` | http | binary `fragment` | **no** | binary fragment; no builder found yet |
+| ? | `/accounts/me/notifications` | http | binary `0x145060180` | yes | method not read yet |
+| ? | `/accounts/me/notifications/bulk/{id}` | http | binary `fragment` | yes | binary fragment; no builder found yet |
+| ? | `/accounts/me/notifications/{id}` | http | binary `0x145060de0` | yes | method not read yet |
+| ? | `/accounts/me/relationships` | social | binary `fragment` | **no** | binary fragment; no builder found yet |
+| PUT | `/accounts/me/relationships/{id}/block` | social | binary `0x144fe81e0` | yes |  |
+| PUT | `/accounts/me/relationships/{id}/unblock` | social | binary `0x144ff4890` | yes |  |
+| PUT | `/accounts/me/relationships/{id}/unfollow` | social | binary `0x144ff4a20` | **no** |  |
+| GET | `/accounts/{id}` | http | binary `0x144fda420` | yes | also 0x144fda5f0 |
+| PUT | `/accounts/{id}` | http | binary `0x144fddd00` | **no** | also 0x144fddeb0 |
+| GET | `/accounts/{id}/relationships/followers` | social | binary `0x144fed800` | **no** |  |
+| GET | `/accounts/{id}/{sub}` | http | binary `0x144fda790` | yes | second segment's name not read yet |
+| GET | `/accounts/{network}/bulk` | http | binary `0x144fd76d0`, capture ×9 | yes | sent as PUT + x-hydra-http-method: GET (capture: wb_network) |
+| GET | `/arenas/{id}/groups/{group}/participants` | http | binary `0x145053b10` | **no** |  |
+| GET | `/arenas/{id}/instances` | http | binary `0x145053920` | **no** |  |
+| GET | `/arenas/{id}/instances/{instance}/participants/{participant}` | http | binary `0x1450535f0` | **no** |  |
+| PUT | `/batch` | http | binary `0x145054730`, capture ×26 | yes | runs sub-requests |
+| GET | `/clans/{id}/{sub}` | http | binary `0x145059f00` | **no** | second segment's name not read yet |
+| GET | `/commerce/catalog/{id}/products` | http | binary `0x144fdb040` | **no** |  |
+| ? | `/commerce/catalog/{id}/products/{product}/purchase` | http | binary `0x144fdbda0` | **no** | method not read yet; body has price_slug |
+| GET | `/commerce/products` | http | capture ×22 | yes | capture only; server only |
+| GET | `/commerce/purchases/{id}` | http | binary `0x144fdb4d0`, capture ×22 | yes | id is 'me' in captures |
+| ? | `/commerce/purchases/{id}/finalize` | http | binary `0x144fd91b0` | **no** | method not read yet; a bare '/' piece may mean one more segment |
+| ? | `/commerce/sales` | http | binary `fragment` | **no** | binary fragment; no builder found yet |
+| GET | `/commerce/steam/mtx_user_info/{id}` | http | binary `0x144fd98d0`, capture ×11 | yes | id is 'me' in captures |
+| ? | `/configuration/sdk` | http | binary `fragment` | **no** | binary fragment; no builder found yet |
+| POST | `/datarouter/api/v1/public/data/clients` | http | binary `string` | yes | Unreal DataRouter (engine telemetry); exe holds 'datarouter/api/v1/public/data?SessionID=' |
+| PUT | `/drives/{id}/sync` | http | binary `0x144fdd810`, capture ×11 | yes | method from capture (id: multiversus) |
+| GET | `/file_storage` | http | binary `0x14505b5d0`, capture ×11 | yes | method from capture |
+| GET | `/file_storage/{slug}` | http | binary `0x14505b5d0`, capture ×44 | yes | method from capture |
+| GET | `/friends/me` | social | binary `0x140f9a310`, capture ×14 | yes | social layer; method from capture |
+| POST | `/friends/me/invitations` | social | binary `0x140f9b5e0` | yes | social layer; method from server |
+| GET | `/friends/me/invitations/incoming` | social | binary `0x140f99fb0`, capture ×14 | yes | social layer; method from capture |
+| GET | `/friends/me/invitations/outgoing` | social | binary `0x140f9a160`, capture ×14 | yes | social layer; method from capture |
+| PUT | `/friends/me/invitations/{id}/accept` | social | binary `0x140f932a0` | yes | social layer; method from server |
+| ? | `/friends/me/invitations/{id}/cancel` | social | binary `0x140f943c0` | **no** | social layer; method from unknown |
+| PUT | `/friends/me/invitations/{id}/decline` | social | binary `0x140f97d00` | yes | social layer; method from server |
+| PUT | `/friends/me/unfriend/{id}` | social | binary `0x140fa3780` | yes | social layer; method from server |
+| GET | `/global_configuration_types/{type}/global_configurations` | http | binary `0x14505caf0` | yes |  |
+| GET | `/global_configuration_types/{type}/global_configurations/{id}` | http | binary `0x14505c830` | yes |  |
+| GET | `/layout/{layout_type}/personalized/{variant}/{id}` | http | binary `0x144fd9620`, capture ×96 | yes |  |
+| GET | `/leaderboards/bulk/score-and-rank/{id}` | http | binary `0x145065780`, capture ×84 | yes | sent as PUT + x-hydra-http-method: GET |
+| GET | `/leaderboards/{id}` | http | binary `0x145065df0` | **no** |  |
+| GET | `/leaderboards/{id}/around/me` | http | binary `0x145066ac0` | **no** |  |
+| GET | `/leaderboards/{id}/around/{account}` | http | binary `0x1450668b0`, capture ×4 | yes |  |
+| GET | `/leaderboards/{id}/friends` | http | binary `0x145066cb0` | **no** |  |
+| GET | `/leaderboards/{id}/score-and-rank/{account}` | http | binary `0x1450654c0` | **no** |  |
+| GET | `/leaderboards/{id}/show` | http | binary `0x1450666c0`, capture ×2 | yes |  |
+| GET | `/matches/all/{id}` | lobbies | binary `0x144fdab70`, capture ×8 | yes |  |
+| POST | `/matches/matchmaking/request/{id}/cancel` | lobbies | binary `0x144fd78f0`, capture ×5 | yes | method from capture |
+| POST | `/matches/matchmaking/{criteria}/request` | lobbies | binary `0x144fdd630`, capture ×10 | yes | criteria e.g. 1v1-retail |
+| GET | `/matches/{id}` | lobbies | binary `0x144fda970` | yes |  |
+| PUT | `/matches/{id}` | lobbies | binary `0x144fde060`, capture ×11 | yes |  |
+| PUT | `/matches/{id}/leave` | lobbies | binary `0x144fd9f20` | yes |  |
+| PUT | `/objects/{type}/unique/{id}/upsert` | http | binary `0x145061a20` | **no** |  |
+| GET | `/objects/{type}/unique/{id}/{key}` | http | binary `0x1450615d0` | yes | pieces include a bare '/': one more segment |
+| PUT | `/objects/{type}/unique/{id}/{key}/upsert` | http | binary `0x1450617e0` | **no** | pieces include a bare '/': one more segment |
+| GET | `/profiles/bulk` | http | binary `0x145065060`, capture ×48 | yes | sent as PUT + x-hydra-http-method: GET |
+| GET | `/profiles/search_queries/{id}/run` | http | binary `0x145066420` | yes |  |
+| GET | `/profiles/{id}` | http | binary `0x145065a80` | yes | also 0x145065c50 |
+| PUT | `/profiles/{id}` | http | binary `0x145066ea0` | **no** |  |
+| GET | `/profiles/{id}/inventory` | http | binary `0x14505dbe0`, capture ×11 | yes | sent as PUT + x-hydra-http-method: GET |
+| PUT | `/profiles/{id}/inventory` | http | binary `0x14505dd70`, capture ×11 | yes | body: modifications. Same wire request as GET /profiles/{id}/inventory (a PUT with x-hydra-http-method: GET); only that header tells them apart |
+| ? | `/realtime/config` | http | binary `0x140f9abc0` | **no** | social layer; method from unknown |
+| ? | `/relationships/followers` | social | binary `fragment` | **no** | binary fragment; no builder found yet |
+| GET | `/seasons/types/{type}/participant_leaderboards/{id}/score-and-rank/{account}` | http | binary `0x1450679d0` | **no** | segment order inferred |
+| GET | `/seasons/{id}/instances/{instance}/participants/{participant}` | http | binary `0x145067d00` | **no** |  |
+| ? | `/sessions/auth/password` | access | binary `0x140f9baf0` | **no** | social layer; method from unknown |
+| POST | `/sessions/auth/token` | access | binary `0x140f9be40`, capture ×11 | yes | social layer; method from capture |
+| ? | `/sessions/device` | access | binary `0x140f99970` | **no** | social layer; method from unknown |
+| PUT | `/social/me/block/{id}` | social | binary `0x140f93530` | yes | social layer; method from server |
+| GET | `/social/me/blocked` | social | binary `0x140f99e00`, capture ×14 | yes | social layer; method from capture |
+| PUT | `/social/me/unblock/{id}` | social | binary `0x140fa3540` | yes | social layer; method from server |
+| GET | `/store/store_products/{id}/my_products` | http | binary `0x144feb090` | **no** | segment order inferred |
+| POST | `/virtual_commerce/purchases/{id}/{item}` | http | binary `0x145069300` | yes | item e.g. toasts_gleamium |
 
 ## All SSC functions
 
-| Method | Route | Game source | TS server | Notes |
-|---|---|---|---|---|
-| ? | `/ssc/invoke/activate_timed_boost` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/add_custom_game_bot` | binary `ssc name` | yes | ssc: binary |
-| POST | `/ssc/invoke/attempt_daily_refresh` | binary `ssc name`, capture ×11 | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/autoparty_join` | binary `ssc name` | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/bot_queue` | binary `ssc name`, capture ×1 | **no** | ssc: binary |
-| PUT | `/ssc/invoke/cancel_party_invite` | binary `ssc name` | yes | ssc: binary |
-| ? | `/ssc/invoke/casual_queue` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/check_leaver_punishment` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/check_server_grants` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/check_training_server_ready` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/claim_all_milestone_reward_track_tiers` | binary `ssc name`, capture ×1 | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/claim_cauldron` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/claim_competition_points` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/claim_milestone_reward_track_tiers` | binary `ssc name` | **no** | ssc: binary (probable) |
-| POST | `/ssc/invoke/claim_mission_rewards` | binary `ssc name`, capture ×3 | yes | ssc: server/capture |
-| ? | `/ssc/invoke/claim_server_grants` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/claim_voting_competition_rewards` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/consumable_event` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/consume_character_xp_boost` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/convert_candy_to_gold` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/create_custom_game_lobby` | binary `ssc name` | yes | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it |
-| PUT | `/ssc/invoke/create_party` | binary `ssc name` | yes | ssc: binary |
-| PUT | `/ssc/invoke/create_party_lobby` | binary `ssc name`, capture ×11 | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/create_rift_lobby` | binary `ssc name`, capture ×5 | **no** | ssc: server/capture |
-| ? | `/ssc/invoke/debug_lock_inventory_item` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/debug_unlock_inventory_item` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/decline_party_invite` | binary `ssc name` | yes | ssc: binary |
-| ? | `/ssc/invoke/deduct_guild_dungeon_ticket` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/dlc_event` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/equip_announcer_pack` | binary `ssc name` | yes | ssc: binary (probable) |
-| PUT | `/ssc/invoke/equip_banner` | binary `ssc name`, capture ×2 | yes | ssc: binary (probable) |
-| PUT | `/ssc/invoke/equip_gems` | binary `ssc name`, capture ×3 | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/equip_profile_icon` | binary `ssc name` | **no** | ssc: binary (probable) |
-| PUT | `/ssc/invoke/equip_ringout_vfx` | binary `ssc name` | yes | ssc: binary (probable) |
-| PUT | `/ssc/invoke/equip_stat_tracker` | binary `ssc name` | yes | ssc: binary (probable) |
-| PUT | `/ssc/invoke/equip_taunt` | binary `ssc name` | yes | ssc: binary (probable) |
-| PUT | `/ssc/invoke/faceoff_timeout` | binary `ssc name` | yes | ssc: server/capture |
-| ? | `/ssc/invoke/finish_rift_chapter` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/follow_account` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/game_install` | binary `ssc name` | yes | ssc: binary |
-| PUT | `/ssc/invoke/game_launch_event` | binary `ssc name`, capture ×11 | yes | ssc: binary |
-| ? | `/ssc/invoke/get_active_ranked_seasons` | binary `ssc name` | **no** | ssc: binary |
-| GET | `/ssc/invoke/get_calendar_events` | binary `ssc name` | yes | ssc: server/capture |
-| GET | `/ssc/invoke/get_country_code` | binary `ssc name` | yes | ssc: binary |
-| ? | `/ssc/invoke/get_current_ftue_step` | binary `ssc name` | **no** | ssc: binary |
-| GET | `/ssc/invoke/get_equipped_cosmetics` | binary `ssc name` | yes | ssc: binary (probable) |
-| GET | `/ssc/invoke/get_gm_leaderboards` | binary `ssc name` | yes | ssc: binary |
-| GET | `/ssc/invoke/get_hiss_calendar_events` | binary `ssc name` | yes | ssc: binary |
-| GET | `/ssc/invoke/get_milestone_reward_tracks` | binary `ssc name` | yes | ssc: binary (probable) |
-| POST | `/ssc/invoke/get_or_create_mission_object` | binary `ssc name`, capture ×11 | yes | ssc: server/capture |
-| ? | `/ssc/invoke/get_or_create_my_match_config` | binary `ssc name` | **no** | ssc: binary |
-| GET | `/ssc/invoke/get_or_create_rift_state` | binary `ssc name`, capture ×5 | **no** | ssc: server/capture |
-| ? | `/ssc/invoke/get_preferred_currency` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/grant_character_gift` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/grant_currency` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/grant_gold` | binary `ssc name` | **no** | ssc: binary |
-| GET | `/ssc/invoke/hiss_amalgamation` | binary `ssc name` | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/hiss_amalgamation` | binary `ssc name` | yes | ssc: server/capture |
-| ? | `/ssc/invoke/ingame_purchase_event` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/invite_to_party` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/invite_to_player_lobby` | binary `ssc name` | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/join_custom_game_lobby` | binary `ssc name` | yes | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it |
-| ? | `/ssc/invoke/join_party` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/join_party_lobby` | binary `ssc name` | yes | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it |
-| ? | `/ssc/invoke/join_voting_competition` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/kick_from_lobby` | binary `ssc name` | yes | ssc: binary |
-| ? | `/ssc/invoke/leave_party` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/leave_player_lobby` | binary `ssc name` | yes | ssc: server/capture |
-| GET | `/ssc/invoke/load_gameplay_config` | binary `ssc name` | yes | ssc: binary (probable) |
-| GET | `/ssc/invoke/load_rifts` | binary `ssc name` | yes | ssc: binary (probable) |
-| PUT | `/ssc/invoke/lobby_code` | binary `ssc name` | yes | ssc: server/capture |
-| ? | `/ssc/invoke/local_leaderboard_claim_rewards` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/local_leaderboard_has_unclaimed_rewards` | binary `ssc name` | **no** | ssc: binary (probable) |
-| PUT | `/ssc/invoke/lock_lobby_loadout` | binary `ssc name`, capture ×18 | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/lock_rift_lobby_loadout` | binary `ssc name`, capture ×3 | **no** | ssc: server/capture |
-| PUT | `/ssc/invoke/match_set_absent` | binary `ssc name`, capture ×2 | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/match_set_checkin` | binary `ssc name`, capture ×6 | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/match_set_concede` | binary `ssc name` | yes | ssc: server/capture |
-| ? | `/ssc/invoke/notify_changing_modes` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/perks_absent` | binary `ssc name`, capture ×3 | yes | ssc: server/capture |
-| GET | `/ssc/invoke/perks_get_all_pages` | binary `ssc name` | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/perks_lock` | binary `ssc name`, capture ×9 | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/perks_set_character_page` | binary `ssc name` | yes | ssc: server/capture |
-| ? | `/ssc/invoke/post_login_bonuses` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/promote_to_lobby_leader` | binary `ssc name` | yes | ssc: binary |
-| ? | `/ssc/invoke/purchase_stocks` | binary `ssc name` | **no** | ssc: binary (probable) |
-| PUT | `/ssc/invoke/ranked_claim_end_of_season_rewards` | binary `ssc name`, capture ×3 | **no** | ssc: server/capture |
-| GET | `/ssc/invoke/ranked_data` | binary `ssc name` | yes | ssc: server/capture |
-| ? | `/ssc/invoke/read_cached_configs` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/rematch_accept` | binary `ssc name` | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/rematch_decline` | binary `ssc name` | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/reset_custom_lobby_to_defaults` | binary `ssc name` | yes | ssc: server/capture |
-| ? | `/ssc/invoke/reset_inventory` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/rift_reset_all_chapters` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/rift_reset_all_player_data` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/rift_unlock_chapter_cauldron_tiers` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/save_current_ftue_step` | binary `ssc name` | **no** | ssc: binary |
-| ? | `/ssc/invoke/select_rift_loadout` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/send_frontend_mission_updates` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/send_profile_notification` | binary `ssc name` | yes | ssc: binary |
-| ? | `/ssc/invoke/set_chapter_difficulty` | binary `ssc name` | **no** | ssc: binary (probable) |
-| PUT | `/ssc/invoke/set_enabled_maps_for_custom_game` | binary `ssc name` | yes | ssc: binary |
-| PUT | `/ssc/invoke/set_game_mode_for_custom_game` | binary `ssc name` | yes | ssc: binary |
-| ? | `/ssc/invoke/set_joinable` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/set_lobby_joinable` | binary `ssc name`, capture ×5 | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/set_lobby_not_joinable` | binary `ssc name`, capture ×1 | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/set_mode_for_lobby` | binary `ssc name` | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/set_player_handicap_for_custom_game` | binary `ssc name` | yes | ssc: binary |
-| PUT | `/ssc/invoke/set_profile_icon` | binary `ssc name` | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/set_ready_for_lobby` | binary `ssc name`, capture ×10 | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/set_world_buffs_for_custom_game` | binary `ssc name` | yes | ssc: binary |
-| ? | `/ssc/invoke/skip_rift_node` | binary `ssc name` | **no** | ssc: binary (probable) |
-| PUT | `/ssc/invoke/start_custom_match` | binary `ssc name` | yes | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it |
-| PUT | `/ssc/invoke/start_rift_node` | binary `ssc name`, capture ×1 | **no** | ssc: binary (probable) |
-| PUT | `/ssc/invoke/submit_end_of_match_stats` | binary `ssc name`, capture ×9 | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/switch_custom_game_lobby_team` | binary `ssc name` | yes | ssc: binary |
-| ? | `/ssc/invoke/sync_match_config` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/toast_player` | binary `ssc name`, capture ×4 | yes | ssc: server/capture |
-| ? | `/ssc/invoke/unlock_ftue_character` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/update_custom_game_bot_fighter` | binary `ssc name` | yes | ssc: binary |
-| PUT | `/ssc/invoke/update_int_setting_for_custom_game` | binary `ssc name` | yes | ssc: binary |
-| ? | `/ssc/invoke/update_member_data` | binary `ssc name` | **no** | ssc: binary |
-| PUT | `/ssc/invoke/update_party_game_modes` | binary `ssc name` | yes | ssc: binary |
-| PUT | `/ssc/invoke/update_player_preferences` | binary `ssc name` | yes | ssc: server/capture |
-| PUT | `/ssc/invoke/update_team_style_for_custom_game` | binary `ssc name` | yes | ssc: binary |
-| ? | `/ssc/invoke/upgrade_track_to_premium` | binary `ssc name` | **no** | ssc: binary (probable) |
-| ? | `/ssc/invoke/zd_ticket_submit` | binary `ssc name` | **no** | ssc: binary |
+| Method | Route | Owner | Game source | TS server | Notes |
+|---|---|---|---|---|---|
+| ? | `/ssc/invoke/activate_timed_boost` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/add_custom_game_bot` | lobbies | binary `ssc name` | yes | ssc: binary |
+| POST | `/ssc/invoke/attempt_daily_refresh` | http | binary `ssc name`, capture ×11 | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/autoparty_join` | lobbies | binary `ssc name` | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/bot_queue` | lobbies | binary `ssc name`, capture ×1 | **no** | ssc: binary |
+| PUT | `/ssc/invoke/cancel_party_invite` | lobbies | binary `ssc name` | yes | ssc: binary |
+| ? | `/ssc/invoke/casual_queue` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/check_leaver_punishment` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/check_server_grants` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/check_training_server_ready` | matchflow | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/claim_all_milestone_reward_track_tiers` | http | binary `ssc name`, capture ×1 | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/claim_cauldron` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/claim_competition_points` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/claim_milestone_reward_track_tiers` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| POST | `/ssc/invoke/claim_mission_rewards` | http | binary `ssc name`, capture ×3 | yes | ssc: server/capture |
+| ? | `/ssc/invoke/claim_server_grants` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/claim_voting_competition_rewards` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/consumable_event` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/consume_character_xp_boost` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/convert_candy_to_gold` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/create_custom_game_lobby` | lobbies | binary `ssc name` | yes | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it |
+| PUT | `/ssc/invoke/create_party` | lobbies | binary `ssc name` | yes | ssc: binary |
+| PUT | `/ssc/invoke/create_party_lobby` | lobbies | binary `ssc name`, capture ×11 | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/create_rift_lobby` | lobbies | binary `ssc name`, capture ×5 | **no** | ssc: server/capture |
+| ? | `/ssc/invoke/debug_lock_inventory_item` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/debug_unlock_inventory_item` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/decline_party_invite` | lobbies | binary `ssc name` | yes | ssc: binary |
+| ? | `/ssc/invoke/deduct_guild_dungeon_ticket` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/dlc_event` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/equip_announcer_pack` | http | binary `ssc name` | yes | ssc: binary (probable) |
+| PUT | `/ssc/invoke/equip_banner` | http | binary `ssc name`, capture ×2 | yes | ssc: binary (probable) |
+| PUT | `/ssc/invoke/equip_gems` | http | binary `ssc name`, capture ×3 | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/equip_profile_icon` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/equip_ringout_vfx` | http | binary `ssc name` | yes | ssc: binary (probable) |
+| PUT | `/ssc/invoke/equip_stat_tracker` | http | binary `ssc name` | yes | ssc: binary (probable) |
+| PUT | `/ssc/invoke/equip_taunt` | http | binary `ssc name` | yes | ssc: binary (probable) |
+| PUT | `/ssc/invoke/faceoff_timeout` | matchflow | binary `ssc name` | yes | ssc: server/capture |
+| ? | `/ssc/invoke/finish_rift_chapter` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/follow_account` | social | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/game_install` | http | binary `ssc name` | yes | ssc: binary |
+| PUT | `/ssc/invoke/game_launch_event` | http | binary `ssc name`, capture ×11 | yes | ssc: binary |
+| ? | `/ssc/invoke/get_active_ranked_seasons` | http | binary `ssc name` | **no** | ssc: binary |
+| GET | `/ssc/invoke/get_calendar_events` | http | binary `ssc name` | yes | ssc: server/capture |
+| GET | `/ssc/invoke/get_country_code` | http | binary `ssc name` | yes | ssc: binary |
+| ? | `/ssc/invoke/get_current_ftue_step` | http | binary `ssc name` | **no** | ssc: binary |
+| GET | `/ssc/invoke/get_equipped_cosmetics` | http | binary `ssc name` | yes | ssc: binary (probable) |
+| GET | `/ssc/invoke/get_gm_leaderboards` | http | binary `ssc name` | yes | ssc: binary |
+| GET | `/ssc/invoke/get_hiss_calendar_events` | http | binary `ssc name` | yes | ssc: binary |
+| GET | `/ssc/invoke/get_milestone_reward_tracks` | http | binary `ssc name` | yes | ssc: binary (probable) |
+| POST | `/ssc/invoke/get_or_create_mission_object` | http | binary `ssc name`, capture ×11 | yes | ssc: server/capture |
+| ? | `/ssc/invoke/get_or_create_my_match_config` | matchflow | binary `ssc name` | **no** | ssc: binary |
+| GET | `/ssc/invoke/get_or_create_rift_state` | http | binary `ssc name`, capture ×5 | **no** | ssc: server/capture |
+| ? | `/ssc/invoke/get_preferred_currency` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/grant_character_gift` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/grant_currency` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/grant_gold` | http | binary `ssc name` | **no** | ssc: binary |
+| GET | `/ssc/invoke/hiss_amalgamation` | http | binary `ssc name` | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/hiss_amalgamation` | http | binary `ssc name` | yes | ssc: server/capture |
+| ? | `/ssc/invoke/ingame_purchase_event` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/invite_to_party` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/invite_to_player_lobby` | lobbies | binary `ssc name` | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/join_custom_game_lobby` | lobbies | binary `ssc name` | yes | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it |
+| ? | `/ssc/invoke/join_party` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/join_party_lobby` | lobbies | binary `ssc name` | yes | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it |
+| ? | `/ssc/invoke/join_voting_competition` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/kick_from_lobby` | lobbies | binary `ssc name` | yes | ssc: binary |
+| ? | `/ssc/invoke/leave_party` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/leave_player_lobby` | lobbies | binary `ssc name` | yes | ssc: server/capture |
+| GET | `/ssc/invoke/load_gameplay_config` | http | binary `ssc name` | yes | ssc: binary (probable) |
+| GET | `/ssc/invoke/load_rifts` | http | binary `ssc name` | yes | ssc: binary (probable) |
+| PUT | `/ssc/invoke/lobby_code` | lobbies | binary `ssc name` | yes | ssc: server/capture |
+| ? | `/ssc/invoke/local_leaderboard_claim_rewards` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/local_leaderboard_has_unclaimed_rewards` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/lock_lobby_loadout` | lobbies | binary `ssc name`, capture ×18 | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/lock_rift_lobby_loadout` | lobbies | binary `ssc name`, capture ×3 | **no** | ssc: server/capture |
+| PUT | `/ssc/invoke/match_set_absent` | matchflow | binary `ssc name`, capture ×2 | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/match_set_checkin` | matchflow | binary `ssc name`, capture ×6 | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/match_set_concede` | matchflow | binary `ssc name` | yes | ssc: server/capture |
+| ? | `/ssc/invoke/notify_changing_modes` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/perks_absent` | matchflow | binary `ssc name`, capture ×3 | yes | ssc: server/capture |
+| GET | `/ssc/invoke/perks_get_all_pages` | http | binary `ssc name` | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/perks_lock` | matchflow | binary `ssc name`, capture ×9 | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/perks_set_character_page` | http | binary `ssc name` | yes | ssc: server/capture |
+| ? | `/ssc/invoke/post_login_bonuses` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/promote_to_lobby_leader` | lobbies | binary `ssc name` | yes | ssc: binary |
+| ? | `/ssc/invoke/purchase_stocks` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/ranked_claim_end_of_season_rewards` | http | binary `ssc name`, capture ×3 | **no** | ssc: server/capture |
+| GET | `/ssc/invoke/ranked_data` | http | binary `ssc name` | yes | ssc: server/capture |
+| ? | `/ssc/invoke/read_cached_configs` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/rematch_accept` | lobbies | binary `ssc name` | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/rematch_decline` | lobbies | binary `ssc name` | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/reset_custom_lobby_to_defaults` | lobbies | binary `ssc name` | yes | ssc: server/capture |
+| ? | `/ssc/invoke/reset_inventory` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/rift_reset_all_chapters` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/rift_reset_all_player_data` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/rift_unlock_chapter_cauldron_tiers` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/save_current_ftue_step` | http | binary `ssc name` | **no** | ssc: binary |
+| ? | `/ssc/invoke/select_rift_loadout` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/send_frontend_mission_updates` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/send_profile_notification` | http | binary `ssc name` | yes | ssc: binary |
+| ? | `/ssc/invoke/set_chapter_difficulty` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/set_enabled_maps_for_custom_game` | lobbies | binary `ssc name` | yes | ssc: binary |
+| PUT | `/ssc/invoke/set_game_mode_for_custom_game` | lobbies | binary `ssc name` | yes | ssc: binary |
+| ? | `/ssc/invoke/set_joinable` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/set_lobby_joinable` | lobbies | binary `ssc name`, capture ×5 | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/set_lobby_not_joinable` | lobbies | binary `ssc name`, capture ×1 | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/set_mode_for_lobby` | lobbies | binary `ssc name` | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/set_player_handicap_for_custom_game` | lobbies | binary `ssc name` | yes | ssc: binary |
+| PUT | `/ssc/invoke/set_profile_icon` | http | binary `ssc name` | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/set_ready_for_lobby` | lobbies | binary `ssc name`, capture ×10 | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/set_world_buffs_for_custom_game` | lobbies | binary `ssc name` | yes | ssc: binary |
+| ? | `/ssc/invoke/skip_rift_node` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/start_custom_match` | lobbies | binary `ssc name` | yes | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it |
+| PUT | `/ssc/invoke/start_rift_node` | http | binary `ssc name`, capture ×1 | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/submit_end_of_match_stats` | http | binary `ssc name`, capture ×9 | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/switch_custom_game_lobby_team` | lobbies | binary `ssc name` | yes | ssc: binary |
+| ? | `/ssc/invoke/sync_match_config` | matchflow | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/toast_player` | matchflow | binary `ssc name`, capture ×4 | yes | ssc: server/capture |
+| ? | `/ssc/invoke/unlock_ftue_character` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/update_custom_game_bot_fighter` | lobbies | binary `ssc name` | yes | ssc: binary |
+| PUT | `/ssc/invoke/update_int_setting_for_custom_game` | lobbies | binary `ssc name` | yes | ssc: binary |
+| ? | `/ssc/invoke/update_member_data` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/update_party_game_modes` | lobbies | binary `ssc name` | yes | ssc: binary |
+| PUT | `/ssc/invoke/update_player_preferences` | http | binary `ssc name` | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/update_team_style_for_custom_game` | lobbies | binary `ssc name` | yes | ssc: binary |
+| ? | `/ssc/invoke/upgrade_track_to_premium` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| ? | `/ssc/invoke/zd_ticket_submit` | http | binary `ssc name` | **no** | ssc: binary |

@@ -4,8 +4,11 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using OpenVersus.Server.Core.Settings;
-using OpenVersus.Server.Http.Hosting;
-using OpenVersus.Server.Http.Stubs;
+using OpenVersus.Server.Http.Shared.Hosting;
+using OpenVersus.Server.Http.Shared.Stubs;
+
+using OpenVersus.Server.Core.Hosting;
+using OpenVersus.Server.TestSupport;
 
 namespace OpenVersus.Server.Http.Tests;
 
@@ -26,7 +29,13 @@ public sealed class RouteMapTests : IClassFixture<GameAppFactory>
         _client = factory.CreateGameClient();
     }
 
-    public sealed record Route(string Method, string Path, string Kind, string Area);
+    public sealed record Route(string Method, string Path, string Kind, string Area, string Owner);
+
+    /// <summary>The services that answer routes (owners.tsv, copied into routes.json by gen_routes.py).</summary>
+    internal static readonly string[] Owners = ["http", "access", "social", "lobbies", "matchflow", "web"];
+
+    /// <summary>Owners whose routes still live in this service: each moves out to its own executable (web has).</summary>
+    internal static readonly string[] StillHere = ["http", "access", "social", "lobbies", "matchflow"];
 
     internal static IReadOnlyList<Route> LoadRoutes()
     {
@@ -39,7 +48,8 @@ public sealed class RouteMapTests : IClassFixture<GameAppFactory>
         Assert.NotNull(dir);
         using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir!.FullName, "docs", "routes.json")));
         return doc.RootElement.EnumerateArray()
-            .Select(r => new Route(r.GetProperty("method").GetString()!, r.GetProperty("path").GetString()!, r.GetProperty("kind").GetString()!, r.GetProperty("area").GetString()!))
+            .Select(r => new Route(r.GetProperty("method").GetString()!, r.GetProperty("path").GetString()!, r.GetProperty("kind").GetString()!, r.GetProperty("area").GetString()!,
+                r.TryGetProperty("owner", out var owner) ? owner.GetString() ?? "" : ""))
             .Where(r => !r.Path.StartsWith("/.*", StringComparison.Ordinal))
             .ToList();
     }
@@ -63,12 +73,26 @@ public sealed class RouteMapTests : IClassFixture<GameAppFactory>
     }
 
     [Fact]
+    public void EveryRouteHasAnOwner()
+    {
+        var unowned = LoadRoutes().Where(r => !Owners.Contains(r.Owner)).Select(r => $"{r.Method} {r.Path}: '{r.Owner}'").ToList();
+        Assert.Empty(unowned);
+    }
+
+    [Fact]
+    public async Task AnswersExactlyTheRoutesItOwnsAndSendsTheRestToTheFallback()
+    {
+        var problems = await RouteOwnership.ProblemsAsync(_client, KnownServices.Http.Name, fallback: true, stillHere: StillHere);
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    [Fact]
     public async Task EveryRouteReachesAnEndpointOfItsOwn()
     {
         var owners = new Dictionary<string, string>();
         var problems = new List<string>();
-        var routes = LoadRoutes();
-        Assert.True(routes.Count > 200, $"routes.json has only {routes.Count} routes");
+        var routes = LoadRoutes().Where(r => StillHere.Contains(r.Owner)).ToList();
+        Assert.True(routes.Count > 200, $"routes.json has only {routes.Count} routes here");
         foreach (var route in routes)
         {
             // A route with an unknown method may share its path with routes whose methods are known; it only owns

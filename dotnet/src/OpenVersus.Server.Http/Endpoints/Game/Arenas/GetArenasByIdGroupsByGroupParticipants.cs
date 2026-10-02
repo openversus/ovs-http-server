@@ -1,5 +1,5 @@
 using FastEndpoints;
-using OpenVersus.Server.Http.Stubs;
+using OpenVersus.Server.Http.Shared.Stubs;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Arenas;
 

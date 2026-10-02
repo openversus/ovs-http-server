@@ -13,7 +13,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "access"
   },
   {
     "method": "DELETE",
@@ -29,7 +30,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "access"
   },
   {
     "method": "POST",
@@ -45,7 +47,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "access"
   },
   {
     "method": "POST",
@@ -61,7 +64,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "POST",
@@ -77,7 +81,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -91,7 +96,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -105,7 +111,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -119,7 +126,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -133,7 +141,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -147,7 +156,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -163,7 +173,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -179,7 +190,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -195,7 +207,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -209,7 +222,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "social"
   },
   {
     "method": "PUT",
@@ -223,7 +237,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "PUT",
@@ -237,7 +252,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "PUT",
@@ -249,7 +265,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "social"
   },
   {
     "method": "GET",
@@ -265,7 +282,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -279,7 +297,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -291,7 +310,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "social"
   },
   {
     "method": "GET",
@@ -307,7 +327,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -323,7 +344,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -339,7 +361,8 @@
     ],
     "kind": "ovs-admin",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "POST",
@@ -355,7 +378,8 @@
     ],
     "kind": "ovs-admin",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -371,7 +395,8 @@
     ],
     "kind": "ovs-admin",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "POST",
@@ -388,7 +413,8 @@
     ],
     "kind": "ovs-client",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -404,7 +430,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -420,7 +447,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -436,7 +464,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "POST",
@@ -452,7 +481,8 @@
     ],
     "kind": "ovs-rollback",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "matchflow"
   },
   {
     "method": "GET",
@@ -464,7 +494,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -476,7 +507,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -488,7 +520,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -504,7 +537,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -520,7 +554,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "PUT",
@@ -536,7 +571,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -550,7 +586,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -562,7 +599,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -576,7 +614,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -593,7 +632,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -609,7 +649,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -623,7 +664,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -637,7 +679,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -653,7 +696,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -667,7 +711,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "POST",
@@ -683,7 +728,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -699,7 +745,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -715,7 +762,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -731,7 +779,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -747,7 +796,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -774,7 +824,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -790,7 +841,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "POST",
@@ -806,7 +858,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "GET",
@@ -822,7 +875,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "GET",
@@ -838,7 +892,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "PUT",
@@ -854,7 +909,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "?",
@@ -868,7 +924,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "social"
   },
   {
     "method": "PUT",
@@ -884,7 +941,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "PUT",
@@ -900,7 +958,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "GET",
@@ -915,7 +974,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -929,7 +989,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -945,7 +1006,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -961,7 +1023,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -983,7 +1046,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -999,7 +1063,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -1015,7 +1080,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -1027,7 +1093,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -1039,7 +1106,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -1053,7 +1121,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -1065,7 +1134,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -1077,7 +1147,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -1091,7 +1162,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -1107,7 +1179,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -1121,7 +1194,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "POST",
@@ -1137,7 +1211,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "POST",
@@ -1155,7 +1230,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "GET",
@@ -1169,7 +1245,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -1183,7 +1260,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -1197,7 +1275,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "POST",
@@ -1213,7 +1292,8 @@
     ],
     "kind": "ovs-rollback",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "matchflow"
   },
   {
     "method": "POST",
@@ -1229,7 +1309,8 @@
     ],
     "kind": "ovs-rollback",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "matchflow"
   },
   {
     "method": "GET",
@@ -1245,7 +1326,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "POST",
@@ -1261,7 +1343,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "PUT",
@@ -1273,7 +1356,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -1289,7 +1373,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -1303,7 +1388,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -1319,7 +1405,8 @@
     ],
     "kind": "ovs-client",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -1336,7 +1423,8 @@
     ],
     "kind": "ovs-client",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "POST",
@@ -1352,7 +1440,8 @@
     ],
     "kind": "ovs-client",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "POST",
@@ -1368,7 +1457,8 @@
     ],
     "kind": "ovs-client",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "POST",
@@ -1384,7 +1474,8 @@
     ],
     "kind": "ovs-client",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "POST",
@@ -1400,7 +1491,8 @@
     ],
     "kind": "ovs-client",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "PUT",
@@ -1416,7 +1508,8 @@
     ],
     "kind": "ovs-client",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "DELETE",
@@ -1432,7 +1525,8 @@
     ],
     "kind": "ovs-client",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "GET",
@@ -1449,7 +1543,8 @@
     ],
     "kind": "ovs-client",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "POST",
@@ -1465,7 +1560,8 @@
     ],
     "kind": "ovs-rollback",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "matchflow"
   },
   {
     "method": "POST",
@@ -1481,7 +1577,8 @@
     ],
     "kind": "ovs-rollback",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "matchflow"
   },
   {
     "method": "POST",
@@ -1497,7 +1594,8 @@
     ],
     "kind": "ovs-rollback",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "matchflow"
   },
   {
     "method": "POST",
@@ -1513,7 +1611,8 @@
     ],
     "kind": "ovs-rollback",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "matchflow"
   },
   {
     "method": "GET",
@@ -1529,7 +1628,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -1543,7 +1643,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -1559,7 +1660,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -1571,7 +1673,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -1587,7 +1690,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -1603,7 +1707,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -1617,7 +1722,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -1631,7 +1737,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "social"
   },
   {
     "method": "GET",
@@ -1645,7 +1752,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -1657,7 +1765,8 @@
     "notes": [],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -1671,7 +1780,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "access"
   },
   {
     "method": "POST",
@@ -1687,7 +1797,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "access"
   },
   {
     "method": "?",
@@ -1701,7 +1812,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "access"
   },
   {
     "method": "PUT",
@@ -1717,7 +1829,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "GET",
@@ -1733,7 +1846,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "PUT",
@@ -1749,7 +1863,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "social"
   },
   {
     "method": "?",
@@ -1763,7 +1878,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -1779,7 +1895,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "POST",
@@ -1795,7 +1912,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -1811,7 +1929,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -1825,7 +1944,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -1841,7 +1961,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -1855,7 +1976,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -1869,7 +1991,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -1883,7 +2006,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -1897,7 +2021,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "matchflow"
   },
   {
     "method": "PUT",
@@ -1911,7 +2036,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -1925,7 +2051,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -1939,7 +2066,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -1953,7 +2081,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "POST",
@@ -1969,7 +2098,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -1983,7 +2113,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -1997,7 +2128,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2011,7 +2143,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2025,7 +2158,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2039,7 +2173,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2055,7 +2190,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -2071,7 +2207,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -2087,7 +2224,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -2101,7 +2239,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -2115,7 +2254,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2129,7 +2269,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2145,7 +2286,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -2159,7 +2301,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2173,7 +2316,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2189,7 +2333,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2205,7 +2350,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2219,7 +2365,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2233,7 +2380,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2249,7 +2397,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2265,7 +2414,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2281,7 +2431,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2297,7 +2448,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "matchflow"
   },
   {
     "method": "?",
@@ -2311,7 +2463,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2325,7 +2478,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "social"
   },
   {
     "method": "PUT",
@@ -2341,7 +2495,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2357,7 +2512,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2371,7 +2527,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -2387,7 +2544,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -2403,7 +2561,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2417,7 +2576,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -2433,7 +2593,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -2449,7 +2610,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -2465,7 +2627,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -2481,7 +2644,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "POST",
@@ -2497,7 +2661,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2511,7 +2676,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "matchflow"
   },
   {
     "method": "GET",
@@ -2525,7 +2691,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2539,7 +2706,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2553,7 +2721,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2567,7 +2736,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2581,7 +2751,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -2597,7 +2768,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2613,7 +2785,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2627,7 +2800,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2641,7 +2815,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -2657,7 +2832,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -2673,7 +2849,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -2687,7 +2864,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -2703,7 +2881,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -2717,7 +2896,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2733,7 +2913,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -2747,7 +2928,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -2763,7 +2945,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "GET",
@@ -2779,7 +2962,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -2795,7 +2979,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2811,7 +2996,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -2825,7 +3011,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -2839,7 +3026,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2855,7 +3043,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -2869,7 +3058,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -2885,7 +3075,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "matchflow"
   },
   {
     "method": "PUT",
@@ -2901,7 +3092,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "matchflow"
   },
   {
     "method": "PUT",
@@ -2917,7 +3109,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "matchflow"
   },
   {
     "method": "?",
@@ -2931,7 +3124,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -2947,7 +3141,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "matchflow"
   },
   {
     "method": "GET",
@@ -2963,7 +3158,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -2979,7 +3175,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "matchflow"
   },
   {
     "method": "PUT",
@@ -2995,7 +3192,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -3009,7 +3207,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -3025,7 +3224,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -3039,7 +3239,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -3053,7 +3254,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -3069,7 +3271,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -3083,7 +3286,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -3099,7 +3303,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -3115,7 +3320,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -3131,7 +3337,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -3145,7 +3352,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -3159,7 +3367,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -3173,7 +3382,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -3187,7 +3397,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -3201,7 +3412,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -3215,7 +3427,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -3229,7 +3442,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -3245,7 +3459,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -3259,7 +3474,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -3275,7 +3491,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -3291,7 +3508,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -3305,7 +3523,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -3321,7 +3540,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -3337,7 +3557,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -3353,7 +3574,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -3369,7 +3591,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -3385,7 +3608,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -3401,7 +3625,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -3417,7 +3642,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -3431,7 +3657,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -3447,7 +3674,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -3461,7 +3689,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -3477,7 +3706,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -3493,7 +3723,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -3507,7 +3738,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "matchflow"
   },
   {
     "method": "PUT",
@@ -3523,7 +3755,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "matchflow"
   },
   {
     "method": "?",
@@ -3537,7 +3770,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -3553,7 +3787,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -3569,7 +3804,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -3583,7 +3819,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -3599,7 +3836,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",
@@ -3615,7 +3853,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   },
   {
     "method": "PUT",
@@ -3631,7 +3870,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "lobbies"
   },
   {
     "method": "?",
@@ -3645,7 +3885,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "?",
@@ -3659,7 +3900,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "GET",
@@ -3675,7 +3917,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -3689,7 +3932,8 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": false
+    "in_server": false,
+    "owner": "http"
   },
   {
     "method": "POST",
@@ -3705,7 +3949,8 @@
     ],
     "kind": "ovs-admin",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -3721,7 +3966,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "GET",
@@ -3737,7 +3983,8 @@
     ],
     "kind": "ovs-web",
     "in_game": false,
-    "in_server": true
+    "in_server": true,
+    "owner": "web"
   },
   {
     "method": "POST",
@@ -3754,6 +4001,7 @@
     ],
     "kind": "game",
     "in_game": true,
-    "in_server": true
+    "in_server": true,
+    "owner": "http"
   }
 ]

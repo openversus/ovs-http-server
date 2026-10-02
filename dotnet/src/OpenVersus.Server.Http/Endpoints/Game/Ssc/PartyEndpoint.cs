@@ -1,7 +1,7 @@
 using System.Text.Json.Nodes;
 using OpenVersus.Server.Core.CustomLobbies;
 using OpenVersus.Server.Core.Matches;
-using OpenVersus.Server.Http.Hosting;
+using OpenVersus.Server.Http.Shared.Hosting;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;

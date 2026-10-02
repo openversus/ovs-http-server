@@ -9,7 +9,13 @@ import json, re, pathlib, collections
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-ENDPOINTS = ROOT / "src/OpenVersus.Server.Http/Endpoints"
+# Each route's stub goes into the project of the service that owns it (routes.json, owner); owners not listed here still
+# live in the HTTP service.
+OWNER_PROJECTS = {"web": "OpenVersus.Server.Web"}
+
+
+def project(row):
+    return OWNER_PROJECTS.get(row["owner"], "OpenVersus.Server.Http")
 ALL_VERBS = ["GET", "PUT", "POST", "DELETE"]
 KIND_DIRS = {
     "game": "Game",
@@ -78,8 +84,21 @@ def summary(row, verbs):
     return lines
 
 
+def declared_routes():
+    """Every path an endpoint in any service's project declares (Routes("...") or an SSC `Route => "name"`), so a route
+    already answered under another class name (AnyEquipGems for a route whose method became known) is not written again."""
+    paths = set()
+    for f in (ROOT / "src").glob("*/Endpoints/**/*.cs"):
+        text = f.read_text()
+        for m in re.finditer(r'Routes\(([^)]*)\)', text):
+            paths.update(p.rstrip("/") for p in re.findall(r'"([^"]+)"', m.group(1)))
+        paths.update("/ssc/invoke/" + m.group(1) for m in re.finditer(r'Route\s*=>\s*"([^"]+)"', text))
+    return paths
+
+
 def main():
     rows = json.loads((ROOT / "docs/routes.json").read_text())
+    declared = declared_routes()
     claimed = {}  # (verb, shape) -> class
     # The catch-all is hand-written; keep generated SSC names from colliding with it.
     written = skipped = existing = 0
@@ -106,16 +125,16 @@ def main():
             name += str(names[(folder(row), name)])
         for v in free:
             claimed[(v, shape(row["path"]))] = name
-        target = ENDPOINTS / folder(row) / f"{name}.cs"
-        if target.exists():
+        target = ROOT / "src" / project(row) / "Endpoints" / folder(row) / f"{name}.cs"
+        if target.exists() or row["path"] in declared:
             existing += 1
             continue
-        ns = "OpenVersus.Server.Http.Endpoints." + folder(row).replace("/", ".")
+        ns = f"{project(row)}.Endpoints." + folder(row).replace("/", ".")
         verb_call = f"Verbs({', '.join(FE_VERB[v] for v in free)});"
         doc = "\n".join(f"/// {line}" for line in summary(row, free))
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(f"""using FastEndpoints;
-using OpenVersus.Server.Http.Stubs;
+using OpenVersus.Server.Http.Shared.Stubs;
 
 namespace {ns};
 

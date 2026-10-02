@@ -1,5 +1,5 @@
 using System.Net;
-using OpenVersus.Server.Http.Hosting;
+using OpenVersus.Server.Http.Shared.Hosting;
 using HydraCodec = OpenVersus.Server.Core.Hydra.Hydra;
 
 namespace OpenVersus.Server.Http.Tests;

@@ -1,8 +1,8 @@
 using FastEndpoints;
 using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.CustomLobbies;
-using OpenVersus.Server.Http.Hosting;
-using OpenVersus.Server.Http.Stubs;
+using OpenVersus.Server.Http.Shared.Hosting;
+using OpenVersus.Server.Http.Shared.Stubs;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Matches;
 

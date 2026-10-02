@@ -7,7 +7,7 @@ using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Missions;
 using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.RewardTracks;
-using OpenVersus.Server.Http.Hosting;
+using OpenVersus.Server.Http.Shared.Hosting;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;

@@ -99,7 +99,10 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 ### 3. `/batch` sends the sub-requests C# has not ported to TS (`src/OpenVersus.Server.Http/Batch/BatchRunner.cs`)
 
 - **Decided:** 2026-09-29 (option 1, on the condition that it is recorded here and never becomes permanent).
-- **What:** the C# `/batch` runs every sub-request through its own pipeline. Those that reach a stub (not ported), and
+- **Not part of the bridge:** a sub-request another C# service owns (`owner` in `routes.json`) goes to that service
+  through the router (`Batch:EdgeUrl`: the proxy on the bench, the router in production) as a request of its own, with
+  the same headers. That is how a batch spans services, and it stays when TS is gone.
+- **What:** the C# `/batch` runs each of its own service's sub-requests through its own pipeline. Those that reach a stub (not ported), and
   those whose route is listed in `Batch:ForwardRoutes`, go to the TS server (`Batch:TsUrl`) together, as one TS `/batch`
   carrying the game's batch headers as they came (plus `X-Real-IP`), so the TS server runs them exactly as it runs its
   own batches. Its answers are put into the response byte for byte, in the game's order.

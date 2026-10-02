@@ -1,8 +1,8 @@
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using System.Text.Json.Nodes;
-using OpenVersus.Server.Http.Hosting;
-using OpenVersus.Server.Http.Stubs;
+using OpenVersus.Server.Http.Shared.Hosting;
+using OpenVersus.Server.Http.Shared.Stubs;
 using HydraCodec = OpenVersus.Server.Core.Hydra.Hydra;
 
 namespace OpenVersus.Server.Http.Tests;
@@ -73,8 +73,7 @@ public sealed class HydraTokenTests(GameAppFactory factory) : IClassFixture<Game
     [InlineData("GET", "/leaderboards/x/around/me")]
     [InlineData("GET", "/leaderboards/x/around/0000000000000000000a0002")]
     [InlineData("GET", "/global_configuration_types/eula/global_configurations/x")]
-    // Not game routes: they do their own checks.
-    [InlineData("GET", "/ovs/notifications")]
+    // Not a game route.
     [InlineData("GET", "/health/live")]
     public async Task RoutesTheTsServerAnswersWithoutAToken(string method, string path)
     {

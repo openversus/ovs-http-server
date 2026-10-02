@@ -1,5 +1,5 @@
 using System.Net;
-using OpenVersus.Server.Http.Hosting;
+using OpenVersus.Server.Http.Shared.Hosting;
 
 namespace OpenVersus.Server.Http.Tests;
 

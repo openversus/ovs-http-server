@@ -1,7 +1,7 @@
 using FastEndpoints;
 using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Core.Inventory;
-using OpenVersus.Server.Http.Hosting;
+using OpenVersus.Server.Http.Shared.Hosting;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Profiles;
 

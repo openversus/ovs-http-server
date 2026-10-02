@@ -4,12 +4,13 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Hydra;
 using OpenVersus.Server.Core.Settings;
-using OpenVersus.Server.Http.Hosting;
-using OpenVersus.Server.Http.Stubs;
+using OpenVersus.Server.Http.Shared.Hosting;
+using OpenVersus.Server.Http.Shared.Stubs;
 
 namespace OpenVersus.Server.Http.Batch;
 
@@ -22,6 +23,10 @@ public sealed class BatchSettings : IValidatableObject
 
     [Description("Routes the TS server answers inside a batch although C# has ported them, as METHOD /path separated by commas (the form of Proxy:PortedRoutes). Taking a route out of Proxy:PortedRoutes does not reach into batches; listing it here does. Empty: C# answers every route it has ported.")]
     public string ForwardRoutes { get; set; } = "";
+
+    [Description("Where a sub-request another service answers is sent (docs/routes.json, owner): the router in front of the services (on the bench, the proxy), which sends it to its owner like any request of the game's.")]
+    [Url]
+    public string EdgeUrl { get; set; } = "http://127.0.0.1:18000";
 
     [Description("How long a batch waits for the TS server, in seconds. After that the sub-requests sent there answer 504 and the batch answers with the rest (the TS server itself waits for ever on a sub-request that never answers).")]
     [Range(1, 600)]
@@ -65,7 +70,11 @@ public sealed class BatchPipeline
 /// copied, there or here.
 /// </para>
 /// <para>
-/// MIGRATION BRIDGE (dotnet/docs/MIGRATION-BRIDGES.md, 3): a sub-request that reaches a stub (not ported), or whose
+/// A sub-request another service answers (its route's owner in docs/routes.json is not this service) goes to that
+/// service through the router (<see cref="BatchSettings.EdgeUrl"/>) as a request of its own, with the same headers.
+/// </para>
+/// <para>
+/// MIGRATION BRIDGE (dotnet/docs/MIGRATION-BRIDGES.md, 3): a sub-request of this service's that reaches a stub (not ported), or whose
 /// route is in <see cref="BatchSettings.ForwardRoutes"/>, goes to the TS server; all of those in one TS /batch that
 /// carries this batch's headers, so the TS server runs them exactly as it runs its own. Its answers, and this service's
 /// own, are put into the response as the bytes they came as (<see cref="HydraRaw"/>).
@@ -82,6 +91,8 @@ public sealed class BatchRunner(
     IHttpContextFactory contexts,
     IHttpClientFactory clients,
     IOptionsMonitor<BatchSettings> settings,
+    ServiceDefinition service,
+    RouteOwners owners,
     ILogger<BatchRunner> log)
 {
     public const string ClientName = "batch-ts";
@@ -122,6 +133,7 @@ public sealed class BatchRunner(
         var items = new JsonNode?[requests.Count];
         var forward = new List<int>();
         var local = new List<(int Index, Task<(bool Stub, JsonNode Item)> Answer)>();
+        var elsewhere = new List<(int Index, Task<JsonNode> Answer)>();
         for (int i = 0; i < requests.Count; i++)
         {
             if (Parse(requests[i]) is not { } sub)
@@ -135,6 +147,10 @@ public sealed class BatchRunner(
             else if (forwardRoutes.Contains(sub.Method, sub.Path))
             {
                 forward.Add(i);
+            }
+            else if (owners.OwnerOf(sub.Method, sub.Path) != service.Name)
+            {
+                elsewhere.Add((i, EdgeAsync(batch, sub, clientAddress, current, ct)));
             }
             else
             {
@@ -155,6 +171,11 @@ public sealed class BatchRunner(
             }
         }
 
+        foreach (var (index, answer) in elsewhere)
+        {
+            items[index] = await answer;
+        }
+
         forward.Sort();
         if (forward.Count > 0)
         {
@@ -165,8 +186,8 @@ public sealed class BatchRunner(
             }
         }
 
-        log.LogDebug("Batch of {Count}: {Local} answered here, {Forwarded} by the TS server, in {Ms} ms",
-            requests.Count, requests.Count - forward.Count, forward.Count, watch.ElapsedMilliseconds);
+        log.LogDebug("Batch of {Count}: {Local} answered here, {Elsewhere} by other services, {Forwarded} by the TS server, in {Ms} ms",
+            requests.Count, requests.Count - forward.Count - elsewhere.Count, elsewhere.Count, forward.Count, watch.ElapsedMilliseconds);
         return HydraEncoder.Encode(new JsonObject { ["responses"] = new JsonArray(items) });
     }
 
@@ -256,14 +277,7 @@ public sealed class BatchRunner(
                     return (true, new JsonObject());
                 }
 
-                // A Hydra answer as its bytes; a text answer as its text, empty included (res.send("") gives the TS batch "");
-                // no answer at all (no content type, nothing sent) as null.
-                byte[] bytes = responseBody.ToArray();
-                bool hydra = string.Equals(response.ContentType, HydraBodies.ContentType, StringComparison.OrdinalIgnoreCase);
-                JsonNode? answer = hydra ? (bytes.Length == 0 ? null : HydraRaw.Node(bytes))
-                    : bytes.Length > 0 || response.ContentType is { Length: > 0 } ? JsonValue.Create(Encoding.UTF8.GetString(bytes))
-                    : null;
-                return (false, Item(response.StatusCode, answer));
+                return (false, Item(response.StatusCode, Answer(response.ContentType, responseBody.ToArray())));
             }
             finally
             {
@@ -274,6 +288,59 @@ public sealed class BatchRunner(
         {
             log.LogError(e, "Batch sub-request {Verb} {Url} failed; it answers 500", sub.Verb, sub.Url);
             return (false, Item(StatusCodes.Status500InternalServerError, new JsonObject()));
+        }
+    }
+
+    // A Hydra answer as its bytes; a text answer as its text, empty included (res.send("") gives the TS batch ""); no
+    // answer at all (no content type, nothing sent) as null.
+    private static JsonNode? Answer(string? contentType, byte[] bytes)
+    {
+        bool hydra = string.Equals(contentType, HydraBodies.ContentType, StringComparison.OrdinalIgnoreCase);
+        return hydra ? (bytes.Length == 0 ? null : HydraRaw.Node(bytes))
+            : bytes.Length > 0 || contentType is { Length: > 0 } ? JsonValue.Create(Encoding.UTF8.GetString(bytes))
+            : null;
+    }
+
+    // A sub-request of another service's, through the router: what the in-process copy gets (its own headers, the
+    // batch's token and client address, the batch's Host), as a request of its own.
+    private async Task<JsonNode> EdgeAsync(HttpContext batch, SubRequest sub, string clientAddress, BatchSettings current, CancellationToken ct)
+    {
+        try
+        {
+            using var message = new HttpRequestMessage(new HttpMethod(sub.Verb), $"{current.EdgeUrl.TrimEnd('/')}{sub.Url}");
+            if (sub.Body is not null)
+            {
+                message.Content = new ByteArrayContent(HydraEncoder.Encode(sub.Body));
+                message.Content.Headers.ContentType = new(HydraBodies.ContentType);
+            }
+
+            foreach (var (name, value) in sub.Headers)
+            {
+                if (!s_notForwarded.Contains(name))
+                {
+                    message.Headers.TryAddWithoutValidation(name, value);
+                }
+            }
+
+            message.Headers.Host = batch.Request.Host.Value;
+            message.Headers.TryAddWithoutValidation(HydraToken.Header, (IEnumerable<string?>)batch.Request.Headers[HydraToken.Header]);
+            message.Headers.TryAddWithoutValidation("x-real-ip", clientAddress);
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(current.ForwardTimeoutSeconds));
+            using var response = await clients.CreateClient(ClientName).SendAsync(message, timeout.Token);
+            byte[] bytes = await response.Content.ReadAsByteArrayAsync(timeout.Token);
+            return Item((int)response.StatusCode, Answer(response.Content.Headers.ContentType?.MediaType, bytes));
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            log.LogWarning("Batch: {Verb} {Url} did not answer through {Edge} within {Seconds} s; it answers 504", sub.Verb, sub.Url, current.EdgeUrl, current.ForwardTimeoutSeconds);
+            return Item(StatusCodes.Status504GatewayTimeout, new JsonObject());
+        }
+        catch (Exception e) when (e is HttpRequestException or HydraFormatException or IOException)
+        {
+            log.LogWarning("Batch: {Verb} {Url} through {Edge} failed ({Error}); it answers 502", sub.Verb, sub.Url, current.EdgeUrl, e.Message);
+            return Item(StatusCodes.Status502BadGateway, new JsonObject());
         }
     }
 
@@ -348,6 +415,7 @@ public static class BatchHosting
         builder.AddSetting<BatchSettings>("Batch");
         builder.Services.AddSingleton<BatchPipeline>();
         builder.Services.AddSingleton<BatchRunner>();
+        builder.Services.TryAddSingleton(RouteOwners.Routes);
         // The timeout is per batch, from the setting, so the client's own is off; answers are passed on as they are.
         builder.Services.AddHttpClient(BatchRunner.ClientName, c => c.Timeout = Timeout.InfiniteTimeSpan)
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false, UseProxy = false });

@@ -2,7 +2,7 @@ using System.Text.Json.Nodes;
 using FastEndpoints;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Rifts;
-using OpenVersus.Server.Http.Hosting;
+using OpenVersus.Server.Http.Shared.Hosting;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;

@@ -1,7 +1,7 @@
 using FastEndpoints;
 using OpenVersus.Server.Core.Hydra;
 using OpenVersus.Server.Http.Batch;
-using OpenVersus.Server.Http.Hosting;
+using OpenVersus.Server.Http.Shared.Hosting;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Batch;
 

@@ -1,6 +1,6 @@
 using FastEndpoints;
 using OpenVersus.Server.Core.Leaderboards;
-using OpenVersus.Server.Http.Hosting;
+using OpenVersus.Server.Http.Shared.Hosting;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 

@@ -172,6 +172,21 @@ def load_server():
 NOT_GAME = re.compile(r"^/(appinfo|dynamicstore|events/|textfilter|dns-query|dokken/|v1/fleets|\{n\}$|$|//|[0-9a-f]{40})")
 
 
+# The executables that answer routes (KnownServices names); owners.tsv gives each route one of them.
+OWNERS = ("http", "access", "social", "lobbies", "matchflow", "web")
+
+
+def load_owners():
+    owners = {}
+    for line in (SRC / "owners.tsv").read_text().splitlines():
+        if line and not line.startswith("#"):
+            method, path, owner = line.split("\t")
+            if owner not in OWNERS:
+                raise SystemExit(f"owners.tsv: {method} {path}: unknown owner '{owner}' (one of {', '.join(OWNERS)})")
+            owners[(method, path)] = owner
+    return owners
+
+
 def area_of(path):
     seg = path.strip("/").split("/")[0]
     return seg or "root"
@@ -265,6 +280,15 @@ def main():
         r["kind"] = next((k for k, rx in OVS_KINDS if rx.match(r["path"])), "game")
         r["in_game"] = r["kind"] == "game" and (bool(r["binary"]) or r["capture"] > 0 or r["path"].endswith("/access"))
         r["in_server"] = bool(r["server"])
+    owners = load_owners()
+    unowned = [f"{r['method']} {r['path']}" for r in rows if (r["method"], r["path"]) not in owners]
+    if unowned:
+        raise SystemExit("owners.tsv has no owner for: " + ", ".join(unowned))
+    stale = sorted(set(owners) - {(r["method"], r["path"]) for r in rows})
+    if stale:
+        raise SystemExit("owners.tsv names routes that do not exist: " + ", ".join(f"{m} {p}" for m, p in stale))
+    for r in rows:
+        r["owner"] = owners[(r["method"], r["path"])]
     DOCS.mkdir(exist_ok=True)
     (DOCS / "routes.json").write_text(json.dumps(rows, indent=2) + "\n")
     write_markdown(rows)
@@ -283,14 +307,14 @@ def write_markdown(rows):
     def line(r):
         server = "yes" if r["in_server"] else "**no**"
         notes = "; ".join(dict.fromkeys(n for n in r["notes"] if n))
-        return f"| {r['method']} | `{r['path']}` | {src(r)} | {server} | {notes} |"
+        return f"| {r['method']} | `{r['path']}` | {r['owner']} | {src(r)} | {server} | {notes} |"
 
     game = [r for r in rows if r["in_game"] and r["kind"] == "game"]
     ssc = [r for r in rows if r["area"] == "ssc"]
     missing = [r for r in game if not r["in_server"] and r["area"] != "ssc"]
     ssc_missing = [r for r in ssc if not r["in_server"]]
     ovs = {k: [r for r in rows if r["kind"] == k] for k in KIND_TITLES}
-    head = "| Method | Route | Game source | TS server | Notes |\n|---|---|---|---|---|"
+    head = "| Method | Route | Owner | Game source | TS server | Notes |\n|---|---|---|---|---|---|"
     out = [
         "# Routes",
         "",

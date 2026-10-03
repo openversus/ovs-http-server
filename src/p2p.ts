@@ -7,7 +7,25 @@
 // posts /ovs_p2p_ready when it serves (which is when the players get game-server-instance-ready) and
 // /ovs_match_started when the match starts.
 import env from "./env/env";
+import { redisClient } from "./config/redis";
 import type { MATCH_FOUND_NOTIFICATION, RedisTeamEntry } from "./config/redis";
+
+import { parseNodePort } from "./services/nodePort";
+
+export { parseNodePort };
+
+/**
+ * The port this player's game is sent to for a P2P match: the one its client reported for its node
+ * (/api/identify, kept in connections:<id> by /access and by a late identify), else P2P_NODE_PORT, the
+ * fixed port a node takes when it can.
+ */
+export async function nodePortFor(playerId: string): Promise<number> {
+  try {
+    return parseNodePort(await redisClient.hGet(`connections:${playerId}`, "nodePort")) || env.P2P_NODE_PORT;
+  } catch {
+    return env.P2P_NODE_PORT;
+  }
+}
 
 /** Only 1v1 between two humans for now: a host whose connection drops ends the match for everyone, and the
  *  relay would have handed the slot to AI; team modes wait for that. */

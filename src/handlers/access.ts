@@ -21,6 +21,7 @@ import { getBans, GetBanWarningMessage, isBanned, isCIDRBanned } from "../servic
 import { writeIdentityIndexes, bumpIpAccountsChangedAt, normalizeHardwareSignal, normalizeIdentity } from "../services/identityService";
 import { chooseAdoptionCandidate, chooseUnambiguousLegacyIpCandidate, idLessAccountFilter, STALE_IP_LINK_DAYS, staleIpLinkFilter } from "../services/identityNormalization";
 import { tryGrantDailyToastBonus } from "../data/playerCounters";
+import { parseNodePort } from "../p2p";
 
 const serviceName = "Handlers.Access";
 const logPrefix = `[${serviceName}]:`;
@@ -106,6 +107,8 @@ async function generateStaticAccess(req: express.Request) {
   let steamId = "", epicId = "", hardwareId = "", hardwareIdVersion = "", hardwareIdQuality = "", installId = "", clientVersion = "";
   let identityRegistered = false;
   let identitySource = "none";
+  // The UDP port of the client's rollback node (P2P matches go to it); 0 when the client reported none.
+  let nodePort = 0;
 
   try {
     const rawToken = req.headers["x-hydra-access-token"];
@@ -122,6 +125,7 @@ async function generateStaticAccess(req: express.Request) {
         installId = normalizeIdentity("install", decoded.installId);
         clientVersion = decoded.clientVersion || "";
         identityRegistered = decoded.identityRegistered === "1";
+        nodePort = parseNodePort(decoded.nodePort);
         identitySource = "jwt";
       }
     }
@@ -142,6 +146,7 @@ async function generateStaticAccess(req: express.Request) {
       installId = normalizeIdentity("install", identity.installId);
       clientVersion = identity.clientVersion || "";
       identityRegistered = identity.identityRegistered;
+      nodePort = identity.nodePort;
       identitySource = "redis";
     }
   }
@@ -468,6 +473,7 @@ async function generateStaticAccess(req: express.Request) {
     installId: player.installId ?? "",
     clientVersion,
     identityRegistered: identityRegistered ? "1" : "",
+    nodePort: String(nodePort),
   });
 
   // Write identity index keys so downstream lookups can resolve by steamId/epicId/hardwareId

@@ -47,7 +47,7 @@ import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
 import { handleMatchStatusUpdate } from "./handlers/match_status";
-import { p2pRelayKey } from "./p2p";
+import { p2pRelayKey, parseNodePort } from "./p2p";
 import { DeployInfo, getDefaultDeployInfo, useOnDemandRollback, IDeployInfo } from "./services/rollbackService";
 import { normalizeHardwareSignal, normalizeIdentity, refreshIpIdentityFromToken, resolveAccountWithSource } from "./services/identityService";
 import { mergeIpIdentity } from "./services/identityNormalization";
@@ -901,11 +901,14 @@ app.post("/api/identify", async (req, res) => {
       hardwareIdQuality: _hq = "",
       installId: _i = "",
       clientVersion: _v = "",
+      nodePort: _np = 0,
     } = req.body ?? {};
     if (!ip) {
       res.status(400).json({ error: "Could not determine IP" });
       return;
     }
+    // The UDP port of the client's rollback node (P2P matches are sent to it); 0 from a client without one.
+    const nodePort = parseNodePort(_np);
     const { steamId, epicId, hardwareId, hardwareIdVersion, hardwareIdQuality, installId, clientVersion } = mergeIpIdentity(
       await redisGetIdentity(ip),
       {
@@ -927,11 +930,12 @@ app.post("/api/identify", async (req, res) => {
       hardwareIdVersion,
       hardwareIdQuality,
       identityRegistered,
+      nodePort,
     );
     logger.info(
       `${logPrefix} Identity registered for IP ${ip} — steam:${steamId || "-"} epic:${epicId || "-"} `
       + `install:${installId ? "yes" : "no"} hardware:${hardwareId ? `v${hardwareIdVersion}/${hardwareIdQuality}` : "none"} `
-      + `version:${clientVersion || "legacy"} identity:${identityRegistered ? "registered" : "missing"}`,
+      + `version:${clientVersion || "legacy"} identity:${identityRegistered ? "registered" : "missing"} node:${nodePort || "none"}`,
     );
 
     // Construct an OVS-side JWT and return it so the DLL can attach it to
@@ -976,6 +980,7 @@ app.post("/api/identify", async (req, res) => {
       installId,
       clientVersion,
       identityRegistered: identityRegistered ? "1" : "",
+      nodePort: String(nodePort),
       current_ip: ip,
       // Leave unrelated fields empty — resolver only consults id/steamId/epicId/hardwareId
       profile_id: "",
@@ -991,13 +996,16 @@ app.post("/api/identify", async (req, res) => {
     const token = jwtLib.sign(claims, SECRET, { expiresIn: "30d" });
 
     // If /access won the startup race, unlock that live session as soon as a
-    // valid late /api/identify request resolves back to its account.
+    // valid late /api/identify request resolves back to its account. The node port
+    // is carried over too: a client whose node was slow to start registers again
+    // with it once it knows it, after /access has already built the connection.
     if (resolvedId && identityRegistered) {
       const connectionKey = `connections:${resolvedId}`;
       if (await redisClient.exists(connectionKey)) {
         await redisClient.hSet(connectionKey, {
           clientVersion,
           identityRegistered: "1",
+          ...(nodePort ? { nodePort: String(nodePort) } : {}),
         });
       }
     }

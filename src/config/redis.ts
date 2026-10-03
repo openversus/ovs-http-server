@@ -544,6 +544,7 @@ export async function redisSaveIdentity(
   hardwareIdVersion = "",
   hardwareIdQuality = "",
   identityRegistered = false,
+  nodePort = 0,
 ) {
   await redisClient.hSet(`identity:${ip}`, {
     steamId,
@@ -554,6 +555,7 @@ export async function redisSaveIdentity(
     installId,
     clientVersion,
     identityRegistered: identityRegistered ? "1" : "",
+    nodePort: String(nodePort),
   });
   await redisClient.expire(`identity:${ip}`, 300); // 5 min TTL, enough for access handshake
 }
@@ -582,10 +584,12 @@ export async function redisGetIdentity(ip: string): Promise<{
   installId: string;
   clientVersion: string;
   identityRegistered: boolean;
+  nodePort: number;
 } | null> {
   const data = await redisClient.hGetAll(`identity:${ip}`);
   if (!data || Object.keys(data).length === 0) return null;
   return {
+    nodePort: Number(data.nodePort) || 0,
     steamId: data.steamId ?? "",
     epicId: data.epicId ?? "",
     hardwareId: data.hardwareId ?? "",

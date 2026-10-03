@@ -17,6 +17,8 @@ export interface IAccountToken {
   clientVersion?: string;
   /** "1" only when this session was bootstrapped through /api/identify. */
   identityRegistered?: string;
+  /** The UDP port of the client's rollback node, as a string; "0" or absent when it reported none. Connection record only. */
+  nodePort?: string;
   // token: AccountToken;
   // account: AccountToken;
 }
@@ -39,6 +41,7 @@ export class AccountToken implements IAccountToken {
   installId?: string;
   clientVersion?: string;
   identityRegistered?: string;
+  nodePort?: string;
   // token: AccountToken;
   // account: AccountToken;
 

@@ -97,6 +97,7 @@ import { getMapHazards } from "./data/maps";
 import ObjectID from "bson-objectid";
 import { RedisClientType } from "@redis/client";
 import env from "./env/env";
+import { nodePortFor } from "./p2p";
 import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./database/Cosmetics";
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 import { cancelMatchmakingForAll } from "./services/matchmakingService";
@@ -922,7 +923,7 @@ export class WebSocketService {
         //const gameServerPort = redisGetGamePort(notification.matchId).then(port => port);
         // A P2P match: the game's rollback server is the node on its own machine. Otherwise a player on this
         // machine (IPv4 or IPv6 loopback) is sent loopback, everyone else a public rollback address.
-        const gameServerPort = notification.p2p ? env.P2P_NODE_PORT : (notification.rollbackPort || GAME_SERVER_PORT);
+        const gameServerPort = notification.p2p ? await nodePortFor(matchPlayer.playerId) : (notification.rollbackPort || GAME_SERVER_PORT);
         const isLocalPlayer = player.ip === "127.0.0.1" || player.ip === "::1";
         const gameServerAddress = notification.p2p || isLocalPlayer ? "127.0.0.1" : arr[randomIndex];
         logger.info(
@@ -1625,7 +1626,7 @@ export class WebSocketService {
       // const client = this.clients.get(playerId);
       const client = playerClients.find(pc => pc[playerId])?.[playerId];
 
-      const gameServerPort = p2p ? env.P2P_NODE_PORT : (notification.rollbackPort || GAME_SERVER_PORT);
+      const gameServerPort = p2p ? await nodePortFor(playerId) : (notification.rollbackPort || GAME_SERVER_PORT);
       logger.info(
         `[${serviceName}]: Received game server instance ready for match ${notification.containerMatchId} and player ${playerId} with IP ${client?.ip ?? "unknown"} and name ${client?.account?.username ?? "unknown"}, sending game server info with ${rollbackHost}:${gameServerPort}${p2p ? " (P2P node)" : ""}`,
       );

@@ -47,6 +47,8 @@ import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { handleDeployRollbackServer, handleDestroyRollbackServer } from "./handlers/testing";
 import { handleMatchStatusUpdate } from "./handlers/match_status";
+import { p2pRelayKey } from "./p2p";
+import { DeployInfo, getDefaultDeployInfo, useOnDemandRollback, IDeployInfo } from "./services/rollbackService";
 import { normalizeHardwareSignal, normalizeIdentity, refreshIpIdentityFromToken, resolveAccountWithSource } from "./services/identityService";
 import { mergeIpIdentity } from "./services/identityNormalization";
 import {
@@ -488,12 +490,44 @@ app.post("/ovs_register", async (req, res, next) => {
   // A P2P match waits for /ovs_p2p_ready instead: every node fetches the config to learn its role, and the
   // host's node is only ready once its peers have reached it.
   const playerIds = realPlayers.map((p) => p.playerId);
-  if (config.p2p) {
+  if (config.p2p && !(await redisClient.get(p2pRelayKey(body.matchId)))) {
     logger.info(`${logPrefix} Match ${body.matchId} is P2P: game-server-instance-ready waits for /ovs_p2p_ready from the host's node`);
     return;
   }
   await redisGameServerInstanceReady(body.matchId, playerIds);
   logger.info(`${logPrefix} Sent game-server-instance-ready for match ${body.matchId} after rollback server fetched config`);
+});
+
+// Called by a P2P node when no direct path to its peer opened: the match falls back to a rollback server.
+// The first call deploys it (on-demand) on the port the match was given at creation; every call answers with
+// its address, and the nodes forward their games there. /ovs_register from that server then releases
+// game-server-instance-ready as for a server match. Checked by the match key.
+app.post("/ovs_p2p_failed", async (req, res, next) => {
+  const body = req.body;
+  if (!body?.matchId || !body?.key) {
+    res.send("");
+    return;
+  }
+  const config = await redisGetMatchConfig(body.matchId);
+  if (!config || !config.matchKey || config.matchKey !== body.key || !config.p2p) {
+    logger.info(`${logPrefix} Invalid /ovs_p2p_failed call for MatchID: ${body.matchId} (unknown match, key mismatch or not P2P)`);
+    res.send("");
+    return;
+  }
+  const first = await redisClient.set(p2pRelayKey(body.matchId), "1", { NX: true, EX: 1200 });
+  if (first) {
+    logger.info(`${logPrefix} P2P match ${body.matchId}: no direct path; relay on port ${config.rollbackPort}${useOnDemandRollback ? " (deploying)" : ""}`);
+    if (useOnDemandRollback) {
+      const deployInfo: IDeployInfo = getDefaultDeployInfo();
+      deployInfo.port = config.rollbackPort;
+      deployInfo.entrypoint = deployInfo.entrypoint.replace("CHANGEMEDEFAULTPORT", deployInfo.port.toString());
+      deployInfo.ovs_server = env.OVS_SERVER;
+      if (!DeployInfo.Deploy(deployInfo)) {
+        logger.error(`${logPrefix} Failed to deploy the relay for P2P match ${body.matchId} on port ${deployInfo.port}`);
+      }
+    }
+  }
+  res.json({ host: env.UDP_SERVER_IP, port: config.rollbackPort });
 });
 
 // Called by a P2P host node once it serves the match (every peer path open): the players may now be told

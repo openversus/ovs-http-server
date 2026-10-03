@@ -497,7 +497,7 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
 
     const p2p = markP2P(notification);
     if (p2p) {
-      logger.info(`${logPrefix} Match ${matchId} runs P2P: the players connect to their own nodes${deploysRollbackServer(true) ? ", with a relay deployed" : ", no relay"}`);
+      logger.info(`${logPrefix} Match ${matchId} runs P2P: the players connect to their own nodes (a relay only if no direct path opens)`);
     }
 
     if (useOnDemandRollback && deploysRollbackServer(p2p)) {

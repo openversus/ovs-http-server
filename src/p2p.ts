@@ -24,8 +24,11 @@ export function markP2P(notification: MATCH_FOUND_NOTIFICATION): boolean {
   return notification.p2p;
 }
 
-/** Whether the on-demand rollback server is deployed for this match: always for a server match, and for a
- *  P2P match only as the nodes' relay (P2P_DEPLOY_RELAY). */
+/** Whether the on-demand rollback server is deployed when the match is created: only for a server match. A P2P
+ *  match gets one only if its nodes report that no direct path opened (/ovs_p2p_failed), as their relay. */
 export function deploysRollbackServer(p2p: boolean): boolean {
-  return !p2p || env.P2P_DEPLOY_RELAY === 1;
+  return !p2p;
 }
+
+/** Redis key set once the relay for a P2P match has been requested (and deployed, when on-demand is on). */
+export const p2pRelayKey = (matchId: string) => `p2p_relay:${matchId}`;

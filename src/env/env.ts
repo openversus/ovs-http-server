@@ -101,8 +101,6 @@ const env = cleanEnv(process.env, {
   // machine (127.0.0.1:P2P_NODE_PORT); the host's node runs the engine, the other forwards to it. See SERVER_FLAGS.md.
   P2P_ROLLBACK: num({ default: 0 }),
   P2P_NODE_PORT: num({ default: 41234 }),
-  // 1: still deploy the on-demand rollback server for a P2P match, as the relay the nodes fall back to.
-  P2P_DEPLOY_RELAY: num({ default: 1 }),
   USE_INTERNAL_ROLLBACK_CPP: num({ default: 0 }),
   USE_SECURE_WEBSOCKET: num({ default: 0 }),
   UDP_PORT: num(),

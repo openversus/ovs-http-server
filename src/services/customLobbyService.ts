@@ -676,7 +676,7 @@ export async function startMatch(
 
     const p2p = isP2PEligible([...players, ...spectatorEntries]);
     if (p2p) {
-      logwrapper.info(`${logPrefix} Custom match ${matchId} runs P2P${deploysRollbackServer(true) ? ", with a relay deployed" : ", no relay"}`);
+      logwrapper.info(`${logPrefix} Custom match ${matchId} runs P2P (a relay only if no direct path opens)`);
     }
 
     if (useOnDemandRollback && deploysRollbackServer(p2p)) {
@@ -1102,7 +1102,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
 
     const p2p = isP2PEligible([...players, ...rematchSpectatorEntries]);
     if (p2p) {
-      logwrapper.info(`${logPrefix} Custom match ${matchId} runs P2P${deploysRollbackServer(true) ? ", with a relay deployed" : ", no relay"}`);
+      logwrapper.info(`${logPrefix} Custom match ${matchId} runs P2P (a relay only if no direct path opens)`);
     }
 
     if (useOnDemandRollback && deploysRollbackServer(p2p)) {

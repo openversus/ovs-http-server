@@ -1,3 +1,4 @@
+import { isP2PEligible } from "../p2p";
 import ObjectID from "bson-objectid";
 import redis, { createClient } from "redis";
 import type { RedisClientType } from "redis";
@@ -190,6 +191,8 @@ export interface MATCH_FOUND_NOTIFICATION extends MVS_NOTIFICATION {
   map: string;
   mode: string;
   rollbackPort: number;
+  // P2P rollback (P2P_ROLLBACK=1 and the match is eligible): the players connect to their own node.
+  p2p?: boolean;
   // Custom game settings (injected into handleSendGamePlayConfig)
   isCustomGame?: boolean;
   customNumRingouts?: number;
@@ -613,6 +616,11 @@ export async function redisOnMatchMakerStarted(notification: ON_MATCH_MAKER_STAR
 }
 
 export async function redisOnGameplayConfigNotified(notification: MATCH_FOUND_NOTIFICATION) {
+  // Every match config passes through here (matchmaker, custom lobby, set continuation, rematch): decide P2P
+  // once, unless the creator already did (it needs the answer earlier, for the rollback server deploy).
+  if (notification.p2p === undefined) {
+    notification.p2p = isP2PEligible(notification.players);
+  }
   const EX = 60 * 20;
   await redisClient.set(notification.matchId, JSON.stringify(notification), { EX });
   await redisClient.publish(ON_GAMEPLAY_CONFIG_NOTIFIED_CHANNEL, JSON.stringify(notification));

@@ -1,3 +1,4 @@
+import { deploysRollbackServer, isP2PEligible } from "../p2p";
 import { logger } from "../config/logger";
 import express, { Request, Response } from "express";
 import {
@@ -528,8 +529,11 @@ async function createNextSetMatch(setId: string, setState: any) {
   // Select new map
   const map = await getRandomMapByType(setState.mode, matchId);
 
-  // Deploy rollback server if on-demand
-  if (useOnDemandRollback) {
+  // P2P (decided here as well, for the deploy; redisOnGameplayConfigNotified would decide it the same way)
+  const p2p = isP2PEligible(setState.players);
+
+  // Deploy rollback server if on-demand (for a P2P match only as the relay, P2P_DEPLOY_RELAY)
+  if (useOnDemandRollback && deploysRollbackServer(p2p)) {
     const deployInfo = getDefaultDeployInfo();
     deployInfo.port = rollbackPort;
     deployInfo.entrypoint = deployInfo.entrypoint.replace("CHANGEMEDEFAULTPORT", deployInfo.port.toString());
@@ -548,6 +552,7 @@ async function createNextSetMatch(setId: string, setState: any) {
     map,
     mode: setState.mode,
     rollbackPort,
+    p2p,
   };
 
   await redisOnGameplayConfigNotified(notification);

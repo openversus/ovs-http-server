@@ -23,6 +23,7 @@ import { randomBytes } from "crypto";
 import { MATCH_TYPES, getBaseMode } from "./services/matchmakingService";
 import { getRandomMapByType } from "./data/maps";
 import { randomUUID, randomInt } from "crypto";
+import { deploysRollbackServer, markP2P } from "./p2p";
 import { IDeployInfo, DeployInfo, getDefaultDeployInfo, useOnDemandRollback } from "./services/rollbackService";
 import { resolveAccountByIdentifiers } from "./services/identityService";
 import env from "./env/env";
@@ -494,7 +495,12 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
       rollbackPort: match.rollbackPort,
     };
 
-    if (useOnDemandRollback) {
+    const p2p = markP2P(notification);
+    if (p2p) {
+      logger.info(`${logPrefix} Match ${matchId} runs P2P: the players connect to their own nodes${deploysRollbackServer(true) ? ", with a relay deployed" : ", no relay"}`);
+    }
+
+    if (useOnDemandRollback && deploysRollbackServer(p2p)) {
       let deployInfo: IDeployInfo = getDefaultDeployInfo();
       deployInfo.port = match.rollbackPort;
       deployInfo.entrypoint = deployInfo.entrypoint.replace("CHANGEMEDEFAULTPORT", deployInfo.port.toString());

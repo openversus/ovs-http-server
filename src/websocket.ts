@@ -920,18 +920,21 @@ export class WebSocketService {
 
         //const gameServerPort: Promise<number | undefined> = redisGetGamePort(notification.matchId).then(port => port) || GAME_SERVER_PORT;
         //const gameServerPort = redisGetGamePort(notification.matchId).then(port => port);
-        const gameServerPort = notification.rollbackPort || GAME_SERVER_PORT;
+        // A P2P match: the game's rollback server is the node on its own machine. Otherwise a player on this
+        // machine (IPv4 or IPv6 loopback) is sent loopback, everyone else a public rollback address.
+        const gameServerPort = notification.p2p ? env.P2P_NODE_PORT : (notification.rollbackPort || GAME_SERVER_PORT);
+        const isLocalPlayer = player.ip === "127.0.0.1" || player.ip === "::1";
+        const gameServerAddress = notification.p2p || isLocalPlayer ? "127.0.0.1" : arr[randomIndex];
         logger.info(
-          `[${serviceName}]: Match ${notification.matchId} found for player ${player.account?.id ?? "unknown"}, sending match found notification with game server port ${gameServerPort}`,
+          `[${serviceName}]: Match ${notification.matchId} found for player ${player.account?.id ?? "unknown"}, sending match found notification with game server ${gameServerAddress}:${gameServerPort}${notification.p2p ? " (P2P node)" : ""}`,
         );
         const message = {
           data: {
             MatchKey: notification.matchKey,
             MatchID: notification.matchId,
-            //Port: gameServerPort || GAME_SERVER_PORT,
             Port: gameServerPort,
             template_id: "GameServerReadyNotification",
-            IPAddress: player.ip === "127.0.0.1" ? "127.0.0.1" : arr[randomIndex],
+            IPAddress: gameServerAddress,
           },
           payload: {
             match: {
@@ -1599,6 +1602,11 @@ export class WebSocketService {
     let useCentralRollback = env.USE_INTERNAL_ROLLBACK === 1 ? true : false;
     let rollbackHost = useCentralRollback ? `${env.UDP_SERVER_IP}` : "127.0.0.1";
     let playerClients: Record<string, WebSocketPlayer>[] = [];
+    // A P2P match: the server is the node on each player's machine, whatever USE_INTERNAL_ROLLBACK says.
+    const p2p = (await redisGetMatchConfig(notification.containerMatchId).catch(() => null))?.p2p === true;
+    if (p2p) {
+      rollbackHost = "127.0.0.1";
+    }
 
     for (const playerId of notification.playerIds) {
       const client = this.clients.get(playerId);
@@ -1617,9 +1625,9 @@ export class WebSocketService {
       // const client = this.clients.get(playerId);
       const client = playerClients.find(pc => pc[playerId])?.[playerId];
 
-      const gameServerPort = notification.rollbackPort || GAME_SERVER_PORT;
+      const gameServerPort = p2p ? env.P2P_NODE_PORT : (notification.rollbackPort || GAME_SERVER_PORT);
       logger.info(
-        `[${serviceName}]: Received game server instance ready for match ${notification.containerMatchId} and player ${playerId} with IP ${client?.ip ?? "unknown"} and name ${client?.account?.username ?? "unknown"}, sending game server info with port ${gameServerPort}`,
+        `[${serviceName}]: Received game server instance ready for match ${notification.containerMatchId} and player ${playerId} with IP ${client?.ip ?? "unknown"} and name ${client?.account?.username ?? "unknown"}, sending game server info with ${rollbackHost}:${gameServerPort}${p2p ? " (P2P node)" : ""}`,
       );
 
       const message = {

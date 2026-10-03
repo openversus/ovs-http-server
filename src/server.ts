@@ -485,9 +485,40 @@ app.post("/ovs_register", async (req, res, next) => {
 
   // Now that the rollback server has the match config, tell ALL real-player clients
   // (including spectators, excluding bots) to connect. Bots have no client to notify.
+  // A P2P match waits for /ovs_p2p_ready instead: every node fetches the config to learn its role, and the
+  // host's node is only ready once its peers have reached it.
   const playerIds = realPlayers.map((p) => p.playerId);
+  if (config.p2p) {
+    logger.info(`${logPrefix} Match ${body.matchId} is P2P: game-server-instance-ready waits for /ovs_p2p_ready from the host's node`);
+    return;
+  }
   await redisGameServerInstanceReady(body.matchId, playerIds);
   logger.info(`${logPrefix} Sent game-server-instance-ready for match ${body.matchId} after rollback server fetched config`);
+});
+
+// Called by a P2P host node once it serves the match (every peer path open): the players may now be told
+// their server is ready. Checked by the match key, which the node has from the game's own NewConnection.
+app.post("/ovs_p2p_ready", async (req, res, next) => {
+  const body = req.body;
+  if (!body?.matchId || !body?.key) {
+    res.send("");
+    return;
+  }
+  const config = await redisGetMatchConfig(body.matchId);
+  if (!config || !config.matchKey || config.matchKey !== body.key) {
+    logger.info(`${logPrefix} Invalid /ovs_p2p_ready call for MatchID: ${body.matchId} (unknown match or key mismatch)`);
+    res.send("");
+    return;
+  }
+  if (!config.p2p) {
+    logger.info(`${logPrefix} /ovs_p2p_ready for MatchID: ${body.matchId}, which is not a P2P match; ignored`);
+    res.send("");
+    return;
+  }
+  const playerIds = config.players.filter((p) => !p.isBot).map((p) => p.playerId);
+  await redisGameServerInstanceReady(body.matchId, playerIds);
+  logger.info(`${logPrefix} Sent game-server-instance-ready for P2P match ${body.matchId}: the host's node is serving`);
+  res.send("");
 });
 
 // Called by the rollback server when gameplay actually begins (first frame).

@@ -1,3 +1,4 @@
+import { deploysRollbackServer, isP2PEligible } from "../p2p";
 import {
   redisClient,
   RedisTeamEntry,
@@ -673,7 +674,12 @@ export async function startMatch(
       ? lobby.mapPool[Math.floor(Math.random() * lobby.mapPool.length)]
       : await getCustomRandomMapByType(lobby.mode);
 
-    if (useOnDemandRollback) {
+    const p2p = isP2PEligible([...players, ...spectatorEntries]);
+    if (p2p) {
+      logwrapper.info(`${logPrefix} Custom match ${matchId} runs P2P${deploysRollbackServer(true) ? ", with a relay deployed" : ", no relay"}`);
+    }
+
+    if (useOnDemandRollback && deploysRollbackServer(p2p)) {
       logwrapper.info(`${logPrefix} Deploying rollback server for match ${matchId} with port: ${match.rollbackPort}`)
       let deployInfo: IDeployInfo = getDefaultDeployInfo();
       deployInfo.port = customLobbyRollbackPort;
@@ -698,6 +704,7 @@ export async function startMatch(
       mode: lobby.mode,
       rollbackPort: customLobbyRollbackPort,
       isCustomGame: true,
+      p2p,
     };
 
     // Include spectators in playerIds so they receive all match notifications
@@ -1093,7 +1100,12 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
       ? lobby.mapPool[Math.floor(Math.random() * lobby.mapPool.length)]
       : await getCustomRandomMapByType(lobby.mode);
 
-    if (useOnDemandRollback) {
+    const p2p = isP2PEligible([...players, ...rematchSpectatorEntries]);
+    if (p2p) {
+      logwrapper.info(`${logPrefix} Custom match ${matchId} runs P2P${deploysRollbackServer(true) ? ", with a relay deployed" : ", no relay"}`);
+    }
+
+    if (useOnDemandRollback && deploysRollbackServer(p2p)) {
       logwrapper.info(`${logPrefix} Deploying rollback server for match ${matchId} with port: ${match.rollbackPort}`)
       let deployInfo: IDeployInfo = getDefaultDeployInfo();
       deployInfo.port = customLobbyRollbackPort;
@@ -1117,6 +1129,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
       mode: lobby.mode,
       rollbackPort: customLobbyRollbackPort,
       isCustomGame: true,
+      p2p,
     };
 
     const playerIds = [...players, ...rematchSpectatorEntries].map((p) => p.playerId);

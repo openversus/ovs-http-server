@@ -47,6 +47,7 @@ import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { handleMatchStatusUpdate } from "./handlers/match_status";
 import { p2pRelayKey, parseNodePort } from "./p2p";
+import { nodeConfigAnswer, signBody, SIGNATURE_HEADER } from "./nodeConfig";
 import { DeployInfo, getDefaultDeployInfo, useOnDemandRollback, IDeployInfo } from "./services/rollbackService";
 import { normalizeHardwareSignal, normalizeIdentity, refreshIpIdentityFromToken, resolveAccountWithSource } from "./services/identityService";
 import { mergeIpIdentity } from "./services/identityNormalization";
@@ -477,11 +478,15 @@ app.post("/ovs_register", async (req, res, next) => {
   if (botCount > 0) {
     logger.info(`${logPrefix} Match ${body.matchId} has ${botCount} bot(s) — excluded from rollback registration. max_players=${realPlayers.length}`);
   }
-  res.json({
+  // Signed for P2P nodes, which host only on a config the server signed (src/nodeConfig.ts); a relay ignores the header.
+  const registration = JSON.stringify({
     max_players: realPlayers.length,
     match_duration: 36000,
     players,
   });
+  const signature = signBody(registration);
+  if (signature) res.set(SIGNATURE_HEADER, signature);
+  res.type("application/json").send(registration);
 
   // Now that the rollback server has the match config, tell ALL real-player clients
   // (including spectators, excluding bots) to connect. Bots have no client to notify.
@@ -494,6 +499,17 @@ app.post("/ovs_register", async (req, res, next) => {
   }
   await redisGameServerInstanceReady(body.matchId, playerIds);
   logger.info(`${logPrefix} Sent game-server-instance-ready for match ${body.matchId} after rollback server fetched config`);
+});
+
+// Fetched by every P2P node at startup: the settings every player in a match shares, signed (src/nodeConfig.ts). 503
+// when there is no signing key or no readable update; the node then uses the values built into it.
+app.get("/ovs_node_config", (req, res) => {
+  const answer = nodeConfigAnswer();
+  if (!answer) {
+    res.status(503).send("");
+    return;
+  }
+  res.set(SIGNATURE_HEADER, answer.signature).type("application/json").send(answer.body);
 });
 
 // Called by a P2P node when no direct path to its peer opened: the match falls back to a rollback server.

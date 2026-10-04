@@ -103,6 +103,16 @@ public sealed class RollbackSettings
     [Description("The key a rollback server's calls carry in their MatchUpdateKey header (MATCHUPDATEKEY; the rollback server's Server__MatchUpdateKey). Unset, or the TS placeholder MisconfiguredMatchUpdateKey: every such call is refused.")]
     [Secret]
     public string MatchUpdateKey { get; set; } = "";
+
+    [Description("Signs what P2P nodes take from the server (GET /ovs_node_config, match configs): an ECDSA P-256 private key as PKCS#8 PEM text (P2P_NODE_SIGNING_KEY); the nodes are built with its public half. Empty: NodeSigningKeyFile, and without that nothing is signed and nodes send every P2P match to the relay.")]
+    [Secret]
+    public string NodeSigningKey { get; set; } = "";
+
+    [Description("A file holding the NodeSigningKey PEM, read when NodeSigningKey is empty (P2P_NODE_SIGNING_KEY_FILE).")]
+    public string NodeSigningKeyFile { get; set; } = "";
+
+    [Description("The P2P nodes' settings update, {\"version\": N, \"config\": {sections}}, read at most every five minutes (P2P_NODE_CONFIG_FILE; a relative path is from the working directory). Empty: the TS server's src/data/node-config.json, built in.")]
+    public string NodeConfigFile { get; set; } = "";
 }
 
 /// <summary>

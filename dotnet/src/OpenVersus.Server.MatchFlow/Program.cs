@@ -19,6 +19,7 @@ builder.AddRiftResults();
 builder.AddPerksLock();
 builder.AddMatchToasts();
 builder.AddMatchInputs();
+builder.AddNodeConfig();
 
 var app = builder.Build();
 app.UseGameHttp();

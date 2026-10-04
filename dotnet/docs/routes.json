@@ -1613,6 +1613,23 @@
     "owner": "matchflow"
   },
   {
+    "method": "GET",
+    "path": "/ovs_node_config",
+    "area": "ovs_node_config",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "GET /ovs_node_config"
+    ],
+    "notes": [
+      "server only: the signed settings update every P2P node fetches at startup (the rollback repo's NodeLockdown)"
+    ],
+    "kind": "ovs-rollback",
+    "in_game": false,
+    "in_server": true,
+    "owner": "matchflow"
+  },
+  {
     "method": "POST",
     "path": "/ovs_p2p_failed",
     "area": "ovs_p2p_failed",

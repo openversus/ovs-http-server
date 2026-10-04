@@ -101,6 +101,12 @@ const env = cleanEnv(process.env, {
   // machine (127.0.0.1:P2P_NODE_PORT); the host's node runs the engine, the others forward to it. See SERVER_FLAGS.md.
   P2P_ROLLBACK: num({ default: 0 }),
   P2P_NODE_PORT: num({ default: 41234 }),
+  // The nodes' lockdown (src/nodeConfig.ts): the private key /ovs_node_config and /ovs_register are signed with
+  // (PKCS#8 PEM text, or a path to it), and the settings update nodes fetch at startup. No key: nodes fall back to
+  // the relay for every P2P match.
+  P2P_NODE_SIGNING_KEY: str({ default: "" }),
+  P2P_NODE_SIGNING_KEY_FILE: str({ default: "" }),
+  P2P_NODE_CONFIG_FILE: str({ default: "data/node-config.json" }),
   USE_INTERNAL_ROLLBACK_CPP: num({ default: 0 }),
   USE_SECURE_WEBSOCKET: num({ default: 0 }),
   UDP_PORT: num(),

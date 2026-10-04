@@ -97,8 +97,8 @@ const env = cleanEnv(process.env, {
   SECURE_WEBSOCKET_PORT: num({ default: 5000 }),
   STEAMID_BANS_FILE: str({ default: "../data/steamid_bans.txt" }),
   USE_INTERNAL_ROLLBACK: num({ default: 0 }),
-  // P2P rollback: eligible matches (two humans, no spectators) are told to connect to the node on their own
-  // machine (127.0.0.1:P2P_NODE_PORT); the host's node runs the engine, the other forwards to it. See SERVER_FLAGS.md.
+  // P2P rollback: every match with a human player is told to connect to the node on their own
+  // machine (127.0.0.1:P2P_NODE_PORT); the host's node runs the engine, the others forward to it. See SERVER_FLAGS.md.
   P2P_ROLLBACK: num({ default: 0 }),
   P2P_NODE_PORT: num({ default: 41234 }),
   USE_INTERNAL_ROLLBACK_CPP: num({ default: 0 }),

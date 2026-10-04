@@ -1,4 +1,6 @@
 import { WebSocket, WebSocketServer } from "ws";
+import { gameplayPreferencesOf } from "./utils/gameplayPreferences";
+import { clientIpFromHeaders } from "./utils/clientIp";
 import { MVSHTTPServer } from "./server";
 import { randomUUID, randomInt } from "crypto";
 import { HydraDecoder, HydraEncoder } from "mvs-dump";
@@ -723,7 +725,9 @@ export class WebSocketService {
 
   setupSocketHandlers() {
     this.ws.on("connection", (ws, request) => {
-      let ip = request.socket.remoteAddress!.replace(/^::ffff:/, "");
+      // The client's address, not the reverse proxy's: the same rule the HTTP routes use, so this connection's
+      // IP-keyed records (active_ip_accounts, connections:{ip}) are the ones /access wrote.
+      let ip = clientIpFromHeaders(request.headers, request.socket.remoteAddress).ip.replace(/^::ffff:/, "");
       logger.info(`${logPrefix} Client with IP ${ip} connected`);
 
       const playerWS = new WebSocketPlayer(ws, ip!);
@@ -1119,7 +1123,7 @@ export class WebSocketService {
       const profileIcon = rPlayerConnectionByID.profileIcon ?? "profile_icon_default_gold";
       const character = rPlayerConnectionByID.character ?? "character_jason";
       const skin = rPlayerConnectionByID.skin ?? "skin_jason_000";
-      const GameplayPreferences: number = Number(rPlayerConnectionByID.GameplayPreferences) || 964;
+      const GameplayPreferences: number = gameplayPreferencesOf(rPlayerConnectionByID.GameplayPreferences);
 
       logger.info(
         `[${serviceName}]: Building config for player ${player.playerId} with IP ${rPlayerConnectionByID.current_ip} and name ${rPlayerConnectionByID.username ?? "unknown"} for match ${notification.matchId}, GameplayPreferences: ${GameplayPreferences}`,
@@ -1931,7 +1935,7 @@ export class WebSocketService {
     for (const pid of allPlayerIds) {
       const conn = await redisClient.hGetAll(`connections:${pid}`) as any;
       playerConnections.set(pid, conn);
-      gameplayPrefs[pid] = Number(conn?.GameplayPreferences) || 964;
+      gameplayPrefs[pid] = gameplayPreferencesOf(conn?.GameplayPreferences);
       autoPartyPrefs[pid] = false;
       platforms[pid] = "PC";
       lockedLoadouts[pid] = {
@@ -2148,7 +2152,7 @@ export class WebSocketService {
     for (const pid of allPlayerIds) {
       const conn = await redisClient.hGetAll(`connections:${pid}`) as any;
       playerConnections.set(pid, conn);
-      gameplayPrefs[pid] = Number(conn?.GameplayPreferences) || 964;
+      gameplayPrefs[pid] = gameplayPreferencesOf(conn?.GameplayPreferences);
       autoPartyPrefs[pid] = false;
       platforms[pid] = "PC";
       lockedLoadouts[pid] = {

@@ -8,6 +8,7 @@ import * as http from "http";
 import * as fs from "fs";
 import * as path from "path";
 import { hydraTokenMiddleware, SECRET } from "./middleware/auth";
+import { recordGameplayPreferencesFromRequest } from "./services/gameplayPreferences";
 import { connect } from "./database/client";
 import { generate_hiss } from "./handlers/hiss_amalgation_get";
 import { redisClient,

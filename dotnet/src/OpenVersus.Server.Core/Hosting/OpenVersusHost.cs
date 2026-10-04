@@ -167,6 +167,7 @@ public static class OpenVersusHost
         app.LogFrozenAccountData();
         app.MapOpenVersusControl();
         app.Logger.LogWarning("MIGRATION BRIDGE: the control API's player disconnect asks the TS websocket to close the connection (ws:disconnect); see dotnet/docs/MIGRATION-BRIDGES.md (5)");
+        Matches.MatchLauncherHosting.WarnP2PBridge(app);
         app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
         app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready"), ResponseWriter = WriteReadyAsync });
         var service = app.Services.GetRequiredService<ServiceDefinition>();

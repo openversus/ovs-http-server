@@ -37,6 +37,14 @@ public sealed class TsEnvironmentTests
     public void OnDemandRollbackReadsAsTheTsServerCompares(string value, string expected) =>
         Assert.Equal(expected, With(new() { ["ON_DEMAND_ROLLBACK"] = value })["Rollback:OnDemand"]);
 
+    [Theory]
+    // P2P_ROLLBACK is compared the same way (env.P2P_ROLLBACK !== 1 in src/p2p.ts).
+    [InlineData("1", "true")]
+    [InlineData("0", "false")]
+    [InlineData("2", "false")]
+    public void P2PRollbackReadsAsTheTsServerCompares(string value, string expected) =>
+        Assert.Equal(expected, With(new() { ["P2P_ROLLBACK"] = value })["Rollback:P2P"]);
+
     [Fact]
     public void TheCatalogKeyWins() =>
         Assert.Equal("2.0", With(new() { ["MIN_CLIENT_VERSION"] = "1.0", ["Clients:MinimumVersion"] = "2.0" })["Clients:MinimumVersion"]);

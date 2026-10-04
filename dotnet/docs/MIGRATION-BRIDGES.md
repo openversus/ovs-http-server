@@ -193,6 +193,22 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 - **Why:** match end is still the TS websocket's; C# cannot stop its decline without changing TS, which is going away.
 - **Delete when:** match end moves to C# (the match flow lifecycle and the realtime gateway), with the rematch above.
 
+### 8. P2P is switched in two places, and its match flow is still the TS server's
+
+- **What:** whether eligible matches run P2P (on the players' own nodes) is `Rollback:P2P` for the matches C# starts
+  (`MatchLauncher`: custom lobbies, the Casual queue, rift nodes; the C# matchmaker) and the TS server's `P2P_ROLLBACK`
+  environment variable for the ones it still starts: a ranked set's next game (`createNextSetMatch`), a custom lobby's
+  rematch, and its own matchmaker when it runs. Both write `p2p` into the match config with the same rule
+  (`Matches/P2P.cs`, `src/p2p.ts`); the rest of a P2P match is TS: `/api/identify` (the node's port), the websocket
+  (sends the game to `127.0.0.1` and that port), `/ovs_register` (holds game-server-instance-ready),
+  `/ovs_p2p_ready` and `/ovs_p2p_failed` (C# stubs, forwarded by the proxy). `Rollback:P2P` takes `P2P_ROLLBACK` when it
+  is not set itself, but a cluster setting changed through the control API is not seen by TS: with the two different, a
+  set's first game and its next ones can disagree.
+- **Until then:** change both together; each executable that starts matches logs the C# value at startup.
+- **Delete when:** set continuations, custom lobby rematches, `/api/identify`, `/ovs_register` and the two P2P routes
+  are ported (match flow), the TS matchmaker is retired, and the websocket reads `p2p` and the node port from C#'s
+  config (the realtime gateway).
+
 ## Not bridges (kept after the migration)
 
 - `TsEnvironment`: the TS server's environment variable names (`JWT_SECRET`, `WB_DOMAIN`, ...) fill C# settings, so the

@@ -37,6 +37,7 @@ namespace OpenVersus.Server.Core.Matchmaking;
 // A match (createMatch): match:{id} (the tickets as queued) EX 20 min; teams (parties shuffled, team 0 filled first,
 // player index = place * 2 + team, a random index hosts, each player's ip from player:{id}); a map (Matchmaking/maps.json:
 // an enabled one for the mode; 1v1: 1 in 999 PVE_03); the notification at {id} EX 20 min and on match:notifications;
+// p2p in the notification (Rollback:P2P and P2P.IsEligible; a P2P match is deployed no rollback server);
 // ranked_set:{id} and player_ranked_set:{player} EX 10 min (every regular match: game 1 of a set); matchmaking:complete
 // once per ticket (its own request id and players). A Casual match is never rated: match:{id} has isPasswordMatch (the
 // TS match result skips those) and queue "casual" (for a Casual rating of its own, later), it starts no ranked set, and
@@ -61,7 +62,8 @@ public sealed class MatchmakingSettings
     public int IntervalMs { get; set; } = 2000;
 }
 
-internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLauncher launcher, IOptionsMonitor<MatchmakingSettings> settings, TimeProvider time,
+internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLauncher launcher, IOptionsMonitor<MatchmakingSettings> settings,
+    IOptionsMonitor<RollbackSettings> rollback, TimeProvider time,
     ILogger<MatchmakingWorker> log) : BackgroundService
 {
     public const string HeartbeatsKey = "player_heartbeats";
@@ -450,7 +452,12 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
             notification["gameplayConfigOverride"] = Matches.BotDefaults.UnrankedConfigOverride();
         }
 
-        launcher.DeployIfOnDemand(port, matchId);
+        // As the TS worker's markP2P: a P2P match gets no rollback server unless its nodes find no direct path.
+        bool p2p = Matches.P2P.Mark(notification, rollback.CurrentValue.P2P);
+        if (!p2p)
+        {
+            launcher.DeployIfOnDemand(port, matchId);
+        }
 
         string json = Js.Stringify(notification);
         await redis.StringSetAsync(matchId, json, s_matchTtl);
@@ -488,7 +495,8 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
             await redis.PublishAsync(RedisChannel.Literal(MatchLauncher.MatchmakingCompleteChannel), Js.Stringify(complete));
         }
 
-        log.LogInformation("Created {Mode} match {Match} from {Queue} with {Players} players across {Tickets} tickets on rollback port {Port}", mode, matchId, queue, total, tickets.Count, port);
+        log.LogInformation("Created {Mode} match {Match} from {Queue} with {Players} players across {Tickets} tickets on rollback port {Port}{P2P}", mode, matchId, queue, total, tickets.Count, port,
+            p2p ? " (P2P: the players connect to their own nodes; a relay only if no direct path opens)" : "");
     }
 
     /// <summary>

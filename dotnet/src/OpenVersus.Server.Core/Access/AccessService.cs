@@ -20,11 +20,13 @@ namespace OpenVersus.Server.Core.Access;
 //
 // Redis, read
 //   identity:{ip}                hash from /api/identify: steamId, epicId, hardwareId, hardwareIdVersion,
-//                                hardwareIdQuality, installId, clientVersion, identityRegistered ("1")
+//                                hardwareIdQuality, installId, clientVersion, identityRegistered ("1"), nodePort
 //   active_ip_accounts:{ip}      zset of player ids by last-seen ms (sessions within 90 s count)
 // Redis, written
 //   connections:{playerId}       hash: the account token's fields (GameplayPreferences as text), hardwareIdVersion,
-//                                hardwareIdQuality, installId, clientVersion, identityRegistered, jwt; party_key
+//                                hardwareIdQuality, installId, clientVersion, identityRegistered, nodePort (the P2P
+//                                node's port, from the identify token's claim or identity:{ip}; "0" for none; never in
+//                                the account token), jwt; party_key
 //   connections:{ip}             the same hash, for old clients; 120 s TTL
 //   active_ip_accounts:{ip}      entries older than 90 s dropped, this player added (score: now ms); 180 s TTL
 //   player:{playerId}:blocked    JSON array of blocked player ids
@@ -122,6 +124,8 @@ internal sealed class AccessService(
         public string SteamId = "", EpicId = "", InstallId = "", ClientVersion = "";
         public HardwareSignal Hardware = HardwareSignal.None;
         public bool Registered;
+        // The UDP port of the client's P2P node (Matches/P2P.cs); 0 when it reported none.
+        public int NodePort;
         public string Source = "none";
 
         public bool Any => SteamId.Length > 0 || EpicId.Length > 0 || InstallId.Length > 0;
@@ -259,6 +263,7 @@ internal sealed class AccessService(
                     identity.InstallId = IdentityRules.Normalize(IdentityKind.Install, claims["installId"]);
                     identity.ClientVersion = Truthy(claims["clientVersion"]) ? JsString(claims["clientVersion"]) : "";
                     identity.Registered = StringOnly(claims["identityRegistered"]) == "1";
+                    identity.NodePort = Matches.P2P.ParseNodePort(claims["nodePort"]);
                     identity.Source = "jwt";
                 }
             }
@@ -315,6 +320,8 @@ internal sealed class AccessService(
         identity.InstallId = IdentityRules.Normalize(IdentityKind.Install, Field("installId"));
         identity.ClientVersion = Field("clientVersion");
         identity.Registered = Field("identityRegistered") == "1";
+        // The TS server reads Number(nodePort) || 0; /api/identify only ever writes a parsed port or "0".
+        identity.NodePort = Matches.P2P.ParseNodePort(Field("nodePort"));
         return true;
     }
 
@@ -539,6 +546,7 @@ internal sealed class AccessService(
         connection.Add(new HashEntry("installId", player.Str("installId") ?? ""));
         connection.Add(new HashEntry("clientVersion", identity.ClientVersion));
         connection.Add(new HashEntry("identityRegistered", identity.Registered ? "1" : ""));
+        connection.Add(new HashEntry("nodePort", identity.NodePort.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         connection.Add(new HashEntry("jwt", token));
         // The IP hash was just written for this player, so the TS server's owner check before mirroring the party key
         // always passes here.

@@ -100,6 +100,8 @@ POST	/ovs_end_match	matchflow
 POST	/ovs_match_inputs	matchflow
 POST	/ovs_match_started	matchflow
 POST	/ovs_match_status	matchflow
+POST	/ovs_p2p_failed	matchflow
+POST	/ovs_p2p_ready	matchflow
 POST	/ovs_register	matchflow
 GET	/profiles/bulk	http
 GET	/profiles/search_queries/{id}/run	http

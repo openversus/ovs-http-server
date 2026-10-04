@@ -30,6 +30,7 @@ public static class TsEnvironment
         ("ROLLBACK_UDP_PORT_LOW", "Rollback:UdpPortLow"),
         ("ROLLBACK_UDP_PORT_HIGH", "Rollback:UdpPortHigh"),
         ("ON_DEMAND_ROLLBACK", "Rollback:OnDemand"),
+        ("P2P_ROLLBACK", "Rollback:P2P"),
         ("ON_DEMAND_ROLLBACK_PORT_LOW", "Rollback:OnDemandPortLow"),
         ("ON_DEMAND_ROLLBACK_PORT_HIGH", "Rollback:OnDemandPortHigh"),
         ("WEBHOOK_HOST", "Rollback:WebhookHost"),
@@ -46,7 +47,7 @@ public static class TsEnvironment
 
     // Numbers the TS server compares with === 1 (envalid's num): 1 is on, any other number off; anything else is passed
     // on and refused at startup, as envalid refuses it.
-    private static readonly HashSet<string> s_numericBooleans = ["ON_DEMAND_ROLLBACK"];
+    private static readonly HashSet<string> s_numericBooleans = ["ON_DEMAND_ROLLBACK", "P2P_ROLLBACK"];
 
     private static string NumericBool(string value) =>
         double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double n)

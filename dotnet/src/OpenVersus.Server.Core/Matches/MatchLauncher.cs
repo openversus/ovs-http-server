@@ -45,6 +45,9 @@ namespace OpenVersus.Server.Core.Matches;
 //     and the players find no server. One difference: the TS server uses an INCR below OnDemandPortLow as it is
 //     (the first INCR of an empty Redis is port 1); here it wraps to OnDemandPortLow like one above the range.
 // Redis, written  rollback:current_port (on demand)
+//
+// P2P (Rollback:P2P, see P2P.cs): the notification carries p2p, true or false. A P2P match is given its port all the
+// same, and nothing is deployed on it unless its nodes report that no direct path opened.
 
 /// <summary>Rollback server settings.</summary>
 public sealed class RollbackSettings
@@ -59,6 +62,9 @@ public sealed class RollbackSettings
 
     [Description("A rollback server deployed for each match through the deploy webhook (ON_DEMAND_ROLLBACK=1), instead of the running ones on UdpPortLow..UdpPortHigh.")]
     public bool OnDemand { get; set; }
+
+    [Description("Eligible matches (exactly two humans, no spectators) run P2P, on the players' own nodes, with no rollback server unless their nodes report that no direct path opened (P2P_ROLLBACK). The TS server reads its own P2P_ROLLBACK for the matches it still creates: keep the two the same (MIGRATION-BRIDGES.md 8).")]
+    public bool P2P { get; set; }
 
     [Description("Lowest port an on-demand rollback server is given (ON_DEMAND_ROLLBACK_PORT_LOW).")]
     [Range(1, 65535)]
@@ -242,7 +248,13 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
             notification["gameplayConfigData"] = launch.ConfigData.DeepClone();
         }
 
-        DeployIfOnDemand(rollbackPort, matchId);
+        // As the TS server's redisOnGameplayConfigNotified, which every match config passes through: P2P decided once.
+        // A P2P match keeps its port for the relay, deployed only if its nodes find no direct path (/ovs_p2p_failed).
+        bool p2p = P2P.Mark(notification, rollback.P2P);
+        if (!p2p)
+        {
+            DeployIfOnDemand(rollbackPort, matchId);
+        }
 
         string json = Js.Stringify(notification);
         await redis.StringSetAsync(matchId, json, s_ttl);
@@ -255,7 +267,8 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
             ["resultId"] = ObjectId.GenerateNewId().ToString(),
         }));
 
-        log.LogInformation("Started {Mode} match {Match} on rollback port {Port}: {Players}", launch.Mode, matchId, rollbackPort,
+        log.LogInformation("Started {Mode} match {Match} on rollback port {Port}{P2P}: {Players}", launch.Mode, matchId, rollbackPort,
+            p2p ? " (P2P: the players connect to their own nodes; a relay only if no direct path opens)" : "",
             string.Join(", ", launch.Players.Select(p => $"{p.PlayerId} (team {p.TeamIndex}, index {p.PlayerIndex}{(p.IsBot ? ", bot" : "")})")));
         return new LaunchedMatch(matchId, rollbackPort);
     }
@@ -346,5 +359,15 @@ public static class MatchLauncherHosting
         builder.Services.AddSingleton<IMatchLauncher, MatchLauncher>();
         builder.Services.AddHttpClient(MatchLauncher.DeployClient, c => c.Timeout = TimeSpan.FromSeconds(30));
         return builder;
+    }
+
+    /// <summary>The startup warning for MIGRATION-BRIDGES.md 8, in every executable that starts matches (UseOpenVersus).</summary>
+    public static void WarnP2PBridge(WebApplication app)
+    {
+        if (app.Services.GetService<IMatchLauncher>() is not null)
+        {
+            app.Logger.LogWarning("MIGRATION BRIDGE: P2P is switched twice, Rollback:P2P (here, now {P2P}) for the matches C# starts and the TS server's P2P_ROLLBACK for set continuations, custom lobby rematches and its own matchmaker; keep them the same. See dotnet/docs/MIGRATION-BRIDGES.md (8)",
+                app.Services.GetRequiredService<IOptionsMonitor<RollbackSettings>>().CurrentValue.P2P);
+        }
     }
 }

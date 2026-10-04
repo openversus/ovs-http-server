@@ -42,8 +42,8 @@ async function run(baseUrl, outFile) {
   const post = async (name, ip, headers = {}) => record(name, await call(baseUrl, "POST", ip, body, headers));
   const record = async (name, response) => steps.push({ name, response, state: await dump(redis, db) });
 
-  // 1. A new player, identified by /api/identify's IP record.
-  await redis.hSet("identity:198.51.100.1", identity({ steamId: STEAM_A, installId: INSTALL_A }));
+  // 1. A new player, identified by /api/identify's IP record (with its P2P node's port).
+  await redis.hSet("identity:198.51.100.1", identity({ steamId: STEAM_A, installId: INSTALL_A, nodePort: "51561" }));
   await redis.expire("identity:198.51.100.1", 300);
   await post("identified-new", "198.51.100.1");
   const first = steps[0].response;
@@ -126,6 +126,7 @@ async function run(baseUrl, outFile) {
     const token = jwt.sign({
       id: "", steamId: "76561198000000010", epicId: "", installId: "10101010101010101010101010101010",
       hardwareId: "ab".repeat(32), hardwareIdVersion: 2, hardwareIdQuality: "Strong", clientVersion: "2026.09.28.04", identityRegistered: "1",
+      nodePort: "51562",
     }, process.env.REF_JWT_SECRET);
     await post("identify-token-hardware", "198.51.100.10", { "x-hydra-access-token": token });
   }

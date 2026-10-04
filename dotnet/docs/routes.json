@@ -1614,6 +1614,40 @@
   },
   {
     "method": "POST",
+    "path": "/ovs_p2p_failed",
+    "area": "ovs_p2p_failed",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /ovs_p2p_failed"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-rollback",
+    "in_game": false,
+    "in_server": true,
+    "owner": "matchflow"
+  },
+  {
+    "method": "POST",
+    "path": "/ovs_p2p_ready",
+    "area": "ovs_p2p_ready",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /ovs_p2p_ready"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-rollback",
+    "in_game": false,
+    "in_server": true,
+    "owner": "matchflow"
+  },
+  {
+    "method": "POST",
     "path": "/ovs_register",
     "area": "ovs_register",
     "binary": null,

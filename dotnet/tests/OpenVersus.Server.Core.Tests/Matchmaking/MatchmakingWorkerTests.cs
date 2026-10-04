@@ -22,12 +22,12 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
 
     private sealed class Ports : IMatchLauncher
     {
+        public List<string> Deployed { get; } = [];
+
         public Task<LaunchedMatch?> LaunchAsync(MatchLaunch launch, CancellationToken ct) => throw new NotSupportedException();
         public Task<int?> RollbackPortAsync(IDatabase redis) => Task.FromResult<int?>(57001);
 
-        public void DeployIfOnDemand(int port, string matchId)
-        {
-        }
+        public void DeployIfOnDemand(int port, string matchId) => Deployed.Add(matchId);
     }
 
     public async Task InitializeAsync()
@@ -69,8 +69,9 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
 
     private IDatabase Db => _redis!.GetDatabase();
 
-    private MatchmakingWorker Worker() => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(), new Ports(),
-        new TestOptions<MatchmakingSettings>(new MatchmakingSettings()), TimeProvider.System, NullLogger<MatchmakingWorker>.Instance);
+    private MatchmakingWorker Worker(Ports? ports = null, bool p2p = false) => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
+        ports ?? new Ports(), new TestOptions<MatchmakingSettings>(new MatchmakingSettings()), new TestOptions<RollbackSettings>(new RollbackSettings { P2P = p2p }),
+        TimeProvider.System, NullLogger<MatchmakingWorker>.Instance);
 
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
@@ -308,5 +309,48 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
         Assert.Null(regular["isPasswordMatch"]);
         var regularNotification = JsonNode.Parse((await Db.StringGetAsync((string)regular["matchId"]!)).ToString())!;
         Assert.Null(regularNotification["isCustomGame"]);
+    }
+
+    [Theory]
+    // A 1v1 of two humans runs P2P with the switch on: p2p in its config, and no rollback server deployed (the port is
+    // kept for the relay). Switched off, the same match is a server match, deployed as before.
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A1v1OfTwoHumansRunsP2POnlyWithTheSwitchAndThenDeploysNothing(bool p2p)
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await QueueAsync("1v1", [1], age: 1);
+        await QueueAsync("1v1", [2], age: 1);
+        var ports = new Ports();
+        await Worker(ports, p2p).TickAsync(Db);
+
+        string matchId = (string)(await MatchesAsync()).Single()["matchId"]!;
+        var notification = JsonNode.Parse((await Db.StringGetAsync(matchId)).ToString())!;
+        Assert.Equal(p2p, notification["p2p"]!.GetValue<bool>());
+        Assert.Equal(57001, notification["rollbackPort"]!.GetValue<int>());
+        Assert.Equal(p2p ? [] : [matchId], ports.Deployed);
+    }
+
+    [Fact]
+    // Four humans: not eligible (two only), so a server match even with the switch on.
+    public async Task A2v2OfFourHumansIsNeverP2P()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await QueueAsync("2v2", [1, 2], age: 1);
+        await QueueAsync("2v2", [3, 4], age: 1);
+        var ports = new Ports();
+        await Worker(ports, p2p: true).TickAsync(Db);
+
+        string matchId = (string)(await MatchesAsync()).Single()["matchId"]!;
+        Assert.False(JsonNode.Parse((await Db.StringGetAsync(matchId)).ToString())!["p2p"]!.GetValue<bool>());
+        Assert.Equal([matchId], ports.Deployed);
     }
 }

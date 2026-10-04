@@ -23,6 +23,7 @@ import { redisClient,
   redisGetOnlinePlayerCount,
   redisGetActiveRankedSets,
   redisGetInProgressMatches,
+  redisGetMatchTickets,
   redisUpdateIpMirror,
 } from "./config/redis";
 import { getLeaderboard, getPlayerRank, processMatchLeave, eloToTierDivision } from "./services/eloService";
@@ -45,6 +46,8 @@ import * as AuthUtils from "./utils/auth";
 import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { handleMatchStatusUpdate } from "./handlers/match_status";
+import { p2pRelayKey, parseNodePort } from "./p2p";
+import { DeployInfo, getDefaultDeployInfo, useOnDemandRollback, IDeployInfo } from "./services/rollbackService";
 import { normalizeHardwareSignal, normalizeIdentity, refreshIpIdentityFromToken, resolveAccountWithSource } from "./services/identityService";
 import { mergeIpIdentity } from "./services/identityNormalization";
 import {
@@ -230,20 +233,26 @@ app.get("/stats", async (req, res) => {
     const accountId = String((player as any)._id);
     const stats = await PlayerStatsModel.findOne({ account_id: accountId }).lean();
 
-    if (!stats || !stats.aggregate || Object.keys(stats.aggregate).length === 0) {
+    const hasAggregate = !!stats?.aggregate && Object.keys(stats.aggregate).length > 0;
+    const hasRecord = Object.keys(stats?.characters_1v1 || {}).length > 0 || Object.keys(stats?.characters_2v2 || {}).length > 0;
+    if (!stats || (!hasAggregate && !hasRecord)) {
       const html = myStatsTemplate({ hasStats: false, playerName: (player as any).name || "" });
       res.send(html);
       return;
     }
 
-    // Stringify the aggregate as JSON for the inline <script> block. Escape `</`
-    // so the JSON can't close the script tag if a field name ever contains it.
-    const aggregateJson = JSON.stringify(stats.aggregate).replace(/<\//g, "<\\/");
+    // Stringify as JSON for the inline <script> blocks. Escape `</` so the JSON
+    // can't close the script tag if a field name ever contains it.
+    const toScriptJson = (value: unknown) => JSON.stringify(value).replace(/<\//g, "<\\/");
+    const aggregateJson = toScriptJson(stats.aggregate || {});
+    // Ranked set records per character (and 1v1 matchups), as recordSetStats writes them.
+    const charactersJson = toScriptJson({ "1v1": stats.characters_1v1 || {}, "2v2": stats.characters_2v2 || {} });
 
     const html = myStatsTemplate({
       hasStats: true,
       playerName: (player as any).name || "Unknown",
       aggregateJson,
+      charactersJson,
       updatedAt: Number(stats.updated_at) || Date.now(),
     });
     res.send(html);
@@ -476,9 +485,72 @@ app.post("/ovs_register", async (req, res, next) => {
 
   // Now that the rollback server has the match config, tell ALL real-player clients
   // (including spectators, excluding bots) to connect. Bots have no client to notify.
+  // A P2P match waits for /ovs_p2p_ready instead: every node fetches the config to learn its role, and the
+  // host's node is only ready once its peers have reached it.
   const playerIds = realPlayers.map((p) => p.playerId);
+  if (config.p2p && !(await redisClient.get(p2pRelayKey(body.matchId)))) {
+    logger.info(`${logPrefix} Match ${body.matchId} is P2P: game-server-instance-ready waits for /ovs_p2p_ready from the host's node`);
+    return;
+  }
   await redisGameServerInstanceReady(body.matchId, playerIds);
   logger.info(`${logPrefix} Sent game-server-instance-ready for match ${body.matchId} after rollback server fetched config`);
+});
+
+// Called by a P2P node when no direct path to its peer opened: the match falls back to a rollback server.
+// The first call deploys it (on-demand) on the port the match was given at creation; every call answers with
+// its address, and the nodes forward their games there. /ovs_register from that server then releases
+// game-server-instance-ready as for a server match. Checked by the match key.
+app.post("/ovs_p2p_failed", async (req, res, next) => {
+  const body = req.body;
+  if (!body?.matchId || !body?.key) {
+    res.send("");
+    return;
+  }
+  const config = await redisGetMatchConfig(body.matchId);
+  if (!config || !config.matchKey || config.matchKey !== body.key || !config.p2p) {
+    logger.info(`${logPrefix} Invalid /ovs_p2p_failed call for MatchID: ${body.matchId} (unknown match, key mismatch or not P2P)`);
+    res.send("");
+    return;
+  }
+  const first = await redisClient.set(p2pRelayKey(body.matchId), "1", { NX: true, EX: 1200 });
+  if (first) {
+    logger.info(`${logPrefix} P2P match ${body.matchId}: no direct path; relay on port ${config.rollbackPort}${useOnDemandRollback ? " (deploying)" : ""}`);
+    if (useOnDemandRollback) {
+      const deployInfo: IDeployInfo = getDefaultDeployInfo();
+      deployInfo.port = config.rollbackPort;
+      deployInfo.entrypoint = deployInfo.entrypoint.replace("CHANGEMEDEFAULTPORT", deployInfo.port.toString());
+      deployInfo.ovs_server = env.OVS_SERVER;
+      if (!DeployInfo.Deploy(deployInfo)) {
+        logger.error(`${logPrefix} Failed to deploy the relay for P2P match ${body.matchId} on port ${deployInfo.port}`);
+      }
+    }
+  }
+  res.json({ host: env.UDP_SERVER_IP, port: config.rollbackPort });
+});
+
+// Called by a P2P host node once it serves the match (every peer path open): the players may now be told
+// their server is ready. Checked by the match key, which the node has from the game's own NewConnection.
+app.post("/ovs_p2p_ready", async (req, res, next) => {
+  const body = req.body;
+  if (!body?.matchId || !body?.key) {
+    res.send("");
+    return;
+  }
+  const config = await redisGetMatchConfig(body.matchId);
+  if (!config || !config.matchKey || config.matchKey !== body.key) {
+    logger.info(`${logPrefix} Invalid /ovs_p2p_ready call for MatchID: ${body.matchId} (unknown match or key mismatch)`);
+    res.send("");
+    return;
+  }
+  if (!config.p2p) {
+    logger.info(`${logPrefix} /ovs_p2p_ready for MatchID: ${body.matchId}, which is not a P2P match; ignored`);
+    res.send("");
+    return;
+  }
+  const playerIds = config.players.filter((p) => !p.isBot).map((p) => p.playerId);
+  await redisGameServerInstanceReady(body.matchId, playerIds);
+  logger.info(`${logPrefix} Sent game-server-instance-ready for P2P match ${body.matchId}: the host's node is serving`);
+  res.send("");
 });
 
 // Called by the rollback server when gameplay actually begins (first frame).
@@ -661,12 +733,31 @@ app.get("/leaderboard", async (req, res) => {
 // does one Redis sweep regardless of how many tabs are polling.
 
 const MATCHES_CACHE_TICK_MS = 2000;
-let matchesCache: { matches: any[]; count: number; onlinePlayers: number; generatedAt: number } = {
+// The matchmaking queues (Redis lists of tickets) whose searching players the page counts.
+const SEARCHING_QUEUES = ["1v1", "2v2"] as const;
+type SearchingCounts = Record<(typeof SEARCHING_QUEUES)[number], number>;
+
+let matchesCache: { matches: any[]; count: number; onlinePlayers: number; searching: SearchingCounts; generatedAt: number } = {
   matches: [],
   count: 0,
   onlinePlayers: 0,
+  searching: { "1v1": 0, "2v2": 0 },
   generatedAt: 0,
 };
+
+/** Players searching in each queue: the distinct player ids across its tickets (a party counts as its members). */
+async function countSearchingPlayers(previous: SearchingCounts): Promise<SearchingCounts> {
+  const counts = { ...previous };
+  for (const queue of SEARCHING_QUEUES) {
+    try {
+      const tickets = await redisGetMatchTickets(queue);
+      counts[queue] = new Set(tickets.flatMap((t) => (t.players || []).map((p) => p.id))).size;
+    } catch (e) {
+      logger.warn(`${logPrefix} counting ${queue} searching players failed, keeping previous value: ${e}`);
+    }
+  }
+  return counts;
+}
 
 async function refreshMatchesCache(): Promise<void> {
   try {
@@ -771,7 +862,9 @@ async function refreshMatchesCache(): Promise<void> {
       logger.warn(`${logPrefix} redisGetOnlinePlayerCount failed, keeping previous value: ${e}`);
     }
 
-    matchesCache = { matches: results, count: results.length, onlinePlayers, generatedAt: Date.now() };
+    const searching = await countSearchingPlayers(matchesCache.searching);
+
+    matchesCache = { matches: results, count: results.length, onlinePlayers, searching, generatedAt: Date.now() };
   } catch (e) {
     logger.error(`${logPrefix} refreshMatchesCache error: ${e}`);
   }
@@ -806,11 +899,14 @@ app.post("/api/identify", async (req, res) => {
       hardwareIdQuality: _hq = "",
       installId: _i = "",
       clientVersion: _v = "",
+      nodePort: _np = 0,
     } = req.body ?? {};
     if (!ip) {
       res.status(400).json({ error: "Could not determine IP" });
       return;
     }
+    // The UDP port of the client's rollback node (P2P matches are sent to it); 0 from a client without one.
+    const nodePort = parseNodePort(_np);
     const { steamId, epicId, hardwareId, hardwareIdVersion, hardwareIdQuality, installId, clientVersion } = mergeIpIdentity(
       await redisGetIdentity(ip),
       {
@@ -832,11 +928,12 @@ app.post("/api/identify", async (req, res) => {
       hardwareIdVersion,
       hardwareIdQuality,
       identityRegistered,
+      nodePort,
     );
     logger.info(
       `${logPrefix} Identity registered for IP ${ip} — steam:${steamId || "-"} epic:${epicId || "-"} `
       + `install:${installId ? "yes" : "no"} hardware:${hardwareId ? `v${hardwareIdVersion}/${hardwareIdQuality}` : "none"} `
-      + `version:${clientVersion || "legacy"} identity:${identityRegistered ? "registered" : "missing"}`,
+      + `version:${clientVersion || "legacy"} identity:${identityRegistered ? "registered" : "missing"} node:${nodePort || "none"}`,
     );
 
     // Construct an OVS-side JWT and return it so the DLL can attach it to
@@ -881,6 +978,7 @@ app.post("/api/identify", async (req, res) => {
       installId,
       clientVersion,
       identityRegistered: identityRegistered ? "1" : "",
+      nodePort: String(nodePort),
       current_ip: ip,
       // Leave unrelated fields empty — resolver only consults id/steamId/epicId/hardwareId
       profile_id: "",
@@ -896,13 +994,16 @@ app.post("/api/identify", async (req, res) => {
     const token = jwtLib.sign(claims, SECRET, { expiresIn: "30d" });
 
     // If /access won the startup race, unlock that live session as soon as a
-    // valid late /api/identify request resolves back to its account.
+    // valid late /api/identify request resolves back to its account. The node port
+    // is carried over too: a client whose node was slow to start registers again
+    // with it once it knows it, after /access has already built the connection.
     if (resolvedId && identityRegistered) {
       const connectionKey = `connections:${resolvedId}`;
       if (await redisClient.exists(connectionKey)) {
         await redisClient.hSet(connectionKey, {
           clientVersion,
           identityRegistered: "1",
+          ...(nodePort ? { nodePort: String(nodePort) } : {}),
         });
       }
     }

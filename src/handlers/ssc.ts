@@ -459,9 +459,36 @@ export async function handleSsc_invoke_get_gm_leaderboards(req: Request<{}, {}, 
 }
 
 export async function handleSsc_invoke_get_hiss_calendar_events(req: Request<{}, {}, {}, {}>, res: Response) {
-  res.send({
+  const halloweenTheme =
+    "/MvsSeason03/EventData/Season3Events/MissionEvents/Season3_Mission3/THEME_HalloweenFrontendTheme.THEME_HalloweenFrontendTheme";
+  const response = {
     body: {
       Events: [
+        {
+          tags: ["mvsevent", "halloween"],
+          name: "evt_ovs_halloween_2026",
+          calendar_type_slug: "events",
+          entry_type: "one-time",
+          event_type: null,
+          deleted: false,
+          data: {
+            slug: "evt_ovs_halloween_2026",
+            bIsEnabled: true,
+            FrontendTheme: halloweenTheme,
+            TimeSpan: {
+              StartTime: { Year: 2026, Month: 10, Day: 1, Hour: 0, Minute: 0 },
+              EndTime: { Year: 2026, Month: 11, Day: 1, Hour: 0, Minute: 0 },
+              bHasFiniteEndTime: true,
+            },
+          },
+          entry_options: {
+            start_at: { _hydra_unix_date: 1790812800 },
+            task_start_at: { _hydra_unix_date: 1790812800 },
+            end_at: { _hydra_unix_date: 1793491200 },
+          },
+          id: "68ddc8000000000000000001",
+          bIsCurrentlyActive: true,
+        },
         {
           tags: ["mvsevent", "arena"],
           name: "evt_season5_arenaevent3",
@@ -1318,7 +1345,8 @@ export async function handleSsc_invoke_get_hiss_calendar_events(req: Request<{},
     },
     metadata: null,
     return_code: 0,
-  });
+  };
+  res.send(response);
 }
 
 export async function handleSsc_invoke_get_milestone_reward_tracks(req: Request<{}, {}, {}, {}>, res: Response) {

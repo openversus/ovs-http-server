@@ -3,8 +3,7 @@ import { NextFunction, Request, Response } from "express";
 import * as jwt from "jsonwebtoken";
 import env from "../env/env";
 import * as SharedTypes from "../types/shared-types";
-import { isIPAddress } from "../utils/garbagecan";
-import { get } from "http";
+import { clientIpFromHeaders } from "../utils/clientIp";
 
 declare global {
   namespace Express {
@@ -55,26 +54,13 @@ export const hydraTokenMiddleware = (req: Request, res: Response, next: NextFunc
     return next();
   }
 
-  let forwardedHeader = REAL_IP_HEADER;
-  if (req.headers[FORWARDED_FOR_HOST_HEADER] && !req.headers[REAL_IP_HEADER]) {
-    forwardedHeader = FORWARDED_FOR_HOST_HEADER;
-  }
-  else if (req.headers[FORWARDED_FOR_HEADER] && !req.headers[REAL_IP_HEADER]) {
-    forwardedHeader = FORWARDED_FOR_HEADER;
-  }
-  const clientIpHeader = req.headers[forwardedHeader] as string | undefined;
-
-  if (clientIpHeader)
-  {
-    let resolvedIP = getRealIP(req);
-    if (isIPAddress(resolvedIP.ip)) {
-      req.realIp = resolvedIP.ip;
-      req.requestForwarded = resolvedIP.isForwarded;
-    }
-    else {
-      req.realIp = req.ip;
-      req.requestForwarded = false;
-    }
+  // A /batch sub-request is a copy of the batch's request (Object.create) with the game's own per-call headers, which
+  // carry no proxy headers: it keeps the address resolved for the batch, which it inherits.
+  //@ts-ignore
+  if (!req.batch) {
+    const resolvedIP = getRealIP(req);
+    req.realIp = resolvedIP.ip;
+    req.requestForwarded = resolvedIP.isForwarded;
   }
   const token = req.headers[HYDRA_ACCESS_TOKEN];
 
@@ -99,33 +85,19 @@ export const hydraTokenMiddleware = (req: Request, res: Response, next: NextFunc
   next();
 };
 
+/**
+ * The client's address behind the reverse proxy (see clientIpFromHeaders). req.ip, the connection's own, is read only
+ * when no header names the client, and never throws: on a /batch sub-request (a copy of the batch's request) Express's
+ * ip getter finds no socket and throws.
+ */
 export function getRealIP(req: Request): { ip: string; isForwarded: boolean } {
-  // Yeah, it's duplicated code
-  // No, I don't care to fix it right now
-
-  let forwardedHeader = REAL_IP_HEADER;
-  if (req.headers[FORWARDED_FOR_HOST_HEADER] && !req.headers[REAL_IP_HEADER]) {
-    forwardedHeader = FORWARDED_FOR_HOST_HEADER;
-  }
-  else if (req.headers[FORWARDED_FOR_HEADER] && !req.headers[REAL_IP_HEADER]) {
-    forwardedHeader = FORWARDED_FOR_HEADER;
-  }
-  const clientIpHeader = req.headers[forwardedHeader] as string | undefined;
-  let isForwarded = false;
-  let tempRealIp = req.ip ?? "";
-
-  if (clientIpHeader)
-  {
-    if (isIPAddress(clientIpHeader)) {
-      tempRealIp = clientIpHeader;
-      isForwarded = true;
+  return clientIpFromHeaders(req.headers, () => {
+    try {
+      return req.ip;
+    } catch {
+      return req.socket?.remoteAddress;
     }
-    else {
-      tempRealIp = req.ip ?? "";
-      isForwarded = false;
-    }
-  }
-  return { ip: tempRealIp, isForwarded: isForwarded };
+  });
 }
 
 export function tryGetRealIP(req: Request): string {

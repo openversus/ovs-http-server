@@ -213,6 +213,7 @@
       <h1>LIVE MATCHES</h1>
       <div class="subtitle"><span class="dot"></span><span id="match_count">0 matches in progress</span></div>
       <div class="subtitle"><span class="dot"></span><span id="online_count">0 players online</span></div>
+      <div class="subtitle"><span class="dot"></span><span id="searching_count">0 searching in 1v1 · 0 searching in 2v2</span></div>
 
       <div class="match_list" id="match_list">
         <div class="empty_state">Loading...</div>
@@ -344,6 +345,10 @@
       online.textContent = onlinePlayers === 1
         ? '1 player online'
         : onlinePlayers + ' players online';
+
+      const searching = data.searching || {};
+      const searchingIn = (mode) => (typeof searching[mode] === 'number' ? searching[mode] : 0) + ' searching in ' + mode;
+      document.getElementById('searching_count').textContent = searchingIn('1v1') + ' · ' + searchingIn('2v2');
 
       if (matches.length === 0) {
         list.innerHTML = '<div class="empty_state">No ranked sets currently in progress.</div>';

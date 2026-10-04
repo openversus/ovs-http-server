@@ -199,7 +199,7 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   (`MatchLauncher`: custom lobbies, the Casual queue, rift nodes; the C# matchmaker) and the TS server's `P2P_ROLLBACK`
   environment variable for the ones it still starts: a ranked set's next game (`createNextSetMatch`), a custom lobby's
   rematch, and its own matchmaker when it runs. Both write `p2p` into the match config with the same rule
-  (`Matches/P2P.cs`, `src/p2p.ts`); the rest of a P2P match is TS: `/api/identify` (the node's port), the websocket
+  (`Matches/P2P.cs`, `src/services/nodePort.ts` hasP2PHost: every match with a human who plays); the rest of a P2P match is TS: `/api/identify` (the node's port), the websocket
   (sends the game to `127.0.0.1` and that port), `/ovs_register` (holds game-server-instance-ready),
   `/ovs_p2p_ready` and `/ovs_p2p_failed` (C# stubs, forwarded by the proxy). `Rollback:P2P` takes `P2P_ROLLBACK` when it
   is not set itself, but a cluster setting changed through the control API is not seen by TS: with the two different, a

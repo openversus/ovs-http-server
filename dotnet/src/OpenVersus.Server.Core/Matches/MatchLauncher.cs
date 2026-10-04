@@ -63,7 +63,7 @@ public sealed class RollbackSettings
     [Description("A rollback server deployed for each match through the deploy webhook (ON_DEMAND_ROLLBACK=1), instead of the running ones on UdpPortLow..UdpPortHigh.")]
     public bool OnDemand { get; set; }
 
-    [Description("Eligible matches (exactly two humans, no spectators) run P2P, on the players' own nodes, with no rollback server unless their nodes report that no direct path opened (P2P_ROLLBACK). The TS server reads its own P2P_ROLLBACK for the matches it still creates: keep the two the same (MIGRATION-BRIDGES.md 8).")]
+    [Description("Every match with a human player (any mode, bots and spectators included) runs P2P, on the players' own nodes, with no rollback server unless their nodes report that no direct path opened (P2P_ROLLBACK). The TS server reads its own P2P_ROLLBACK for the matches it still creates: keep the two the same (MIGRATION-BRIDGES.md 8).")]
     public bool P2P { get; set; }
 
     [Description("Lowest port an on-demand rollback server is given (ON_DEMAND_ROLLBACK_PORT_LOW).")]

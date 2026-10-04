@@ -44,12 +44,15 @@ public sealed class P2PTests
     // The ranked matchmaker's entries carry no isBot at all.
     [InlineData("""[{"playerId":"a"},{"playerId":"b"}]""", true)]
     [InlineData("""[{"isBot":false},{"isBot":false}]""", true)]
-    [InlineData("""[{"isBot":false},{"isBot":true}]""", false)]
-    [InlineData("""[{"isBot":false},{"isBot":false},{"isSpectator":true}]""", false)]
+    [InlineData("""[{"isBot":false},{"isBot":true}]""", true)]
+    [InlineData("""[{"isBot":false},{"isBot":false},{"isSpectator":true}]""", true)]
     [InlineData("""[{"isBot":false},{"isBot":true},{"isBot":false},{"isBot":true}]""", true)]
-    [InlineData("""[{},{},{}]""", false)]
-    [InlineData("""[{}]""", false)]
-    public void EligibleIsTwoHumansAndNoSpectator(string players, bool eligible) => Assert.Equal(eligible, P2P.IsEligible(JsonNode.Parse(players)!.AsArray()));
+    [InlineData("""[{},{},{},{},{"isSpectator":true},{"isSpectator":true},{"isSpectator":true},{"isSpectator":true}]""", true)]
+    [InlineData("""[{}]""", true)]
+    [InlineData("""[{"isBot":true},{"isBot":true}]""", false)]
+    [InlineData("""[{"isSpectator":true},{"isBot":true}]""", false)]
+    [InlineData("""[]""", false)]
+    public void EligibleIsAnyMatchWithAHumanWhoPlays(string players, bool eligible) => Assert.Equal(eligible, P2P.IsEligible(JsonNode.Parse(players)!.AsArray()));
 
     [Fact]
     public void MarkAlwaysWritesP2P()

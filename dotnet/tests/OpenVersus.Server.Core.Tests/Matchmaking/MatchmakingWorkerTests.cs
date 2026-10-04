@@ -336,8 +336,8 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
     }
 
     [Fact]
-    // Four humans: not eligible (two only), so a server match even with the switch on.
-    public async Task A2v2OfFourHumansIsNeverP2P()
+    // Four humans: P2P too (any mode), with nothing deployed.
+    public async Task A2v2OfFourHumansRunsP2P()
     {
         if (_redis is null)
         {
@@ -350,7 +350,7 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
         await Worker(ports, p2p: true).TickAsync(Db);
 
         string matchId = (string)(await MatchesAsync()).Single()["matchId"]!;
-        Assert.False(JsonNode.Parse((await Db.StringGetAsync(matchId)).ToString())!["p2p"]!.GetValue<bool>());
-        Assert.Equal([matchId], ports.Deployed);
+        Assert.True(JsonNode.Parse((await Db.StringGetAsync(matchId)).ToString())!["p2p"]!.GetValue<bool>());
+        Assert.Empty(ports.Deployed);
     }
 }

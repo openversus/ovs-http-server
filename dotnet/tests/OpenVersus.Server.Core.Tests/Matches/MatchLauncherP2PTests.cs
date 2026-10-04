@@ -66,11 +66,15 @@ public sealed class MatchLauncherP2PTests : IAsyncLifetime
     {
         { "two humans, switch on", true, [Human(0, host: true), Human(1)], true },
         { "two humans, switch off", false, [Human(0, host: true), Human(1)], false },
-        { "one human and a bot", true, [Human(0, host: true), Bot(1)], false },
-        { "two humans and a spectator", true, [Human(0, host: true), Human(1), Spectator(2)], false },
-        { "four humans", true, [Human(0, host: true), Human(1), Human(2), Human(3)], false },
-        // As the TS isP2PEligible: bots beside the two humans do not make a match ineligible.
+        { "one human and a bot", true, [Human(0, host: true), Bot(1)], true },
+        { "two humans and a spectator", true, [Human(0, host: true), Human(1), Spectator(2)], true },
+        { "four humans", true, [Human(0, host: true), Human(1), Human(2), Human(3)], true },
+        // The most a game holds: four players and four spectators.
+        { "four humans and four spectators", true, [Human(0, host: true), Human(1), Human(2), Human(3), Spectator(4), Spectator(5), Spectator(6), Spectator(7)], true },
         { "two humans and two bots", true, [Human(0, host: true), Bot(1), Human(2), Bot(3)], true },
+        { "four humans, switch off", false, [Human(0, host: true), Human(1), Human(2), Human(3)], false },
+        // Nobody whose node could host.
+        { "a spectator and a bot", true, [Spectator(0), Bot(1)], false },
     };
 
     [Theory]

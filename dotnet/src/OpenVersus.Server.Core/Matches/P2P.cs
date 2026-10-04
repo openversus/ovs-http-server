@@ -18,26 +18,11 @@ public static class P2P
 {
     /// <summary>
     /// Whether a match of <paramref name="players"/> (the notification's entries, as the TS RedisTeamEntry) runs P2P
-    /// with the switch on: exactly two players that are neither a bot nor a spectator, and no spectator. As the TS
-    /// isP2PEligible, bots beside the two humans do not make a match ineligible.
+    /// with the switch on, as the TS hasP2PHost: any mode and any players (1v1, 2v2, FFA; bots and spectators
+    /// included), as long as one player is a human who plays, since the host's node runs the engine.
     /// </summary>
-    public static bool IsEligible(JsonArray players)
-    {
-        int humans = 0, spectators = 0;
-        foreach (var player in players)
-        {
-            if (Flag(player, "isSpectator"))
-            {
-                spectators++;
-            }
-            else if (!Flag(player, "isBot"))
-            {
-                humans++;
-            }
-        }
-
-        return humans == 2 && spectators == 0;
-    }
+    public static bool IsEligible(JsonArray players) =>
+        players.Any(player => !Flag(player, "isSpectator") && !Flag(player, "isBot"));
 
     /// <summary>Writes the notification's p2p (the switch and eligibility) and returns it.</summary>
     public static bool Mark(JsonObject notification, bool enabled)

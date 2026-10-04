@@ -10,9 +10,9 @@ import env from "./env/env";
 import { redisClient } from "./config/redis";
 import type { MATCH_FOUND_NOTIFICATION, RedisTeamEntry } from "./config/redis";
 
-import { parseNodePort } from "./services/nodePort";
+import { hasP2PHost, parseNodePort } from "./services/nodePort";
 
-export { parseNodePort };
+export { hasP2PHost, parseNodePort };
 
 /**
  * The port this player's game is sent to for a P2P match: the one its client reported for its node
@@ -27,13 +27,9 @@ export async function nodePortFor(playerId: string): Promise<number> {
   }
 }
 
-/** Only 1v1 between two humans for now: a host whose connection drops ends the match for everyone, and the
- *  relay would have handed the slot to AI; team modes wait for that. */
+/** With P2P_ROLLBACK=1, every match runs P2P, whatever its mode and players (see hasP2PHost). */
 export function isP2PEligible(players: RedisTeamEntry[]): boolean {
-  if (env.P2P_ROLLBACK !== 1) return false;
-  const humans = players.filter((p) => !p.isBot && !p.isSpectator);
-  const spectators = players.filter((p) => p.isSpectator);
-  return humans.length === 2 && spectators.length === 0;
+  return env.P2P_ROLLBACK === 1 && hasP2PHost(players);
 }
 
 /** Marks the notification (which becomes the stored match config) as a P2P match when eligible. */

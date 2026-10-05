@@ -348,7 +348,8 @@
 
       const searching = data.searching || {};
       const searchingIn = (mode) => (typeof searching[mode] === 'number' ? searching[mode] : 0) + ' searching in ' + mode;
-      document.getElementById('searching_count').textContent = searchingIn('1v1') + ' · ' + searchingIn('2v2');
+      const queues = data.ffaOpen ? ['1v1', '2v2', 'FFA'] : ['1v1', '2v2'];
+      document.getElementById('searching_count').textContent = queues.map(searchingIn).join(' · ');
 
       if (matches.length === 0) {
         list.innerHTML = '<div class="empty_state">No ranked sets currently in progress.</div>';

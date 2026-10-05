@@ -24,6 +24,7 @@ import { randomUUID } from "crypto";
 import { MVSTime } from "../utils/date";
 import env from "../env/env";
 import { cancelMatchmaking, cancelMatchmakingForAll, MATCH_TYPES, queueMatch } from "../services/matchmakingService";
+import { ffaQueueClosedFailure, isFfaQueueOpen } from "../services/ffaSchedule";
 import * as SharedTypes from "../types/shared-types";
 import { HYDRA_ACCESS_TOKEN, SECRET, decodeToken } from "../middleware/auth";
 import * as AuthUtils from "../utils/auth";
@@ -835,10 +836,15 @@ export interface MATCH_MAKING_REQUEST {
   match: string;
 }
 
-export async function handleMatches_matchmaking_1v1_retail_request(req: Request<{}, {}, MATCH_MAKING_REQUEST, {}>, res: Response) {
+export async function handleMatches_matchmaking_1v1_retail_request(
+  req: Request<{}, {}, MATCH_MAKING_REQUEST, {}>,
+  res: Response,
+  requestedMatchType: MATCH_TYPES = MATCH_TYPES.ONE_V_ONE,
+) {
   // const account = req.token;
 
-  logger.info(`${logPrefix} Received 1v1 retail matchmaking request`);
+  const isFfa = requestedMatchType === MATCH_TYPES.FFA;
+  logger.info(`${logPrefix} Received ${isFfa ? "FFA" : "1v1 retail"} matchmaking request`);
 
   // If the player's lobby has 2+ players, force 2v2 instead of 1v1
   const preCheckAccount = AuthUtils.DecodeClientToken(req);
@@ -846,8 +852,14 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
   const outdatedRequester = await getPlayersRequiringClientUpdate([preCheckAccount.id]);
   if (outdatedRequester.length > 0) {
     await requestClientUpdateModalsForPlayers(outdatedRequester.map((player) => player.accountId));
-    logger.warn(`${logPrefix} Blocked 1v1 matchmaking for outdated client ${preCheckAccount.id}`);
+    logger.warn(`${logPrefix} Blocked ${isFfa ? "FFA" : "1v1"} matchmaking for outdated client ${preCheckAccount.id}`);
     res.status(200).send(hydraClientUpdateFailure());
+    return;
+  }
+
+  if (isFfa && !isFfaQueueOpen()) {
+    logger.info(`${logPrefix} Rejected FFA matchmaking for ${preCheckAccount.id}: outside the weekend window`);
+    res.status(200).send(ffaQueueClosedFailure());
     return;
   }
 
@@ -869,6 +881,11 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
   if (preCheckLobbyId) {
     const preCheckLobby = await redisGetLobbyState(preCheckLobbyId);
     if (preCheckLobby && preCheckLobby.playerIds.length >= 2) {
+      if (isFfa) {
+        logger.warn(`${logPrefix} Rejected FFA matchmaking for party ${preCheckLobbyId}; FFA is solo-entry only`);
+        res.status(200).json({ error: "FFA matchmaking requires a solo party" });
+        return;
+      }
       logger.info(`${logPrefix} Lobby ${preCheckLobbyId} has ${preCheckLobby.playerIds.length} players, redirecting 1v1 request to 2v2 handler`);
       return handleMatches_matchmaking_2v2_retail_request(req, res);
     }
@@ -936,7 +953,7 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
         founderpackcoolnameflag: true,
         closed_alpha_battlepass_completed: true,
     },
-    criteria_slug: "1v1-retail",
+    criteria_slug: isFfa ? "ffa" : "1v1-retail",
     cluster: req.body.data.MultiplayParams.MultiplayClusterSlug,
     players_connection_info: {
       [aID]: {
@@ -999,7 +1016,14 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
     id: ObjectID().toHexString(),
   };
   res.send(data);
-  await queueMatch(aID, [aID], data.from_match, data.id, MATCH_TYPES.ONE_V_ONE);
+  await queueMatch(aID, [aID], data.from_match, data.id, requestedMatchType);
+}
+
+export async function handleMatches_matchmaking_ffa_request(
+  req: Request<{}, {}, MATCH_MAKING_REQUEST, {}>,
+  res: Response,
+) {
+  return handleMatches_matchmaking_1v1_retail_request(req, res, MATCH_TYPES.FFA);
 }
 
 export async function handleMatches_matchmaking_2v2_retail_request(req: Request<{}, {}, MATCH_MAKING_REQUEST, {}>, res: Response) {

@@ -45,6 +45,10 @@ const env = cleanEnv(process.env, {
   ACCESS_TOKEN_TTL: accessTokenTtl({ default: "24h" }),
   BANNED_NAMES_FILE: str({ default: "../data/banned_names.txt" }),
   CIDR_BANS_FILE: str({ default: "../data/cidr_bans.txt" }),
+  CROWN_CIRCUIT_TOP25_ACCOUNT_IDS: str({ default: "" }),
+  // Accounts that own the OVS Dev badge (comma-separated account ids).
+  OVS_DEV_ACCOUNT_IDS: str({ default: "" }),
+  CROWN_CIRCUIT_TOP25_DYNAMIC_ENABLED: bool({ default: false }),
   DATA_ASSET_TOKEN: str(),
   DEFAULT_ELO: num({ default: 0 }),
   ELO_DIVISOR: num({ default: 800 }),
@@ -78,6 +82,8 @@ const env = cleanEnv(process.env, {
   // committed. Changing it logs everyone out once.
   JWT_SECRET: jwtSecret(),
   MATCHUPDATEKEY: str({ default: "MisconfiguredMatchUpdateKey" }),
+  // true: public FFA queue only runs Friday 12:00am - Sunday 11:59pm US Eastern.
+  FFA_WEEKEND_ONLY: bool({ default: false }),
   // true: hand players their daily/weekly/FTUE missions. Off = no missions at all.
   MISSIONS_ENABLED: bool({ default: false }),
   // true: serve the retail client's test/unfinished characters (see data/testCharacters.ts).

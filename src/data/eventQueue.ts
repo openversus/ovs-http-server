@@ -160,7 +160,7 @@ export const EVENT_QUEUE_CONFIG = {
       AssetBundleData: {
         Bundles: [],
       },
-      bAlwaysAvailable: false,
+      bAlwaysAvailable: true,
       bIsEnabled: true,
       DisplayName: {
         localizations: {
@@ -188,8 +188,8 @@ export const EVENT_QUEUE_CONFIG = {
       AssetBundleData: {
         Bundles: [],
       },
-      bAlwaysAvailable: true,
-      bIsEnabled: true,
+      bAlwaysAvailable: false,
+      bIsEnabled: false,
       DisplayName: {
         localizations: {
           loc_Casual_Queue: "Casual Queue",

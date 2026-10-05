@@ -14,6 +14,7 @@ import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { isIPv4Address } from "../utils/garbagecan";
 import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { resolveAccountFromRequest } from "../services/identityService";
+import { filterInventoryForEntitlements } from "../services/cosmeticEntitlementService";
 
 const serviceName = "Handlers.Profiles";
 const logPrefix = `[${serviceName}]:`;
@@ -52,7 +53,8 @@ export async function handleProfiles_id_inventory(req: Request<{}, {}, {}, MVSQu
     // to 100 for new accounts and incremented by the daily login bonus
     // and on-toast-received grant.
     const toastEntry = await getToastInventoryEntry(aID);
-    res.send([...unlockAll(aID), GleamiumData, toastEntry]);
+    const inventory = await filterInventoryForEntitlements(unlockAll(aID), aID);
+    res.send([...inventory, GleamiumData, toastEntry]);
 }
 
 export async function handleProfiles_bulk(req: Request<{}, {}, { ids: string[] }, MVSQueries.Profiles_bulk_QUERY>, res: Response) {

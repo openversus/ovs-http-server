@@ -64,6 +64,10 @@ import {
   redisGetMatchTickets,
   TOAST_RECEIVED_CHANNEL,
   RedisToastNotification,
+  REWARD_TRACK_UPDATED_CHANNEL,
+  REWARDS_GRANTED_CHANNEL,
+  RedisRewardsGrantedNotification,
+  RedisRewardTrackUpdateNotification,
   redisGetMatchConfig,
   PLAYER_LOADOUT_LOCKED_CHANNEL,
   RedisPlayerLoadoutLockedNotification,
@@ -122,6 +126,16 @@ const TOAST_RECEIVED_REWARD = 2;
 
 const serviceName: string = "WebSocket";
 const logPrefix = `[${serviceName}]:`;
+
+function createToastReceivedRewards(count: number) {
+  return [{
+    RewardGuid: "OVS-TOAST-TOAST-0001",
+    Constraints: [],
+    RewardGrantMethod: "DirectInventoryItem",
+    InventoryHsda: "match_toasts",
+    DirectInventoryItemCount: count,
+  }];
+}
 
 export class WebSocketPlayer {
   init: boolean = false;
@@ -712,6 +726,7 @@ export class WebSocketService {
     if (playerWS.ticket) {
       await redisPopMatchTicketsFromQueue("1v1", [playerWS.ticket]);
       await redisPopMatchTicketsFromQueue("2v2", [playerWS.ticket]);
+      await redisPopMatchTicketsFromQueue("FFA", [playerWS.ticket]);
     }
   }
 
@@ -1442,6 +1457,14 @@ export class WebSocketService {
 
     // Look up hazards from map JSON data (PVE_03 always has hazards, others check JSON)
     let stageHazards: boolean = await getMapHazards(notification.map, notification.mode);
+    const selectedWorldBuffs = notification.worldBuffs ?? [];
+    const hasFriendlyFireMutator = selectedWorldBuffs.includes("ovs_friendly_fire");
+    // The client resolves GameplayConfig.WorldBuffs by asset name: a shipped
+    // mutator's slug is its asset name in lower case. The OVS mutator assets are
+    // named exactly their slugs for the same reason, so every mutator is sent as
+    // its slug; anything else (an object path, a different name) is dropped.
+    const worldBuffsForClient = selectedWorldBuffs;
+
     const message: GameNotification = {
       data: {
         MatchId: notification.matchId,
@@ -1458,11 +1481,18 @@ export class WebSocketService {
           Created: {
             _hydra_unix_date: MVSTime(new Date()),
           },
-          EventQueueSlug: "",
-          bModeGrantsProgress: true,
+          EventQueueSlug: notification.mode === "FFA" ? "evtq_ffa" : "",
+          // Retail clients discard unknown custom WorldBuff slugs while
+          // resolving UMvsGameplayConfig. Custom matches grant no progression,
+          // so false doubles as the OVS friendly-fire compatibility marker that
+          // the updated ASI can read on every peer.
+          bModeGrantsProgress: !(
+            (notification.isCustomGame ?? false) &&
+            hasFriendlyFireMutator
+          ),
           TeamData: [],
           Spectators,
-          bIsRanked: !(notification.isCustomGame ?? false),
+          bIsRanked: !(notification.isCustomGame ?? false) && notification.mode !== "FFA",
           bIsCustomGame: notification.isCustomGame ?? false,
           Players,
           CustomGameSettings: {
@@ -1481,11 +1511,13 @@ export class WebSocketService {
           RiftNodeAttunement: "Attunements:None",
           CountdownDisplay: "CountdownTypes:XvY",
           Cluster: "ec2-us-east-1-dokken",
-          WorldBuffs: notification.worldBuffs ?? [],
+          WorldBuffs: worldBuffsForClient,
           bIsTutorial: false,
           MatchId: notification.matchId,
           bIsOnlineMatch: true,
-          ModeString: (notification.isCustomGame ?? false) ? notification.mode : `ranked-${notification.mode}`,
+          ModeString: (notification.isCustomGame ?? false) || notification.mode === "FFA"
+            ? notification.mode
+            : `ranked-${notification.mode}`,
           Map: notification.map,
           bIsRift: false,
         },
@@ -1612,6 +1644,7 @@ export class WebSocketService {
   async handleGameServerInstanceReady(notification: RedisGameServerInstanceReadyNotification) {
     let useCentralRollback = env.USE_INTERNAL_ROLLBACK === 1 ? true : false;
     let rollbackHost = useCentralRollback ? `${env.UDP_SERVER_IP}` : "127.0.0.1";
+
     let playerClients: Record<string, WebSocketPlayer>[] = [];
     // A P2P match: the server is the node on each player's machine, whatever USE_INTERNAL_ROLLBACK says.
     const p2p = (await redisGetMatchConfig(notification.containerMatchId).catch(() => null))?.p2p === true;
@@ -1822,13 +1855,7 @@ export class WebSocketService {
     // (koth stuff3@0833e18). The WS message itself is what makes the
     // in-game popup render; the actual count change is the adjustMatchToasts
     // call above.
-    const rewardsGranted = [{
-      RewardGuid: "OVS-TOAST-TOAST-0001",
-      Constraints: [],
-      RewardGrantMethod: "DirectInventoryItem",
-      InventoryHsda: "match_toasts",
-      DirectInventoryItemCount: TOAST_RECEIVED_REWARD,
-    }];
+    const rewardsGranted = createToastReceivedRewards(TOAST_RECEIVED_REWARD);
 
     // Send `ToastReceivedNotification` over WS to the toastee. An earlier
     // note in this codebase claimed this template_id wasn't in the game's
@@ -1860,6 +1887,65 @@ export class WebSocketService {
       cmd: "profile-notification",
     });
     logger.info(`[${serviceName}]: Sent ToastReceivedNotification to ${notification.toasteeAccountId} from ${notification.toasterUsername}`);
+  }
+
+  handleRewardTrackUpdate(notification: RedisRewardTrackUpdateNotification) {
+    const client = this.clients.get(notification.accountId);
+    if (!client) {
+      logger.warn(`[${serviceName}]: Player ${notification.accountId} not connected to WS; reward-track update will be visible on next fetch`);
+      return;
+    }
+
+    const rewardTrackMessage = {
+      data: {
+        template_id: "RewardTrackStatesUpdated",
+        UpdateContext: notification.updateContext,
+        RewardTrackStates: [{
+          TrackSlug: notification.trackSlug,
+          RewardTrackClass: notification.rewardTrackClass ?? "MvsEventRewardTrackHsda",
+          CurrentScore: notification.currentScore,
+          CurrentTier: notification.currentTier,
+          CompletedTiers: notification.completedTiers,
+          ClaimedRewards: notification.claimedRewards,
+          bHasPremium: notification.bHasPremium,
+          Guid: notification.guid ?? "00000000-0000-0000-0000-000000000000",
+          InfiniteTierThreshold: notification.infiniteTierThreshold ?? 60,
+          HighestClaimedInifiniteTier: -1,
+        }],
+      },
+      payload: {
+        frm: { id: "internal-server", type: "server-api-key" },
+        template: "realtime",
+        account_id: notification.accountId,
+        profile_id: notification.accountId,
+      },
+      header: "",
+      cmd: "profile-notification",
+    };
+    client.send(rewardTrackMessage);
+
+    logger.info(`[${serviceName}]: Sent reward-track update to ${notification.accountId}: +${notification.xpDelta}, score=${notification.currentScore}`);
+  }
+
+  handleRewardsGranted(notification: RedisRewardsGrantedNotification) {
+    const client = this.clients.get(notification.accountId);
+    if (!client) return;
+    client.send({
+      data: {
+        template_id: "OnRewardsGranted",
+        Context: notification.context,
+        RewardsGranted: notification.rewards,
+      },
+      payload: {
+        frm: { id: "internal-server", type: "server-api-key" },
+        template: "realtime",
+        account_id: notification.accountId,
+        profile_id: notification.accountId,
+      },
+      header: "",
+      cmd: "profile-notification",
+    });
+    logger.info(`[${serviceName}]: Sent OnRewardsGranted (${notification.rewards.length}) to ${notification.accountId}`);
   }
 
   handlePlayerLoadoutLocked(notification: RedisPlayerLoadoutLockedNotification) {
@@ -3070,6 +3156,27 @@ export class WebSocketService {
       logger.info(`[${serviceName}]: Subscribed to ${TOAST_RECEIVED_CHANNEL} successfully`);
     }).catch((err) => {
       logger.error(`[${serviceName}]: Failed to subscribe to ${TOAST_RECEIVED_CHANNEL}: ${err}`);
+    });
+
+    this.redisSub.subscribe(REWARD_TRACK_UPDATED_CHANNEL, (message) => {
+      try {
+        const notification = JSON.parse(message) as RedisRewardTrackUpdateNotification;
+        this.handleRewardTrackUpdate(notification);
+      } catch (err) {
+        logger.error(`[${serviceName}]: Error parsing reward-track update: ${err} — raw: ${message}`);
+      }
+    }).then(() => {
+      logger.info(`[${serviceName}]: Subscribed to ${REWARD_TRACK_UPDATED_CHANNEL} successfully`);
+    }).catch((err) => {
+      logger.error(`[${serviceName}]: Failed to subscribe to ${REWARD_TRACK_UPDATED_CHANNEL}: ${err}`);
+    });
+
+    this.redisSub.subscribe(REWARDS_GRANTED_CHANNEL, (message) => {
+      try {
+        this.handleRewardsGranted(JSON.parse(message) as RedisRewardsGrantedNotification);
+      } catch (err) {
+        logger.error(`[${serviceName}]: Error parsing rewards-granted message: ${err} — raw: ${message}`);
+      }
     });
 
     this.redisSub.subscribe(PLAYER_LOADOUT_LOCKED_CHANNEL, (message) => {

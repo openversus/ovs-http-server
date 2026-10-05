@@ -17,6 +17,7 @@ import { RANK_SETTINGS } from "../data/rankSettings";
 import { RIFTS_CONFIG } from "../data/rifts";
 import { XP_MULTIPLIER_CONFIG } from "../data/xpMultiplier";
 import { getAllAssets, getAllSkinsByChar, getAllTauntsByChar, getAssetsByType } from "../loadAssets";
+import { filterOwnedByDefaultSlugs } from "../services/cosmeticEntitlementService";
 
 export function generate_hiss() {
   return {
@@ -199,7 +200,7 @@ export function generate_hiss() {
           },
         },
         "inventory-item-definitions": {
-          _hydra_compressed: {}, //INVENTORY_DEFINITIONS,
+          _hydra_compressed: INVENTORY_DEFINITIONS,
         },
         "enabled-assets-data": {
           _hydra_compressed: {
@@ -449,7 +450,7 @@ export function generate_hiss() {
                 TauntSlugsByCharacter: getAllTauntsByChar(),
               },
               StatTrackersThatRequireProgress: {},
-              OwnedByDefaultInventoryItems: getAllAssets().map((a) => a.slug),
+              OwnedByDefaultInventoryItems: filterOwnedByDefaultSlugs(getAllAssets().map((a) => a.slug)),
             },
             AssetMetaData: {
               CharacterMetaData: {

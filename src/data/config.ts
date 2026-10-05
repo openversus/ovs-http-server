@@ -1,11 +1,19 @@
 import { ConfigDataModel } from "../database/Config";
 
 let CRC = 1267552956;
+// Increment when static HISS payloads change so retail clients cannot reuse a
+// matching cached catalog. 1: End Game BP cosmetics. 2-3: StressInducer's profile icons (3 once
+// their DataAssets rows existed). 4: the game's unreleased cosmetics in the battle pass. 5: Painter Beetlejuice.
+// 6: the battle pass's last tier no longer recurs, so it can be claimed. 7: the OVS Dev badge.
+// 8: the One Tough Banana taunt. 9: the MultiVersus Ink profile icon.
+const HISS_CONTENT_REVISION = 9;
 
 export function getCurrentCRC() {
-  return CRC;
+  return CRC + HISS_CONTENT_REVISION;
 }
-export const MATCHMAKING_CRC = 1;
+// Bump when queue/game-mode catalog data changes so clients invalidate their
+// cached matchmaking configuration.
+export const MATCHMAKING_CRC = 2;
 
 export async function LoadConfig() {
   const existing = await ConfigDataModel.findOne().exec();

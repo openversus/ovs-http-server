@@ -5,6 +5,7 @@ import { PlayerTesterModel } from "../database/PlayerTester";
 import { Types } from "mongoose";
 import env from "../env/env";
 import { recordSetStats } from "./statsService";
+import { awardRankedSetXp } from "./rankedSetXpService";
 
 const serviceName = "Services.Elo";
 const logPrefix = `[${serviceName}]:`;
@@ -342,6 +343,12 @@ export async function processSetResult(
     winnerIds, loserIds, winnerRatings, loserRatings,
     playerCharacters, deltas, avgWinnerElo, avgLoserElo, expectedScores,
   }).catch((err) => logger.error(`${logPrefix} Stats recording failed: ${err}`));
+
+  // Fire-and-forget: battle-pass and Fighter Pass XP are earned per ranked set, never per game.
+  if (matchId) {
+    awardRankedSetXp({ winnerIds, loserIds, playerCharacters, setKey: matchId, setScore, isConcede, isPregameDodge })
+      .catch((err) => logger.error(`${logPrefix} Ranked set XP award failed: ${err}`));
+  }
 
   return { deltas, rankUpdates };
 }

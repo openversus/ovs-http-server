@@ -16,5 +16,6 @@ test.json
 udpTest.ts
 vcpkg_installed
 .DS_Store
+logs/
 /.codegraph/
 /graphify-out/

@@ -48,6 +48,34 @@ export interface RedisWsSendNotification {
   message: Record<string, unknown>;
 }
 
+export const REWARD_TRACK_UPDATED_CHANNEL = "reward_track:updated";
+export const REWARDS_GRANTED_CHANNEL = "rewards:granted";
+
+/** Drives the client's OnRewardsGranted popup (e.g. after a battle-pass claim). */
+export interface RedisRewardsGrantedNotification {
+  accountId: string;
+  context: "RewardTrack";
+  rewards: Array<Record<string, unknown>>;
+}
+
+export interface RedisRewardTrackUpdateNotification {
+  accountId: string;
+  trackSlug: string;
+  currentScore: number;
+  currentTier: number;
+  completedTiers: string[];
+  claimedRewards: string[];
+  bHasPremium: boolean;
+  /** EMvsRewardTrackUpdateContext: 1 = RewardTrackClaim, 6 = XpReward. */
+  updateContext: 1 | 6;
+  xpDelta: number;
+  /** Track class and infinite-tier threshold as the HTTP track states report them. */
+  rewardTrackClass?: string;
+  infiniteTierThreshold?: number;
+  /** Must equal the Guid get_milestone_reward_tracks served for this track. */
+  guid?: string;
+}
+
 const CLIENT_UPDATE_MODAL_NONCE_PREFIX = "client_update_modal_nonce:";
 const CLIENT_UPDATE_MODAL_COOLDOWN_PREFIX = "client_update_modal_cooldown:";
 
@@ -360,7 +388,7 @@ export async function redisPopMatchTicketsFromQueue(queueType: string, tickets: 
  * Used at the start of matchmaking to clean up stale tickets before creating new ones.
  */
 export async function redisRemoveExistingTicketsForPlayer(playerId: string): Promise<number> {
-  const queues = ["1v1", "2v2"];
+  const queues = ["1v1", "2v2", "FFA"];
   let removed = 0;
   for (const queue of queues) {
     const ticketsStr = await redisClient.lRange(queue, 0, -1);
@@ -984,6 +1012,16 @@ export interface RedisToastNotification {
 export async function redisPublishToast(notification: RedisToastNotification): Promise<void> {
   await redisClient.publish(TOAST_RECEIVED_CHANNEL, JSON.stringify(notification));
   logger.info(`${logPrefix} Published toast from ${notification.toasterAccountId} (${notification.toasterUsername}) to ${notification.toasteeAccountId} for match ${notification.containerMatchId}`);
+}
+
+export async function redisPublishRewardsGranted(notification: RedisRewardsGrantedNotification): Promise<void> {
+  if (notification.rewards.length === 0) return;
+  await redisClient.publish(REWARDS_GRANTED_CHANNEL, JSON.stringify(notification));
+}
+
+export async function redisPublishRewardTrackUpdate(notification: RedisRewardTrackUpdateNotification): Promise<void> {
+  await redisClient.publish(REWARD_TRACK_UPDATED_CHANNEL, JSON.stringify(notification));
+  logger.info(`${logPrefix} Published reward-track update for ${notification.accountId}: +${notification.xpDelta}, score=${notification.currentScore}`);
 }
 
 // --- Lobby State ---

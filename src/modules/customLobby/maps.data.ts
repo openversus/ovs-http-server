@@ -348,6 +348,10 @@ export const MAP_ROTATIONS = {
       bIsEnabled: true,
       MapsInRotation: [
         {
+          Map: "OVS_SkyFortress_V1",
+          SelectionWeight: 1,
+        },
+        {
           Map: "M000_V2_NEW",
           SelectionWeight: 1,
         },
@@ -535,6 +539,10 @@ export const MAP_ROTATIONS = {
     data: {
       bIsEnabled: true,
       MapsInRotation: [
+        {
+          Map: "OVS_SkyFortress_V1",
+          SelectionWeight: 1,
+        },
         {
           Map: "M000_V1_NEW",
           SelectionWeight: 1,
@@ -847,6 +855,10 @@ export const MAP_ROTATIONS = {
     data: {
       bIsEnabled: true,
       MapsInRotation: [
+        {
+          Map: "OVS_SkyFortress_V1",
+          SelectionWeight: 1,
+        },
         {
           Map: "M000_V1_NEW",
           SelectionWeight: 1,

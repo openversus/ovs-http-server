@@ -26,6 +26,7 @@ import { redisClient,
   redisGetMatchTickets,
   redisUpdateIpMirror,
 } from "./config/redis";
+import { isFfaQueueOpen } from "./services/ffaSchedule";
 import { getLeaderboard, getPlayerRank, processMatchLeave, eloToTierDivision } from "./services/eloService";
 import { GAME_SERVER_PORT } from "./game/udp";
 import { sscRouter } from "./ssc/routes";
@@ -751,14 +752,17 @@ app.get("/leaderboard", async (req, res) => {
 
 const MATCHES_CACHE_TICK_MS = 2000;
 // The matchmaking queues (Redis lists of tickets) whose searching players the page counts.
-const SEARCHING_QUEUES = ["1v1", "2v2"] as const;
+const SEARCHING_QUEUES = ["1v1", "2v2", "FFA"] as const;
 type SearchingCounts = Record<(typeof SEARCHING_QUEUES)[number], number>;
 
-let matchesCache: { matches: any[]; count: number; onlinePlayers: number; searching: SearchingCounts; generatedAt: number } = {
+// ffaOpen: whether the FFA queue takes players now (isFfaQueueOpen, the weekend window when
+// FFA_WEEKEND_ONLY is on); the page shows the FFA count only while it is.
+let matchesCache: { matches: any[]; count: number; onlinePlayers: number; searching: SearchingCounts; ffaOpen: boolean; generatedAt: number } = {
   matches: [],
   count: 0,
   onlinePlayers: 0,
-  searching: { "1v1": 0, "2v2": 0 },
+  searching: { "1v1": 0, "2v2": 0, FFA: 0 },
+  ffaOpen: false,
   generatedAt: 0,
 };
 
@@ -881,7 +885,7 @@ async function refreshMatchesCache(): Promise<void> {
 
     const searching = await countSearchingPlayers(matchesCache.searching);
 
-    matchesCache = { matches: results, count: results.length, onlinePlayers, searching, generatedAt: Date.now() };
+    matchesCache = { matches: results, count: results.length, onlinePlayers, searching, ffaOpen: isFfaQueueOpen(), generatedAt: Date.now() };
   } catch (e) {
     logger.error(`${logPrefix} refreshMatchesCache error: ${e}`);
   }
@@ -1166,7 +1170,8 @@ app.get("/ovs/client-version", async (req, res) => {
 // ============================================================
 // /ovs/notifications — DLL polls this every 2s to receive queued
 // notifications (match_cancel, party invites, toasts, etc.)
-// Player is identified by IP via connections:{ip} Redis hash.
+// Player is identified by account token/platform/install identity. IP is only
+// an unambiguous, short-lived compatibility fallback.
 // Returns JSON array (empty [] if no pending).
 // ============================================================
 app.get("/ovs/notifications", async (req, res) => {

@@ -1,3 +1,9 @@
+import { createHash } from "crypto";
+import { CHROMIUM_FIGHTER_PASS } from "./chromiumSkins";
+import { FIGHTER_PASS_TIERS, FIGHTER_PASS_TOAST_SLUG } from "./fighterPass";
+import { PINK_MOUNTAINEER_JASON_SLUG } from "./pinkMountaineerJason";
+import { SHIRTLESS_TATTOO_SHAGGY_SLUG } from "./ovsBattlepassInventory";
+
 export const MILESTONE_REWARDS = {
   mrt_mastery_account: {
     slug: "mrt_mastery_account",
@@ -23361,7 +23367,7 @@ export const MILESTONE_REWARDS = {
       FeatureName: "global_message",
       FeatureTemplateSlug: "milestone-reward-tracks",
       MatchData: {
-        bGrantsProgressFromMatches: false,
+        bGrantsProgressFromMatches: true,
       },
       RewardsForEveryTier: [],
       RewardTrackClass: "MvsEventRewardTrackHsda",
@@ -80051,21 +80057,22 @@ export const MILESTONE_REWARDS = {
             {
               Constraints: [],
               RewardGrantMethod: "DirectInventoryItem",
-              RewardGuid: "1F0998114F7BB7C8D352C3AAFC4BA201",
+              RewardGuid: "0F5D4A11E3B5419C8F2D7C8B4A0E11C3",
               DirectInventoryItemCount: 1,
-              InventoryHsda: "character_C029",
+              InventoryHsda: "emote_67_hands",
             },
           ],
           ScoreThreshold: 0,
-          TierGuid: "5A44B3F9428A35AEE479AF923854E5D7",
+          TierGuid: "5A44B3F9428A35AEE479AF923854E5DA",
         },
         {
-          DisplayType: 0,
+          DisplayType: 1,
+          // Tier 2: emote_ovs_pleading_cat (community-submitted Tom-style cat)
           Rewards: [
             {
               Constraints: [],
               DirectInventoryItemCount: 1,
-              InventoryHsda: "banner_like_bodacious",
+              InventoryHsda: "emote_ovs_pleading_cat",
               RewardGrantMethod: "DirectInventoryItem",
               RewardGuid: "07759B244F637FA4752C6EA33AD38111",
             },
@@ -80074,13 +80081,15 @@ export const MILESTONE_REWARDS = {
           TierGuid: "6892435741990251FD20D287616C5A79",
         },
         {
-          DisplayType: 0,
+          DisplayType: 1,
+          // Tier 3: emote_ovs_rickflick (community submission)
           Rewards: [
             {
               Constraints: [],
-              RewardGrantMethod: "RewardTableLookup",
+              DirectInventoryItemCount: 1,
+              InventoryHsda: "emote_ovs_rickflick",
+              RewardGrantMethod: "DirectInventoryItem",
               RewardGuid: "18B5081B41501581DFFD15B1C0A25511",
-              RewardHsda: "reward_perk_currency_500",
             },
           ],
           ScoreThreshold: 4000,
@@ -80088,17 +80097,48 @@ export const MILESTONE_REWARDS = {
         },
         {
           DisplayType: 1,
+          // Tier 4: profileicon_ovs_duck_season (community by slashrflik)
           Rewards: [
             {
               Constraints: [],
               DirectInventoryItemCount: 1,
-              InventoryHsda: "ring_out_vfx_slime_monster",
+              InventoryHsda: "profileicon_ovs_duck_season",
               RewardGrantMethod: "DirectInventoryItem",
               RewardGuid: "960C431243A62A7612BC41A9C7D5CFE9",
             },
           ],
           ScoreThreshold: 6000,
           TierGuid: "4D3DBF7F458DC475196E04B7AFD7EA6C",
+        },
+        {
+          DisplayType: 1,
+          // Tier 5: skin_ovs_omniman_superman (first OVS skin ship — Superman variant)
+          Rewards: [
+            {
+              Constraints: [],
+              DirectInventoryItemCount: 1,
+              InventoryHsda: "skin_ovs_omniman_superman",
+              RewardGrantMethod: "DirectInventoryItem",
+              RewardGuid: "7A3F0E2C4B1D88E69521A8FCD0E6B4C5",
+            },
+          ],
+          ScoreThreshold: 7000,
+          TierGuid: "8C2D1F7A4E908B3251743C9DAB5F0E12",
+        },
+        {
+          DisplayType: 1,
+          // Tier 6: Chromium Shaggy, after Omni-Man; later rewards stay intact.
+          Rewards: [
+            {
+              Constraints: [],
+              DirectInventoryItemCount: 1,
+              InventoryHsda: "skin_ovs_chromium_shaggy",
+              RewardGrantMethod: "DirectInventoryItem",
+              RewardGuid: "B0421D494D5B459496F922C3BA8CDD7B",
+            },
+          ],
+          ScoreThreshold: 7500,
+          TierGuid: "4A47137F80E44C109A971DA30B72F20B",
         },
         {
           DisplayType: 0,
@@ -86387,3 +86427,124 @@ export const MILESTONE_REWARDS = {
     },
   },
 };
+
+// Each character mastery track becomes that character's Fighter Pass: toasts on
+// every tier, battle-pass XP on tiers 5, 10 and 15 and the Chromium skin as the capstone
+// (FIGHTER_PASS_TIERS). Native TierGuids are kept; everything the server does
+// not grant (perk currency, lootboxes, per-level rewards) is removed.
+const rewardGuid = (seed: string) => createHash("sha256").update(seed).digest("hex").slice(0, 32).toUpperCase();
+for (const { trackSlug, skinSlug } of CHROMIUM_FIGHTER_PASS) {
+  const track = (MILESTONE_REWARDS as Record<string, any>)[trackSlug];
+  const nativeTiers = track?.data?.Tiers;
+  if (!nativeTiers || nativeTiers.length < FIGHTER_PASS_TIERS.length) {
+    throw new Error(`Missing Chromium Fighter Pass track ${trackSlug}`);
+  }
+  track.data.RewardsForEveryTier = [];
+  track.data.bDoesLastTierRecurInfinitely = false;
+  track.data.Tiers = FIGHTER_PASS_TIERS.map(({ threshold, reward }, index) => ({
+    ...nativeTiers[index],
+    ScoreThreshold: threshold,
+    Rewards: [reward.kind === "battlepassXp"
+      ? {
+        Constraints: [],
+        RewardGrantMethod: "RewardTableLookup",
+        RewardGuid: rewardGuid(`ovs-fighter-pass:${trackSlug}:${index}:${reward.rewardHsda}`),
+        RewardHsda: reward.rewardHsda,
+      }
+      : {
+        Constraints: [],
+        DirectInventoryItemCount: reward.kind === "toasts" ? reward.count : 1,
+        InventoryHsda: reward.kind === "toasts" ? FIGHTER_PASS_TOAST_SLUG : skinSlug,
+        RewardGrantMethod: "DirectInventoryItem",
+        // The Chromium GUID predates the tier rebuild; keep it stable for saved claims.
+        RewardGuid: reward.kind === "toasts"
+          ? rewardGuid(`ovs-fighter-pass:${trackSlug}:${index}:toasts`)
+          : rewardGuid(`ovs-fighter-pass:${trackSlug}:${skinSlug}`),
+      }],
+  }));
+}
+
+// The battle-pass widget presents only the first reward in each tier. Chromium
+// now lives in Fighter Passes, leaving one seasonal sequence of unique skins,
+// community rewards, recovered/custom emotes and the game's unreleased cosmetics
+// (unreleasedCosmetics.ts), in a shuffled order (2026-10-02).
+// Tier N is the Nth slug.
+const battlepassTiers = MILESTONE_REWARDS.mrt_battlepass_season_five.data.Tiers as any[];
+export const OVS_BATTLEPASS_REWARD_SLUGS: string[] = [
+  "banner_pve_unknown_rare",
+  "emote_superman_smile",
+  "emote_jack_o_lantern",
+  "profileicon_ovs_duck_season",
+  "emote_ovs_toastie_beaten",
+  "emote_ovs_bugs_cry",
+  "ring_out_vfx_pfg_arrival",
+  "emote_ovs_snowflake",
+  "emote_ovs_wut",
+  "profileicon_ovs_icy_glare",
+  "emote_ovs_toastie_cute",
+  "taunt_c023b_cackle",
+  PINK_MOUNTAINEER_JASON_SLUG,
+  "emote_ovs_mistletoe",
+  "emote_taz_tongue",
+  "emote_arya_laugh",
+  "skin_c029_s05",
+  "emote_ovs_toastie_sleepy",
+  "taunt_finn_dance2",
+  "emote_ovs_dizzy",
+  "emote_ovs_toastie_sick",
+  "emote_ovs_pleading_cat",
+  "emote_c016_mind",
+  "profileicon_ovs_batmobile",
+  "emote_ovs_toastie_lol",
+  "emote_ovs_taz_get_in",
+  "profileicon_ovs_jason",
+  "emote_ovs_halo",
+  "emote_ovs_rickflick",
+  SHIRTLESS_TATTOO_SHAGGY_SLUG,
+  "emote_ovs_green_light_go",
+  "emote_ovs_cozy_tea",
+  "emote_ovs_popcorn",
+  "HB_SD_ProfileIcon_IntoTheMysteryMachineGang",
+  "Taunt_C028_CardSpring",
+  "emote_reindog_hearts",
+  "emote_ovs_gizmo_smith",
+  "skin_C027_s14",
+  "skin_ovs_omniman_superman",
+  "emote_ovs_toastie_starstruck",
+  "emote_67_hands",
+  "emote_ovs_gingerbread_man",
+  "skin_c030_s14",
+  "emote_ovs_toastie_angry",
+  "emote_ovs_toastie_shocked",
+  "emote_ovs_toastie_cool",
+  "emote_ovs_jdawg",
+  "skin_ovs_painter_beetlejuice",
+  // A MultiVersus logo tattoo (2026-10-04), tier 49.
+  "profileicon_ovs_multiversus_tattoo",
+];
+
+// Every tier is 2,000 XP apart (~4 matches at 500 XP): tier N unlocks at (N-1) x 2000.
+export const OVS_BATTLEPASS_XP_PER_TIER = 2000;
+
+// Past the native track's last tier, tiers are copies of it, each with its own TierGuid.
+const lastNativeTier = battlepassTiers[battlepassTiers.length - 1];
+OVS_BATTLEPASS_REWARD_SLUGS.forEach((slug, rewardIndex) => {
+  const tier = battlepassTiers[rewardIndex] ?? (battlepassTiers[rewardIndex] = {
+    ...lastNativeTier,
+    TierGuid: createHash("sha256").update(`ovs-battlepass-tier:${slug}`).digest("hex").slice(0, 32).toUpperCase(),
+  });
+  tier.ScoreThreshold = rewardIndex * OVS_BATTLEPASS_XP_PER_TIER;
+  tier.Rewards = [{
+    Constraints: [],
+    DirectInventoryItemCount: 1,
+    InventoryHsda: slug,
+    RewardGrantMethod: "DirectInventoryItem",
+    RewardGuid: createHash("sha256").update(`ovs-battlepass:${slug}`).digest("hex").slice(0, 32).toUpperCase(),
+  }];
+});
+
+// One tier per reward.
+battlepassTiers.splice(OVS_BATTLEPASS_REWARD_SLUGS.length);
+// The native pass ended in a recurring tier (lootbox_battlepass_end) the game treats as its
+// infinite tier rather than a claimable one; here the last tier is a reward like the rest.
+MILESTONE_REWARDS.mrt_battlepass_season_five.data.bDoesLastTierRecurInfinitely = false;

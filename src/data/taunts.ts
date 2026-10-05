@@ -253,6 +253,8 @@ const AllTaunts: ITaunt[] = [
       "taunt_bananaguard_default",
       "taunt_bananaguard_mamasaid",
       "taunt_c034_Taunt1",
+      // OVS-made (data/oneToughBananaTaunt.ts).
+      "taunt_bananaguard_onetoughbanana",
     ],
   },
   {

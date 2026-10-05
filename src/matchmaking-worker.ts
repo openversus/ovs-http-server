@@ -20,7 +20,8 @@ import {
 import { logger } from "./config/logger";
 import ObjectID from "bson-objectid";
 import { randomBytes } from "crypto";
-import { MATCH_TYPES, getBaseMode } from "./services/matchmakingService";
+import { MATCH_TYPES, cancelMatchmakingForAll, getBaseMode } from "./services/matchmakingService";
+import { isFfaQueueOpen } from "./services/ffaSchedule";
 import { getRandomMapByType } from "./data/maps";
 import { randomUUID, randomInt } from "crypto";
 import { deploysRollbackServer, markP2P } from "./p2p";
@@ -80,6 +81,11 @@ const MATCH_RULES = {
   "2v2": {
     playersPerTeam: 2,
     teamsRequired: 2,
+    totalPlayersRequired: 4,
+  },
+  FFA: {
+    playersPerTeam: 1,
+    teamsRequired: 4,
     totalPlayersRequired: 4,
   },
 };
@@ -384,10 +390,82 @@ async function process2v2Queue(queueKey: string = MATCH_TYPES.TWO_V_TWO): Promis
   }
 }
 
+// FFA is a four-player, solo-entry queue. Each player becomes their own team.
+async function processFfaQueue(queueKey: string = MATCH_TYPES.FFA): Promise<boolean> {
+  if (!await acquireLock(queueKey)) return false;
+  try {
+    let tickets = await redisGetMatchTickets(queueKey);
+
+    // Weekend-only FFA (FFA_WEEKEND_ONLY): when the window closes, end every
+    // search still in the queue so nobody is left searching until Friday.
+    if (!isFfaQueueOpen()) {
+      if (tickets.length > 0) {
+        await redisPopMatchTicketsFromQueue(queueKey, tickets);
+        for (const ticket of tickets) {
+          await cancelMatchmakingForAll(ticket.players.map((player) => player.id), ticket.matchmakingRequestId);
+        }
+        logger.info(`${logPrefix} FFA queue closed (weekend window); cancelled ${tickets.length} queued ticket(s)`);
+      }
+      return false;
+    }
+
+    tickets = await deduplicateQueue(queueKey, tickets);
+
+    const soloTickets = tickets
+      .filter((ticket) => ticket.party_size === 1 && ticket.players.length === 1)
+      .sort((a, b) => a.created_at - b.created_at);
+    if (soloTickets.length < MATCH_RULES.FFA.totalPlayersRequired) return false;
+
+    // Start with the oldest four distinct players. FFA has no team-composition
+    // problem, and avoiding an ELO gate prevents a low-population queue from
+    // waiting forever.
+    const candidates: RedisMatchTicket[] = [];
+    for (const ticket of soloTickets) {
+      if (candidates.some((candidate) => ticketsSharePlayers(candidate, ticket))) continue;
+      candidates.push(ticket);
+      if (candidates.length === MATCH_RULES.FFA.totalPlayersRequired) break;
+    }
+    if (candidates.length < MATCH_RULES.FFA.totalPlayersRequired) return false;
+
+    const allPlayers = candidates.flatMap((ticket) => ticket.players.map((player) => player.id));
+    const blocked = await playersBlockedEachOther(allPlayers);
+    if (blocked.result) {
+      logger.warn(`${logPrefix} Cannot create FFA match because at least one queued player has blocked another`);
+      return false;
+    }
+
+    await redisPopMatchTicketsFromQueue(queueKey, candidates);
+    await createMatch(candidates, MATCH_TYPES.FFA);
+    return true;
+  }
+  catch (error) {
+    logger.error(`${logPrefix} Error processing FFA queue ${queueKey}: ${error}`);
+    return false;
+  }
+  finally {
+    await releaseLock(queueKey);
+  }
+}
+
 // ChatGPT came up with this o.o
-export async function createTeams(tickets: RedisMatchTicket[]): Promise<RedisTeamEntry[]> {
+export async function createTeams(tickets: RedisMatchTicket[], matchType?: string): Promise<RedisTeamEntry[]> {
   // 1. total number of players
   const totalPlayers = tickets.reduce((sum, t) => sum + t.players.length, 0);
+  if (matchType === MATCH_TYPES.FFA) {
+    const players = tickets.flatMap((ticket) =>
+      ticket.players.map((player) => ({ player, partyId: ticket.partyId })),
+    );
+    const randomHost = Math.floor(Math.random() * players.length);
+    return Promise.all(players.map(async ({ player, partyId }, index) => ({
+      playerId: player.id,
+      partyId,
+      playerIndex: index,
+      teamIndex: index as 0 | 1 | 2 | 3,
+      isHost: index === randomHost,
+      ip: (await redisGetPlayer(player.id)).ip,
+    })));
+  }
+
   if (totalPlayers % 2 !== 0) {
     //throw new Error("Need an even number of total players");
     logger.warn(`${logPrefix} Total players is odd (${totalPlayers}), one player will be left without a team`);
@@ -486,8 +564,10 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
     // Store match data
     await redisUpdateMatch(match.matchId, match);
 
+    const teamEntries = await createTeams(tickets, matchType);
+
     const notification: MATCH_FOUND_NOTIFICATION = {
-      players: await createTeams(tickets),
+      players: teamEntries,
       matchId,
       matchKey: randomBytes(32).toString("base64"),
       map: await getRandomMapByType(matchType, matchId),
@@ -534,6 +614,9 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
     // lines tagged "FALLBACK:" so we can grep for any case where pre-creation failed
     // and we recovered via the older mechanism.
     try {
+      if (matchType === MATCH_TYPES.FFA) {
+        logger.info(`${logPrefix} Skipping ranked-set state for non-ranked FFA match ${matchId}`);
+      } else {
       const setState = {
         players: notification.players,
         mode: notification.mode,
@@ -546,6 +629,7 @@ async function createMatch(tickets: RedisMatchTicket[], matchType: string): Prom
         await redisClient.set(`player_ranked_set:${pid}`, matchId, { EX: 600 });
       }
       logger.info(`${logPrefix} Pre-created ranked set state for match ${matchId} (${playerIds.length} players, mode=${notification.mode})`);
+      }
     } catch (e) {
       logger.error(`${logPrefix} FAILED to pre-create ranked set state for match ${matchId}: ${e} — system will fall back to lazy pending_winner path. Watch for FALLBACK: warns downstream.`);
     }
@@ -581,12 +665,19 @@ async function checkQueues(): Promise<void> {
     // Then try to make regular 2v2 matches
     const made2v2Match = await process2v2Queue();
 
+    // FFA is independent of the team queues and uses four solo tickets.
+    const madeFfaMatch = await processFfaQueue();
+
     if (made1v1Match) {
       logger.info(`${logPrefix} Successfully created matches in this cycle: 1v1=${made1v1Match}`);
     }
 
     if (made2v2Match) {
       logger.info(`${logPrefix} Successfully created matches in this cycle: 2v2=${made2v2Match}`);
+    }
+
+    if (madeFfaMatch) {
+      logger.info(`${logPrefix} Successfully created matches in this cycle: FFA=${madeFfaMatch}`);
     }
   }
   catch (error) {

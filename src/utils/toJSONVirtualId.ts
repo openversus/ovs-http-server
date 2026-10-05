@@ -4,9 +4,10 @@ const toJSONVirtualId: SchemaOptions["toJSON"] = {
   virtuals: true,
   versionKey: false,
   transform: function (doc, ret) {
-    convertDatesToISO(ret);
-    delete ret._id;
-    delete ret.__v;
+    const output = ret as Record<string, unknown>;
+    convertDatesToISO(output);
+    delete output._id;
+    delete output.__v;
   },
 };
 

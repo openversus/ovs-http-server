@@ -1,3 +1,5 @@
+import { isOvsDevAccount } from "../services/cosmeticEntitlementService";
+import { OVS_DEV_BADGE_PROFILE_FIELD } from "../data/ovsDevBadge";
 import express, { Request, Response } from "express";
 import * as Redis from "../config/redis"; //nc
 import { MVSQueries } from "../interfaces/queries_types";
@@ -864,6 +866,8 @@ async function generateStaticAccess(req: express.Request) {
           TotalAttacksDodged: 0,
           Valentines2023Currency: 5200,
           character_matches: charMatches,
+          // The OVS Dev badge's profile field, set for the accounts that own it.
+          ...(isOvsDevAccount(account.id) ? { [OVS_DEV_BADGE_PROFILE_FIELD]: 1 } : {}),
           season1: {
             HighestDamageDealt: 131.25,
             TotalWins: 2,

@@ -6,6 +6,10 @@
     "websocket": "node -r @swc-node/register ./src/websocketStart.ts",
     "worker": "node -r @swc-node/register ./src/workerStart.ts",
     "test": "node -r @swc-node/register ./src/game/udpTest.ts",
+    "test:access-ui": "tsx --test tests/accessUiProbe.test.ts",
+    "test:client-update": "tsx --test tests/clientVersion.test.ts",
+    "test:client-release": "tsx --test tests/clientReleaseManifest.test.ts",
+    "test:identity": "tsx --test tests/identityHardware.test.ts",
     "build": "tsc --project ./ && cp -R src/ build/",
     "start:prod": "node ./build/index.js"
   },

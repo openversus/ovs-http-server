@@ -1761,6 +1761,21 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
     }
   }
 
+  // The rollback server gets one input slot per human (bots are left out of /ovs_register)
+  // and indexes them by PlayerIndex, so every human needs an index below the human count.
+  // The interleaved numbering above breaks that when bots sit between humans: in FFA every
+  // player is their own team (index = team), and in 2v2 two humans on one team against bots
+  // get 0 and 2. Then number humans first, then bots, each in their current order.
+  const humanEntries = teamEntries.filter((e) => !e.isBot);
+  if (humanEntries.some((e) => e.playerIndex >= humanEntries.length)) {
+    const byIndex = (a: RedisTeamEntry, b: RedisTeamEntry) => a.playerIndex - b.playerIndex;
+    const botEntries = teamEntries.filter((e) => e.isBot);
+    [...humanEntries.sort(byIndex), ...botEntries.sort(byIndex)].forEach((entry, index) => {
+      entry.playerIndex = index;
+    });
+    logger.info(`${logPrefix} Match ${matchId}: renumbered players humans first (a human sat past the rollback's ${humanEntries.length} input slot(s))`);
+  }
+
   const allEntries = [...teamEntries, ...spectatorEntries];
   const allPlayerIds = allEntries.map((p) => p.playerId);
 

@@ -38,6 +38,8 @@ public static class TsEnvironment
         ("WEBHOOK_DEPLOY_PATH", "Rollback:WebhookDeployPath"),
         ("WEBHOOK_HMAC_SECRET", "Rollback:WebhookHmacSecret"),
         ("OVS_SERVER", "Rollback:OvsServer"),
+        ("UDP_SERVER_IP", "Rollback:UdpServerIp"),
+        ("UDP_PORT", "Rollback:UdpPort"),
         ("MATCHUPDATEKEY", "Rollback:MatchUpdateKey"),
         ("P2P_NODE_SIGNING_KEY", "Rollback:NodeSigningKey"),
         ("P2P_NODE_SIGNING_KEY_FILE", "Rollback:NodeSigningKeyFile"),

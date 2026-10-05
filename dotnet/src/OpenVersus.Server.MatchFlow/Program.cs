@@ -21,6 +21,8 @@ builder.AddMatchToasts();
 builder.AddMatchInputs();
 builder.AddNodeConfig();
 builder.AddRankedSets();
+builder.AddRollbackCallbacks();
+builder.AddMatchStatusEvents();
 builder.AddMatchResultStream();
 
 var app = builder.Build();

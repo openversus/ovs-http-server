@@ -19,12 +19,12 @@ namespace OpenVersus.Server.Core.Matches;
 // modules/customLobby/lobby.service.ts), step for step, so the TS websocket and rollback code that read it cannot tell
 // the difference. The websocket then tells the game (GameServerReadyNotification, matchmaking-complete,
 // OnGameplayConfigNotified, and PerksLockedNotification once every player's perks are locked), and the rollback server,
-// asking /ovs_get_registry, gets the humans and triggers game-server-instance-ready.
+// asking /ovs_register (RollbackCallbacks), gets the humans and triggers game-server-instance-ready.
 //
 // Redis, written  match:{match} (the TS RedisMatch: one ticket holding every player but the spectators, isPasswordMatch,
 //                 so no ELO) EX 20 min; match:{match}:perks:{bot} (the launch's bot perks, "[]" when none) EX 20 min for
 //                 each bot (bots never send perks_lock, and the TS all-perks-locked check waits for every ticket
-//                 player); {match} (the notification, which /ovs_get_registry reads) EX 20 min
+//                 player); {match} (the notification, which /ovs_register reads) EX 20 min
 // Published       match:notifications (the notification: the websocket sends the match to its players), then
 //                 matchmaking:complete ({containerMatchId, playerIds, matchmakingRequestId, resultId})
 //
@@ -65,6 +65,13 @@ public sealed class RollbackSettings
 
     [Description("Every match with a human player (any mode, bots and spectators included) runs P2P, on the players' own nodes, with no rollback server unless their nodes report that no direct path opened (P2P_ROLLBACK). The TS server reads its own P2P_ROLLBACK for the matches it still creates: keep the two the same (MIGRATION-BRIDGES.md 8).")]
     public bool P2P { get; set; }
+
+    [Description("The address the players' P2P nodes are sent to for a relay when no direct path opened: /ovs_p2p_failed answers it with the match's rollback port (UDP_SERVER_IP). Empty: the nodes are named no relay, and such a match times out.")]
+    public string UdpServerIp { get; set; } = "";
+
+    [Description("The rollback port game-server-instance-ready carries for a match whose match:{id} names none (UDP_PORT; the TS GAME_SERVER_PORT). 0: none, and the TS websocket uses its own UDP_PORT.")]
+    [Range(0, 65535)]
+    public int UdpPort { get; set; }
 
     [Description("Lowest port an on-demand rollback server is given (ON_DEMAND_ROLLBACK_PORT_LOW).")]
     [Range(1, 65535)]
@@ -374,13 +381,15 @@ public static class MatchLauncherHosting
         return builder;
     }
 
-    /// <summary>The startup warning for MIGRATION-BRIDGES.md 8, in every executable that starts matches (UseOpenVersus).</summary>
+    /// <summary>The startup warning for MIGRATION-BRIDGES.md 8, in every executable that starts matches (UseOpenVersus).
+    /// Logged once the app has started: the cluster settings are loaded by a hosted service, and before that the value
+    /// read would be the configuration's, not a cluster override's.</summary>
     public static void WarnP2PBridge(WebApplication app)
     {
         if (app.Services.GetService<IMatchLauncher>() is not null)
         {
-            app.Logger.LogWarning("MIGRATION BRIDGE: P2P is switched twice, Rollback:P2P (here, now {P2P}) for the matches C# starts and the TS server's P2P_ROLLBACK for custom lobby rematches and its own matchmaker; keep them the same. See dotnet/docs/MIGRATION-BRIDGES.md (8)",
-                app.Services.GetRequiredService<IOptionsMonitor<RollbackSettings>>().CurrentValue.P2P);
+            app.Lifetime.ApplicationStarted.Register(() => app.Logger.LogWarning("MIGRATION BRIDGE: P2P is switched twice, Rollback:P2P (here, now {P2P}) for the matches C# starts and the TS server's P2P_ROLLBACK for custom lobby rematches and its own matchmaker; keep them the same. See dotnet/docs/MIGRATION-BRIDGES.md (8)",
+                app.Services.GetRequiredService<IOptionsMonitor<RollbackSettings>>().CurrentValue.P2P));
         }
     }
 }

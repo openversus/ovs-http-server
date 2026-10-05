@@ -25,11 +25,11 @@ namespace OpenVersus.Server.Core.Matches;
 // Answers         200 {"version": N, "config": {sections}} with X-OVS-Signature, the file read and signed at most every
 //                 five minutes (decided 2026-10-04: a settings change may take that long to reach new nodes); 503 when
 //                 there is no key or no readable update (logged), and the node uses the values built into it.
-// C# /ovs_register is still a stub; when it is ported, it signs its answer with Sign as the TS route does.
+// /ovs_register (RollbackCallbacks) signs its answer with Sign, as the TS route does.
 
 public interface INodeConfig
 {
-    /// <summary>The response header carrying the signature, on /ovs_node_config and (once ported) /ovs_register.</summary>
+    /// <summary>The response header carrying the signature, on /ovs_node_config and /ovs_register.</summary>
     const string SignatureHeader = "X-OVS-Signature";
 
     /// <summary>The signed update: the body as it is to be sent and its signature; null when there is none to give.</summary>

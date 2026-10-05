@@ -110,7 +110,8 @@ import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./dat
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 import { cancelMatchmakingForAll } from "./services/matchmakingService";
 import { UPDATE_NOTIFICATION_PROFILES } from "./services/updateNotificationProfiles";
-import { processMatchLeave, getOrCreateRating, eloToTierDivision } from "./services/eloService";
+import { processMatchLeave, getOrCreateRating, getPlayerRank, eloToTierDivision, processSetResult } from "./services/eloService";
+import { gamesFinishedInSet } from "./services/rankedSetXpService";
 import { PlayerTesterModel } from "./database/PlayerTester";
 import { PlayerStatsModel } from "./database/PlayerStats";
 import { INVENTORY_DEFINITIONS } from "./data/inventoryDefs";
@@ -564,8 +565,6 @@ export class WebSocketService {
                       } catch {}
                     }
                     // Pregame dodge — pass isPregameDodge=true so stats count it as a dodge
-                    const { processSetResult } = await import("./services/eloService.js");
-                    const { gamesFinishedInSet } = await import("./services/rankedSetXpService.js");
                     const gamesBefore = setId !== matchId ? await gamesFinishedInSet(setId) : 0;
                     await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId, true, gamesBefore, [playerId]);
                     await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: matchConfig.players.map((p) => p.playerId) }));
@@ -2753,7 +2752,6 @@ export class WebSocketService {
                 logger.warn(`[${serviceName}]: No character found for player ${pid} — ELO will use global fallback`);
               }
             }
-            const { processSetResult } = await import("./services/eloService.js");
             // A walkout during the deciding game: the set completes on score, but the leaver quit (no XP for them).
             await processSetResult(winnerIds, loserIds, existingSet.mode, scores as [number, number], winnerTeam, false, playerChars, notification.matchId,
               false, 0, dodgedByPlayer ? [dodgedByPlayer] : []);
@@ -2762,7 +2760,6 @@ export class WebSocketService {
             }
 
             // Send FullRankUpdate notification to each player with fresh ranked data
-            const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
             for (const pid of [...winnerIds, ...loserIds]) {
               const client = this.clients.get(pid);
               if (!client) continue;
@@ -3431,7 +3428,6 @@ export class WebSocketService {
       try {
         const { playerIds } = JSON.parse(message);
         logger.info(`[${serviceName}]: FullRankUpdate (concede) for ${playerIds.length} players`);
-        const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
         for (const pid of playerIds) {
           const client = this.clients.get(pid);
           if (!client) continue;

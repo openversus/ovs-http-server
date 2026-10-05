@@ -84,6 +84,11 @@ public interface IRankedSets
 
     /// <summary>faceoff_timeout: an opponent of <paramref name="playerId"/> never loaded into the match; the set is dropped.</summary>
     Task FaceoffTimeoutAsync(string playerId);
+
+    /// <summary>submit_end_of_match_stats: game <paramref name="matchId"/> was won by team <paramref name="winner"/> (as
+    /// decided from every report so far, MatchWinner); the score of the set of the first of <paramref name="playerIds"/>
+    /// (the reporter, then the match's players) that is in one follows it.</summary>
+    Task RecordWinnerAsync(IReadOnlyList<string> playerIds, string matchId, int winner);
 }
 
 internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launcher, ISetRatings ratings, IOptionsMonitor<RollbackSettings> rollback,
@@ -275,6 +280,71 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
 
         log.LogInformation("faceoff_timeout cleaning up ranked set {Set}", setId);
         await DropAsync(redis, setId, PlayerIds(set), disconnectFlags: true);
+    }
+
+    // The set score, as the TS submit_end_of_match_stats kept it: a game's win counted once (ranked_set_score:{set}:{game}),
+    // here holding the team it went to, so that a later report that changes the decided winner moves the point. No set for
+    // the player (the matchmaker made none): the winner waits for the TS websocket's match end
+    // (ranked_set_pending_winner:{game}, EX 2 min), which opens a set from it.
+    public async Task RecordWinnerAsync(IReadOnlyList<string> playerIds, string matchId, int winner)
+    {
+        if (winner is not (0 or 1) || playerIds.Count == 0 || Redis() is not { } redis)
+        {
+            return;
+        }
+
+        // The reporter's set, else another player's of the match (a report that decides may come from a spectator).
+        string playerId = playerIds[0];
+        string? setId = null;
+        foreach (string id in playerIds)
+        {
+            if ((string?)await redis.StringGetAsync($"player_ranked_set:{id}") is { Length: > 0 } pointer)
+            {
+                (playerId, setId) = (id, pointer);
+                break;
+            }
+        }
+
+        if (setId is null)
+        {
+            await redis.StringSetAsync($"ranked_set_pending_winner:{matchId}", winner.ToString(System.Globalization.CultureInfo.InvariantCulture), TimeSpan.FromMinutes(2));
+            log.LogWarning("FALLBACK: Stored pending_winner (team {Winner}) for match {Match} — player {Player} has no player_ranked_set. Pre-creation likely failed.", winner, matchId, playerId);
+            return;
+        }
+
+        await using var held = await LockAsync(redis, setId);
+        if (held is null)
+        {
+            log.LogError("Set {Set} stayed locked for {Wait} s: the winner of match {Match} was not counted", setId, LockWait.TotalSeconds, matchId);
+            return;
+        }
+
+        if (await SetAsync(redis, setId) is not { } set)
+        {
+            log.LogWarning("FALLBACK: player_ranked_set:{Player}={Set} but ranked_set:{Set} is missing. Score for match {Match} (winner=team {Winner}) cannot be incremented.",
+                playerId, setId, setId, matchId, winner);
+            return;
+        }
+
+        string scoreKey = $"ranked_set_score:{setId}:{matchId}";
+        int? counted = (string?)await redis.StringGetAsync(scoreKey) is { } was && int.TryParse(was, out int team) && team is 0 or 1 ? team : null;
+        if (counted == winner)
+        {
+            return;
+        }
+
+        var scores = set["scores"] as JsonArray is { Count: >= 2 } stored ? stored : new JsonArray(0, 0);
+        if (counted is { } previous)
+        {
+            scores[previous] = Number(scores[previous]) - 1;
+            log.LogWarning("Match {Match} of set {Set}: the reports now say team {Winner} won, not team {Previous}; the point moves", matchId, setId, winner, previous);
+        }
+
+        scores[winner] = Number(scores[winner]) + 1;
+        set["scores"] = scores.DeepClone();
+        await redis.StringSetAsync($"ranked_set:{setId}", Js.Stringify(set), s_setTtl);
+        await redis.StringSetAsync(scoreKey, winner.ToString(System.Globalization.CultureInfo.InvariantCulture), s_setTtl);
+        log.LogInformation("Ranked set {Set} scores updated: {Team0}-{Team1}", setId, Js.Stringify(scores[0]), Js.Stringify(scores[1]));
     }
 
     // ── Ratings ─────────────────────────────────────────────────────────────────────────────────────────────────────

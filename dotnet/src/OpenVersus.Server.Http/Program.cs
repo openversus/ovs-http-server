@@ -44,6 +44,7 @@ builder.AddRankedData();
 builder.AddCosmetics();
 builder.AddHiss();
 builder.AddRifts();
+builder.AddMatchResults();
 builder.AddBatch();
 
 var app = builder.Build();

@@ -12,10 +12,10 @@ using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Missions;
 
-// Mission progress from a match result. The TS server handles submit_end_of_match_stats (each player's game sends its
-// own) and publishes {matchId, playerId, winningTeamIndex, missionUpdates (that player's counters, e.g.
-// "Stat:Game:Character:TotalRingouts": 2)} on match:end_of_match_stats (docs/MIGRATION-BRIDGES.md 4, as rift
-// progress). The match as the game saw it comes from the match notification at {matchId} (players with teamIndex,
+// Mission progress from a match result. Each player's game sends its own (submit_end_of_match_stats, MatchResults), and
+// the match flow hands this {matchId, playerId, winningTeamIndex, missionUpdates (that player's counters, e.g.
+// "Stat:Game:Character:TotalRingouts": 2)} from the stream match:results (MatchResultStream; the game is told through
+// the TS websocket, docs/MIGRATION-BRIDGES.md 4). The match as the game saw it comes from the match notification at {matchId} (players with teamIndex,
 // mode, map, isCustomGame, gameplayConfigOverride: the TS websocket's config fields, which a C# match overrides) and
 // the player's character and skin from rift_match:{matchId} (a rift match) or player:{id} (what the TS websocket built
 // the match config from).
@@ -176,47 +176,4 @@ internal static class MissionRules
     private static double Counter(JsonNode? node) => node is JsonObject o ? RiftMissions.Number(o["_hydra_double"]) ?? 0 : RiftMissions.Number(node) ?? 0;
 
     private static string? Str(JsonNode? node) => node is JsonValue v && v.TryGetValue(out string? s) ? s : null;
-}
-
-/// <summary>Records match results into missions (Missions:Enabled).</summary>
-internal sealed class MissionResultSubscriber(IServiceProvider services, IOptionsMonitor<MissionSettings> settings, IMissionService missions,
-    ILogger<MissionResultSubscriber> log) : IHostedService
-{
-    public async Task StartAsync(CancellationToken cancellationToken)
-    {
-        if (services.GetService<IConnectionMultiplexer>() is not { } redis)
-        {
-            return;
-        }
-
-        log.LogWarning("MIGRATION BRIDGE: mission progress is recorded from the TS server's {Channel} and sent through its websocket (ws:send); see dotnet/docs/MIGRATION-BRIDGES.md (4)", RiftResultSubscriber.Channel);
-        await redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(RiftResultSubscriber.Channel), (channel, message) => _ = HandleAsync(message.ToString()));
-    }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    private async Task HandleAsync(string message)
-    {
-        try
-        {
-            if (JsonNode.Parse(message) is not JsonObject result
-                || result["matchId"] is not JsonValue m || !m.TryGetValue(out string? matchId)
-                || result["playerId"] is not JsonValue p || !p.TryGetValue(out string? playerId))
-            {
-                return;
-            }
-
-            int? winning = result["winningTeamIndex"] is JsonValue w && w.TryGetValue(out double n) ? (int)n : null;
-            await missions.RecordMatchXpAsync(matchId, playerId, winning, CancellationToken.None);
-            if (settings.CurrentValue.Enabled)
-            {
-                await missions.RecordMatchAsync(matchId, playerId, winning, result["missionUpdates"] as JsonObject, CancellationToken.None);
-            }
-        }
-        catch (Exception e)
-        {
-            // Nothing else would ever see it: this runs on the subscription's callback, not a request.
-            log.LogError(e, "Mission progress from {Message} not recorded: {Error}", message, e.Message);
-        }
-    }
 }

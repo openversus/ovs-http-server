@@ -138,30 +138,19 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   forwarding code, `Batch:TsUrl`, `Batch:ForwardRoutes`, `Batch:ForwardTimeoutSeconds`, the startup warning and this
   entry go; `/batch` keeps running its sub-requests in C#.
 
-### 4. Rift and mission progress from TS match results, pushed through the TS websocket
+### 4. Rift and mission progress from match results reach the game through the TS websocket
 
 - **Decided:** 2026-09-30, on the condition that it is recorded here: each piece has to be ported to C#.
-- **What:** the TS `submit_end_of_match_stats` (`src/handlers/ssc.ts`) publishes every result as it arrives on
-  `match:end_of_match_stats` (`{matchId, playerId, winningTeamIndex, missionUpdates}`, the last being the
-  submitter's own counters from `EndOfMatchStats.PlayerMissionUpdates`, which the rift stars are judged from), before its own processing, which is unchanged.
-  Both C# subscribers run in the match flow executable (`OpenVersus.Server.MatchFlow`), not the HTTP service.
-  The C# `RiftResultSubscriber` (`Core/Rifts/RiftProgressService.cs`) records the progress of rift matches (known by
-  `rift_match:{match}`) and tells the game by publishing on `ws:send` (`{playerIds, message}`), a generic channel the
-  TS websocket (`src/websocket.ts`) answers by sending `message`, as it is, to each connected player named. The C#
-  service logs a `MIGRATION BRIDGE` warning at startup for this. Missions (with `Missions:Enabled`) hear the same
-  channel: `MissionResultSubscriber` (`Core/Missions/MissionProgress.cs`) moves the player's missions, reading the
-  match as the game saw it from the TS match notification at `{matchId}` and the character from `rift_match:{match}`
-  or `player:{id}`, and pushes `MissionUpdatesComplete` (a `profile-notification`) on `ws:send`; it logs its own
-  `MIGRATION BRIDGE` warning.
-- **Why:** the client never asks for its rift progress; the server works it out from the match result and pushes it
-  (`OnLobbyRuntimeDataUpdated`, `OnLobbyRiftStateUpdated`). The result reaches only the TS server, and only the TS
-  websocket reaches the game. Taking over `submit_end_of_match_stats` instead would have put every ranked and casual
-  match's stats through new forwarding code for the sake of rifts.
-- **Delete when:** `submit_end_of_match_stats` is ported to C# and the websocket is ported (`ws:send` is then answered
-  by the C# gateway). The hand-off itself stays, as a Redis Stream with a consumer group instead of this channel
-  (decided 2026-10-02): the HTTP service that receives a result appends it, one match flow replica records and
-  acknowledges it, and a result appended while no replica runs (a restart, a deploy) waits instead of being lost, as a
-  pub/sub message is. It cannot change before then: the TS publisher only knows the channel.
+- **What:** the results themselves are C#'s now: the http service's `submit_end_of_match_stats` (`MatchResults`)
+  appends each report to the stream `match:results`, and the match flow (`MatchResultStream`) records missions, match
+  XP, rift progress and the match's stats from it (see "Not bridges"). What is left is telling the game: the rift
+  progress (`RiftProgressService`: `OnLobbyRuntimeDataUpdated`, `OnLobbyRiftStateUpdated`) and the missions
+  (`MissionProgress`: `MissionUpdatesComplete`, a `profile-notification`) are published on `ws:send` (`{playerIds,
+  message}`), a generic channel the TS websocket (`src/websocket.ts`) answers by sending `message`, as it is, to each
+  connected player named. `MatchResultStream` logs a `MIGRATION BRIDGE` warning at startup for this.
+- **Why:** the client never asks for its rift progress; the server works it out from the match result and pushes it.
+  Only the TS websocket reaches the game.
+- **Delete when:** the websocket is ported (`ws:send` is then answered by the C# gateway).
 
 ### 5. `ovsctl player disconnect` closes the connection through the TS websocket
 
@@ -229,6 +218,12 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   config (the realtime gateway).
 
 ## Not bridges (kept after the migration)
+
+- The stream `match:results` (decided 2026-10-02): the http service that receives a match report appends it
+  (`MatchResults`, at most ~10,000 kept); the match flow replicas read it as one consumer group (`MatchResultStream`),
+  so each result is handled once, a result appended while no replica runs waits instead of being lost, and a replica
+  that dies leaves its unacknowledged results to the others (XAUTOCLAIM after a minute; Redis 6.2+). It replaced the
+  pub/sub channel `match:end_of_match_stats` the TS server published.
 
 - `TsEnvironment`: the TS server's environment variable names (`JWT_SECRET`, `WB_DOMAIN`, ...) fill C# settings, so the
   containers' `.env` files carry over. Configuration compatibility, not a runtime tie to TS.

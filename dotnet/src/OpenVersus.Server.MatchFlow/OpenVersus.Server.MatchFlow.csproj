@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The match flow: a match from its start to what it changes once played. Its own executable and image, beside the
+       HTTP service and the matchmaker. -->
+  <ItemGroup>
+    <PackageReference Include="FastEndpoints" Version="8.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenVersus.Server.Core\OpenVersus.Server.Core.csproj" />
+    <ProjectReference Include="..\OpenVersus.Server.Http.Shared\OpenVersus.Server.Http.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

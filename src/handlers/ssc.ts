@@ -1,6 +1,7 @@
 import { BE_VERBOSE, logger, logwrapper } from "../config/logger";
 import { Request, Response } from "express";
 import { Types } from "mongoose";
+import { createHash } from "crypto";
 import {
   redisClient,
   redisGetMatch,
@@ -15,6 +16,8 @@ import {
   redisGetPlayerLobby,
   redisGetLobbyState,
   redisPublishToast,
+  redisGetClientUpdateModalNonce,
+  END_OF_MATCH_STATS_CHANNEL,
 } from "../config/redis";
 import {  getCurrentCRC, MATCHMAKING_CRC } from "../data/config";
 import { adjustMatchToasts } from "../data/playerCounters";
@@ -26,6 +29,7 @@ import { MVSTime } from "../utils/date";
 import { generate_hiss } from "./hiss_amalgation_get";
 import * as SharedTypes from "../types/shared-types";
 import * as AuthUtils from "../utils/auth";
+import env from "../env/env";
 import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import * as KitchenSink from "../utils/garbagecan";
@@ -33,6 +37,7 @@ import { processMatchResult, getOrCreateRating, getPlayerRank, eloToTierDivision
 import { recordGameStats } from "../services/statsService";
 import { handleRematchDecline, handleRematchAccept } from "../services/customLobbyService";
 import { resolveAccountFromRequest } from "../services/identityService";
+import { CLIENT_UPDATE_URL, ClientUpdateState, getRequestClientUpdateState } from "../services/clientUpdateGate";
 
 const serviceName = "Handlers.SSC";
 const logPrefix = `[${serviceName}]:`;
@@ -73,7 +78,35 @@ export async function handleSsc_invoke_game_launch_event(req: Request<{}, {}, {}
 }
 
 export async function handleSsc_invoke_get_calendar_events(req: Request<{}, {}, {}, {}>, res: Response) {
-  res.send({
+  const updateEventStart = Math.floor(Date.now() / 1000) - 60;
+  // The calendar always answers: if the update check fails, it is served without the update popup.
+  let updateState: ClientUpdateState = {
+    accountId: "",
+    clientVersion: "",
+    identityRegistered: false,
+    required: false,
+  };
+  let updateModalNonce = 0;
+  try {
+    updateState = await getRequestClientUpdateState(req);
+    updateModalNonce = await redisGetClientUpdateModalNonce(updateState.accountId);
+  } catch (e) {
+    logger.error(`${logPrefix} Client update check for the calendar failed: ${e}`);
+  }
+  const updateEventHash = createHash("sha256")
+    .update(
+      `ovs-required-update:${req.token?.id || "unresolved"}:${updateModalNonce}`,
+    )
+    .digest("hex");
+  const updateEntryId = updateEventHash.slice(0, 24);
+  const updateEventRecordId = updateEventHash.slice(24, 48);
+  if (updateState.required) {
+    logger.warn(
+      `${logPrefix} Serving required-update calendar modal to ${updateState.accountId || "unresolved"} `
+      + `(version=${updateState.clientVersion || "legacy"})`,
+    );
+  }
+  const response = {
     body: {
       Events: [
         {
@@ -116,46 +149,47 @@ export async function handleSsc_invoke_get_calendar_events(req: Request<{}, {}, 
           event_type: "carousel-entry",
         },
         {
-          start_at: { _hydra_unix_date: 1738332000 },
-          end_at: { _hydra_unix_date: 1749826500 },
+          start_at: { _hydra_unix_date: updateEventStart },
+          end_at: null,
           data: {
             featured: false,
             display_in_modal: true,
             description: {
               localizations: {
-                game_sunset_description: "Welcome TO MVS Infinite",
+                ovs_update_required_description:
+                  "A required OpenVersus update is available. Download and install it before playing online.",
               },
             },
-            priority: 1200,
-            slug: "",
-            title: { localizations: { game_sunset_title1: "MVS Infinite" } },
-            titleSmall: { localizations: { game_sunset_title1: "MVS Infinite" } },
-            smallImage: "beginnermode-carousel-thumbnail",
-            largeImage: "beginnermode-carousel-keyart",
+            priority: 1000000,
+            slug: "ovs-required-update",
+            title: { localizations: { ovs_update_required_title: "OpenVersus Update Required" } },
+            titleSmall: { localizations: { ovs_update_required_small_title: "Update Required" } },
+            smallImage: "openversus-update-required-thumbnail",
+            largeImage: "openversus-update-required-keyart",
             actionData: {
-              actionButtonTitle: { localizations: { game_sunset_button: "Game News" } },
+              actionButtonTitle: { localizations: { ovs_update_required_button: "Download Update" } },
               isActionable: true,
-              website: "https://multiversus.com/en/news/multiversus-update",
+              website: CLIENT_UPDATE_URL,
             },
           },
           tags: [],
           entry: {
-            id: "679bc91bab5165f55b1d316b",
-            root_entry_id: "679bc91bab5165f55b1d316b",
-            name: "Game Sunset Message",
+            id: updateEntryId,
+            root_entry_id: updateEntryId,
+            name: "OpenVersus Required Update",
             calendar_type_slug: "carousel",
             entry_type: "one-time",
             deleted: false,
-            task_start_at: { _hydra_unix_date: 1738332000 },
+            task_start_at: { _hydra_unix_date: updateEventStart },
           },
           disabled: false,
-          event_record_id: "679cd761912d0624a7b1b94f",
+          event_record_id: updateEventRecordId,
           state: "running",
           controlled_features: [
             {
               feature_name: "global_message",
               feature_settings: {
-                global_message_lookups: [{ slug: "carousel-entries", id: "679bc72d484b37245842b4b2" }],
+                global_message_lookups: [{ slug: "carousel-entries", id: updateEntryId }],
                 features: [{ global_message_feature_name: "enabled", global_message_feature_value: true }],
               },
             },
@@ -172,26 +206,26 @@ export async function handleSsc_invoke_get_calendar_events(req: Request<{}, {}, 
             description: {
               localizations: {
                 s5_battlepass_message_description:
-                  "As a token of gratitude to our players, we are giving all players the Season 5 Premium Battlepass FOR FREE. Go claim Aquaman now!\\n\\nLog in every week and complete missions and earn over 70 rewards including Variants, Ringouts, Gleamium, Emotes, and more.",
+                  "Thanks for playing OpenVersus, the community-run revival of MultiVersus. Check the leaderboards, watch live matches, see your stats and change your name on our website. Have fun and keep it respectful!",
               },
             },
             priority: 1100,
             slug: "",
-            title: { localizations: { s5_battlepass_message_title: "S5 Free Battle Pass" } },
-            titleSmall: { localizations: { s5_battlepass_message_smalltitle: "Token of Appreciation" } },
+            title: { localizations: { s5_battlepass_message_title: "WELCOME TO OPENVERSUS" } },
+            titleSmall: { localizations: { s5_battlepass_message_smalltitle: "OpenVersus" } },
             smallImage: "s5-bp-carousel-thumbnail",
             largeImage: "s5-bp-carousel-keyart",
             actionData: {
-              actionButtonTitle: { localizations: { carousel_button_title: "Check it out!" } },
+              actionButtonTitle: { localizations: { carousel_button_title: "Visit Our Website" } },
               isActionable: true,
-              website: "multiversus://battlepass?UpgradePremium=true",
+              website: "https://prod.openversus.org/home",
             },
           },
           tags: [],
           entry: {
             id: "67a167b43047eb97555ae04e",
             root_entry_id: "67a167b43047eb97555ae04e",
-            name: "S5 Battle Pass Free Message",
+            name: "OpenVersus Welcome Message",
             calendar_type_slug: "carousel",
             entry_type: "one-time",
             deleted: false,
@@ -314,7 +348,13 @@ export async function handleSsc_invoke_get_calendar_events(req: Request<{}, {}, 
     },
     metadata: null,
     return_code: 0,
-  });
+  };
+  if (!updateState.required) {
+    response.body.Events = response.body.Events.filter(
+      (event) => event.data.slug !== "ovs-required-update",
+    );
+  }
+  res.send(response);
 }
 
 export async function handleSsc_invoke_get_country_code(req: Request<{}, {}, {}, {}>, res: Response) {
@@ -419,9 +459,36 @@ export async function handleSsc_invoke_get_gm_leaderboards(req: Request<{}, {}, 
 }
 
 export async function handleSsc_invoke_get_hiss_calendar_events(req: Request<{}, {}, {}, {}>, res: Response) {
-  res.send({
+  const halloweenTheme =
+    "/MvsSeason03/EventData/Season3Events/MissionEvents/Season3_Mission3/THEME_HalloweenFrontendTheme.THEME_HalloweenFrontendTheme";
+  const response = {
     body: {
       Events: [
+        {
+          tags: ["mvsevent", "halloween"],
+          name: "evt_ovs_halloween_2026",
+          calendar_type_slug: "events",
+          entry_type: "one-time",
+          event_type: null,
+          deleted: false,
+          data: {
+            slug: "evt_ovs_halloween_2026",
+            bIsEnabled: true,
+            FrontendTheme: halloweenTheme,
+            TimeSpan: {
+              StartTime: { Year: 2026, Month: 10, Day: 1, Hour: 0, Minute: 0 },
+              EndTime: { Year: 2026, Month: 11, Day: 1, Hour: 0, Minute: 0 },
+              bHasFiniteEndTime: true,
+            },
+          },
+          entry_options: {
+            start_at: { _hydra_unix_date: 1790812800 },
+            task_start_at: { _hydra_unix_date: 1790812800 },
+            end_at: { _hydra_unix_date: 1793491200 },
+          },
+          id: "68ddc8000000000000000001",
+          bIsCurrentlyActive: true,
+        },
         {
           tags: ["mvsevent", "arena"],
           name: "evt_season5_arenaevent3",
@@ -1278,7 +1345,8 @@ export async function handleSsc_invoke_get_hiss_calendar_events(req: Request<{},
     },
     metadata: null,
     return_code: 0,
-  });
+  };
+  res.send(response);
 }
 
 export async function handleSsc_invoke_get_milestone_reward_tracks(req: Request<{}, {}, {}, {}>, res: Response) {
@@ -3879,6 +3947,19 @@ export async function handleSsc_invoke_get_milestone_reward_tracks(req: Request<
   });
 }
 
+/**
+ * Missions are switched off unless MISSIONS_ENABLED=true: the player's mission
+ * object then carries no active missions, so none populate in game. The full
+ * mission set in the handler is kept so it can be switched back on.
+ */
+export function applyMissionsSwitch<T extends { body: { server_data: { MissionControllerContainers: unknown } } }>(
+  missionObject: T,
+  enabled: boolean = env.MISSIONS_ENABLED,
+): T {
+  if (!enabled) missionObject.body.server_data.MissionControllerContainers = {};
+  return missionObject;
+}
+
 export async function handleSsc_invoke_get_or_create_mission_object(req: Request<{}, {}, {}, {}>, res: Response) {
   //const account = req.token;
 
@@ -3889,7 +3970,7 @@ export async function handleSsc_invoke_get_or_create_mission_object(req: Request
   const wb_network_id = account.wb_network_id || req.token.wb_network_id;
   const profile_id = account.profile_id || req.token.profile_id;
 
-  res.send({
+  const missionObject = {
     body: {
       updated_at: { _hydra_unix_date: 1742223633 },
       //owner_id: account.id,
@@ -4624,7 +4705,8 @@ export async function handleSsc_invoke_get_or_create_mission_object(req: Request
     },
     metadata: null,
     return_code: 0,
-  });
+  };
+  res.send(applyMissionsSwitch(missionObject));
 }
 
 export async function handleSsc_invoke_hiss_amalgamation(req: Request<{}, {}, { Crc: number }, {}>, res: Response) {
@@ -57871,6 +57953,25 @@ export async function handleSsc_invoke_submit_end_of_match_stats(req: Request<{}
   let preMatchElo: number | null = null;
   const account = AuthUtils.DecodeClientToken(req);
   const pid = account?.id;
+
+  // For the C# server, which records rift progress from it (dotnet/docs/MIGRATION-BRIDGES.md).
+  if (matchId) {
+    try {
+      await redisClient.publish(
+        END_OF_MATCH_STATS_CHANNEL,
+        JSON.stringify({
+          matchId,
+          playerId: pid ?? null,
+          winningTeamIndex: winningTeamIndex ?? null,
+          // The submitter's own counters (the rift stars are judged from them).
+          missionUpdates: (pid && req.body?.EndOfMatchStats?.PlayerMissionUpdates?.[pid]) ?? null,
+        }),
+      );
+    } catch (e) {
+      logger.error(`${logPrefix} Could not publish end of match stats for match ${matchId}: ${e}`);
+    }
+  }
+
   if (pid) {
     try {
       const preRating = await getOrCreateRating(pid);

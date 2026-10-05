@@ -140,6 +140,14 @@ router.get("/file_storage", (req: Request<{}, {}, {}, {}>, res: Response) => {
   h.handleFile_storage(req, res);
 });
 
+router.get("/file_storage/openversus-update-required-keyart", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  h.handleFile_storage_openversus_update_required_keyart(req, res);
+});
+
+router.get("/file_storage/openversus-update-required-thumbnail", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  h.handleFile_storage_openversus_update_required_thumbnail(req, res);
+});
+
 router.get("/file_storage/beginnermode-carousel-keyart", (req: Request<{}, {}, {}, {}>, res: Response) => {
   // @ts-ignore TODO : implementation. Remove comment once implemented`
   h.handleFile_storage_beginnermode_carousel_keyart(req, res);

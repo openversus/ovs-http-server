@@ -11,6 +11,7 @@ import {
   type RedisMatchTicket,
   type RedisTeamEntry,
   type MATCH_FOUND_NOTIFICATION,
+  redisUpdateIpMirror,
 } from "../../config/redis";
 import { logger, logwrapper } from "../../config/logger";
 import env from "../../env/env";
@@ -33,6 +34,7 @@ import {
   type PlayerConfig,
 } from "./lobby.types";
 import { IDeployInfo, DeployInfo, getDefaultDeployInfo } from "../../services/rollbackService";
+import { getPlayersRequiringClientUpdate, requestClientUpdateModalsForPlayers } from "../../services/clientUpdateGate";
 
 const logPrefix = "[CustomLobby.Service]:";
 const LOBBY_EX = 2 * 24 * 60 * 60; // 2 days
@@ -1569,6 +1571,21 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
   const lobby = (await getLobby(lobbyId)) as CustomLobby | null;
   if (!lobby || lobby.LeaderID !== leaderId) return null;
 
+  const humanPlayerIds = lobby.Teams.flatMap((team) =>
+    Object.entries(team.Players)
+      .filter(([, player]) => player.BotSettingSlug === "")
+      .map(([playerId]) => playerId),
+  );
+  const outdatedPlayers = await getPlayersRequiringClientUpdate(humanPlayerIds);
+  if (outdatedPlayers.length > 0) {
+    await requestClientUpdateModalsForPlayers(outdatedPlayers.map((player) => player.accountId));
+    logger.warn(
+      `${logPrefix} Blocked SSC custom match start because update is required for: `
+      + outdatedPlayers.map((p) => `${p.accountId}:${p.clientVersion || "legacy"}`).join(", "),
+    );
+    return null;
+  }
+
   const matchId = ObjectID().toHexString();
   const resultId = ObjectID().toHexString();
   const selectedMaps = lobby.Maps.filter((m) => m.IsSelected);
@@ -1637,7 +1654,7 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
         if (character && skin) {
           await redisClient.hSet(`connections:${playerId}`, { character, skin });
           const ip = freshConn?.current_ip;
-          if (ip) await redisClient.hSet(`connections:${ip}`, { character, skin });
+          if (ip) await redisUpdateIpMirror(ip, playerId, { character, skin });
         }
 
         playerConfig = {

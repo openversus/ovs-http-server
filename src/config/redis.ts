@@ -1,3 +1,4 @@
+import { isP2PEligible } from "../p2p";
 import ObjectID from "bson-objectid";
 import redis, { createClient } from "redis";
 import type { RedisClientType } from "redis";
@@ -34,6 +35,57 @@ export const LOBBY_REJOIN_CHANNEL = "lobby:rejoin";
 export const PLAYER_LOADOUT_LOCKED_CHANNEL = "lobby:loadout_locked";
 export const LOBBY_RETURN_CHANNEL = "lobby:return";
 export const FRIEND_REQUEST_WS_CHANNEL = "friend:request:ws";
+export const CLIENT_UPDATE_MODAL_CHANNEL = "client_update:modal";
+// Bridges to the C# server (dotnet/docs/MIGRATION-BRIDGES.md): each match result as submitted, for the rifts it
+// records; and a websocket message C# asks this server to send, as it is, to the players named.
+export const END_OF_MATCH_STATS_CHANNEL = "match:end_of_match_stats";
+export const WS_SEND_CHANNEL = "ws:send";
+// An administrator's forced disconnect ({playerId}; ovs-ctl player disconnect).
+export const WS_DISCONNECT_CHANNEL = "ws:disconnect";
+
+export interface RedisWsSendNotification {
+  playerIds: string[];
+  message: Record<string, unknown>;
+}
+
+const CLIENT_UPDATE_MODAL_NONCE_PREFIX = "client_update_modal_nonce:";
+const CLIENT_UPDATE_MODAL_COOLDOWN_PREFIX = "client_update_modal_cooldown:";
+
+export interface RedisClientUpdateModalNotification {
+  playerId: string;
+  nonce: number;
+}
+
+/**
+ * Give the player's required-update carousel entry a fresh identity, then ask
+ * the stock game client to reload calendar/global-message data over Hydra WS.
+ * A short cooldown collapses the game's rapid retries into one visible prompt.
+ */
+export async function redisRequestClientUpdateModal(playerId: string): Promise<boolean> {
+  if (!playerId) return false;
+
+  const cooldown = await redisClient.set(
+    `${CLIENT_UPDATE_MODAL_COOLDOWN_PREFIX}${playerId}`,
+    "1",
+    { EX: 15, NX: true },
+  );
+  if (cooldown !== "OK") return false;
+
+  const nonceKey = `${CLIENT_UPDATE_MODAL_NONCE_PREFIX}${playerId}`;
+  const nonce = await redisClient.incr(nonceKey);
+  await redisClient.expire(nonceKey, 24 * 60 * 60);
+  await redisClient.publish(
+    CLIENT_UPDATE_MODAL_CHANNEL,
+    JSON.stringify({ playerId, nonce } satisfies RedisClientUpdateModalNotification),
+  );
+  return true;
+}
+
+export async function redisGetClientUpdateModalNonce(playerId: string): Promise<number> {
+  if (!playerId) return 0;
+  const value = await redisClient.get(`${CLIENT_UPDATE_MODAL_NONCE_PREFIX}${playerId}`);
+  return Number.parseInt(value || "0", 10) || 0;
+}
 
 export interface RedisFriendRequestWSNotification {
   receiverAccountId: string;
@@ -150,6 +202,8 @@ export interface MATCH_FOUND_NOTIFICATION extends MVS_NOTIFICATION {
   map: string;
   mode: string;
   rollbackPort: number;
+  // P2P rollback (P2P_ROLLBACK=1 and the match is eligible): the players connect to their own node.
+  p2p?: boolean;
   // Custom game settings (injected into handleSendGamePlayConfig)
   isCustomGame?: boolean;
   customNumRingouts?: number;
@@ -158,6 +212,14 @@ export interface MATCH_FOUND_NOTIFICATION extends MVS_NOTIFICATION {
   customShields?: boolean;
   worldBuffs?: string[];
   playerBuffs?: Record<string, string[]>;
+  // Set by the C# server for modes this websocket does not know (rifts; dotnet/docs/MIGRATION-BRIDGES.md, 2):
+  // merged over the GameplayConfig, and over each named player's config, after both are built.
+  gameplayConfigOverride?: Record<string, unknown>;
+  playerConfigOverrides?: Record<string, Record<string, unknown>>;
+  // The template_id to send the config under instead of OnGameplayConfigNotified (a rift retry's RiftRetryNotification),
+  // and fields to add beside it (PriorMatchId).
+  gameplayConfigTemplate?: string;
+  gameplayConfigData?: Record<string, unknown>;
 }
 
 export interface RedisMatchEndNotification extends MVS_NOTIFICATION {
@@ -326,11 +388,21 @@ export async function redisUpdatePlayerLoadout(playerId: string, redisPlayer: Re
   await redisClient.hSet(`player:${playerId}`, redisPlayerStringObj);
 }
 
-export async function redisAddPlayerConnection(playerId: string, ip: string, jwt: string, accountToken: IAccountToken) {
+export async function redisAddPlayerConnection(
+  playerId: string,
+  ip: string,
+  jwt: string,
+  accountToken: IAccountToken,
+  connectionMetadata: Partial<IAccountToken> = {},
+) {
   // Convert all values to strings for Redis
-
-  var newConnection: RedisPlayerConnection = accountToken as RedisPlayerConnection;
-  newConnection.jwt = jwt;
+  // Keep server-only connection metadata out of the game-facing JWT while
+  // retaining it in Redis for identity resolution and update enforcement.
+  const newConnection = {
+    ...accountToken,
+    ...connectionMetadata,
+    jwt,
+  } as RedisPlayerConnection;
 
   const accountTokenStringObj: Record<string, string> = {};
   for (const [
@@ -341,14 +413,83 @@ export async function redisAddPlayerConnection(playerId: string, ip: string, jwt
   }
 
   await redisClient.hSet(`connections:${playerId}`, accountTokenStringObj);
+  // Kept briefly for old clients only. New resolution uses the account/session
+  // and the active-IP set below, so a household member cannot overwrite another.
   await redisClient.hSet(`connections:${ip}`, accountTokenStringObj);
+  await redisClient.expire(`connections:${ip}`, 120);
+  await redisTouchPlayerSession(playerId, ip);
 }
 
-export async function redisSetPlayerConnectionCosmetics(playerId: string, cosmetics: Cosmetics) {
-  let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${playerId}`)) as unknown as RedisPlayerConnection;
-  let ip = rPlayerConnectionByID.current_ip;
-  let rPlayerConnectionByIP = (await redisClient.hGetAll(`connections:${ip}`)) as unknown as RedisPlayerConnection;
+const ACTIVE_SESSION_TTL_MS = 90_000;
 
+export async function redisTouchPlayerSession(playerId: string, ip: string) {
+  if (!playerId || !ip) return;
+  const now = Date.now();
+  const activeKey = `active_ip_accounts:${ip}`;
+  await redisClient
+    .multi()
+    .zRemRangeByScore(activeKey, 0, now - ACTIVE_SESSION_TTL_MS)
+    .zAdd(activeKey, { score: now, value: playerId })
+    .expire(activeKey, 180)
+    .exec();
+}
+
+/** The accounts with a live session from this IP (seen in the last 90 s). */
+export async function redisGetActiveAccountIdsByIP(ip: string): Promise<string[]> {
+  if (!ip) return [];
+  const key = `active_ip_accounts:${ip}`;
+  await redisClient.zRemRangeByScore(key, 0, Date.now() - ACTIVE_SESSION_TTL_MS);
+  return redisClient.zRange(key, 0, -1);
+}
+
+export async function redisGetUniqueActiveConnectionByIP(ip: string): Promise<RedisPlayerConnection | null> {
+  const accountIds = await redisGetActiveAccountIdsByIP(ip);
+  if (accountIds.length !== 1) return null;
+  const connection = (await redisClient.hGetAll(`connections:${accountIds[0]}`)) as unknown as RedisPlayerConnection;
+  return connection?.id ? connection : null;
+}
+
+export async function redisRemovePlayerSession(playerId: string, ip: string) {
+  if (ip && playerId) await redisClient.zRem(`active_ip_accounts:${ip}`, playerId);
+}
+
+// When each connected player's game last answered the websocket ping (every 20 s): the handshake and every
+// answer write it, a clean disconnect removes it. The matchmaking worker reads it, so a ticket whose player has
+// gone silent is dropped even when the websocket server that held their connection is gone.
+const PLAYER_HEARTBEATS_KEY = "player_heartbeats";
+
+// The game answers every 20 s. One missed answer is a hiccup; two take the player out of matchmaking; three
+// disconnect them.
+/** Silent this long (two missed answers): the matchmaking worker drops the player's tickets. */
+export const MATCHMAKING_HEARTBEAT_TIMEOUT_MS = 41_000;
+/** Silent this long (three missed answers): the websocket server closes the connection. */
+export const DISCONNECT_HEARTBEAT_TIMEOUT_MS = 61_000;
+
+export async function redisRecordPlayerHeartbeat(playerId: string) {
+  if (!playerId) return;
+  await redisClient.zAdd(PLAYER_HEARTBEATS_KEY, { score: Date.now(), value: playerId });
+}
+
+export async function redisRemovePlayerHeartbeat(playerId: string) {
+  if (playerId) await redisClient.zRem(PLAYER_HEARTBEATS_KEY, playerId);
+}
+
+/**
+ * When each of these players' games last answered (ms since the epoch), or undefined for a player with no
+ * record. Null when nothing has ever been recorded, i.e. the websocket server does not record heartbeats yet.
+ */
+export async function redisGetPlayerHeartbeats(playerIds: string[]): Promise<Map<string, number | undefined> | null> {
+  if (!(await redisClient.exists(PLAYER_HEARTBEATS_KEY))) return null;
+  const multi = redisClient.multi();
+  for (const id of playerIds) {
+    multi.zScore(PLAYER_HEARTBEATS_KEY, id);
+  }
+  const scores = (await multi.exec()) as unknown as (number | null)[];
+  return new Map(playerIds.map((id, i) => [id, scores[i] ?? undefined]));
+}
+
+// Only the account's own copy: nothing reads a per-IP one, and an IP is shared by a household.
+export async function redisSetPlayerConnectionCosmetics(playerId: string, cosmetics: Cosmetics) {
   const cosmeticStringObj: Record<string, string> = {};
   for (const [
     key,
@@ -358,7 +499,6 @@ export async function redisSetPlayerConnectionCosmetics(playerId: string, cosmet
   }
 
   await redisClient.hSet(`connections:${playerId}:cosmetics`, cosmeticStringObj);
-  await redisClient.hSet(`connections:${ip}:cosmetics`, cosmeticStringObj);
 }
 
 export async function redisSetPlayerConnectionByID(playerId: string, connection: RedisPlayerConnection) {
@@ -372,6 +512,20 @@ export async function redisSetPlayerConnectionByID(playerId: string, connection:
   await redisClient.hSet(`connections:${playerId}`, connectionStringObj);
 }
 
+/**
+ * The legacy connections:<ip> mirror (created for 120 s by redisAddPlayerConnection)
+ * is shared by everyone behind that IP. Update it only when it currently belongs to
+ * this account, so one household member's change never lands in another's record,
+ * and never create or extend it here. Returns whether it was written.
+ */
+export async function redisUpdateIpMirror(ip: string, accountId: string, fields: Record<string, string>): Promise<boolean> {
+  if (!ip || !accountId) return false;
+  const owner = await redisClient.hGet(`connections:${ip}`, "id");
+  if (owner !== accountId) return false;
+  await redisClient.hSet(`connections:${ip}`, fields);
+  return true;
+}
+
 export async function redisSetPlayerConnectionByIp(ip: string, connection: RedisPlayerConnection) {
   const connectionStringObj: Record<string, string> = {};
   for (const [
@@ -380,7 +534,7 @@ export async function redisSetPlayerConnectionByIp(ip: string, connection: Redis
   ] of Object.entries(connection)) {
     connectionStringObj[key] = value;
   }
-  await redisClient.hSet(`connections:${ip}`, connectionStringObj);
+  await redisUpdateIpMirror(ip, connectionStringObj.id, connectionStringObj);
 }
 
 export async function redisGetPlayerConnectionByPlayerIDAsync(playerId: string) {
@@ -399,15 +553,71 @@ export function redisGetPlayerConnectionByIP(ip: string) {
   return redisClient.hGetAll(`connections:${ip}`).then((connection) => connection as unknown as RedisPlayerConnection);
 }
 
-export async function redisSaveIdentity(ip: string, steamId: string, epicId: string, hardwareId: string) {
-  await redisClient.hSet(`identity:${ip}`, { steamId, epicId, hardwareId });
+export async function redisSaveIdentity(
+  ip: string,
+  steamId: string,
+  epicId: string,
+  hardwareId: string,
+  installId = "",
+  clientVersion = "",
+  hardwareIdVersion = "",
+  hardwareIdQuality = "",
+  identityRegistered = false,
+  nodePort = 0,
+) {
+  await redisClient.hSet(`identity:${ip}`, {
+    steamId,
+    epicId,
+    hardwareId,
+    hardwareIdVersion,
+    hardwareIdQuality,
+    installId,
+    clientVersion,
+    identityRegistered: identityRegistered ? "1" : "",
+    nodePort: String(nodePort),
+  });
   await redisClient.expire(`identity:${ip}`, 300); // 5 min TTL, enough for access handshake
 }
 
-export async function redisGetIdentity(ip: string): Promise<{ steamId: string; epicId: string; hardwareId: string } | null> {
+/**
+ * Writes identity:<ip> only if it doesn't exist, in one step: the record is built under a
+ * temporary key and renamed into place with RENAMENX, so an /api/identify that lands in
+ * between is never overwritten. Returns whether it was written.
+ */
+export async function redisSaveIdentityIfAbsent(ip: string, record: Record<string, string>): Promise<boolean> {
+  const key = `identity:${ip}`;
+  const pending = `${key}:pending:${new ObjectID().toHexString()}`;
+  await redisClient.hSet(pending, record);
+  await redisClient.expire(pending, 300);
+  const written = await redisClient.renameNX(pending, key);
+  if (!written) await redisClient.del(pending);
+  return written;
+}
+
+export async function redisGetIdentity(ip: string): Promise<{
+  steamId: string;
+  epicId: string;
+  hardwareId: string;
+  hardwareIdVersion: string;
+  hardwareIdQuality: string;
+  installId: string;
+  clientVersion: string;
+  identityRegistered: boolean;
+  nodePort: number;
+} | null> {
   const data = await redisClient.hGetAll(`identity:${ip}`);
   if (!data || Object.keys(data).length === 0) return null;
-  return { steamId: data.steamId ?? "", epicId: data.epicId ?? "", hardwareId: data.hardwareId ?? "" };
+  return {
+    nodePort: Number(data.nodePort) || 0,
+    steamId: data.steamId ?? "",
+    epicId: data.epicId ?? "",
+    hardwareId: data.hardwareId ?? "",
+    hardwareIdVersion: data.hardwareIdVersion ?? "",
+    hardwareIdQuality: data.hardwareIdQuality ?? "",
+    installId: data.installId ?? "",
+    clientVersion: data.clientVersion ?? "",
+    identityRegistered: data.identityRegistered === "1",
+  };
 }
 
 export async function redisUpdatePlayerStatus(playerId: string, status: string) {
@@ -429,6 +639,11 @@ export async function redisOnMatchMakerStarted(notification: ON_MATCH_MAKER_STAR
 }
 
 export async function redisOnGameplayConfigNotified(notification: MATCH_FOUND_NOTIFICATION) {
+  // Every match config passes through here (matchmaker, custom lobby, set continuation, rematch): decide P2P
+  // once, unless the creator already did (it needs the answer earlier, for the rollback server deploy).
+  if (notification.p2p === undefined) {
+    notification.p2p = isP2PEligible(notification.players);
+  }
   const EX = 60 * 20;
   await redisClient.set(notification.matchId, JSON.stringify(notification), { EX });
   await redisClient.publish(ON_GAMEPLAY_CONFIG_NOTIFIED_CHANNEL, JSON.stringify(notification));
@@ -879,19 +1094,6 @@ export interface RedisLobbyReturnNotification {
 export async function redisPublishLobbyReturn(notification: RedisLobbyReturnNotification): Promise<void> {
   await redisClient.publish(LOBBY_RETURN_CHANNEL, JSON.stringify(notification));
   logger.info(`${logPrefix} Published lobby return (RematchDeclined) for player ${notification.playerId}`);
-}
-
-// --- Party Member Join Notification (AccelByte text-format via Hydra WS) ---
-export const PARTY_MEMBER_JOIN_CHANNEL = "party:member_joined";
-
-export interface RedisPartyMemberJoinNotification {
-  targetPlayerId: string;  // who to send to (the inviter)
-  joinedUserId: string;    // who joined (the invitee)
-}
-
-export async function redisPublishPartyMemberJoin(notification: RedisPartyMemberJoinNotification): Promise<void> {
-  await redisClient.publish(PARTY_MEMBER_JOIN_CHANNEL, JSON.stringify(notification));
-  logger.info(`${logPrefix} Published partyMemberJoinNotif: ${notification.joinedUserId} joined → notify ${notification.targetPlayerId}`);
 }
 
 // --- Lobby Redirects ---

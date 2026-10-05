@@ -1,7 +1,7 @@
 ﻿import express, { Request, Response } from "express";
 import { MVSQueries } from "../interfaces/queries_types";
 import { redisClient, redisGetOnlinePlayers, RedisPlayerConnection } from "../config/redis";
-import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
+import { PlayerTester, findPlayerById } from "../database/PlayerTester";
 import { ensureNoAssholes } from "../services/friendService";
 import { logger, logwrapper } from "../config/logger";
 import * as AuthUtils from "../utils/auth";
@@ -57,14 +57,14 @@ export async function handleAccounts_me_relationships_block(req: Request<{ block
     logger.warn(`${logPrefix} No Redis player connection found for player ID ${aID}, cannot set loadout.`);
   }
 
-  let mongoPlayer = await PlayerTesterModel.findOne({ id: aID });
+  let mongoPlayer = await findPlayerById(aID);
   if (!mongoPlayer) {
     logger.warn(`${logPrefix} No Mongo player found for player ID ${aID}, cannot add blocked player .`);
     res.status(200).send({});
     return;
   }
 
-  let mongoBlockedPlayer = await PlayerTesterModel.findOne({ id: blockedPlayer });
+  let mongoBlockedPlayer = await findPlayerById(blockedPlayer);
   if (!mongoBlockedPlayer) {
     logger.warn(`${logPrefix} No Mongo player found for blocked player ID ${blockedPlayer}, cannot add to blocked list.`);
     res.status(200).send({});
@@ -101,14 +101,14 @@ export async function handleAccounts_me_relationships_unblock(req: Request<{ blo
     logger.warn(`${logPrefix} No Redis player connection found for player ID ${aID}, cannot set loadout.`);
   }
 
-  let mongoPlayer = await PlayerTesterModel.findOne({ id: aID });
+  let mongoPlayer = await findPlayerById(aID);
   if (!mongoPlayer) {
     logger.warn(`${logPrefix} No Mongo player found for player ID ${aID}, cannot add blocked player .`);
     res.status(200).send({});
     return;
   }
 
-  let mongoUnblockedPlayer = await PlayerTesterModel.findOne({ id: unblockedPlayer });
+  let mongoUnblockedPlayer = await findPlayerById(unblockedPlayer);
   if (!mongoUnblockedPlayer) {
     logger.warn(`${logPrefix} No Mongo player found for unblocked player ID ${unblockedPlayer}, cannot remove from blocked list.`);
     res.status(200).send({});

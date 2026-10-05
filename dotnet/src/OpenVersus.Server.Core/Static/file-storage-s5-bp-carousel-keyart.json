@@ -1,0 +1,20 @@
+{
+  "slug": "s5-bp-carousel-keyart",
+  "name": "s5_bp_carousel_keyart",
+  "created_at": {
+    "_hydra_unix_date": 1738631162
+  },
+  "updated_at": {
+    "_hydra_unix_date": 1738631162
+  },
+  "s3_object_id": "dokken/production/a6db14c3-MVS_SEASON5_bp_carousel_keyart.png",
+  "auto_sync": true,
+  "file_size": 7939670,
+  "file_type": "image/png",
+  "filename": "a6db14c3-MVS_SEASON5_bp_carousel_keyart.png",
+  "md5_checksum": "3053388b6e6bc6d67d558b1f4ea2f85e",
+  "auth_exempt": false,
+  "data": {},
+  "id": "67a167fac9f8478011462227",
+  "download_url": "https://wb-agora-hydra-file-storage-dokken.s3.amazonaws.com/dokken/production/a6db14c3-MVS_SEASON5_bp_carousel_keyart.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5J6YDD2RMJ4AQTRN%2F20250318%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250318T023404Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=4db4fd4faeaed47e595a8660d20f253d68f9770aa0219a9cbbec265d64ca5d32"
+}

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <PackageReference Include="FastEndpoints" Version="8.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenVersus.Server.Core\OpenVersus.Server.Core.csproj" />
+    <ProjectReference Include="..\OpenVersus.Server.Http.Shared\OpenVersus.Server.Http.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The route map the stubs were generated from; the tests read it to check every route is registered. -->
+    <None Include="..\..\docs\routes.json" Link="routes.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

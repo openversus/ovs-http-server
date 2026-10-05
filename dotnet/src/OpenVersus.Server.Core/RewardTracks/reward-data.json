@@ -1,0 +1,2501 @@
+{
+ "rewards": {
+  "1250": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 1250
+  },
+  "currency_allseason2reward": {
+   "type": "currency",
+   "target": "currency_season2_event_currency_allevents",
+   "count": 1
+  },
+  "currency_cybucks5000": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 5000
+  },
+  "gem_horror_circle_chance_on_hit_deplete_cooldown_level_1": {
+   "type": "gem",
+   "target": "gem_horror_circle_chance_on_hit_deplete_cooldown",
+   "count": 1
+  },
+  "reard_perk_currency_80": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 80
+  },
+  "reward_afterlife_currency_1": {
+   "type": "currency",
+   "target": "s2_event_currency_afterlife",
+   "count": 1
+  },
+  "reward_armored_scar_65": {
+   "type": "gem",
+   "target": "Gem_season4_armoredscars",
+   "count": 65
+  },
+  "reward_batman_85th_credit_1000": {
+   "type": "currency",
+   "target": "eventcurrency_s3_4",
+   "count": 1000
+  },
+  "reward_batman_85th_credit_150": {
+   "type": "currency",
+   "target": "eventcurrency_s3_4",
+   "count": 150
+  },
+  "reward_batman_85th_credit_200": {
+   "type": "currency",
+   "target": "eventcurrency_s3_4",
+   "count": 200
+  },
+  "reward_batman_85th_credit_2000": {
+   "type": "currency",
+   "target": "eventcurrency_s3_4",
+   "count": 2000
+  },
+  "reward_batman_85th_credit_2500": {
+   "type": "currency",
+   "target": "eventcurrency_s3_4",
+   "count": 2500
+  },
+  "reward_batman_85th_credit_400": {
+   "type": "currency",
+   "target": "eventcurrency_s3_4",
+   "count": 400
+  },
+  "reward_batman_85th_credit_500": {
+   "type": "currency",
+   "target": "eventcurrency_s3_4",
+   "count": 500
+  },
+  "reward_batman_85th_credit_600": {
+   "type": "currency",
+   "target": "eventcurrency_s3_4",
+   "count": 600
+  },
+  "reward_batman_85th_credit_650": {
+   "type": "currency",
+   "target": "eventcurrency_s3_4",
+   "count": 650
+  },
+  "reward_batman_85th_credit_700": {
+   "type": "currency",
+   "target": "eventcurrency_s3_4",
+   "count": 700
+  },
+  "reward_batman_85th_credit_750": {
+   "type": "currency",
+   "target": "eventcurrency_s3_4",
+   "count": 750
+  },
+  "reward_batman_85th_credit_800": {
+   "type": "currency",
+   "target": "eventcurrency_s3_4",
+   "count": 800
+  },
+  "reward_battlefield_wisdom_750": {
+   "type": "gem",
+   "target": "Gem_season4_educatedondamage",
+   "count": 750
+  },
+  "reward_battlepass_xp_1600": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 1600
+  },
+  "reward_c001_s04": {
+   "type": "item",
+   "target": "skin_c001_s04",
+   "count": 1
+  },
+  "reward_c025_s32": {
+   "type": "item",
+   "target": "skin_c025_s32",
+   "count": 1
+  },
+  "reward_c026_s32": {
+   "type": "item",
+   "target": "skin_c026_s32",
+   "count": 1
+  },
+  "reward_c029_s32": {
+   "type": "item",
+   "target": "skin_c029_s32",
+   "count": 1
+  },
+  "reward_c030_s32": {
+   "type": "item",
+   "target": "c030_s32",
+   "count": 1
+  },
+  "reward_c036_char": {
+   "type": "item",
+   "target": "character_c036",
+   "count": 1
+  },
+  "reward_c036_currency_1": {
+   "type": "unresolved",
+   "target": "/Game/Panda_Main/Currencies/Reward_C036.Reward_C036",
+   "count": 1
+  },
+  "reward_c038": {
+   "type": "item",
+   "target": "character_c038",
+   "count": 1
+  },
+  "reward_caps": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 1
+  },
+  "reward_caps_1000": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 1000
+  },
+  "reward_caps_1500": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 1500
+  },
+  "reward_caps_2000": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 2000
+  },
+  "reward_caps_250": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 250
+  },
+  "reward_caps_2500": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 2500
+  },
+  "reward_caps_3000": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 3000
+  },
+  "reward_caps_500": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 500
+  },
+  "reward_caps_550": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 550
+  },
+  "reward_caps_600": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 600
+  },
+  "reward_caps_650": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 650
+  },
+  "reward_caps_700": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 700
+  },
+  "reward_caps_750": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 750
+  },
+  "reward_caps_800": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 800
+  },
+  "reward_caps_850": {
+   "type": "currency",
+   "target": "currency_s4_event_academia",
+   "count": 850
+  },
+  "reward_character_currency_10": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 10
+  },
+  "reward_character_currency_100": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 100
+  },
+  "reward_character_currency_1000": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 1000
+  },
+  "reward_character_currency_15": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 15
+  },
+  "reward_character_currency_150": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 150
+  },
+  "reward_character_currency_1500": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 1500
+  },
+  "reward_character_currency_20": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 20
+  },
+  "reward_character_currency_200": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 200
+  },
+  "reward_character_currency_25": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 25
+  },
+  "reward_character_currency_250": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 250
+  },
+  "reward_character_currency_30": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 30
+  },
+  "reward_character_currency_300": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 300
+  },
+  "reward_character_currency_3000": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 3000
+  },
+  "reward_character_currency_40": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 40
+  },
+  "reward_character_currency_400": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 400
+  },
+  "reward_character_currency_5": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 5
+  },
+  "reward_character_currency_50": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 50
+  },
+  "reward_character_currency_500": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 500
+  },
+  "reward_character_currency_600": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 600
+  },
+  "reward_character_currency_700": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 700
+  },
+  "reward_character_currency_800": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 800
+  },
+  "reward_character_currency_character_mastery": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 500
+  },
+  "reward_character_currency_large": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 1500
+  },
+  "reward_character_currency_medium": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 100
+  },
+  "reward_character_currency_rift_cauldron_medium": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 85
+  },
+  "reward_character_currency_rift_cauldron_small": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 25
+  },
+  "reward_character_currency_rift_daily_reward_crushing": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 15
+  },
+  "reward_character_currency_rift_daily_reward_easy": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 5
+  },
+  "reward_character_currency_rift_daily_reward_experienced": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 10
+  },
+  "reward_character_currency_rift_daily_reward_insanity": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 25
+  },
+  "reward_character_currency_rift_daily_reward_looney": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 50
+  },
+  "reward_character_currency_rift_first_win_easy": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 10
+  },
+  "reward_character_currency_rift_first_win_looney": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 10
+  },
+  "reward_character_currency_small": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 50
+  },
+  "reward_character_ticket_small": {
+   "type": "currency",
+   "target": "character-unlock-ticket-currency",
+   "count": 1
+  },
+  "reward_charater_currency_750": {
+   "type": "currency",
+   "target": "character_currency",
+   "count": 750
+  },
+  "reward_circuit_crew_currency_1": {
+   "type": "currency",
+   "target": "s2_event_currency_circuit_crew",
+   "count": 1
+  },
+  "reward_circuit_crew_currency_1000": {
+   "type": "currency",
+   "target": "s2_event_currency_circuit_crew",
+   "count": 1000
+  },
+  "reward_demon_coin": {
+   "type": "currency",
+   "target": "currency_s4_event_trigon",
+   "count": 1
+  },
+  "reward_digital_circle_first_blood_level_1": {
+   "type": "gem",
+   "target": "gem_digitalcircle_firstblood",
+   "count": 1
+  },
+  "reward_digital_circle_first_blood_level_9": {
+   "type": "gem",
+   "target": "gem_digitalcircle_firstblood",
+   "count": 12500
+  },
+  "reward_discipline_companion_toasty_1000xp": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 1000
+  },
+  "reward_discipline_companion_toasty_1500xp": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 1500
+  },
+  "reward_discipline_companion_toasty_150xp": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 150
+  },
+  "reward_discipline_companion_toasty_1750xp": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 1750
+  },
+  "reward_discipline_companion_toasty_2000xp": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 2000
+  },
+  "reward_discipline_companion_toasty_2500xp": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 2500
+  },
+  "reward_discipline_companion_toasty_25xp": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 25
+  },
+  "reward_discipline_companion_toasty_3000xp": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 3000
+  },
+  "reward_discipline_companion_toasty_300xp": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 300
+  },
+  "reward_discipline_companion_toasty_4000xp": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 4000
+  },
+  "reward_discipline_companion_toasty_5000xp": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 5000
+  },
+  "reward_discipline_companion_toasty_500xp": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 500
+  },
+  "reward_discipline_companion_toasty_750xp": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 750
+  },
+  "reward_discipline_companion_toasty_75xp": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 75
+  },
+  "reward_dotd-coin": {
+   "type": "currency",
+   "target": "eventcurrency_s3_2",
+   "count": 1
+  },
+  "reward_fire_ice_750": {
+   "type": "gem",
+   "target": "Gem_season4_stancefireandice",
+   "count": 750
+  },
+  "reward_fragment_large": {
+   "type": "currency",
+   "target": "fragment",
+   "count": 150
+  },
+  "reward_fragment_medium": {
+   "type": "currency",
+   "target": "fragment",
+   "count": 100
+  },
+  "reward_fragment_small": {
+   "type": "currency",
+   "target": "fragment",
+   "count": 50
+  },
+  "reward_frosty": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 1
+  },
+  "reward_frosty_1000": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 1000
+  },
+  "reward_frosty_1250": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 1250
+  },
+  "reward_frosty_1500": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 1500
+  },
+  "reward_frosty_200": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 200
+  },
+  "reward_frosty_300": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 300
+  },
+  "reward_frosty_3000": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 3000
+  },
+  "reward_frosty_400": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 400
+  },
+  "reward_frosty_500": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 500
+  },
+  "reward_frosty_550": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 550
+  },
+  "reward_frosty_600": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 600
+  },
+  "reward_frosty_650": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 650
+  },
+  "reward_frosty_700": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 700
+  },
+  "reward_frosty_750": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 750
+  },
+  "reward_frosty_800": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 800
+  },
+  "reward_frosty_850": {
+   "type": "currency",
+   "target": "currency_s4_event_ice",
+   "count": 850
+  },
+  "reward_gem_chaos_circle_chance_auto_dodge": {
+   "type": "reward",
+   "target": "reward_gem_digital_square_weaken_bubble_prison",
+   "count": 5
+  },
+  "reward_gem_chaos_circle_chance_auto_dodge_level_1": {
+   "type": "gem",
+   "target": "Gem_chaos_circle_chance_auto_dodge",
+   "count": 1
+  },
+  "reward_gem_chaos_circle_chance_on_hit_critical_hit": {
+   "type": "gem",
+   "target": "gem_horror_circle_chance_on_hit_ice",
+   "count": 500
+  },
+  "reward_gem_chaos_circle_chance_on_hit_critical_hit_level_1": {
+   "type": "gem",
+   "target": "Gem_chaos_circle_chance_on_hit_critical_hit",
+   "count": 1
+  },
+  "reward_gem_chaos_circle_chance_on_hit_random_status_effect_per_match_level_1": {
+   "type": "gem",
+   "target": "Gem_chance_on_hit_random_status_effect_per_match",
+   "count": 1
+  },
+  "reward_gem_chaos_circle_chance_on_space_giant_projectiles_level_1": {
+   "type": "gem",
+   "target": "Gem_chance_on_spawn_giant_projectiles",
+   "count": 1
+  },
+  "reward_gem_chaos_circle_chance_on_spawn_tiny_enemy_projectiles_level_1": {
+   "type": "gem",
+   "target": "Gem_chance_on_spawn_tiny_enemy_projectiles",
+   "count": 1
+  },
+  "reward_gem_chaos_circle_on_dodge_reverse_all_projectiles_level_1": {
+   "type": "gem",
+   "target": "Gem_chaos_circle_on_dodge_reverse_all_projectiles",
+   "count": 1
+  },
+  "reward_gem_chaos_circle_on_spawn_super_shaggy_sandwich_level_1": {
+   "type": "gem",
+   "target": "Gem_chaos_circle_on_spawn_super_shaggy_sandwich",
+   "count": 1
+  },
+  "reward_gem_chaos_circle_on_spawn_super_shaggy_sandwich_level_3": {
+   "type": "gem",
+   "target": "Gem_chaos_circle_on_spawn_super_shaggy_sandwich",
+   "count": 100
+  },
+  "reward_gem_chaos_circle_two_faces_coin_level_1": {
+   "type": "gem",
+   "target": "Gem_chaos_circle_two_faces_coin",
+   "count": 1
+  },
+  "reward_gem_chaos_deal_damage_to_charge_auto_reflect_level_1": {
+   "type": "gem",
+   "target": "gem_chaos_deal_damage_to_charge_auto_reflect",
+   "count": 1
+  },
+  "reward_gem_chaos_out_of_air_specials_joker_balloon_level_1": {
+   "type": "gem",
+   "target": "Gem_chance_on_spawn_giant_projectiles",
+   "count": 1
+  },
+  "reward_gem_digital_circle_additiona_jump_level_3": {
+   "type": "gem",
+   "target": "gem_circle_digital_additionaljump",
+   "count": 100
+  },
+  "reward_gem_digital_circle_additional_jump_level_1": {
+   "type": "gem",
+   "target": "gem_circle_digital_additionaljump",
+   "count": 1
+  },
+  "reward_gem_digital_circle_chance_on_hit_shock_level_1": {
+   "type": "gem",
+   "target": "gem_digital_circle_chance_on_hit_shock",
+   "count": 1
+  },
+  "reward_gem_digital_circle_on_dodge_black_adam_bubble_shield_level_1": {
+   "type": "gem",
+   "target": "Gem_on_dodge_black_adam_bubble_shield",
+   "count": 1
+  },
+  "reward_gem_digital_circle_on_dodge_electric_zone_level_1": {
+   "type": "gem",
+   "target": "gem_digital_circle_on_dodge_electric_zone",
+   "count": 1
+  },
+  "reward_gem_digital_circle_on_dodge_lightning_strike_level_1": {
+   "type": "gem",
+   "target": "gem_digital_circle_on_dodge_lightning_strike",
+   "count": 1
+  },
+  "reward_gem_digital_circle_on_dodge_lightning_strike_level_9": {
+   "type": "gem",
+   "target": "gem_digital_circle_on_dodge_lightning_strike",
+   "count": 12500
+  },
+  "reward_gem_digital_circle_on_dodge_seismic_reactor_level_1": {
+   "type": "gem",
+   "target": "gem_digital_circle_on_dodge_lightning_strike",
+   "count": 1
+  },
+  "reward_gem_digital_circle_on_respawn_armature_level_1": {
+   "type": "gem",
+   "target": "gem_digital_circle_on_respawn_armature",
+   "count": 1
+  },
+  "reward_gem_digital_circle_taunt_after_ko_level_1": {
+   "type": "gem",
+   "target": "gem_digitalcircle_tauntafterko",
+   "count": 1
+  },
+  "reward_gem_digital_circle_taunt_after_ko_level_1_2": {
+   "type": "gem",
+   "target": "gem_digitalcircle_tauntafterko",
+   "count": 2
+  },
+  "reward_gem_digital_circle_taunt_after_ko_level_2": {
+   "type": "gem",
+   "target": "gem_digitalcircle_tauntafterko",
+   "count": 10
+  },
+  "reward_gem_digital_circle_taunt_after_ko_level_3": {
+   "type": "gem",
+   "target": "gem_digitalcircle_tauntafterko",
+   "count": 100
+  },
+  "reward_gem_digital_circle_taunt_after_ko_level_4": {
+   "type": "gem",
+   "target": "gem_digitalcircle_tauntafterko",
+   "count": 250
+  },
+  "reward_gem_digital_circle_taunt_after_ko_level_5": {
+   "type": "gem",
+   "target": "gem_digitalcircle_tauntafterko",
+   "count": 750
+  },
+  "reward_gem_digital_circle_taunt_after_ko_level_6": {
+   "type": "gem",
+   "target": "gem_digitalcircle_tauntafterko",
+   "count": 1500
+  },
+  "reward_gem_digital_circle_taunt_after_ko_level_7": {
+   "type": "gem",
+   "target": "gem_digitalcircle_tauntafterko",
+   "count": 3500
+  },
+  "reward_gem_digital_circle_taunt_after_ko_level_8": {
+   "type": "gem",
+   "target": "gem_digitalcircle_tauntafterko",
+   "count": 7500
+  },
+  "reward_gem_digital_circle_taunt_after_ko_level_9": {
+   "type": "gem",
+   "target": "gem_digitalcircle_tauntafterko",
+   "count": 12500
+  },
+  "reward_gem_digital_circle_walk_to_charge_electric_gauntlets_level_1": {
+   "type": "gem",
+   "target": "gem_digital_circle_walk_to_charge_electric_gauntlets",
+   "count": 1
+  },
+  "reward_gem_digital_circle_walk_to_charge_electric_gauntlets_level_1_2": {
+   "type": "gem",
+   "target": "gem_digital_circle_walk_to_charge_electric_gauntlets",
+   "count": 2
+  },
+  "reward_gem_digital_circle_walk_to_charge_electric_gauntlets_level_2": {
+   "type": "gem",
+   "target": "gem_digital_circle_walk_to_charge_electric_gauntlets",
+   "count": 10
+  },
+  "reward_gem_digital_circle_walk_to_charge_electric_gauntlets_level_3": {
+   "type": "gem",
+   "target": "gem_digital_circle_walk_to_charge_electric_gauntlets",
+   "count": 100
+  },
+  "reward_gem_digital_circle_walk_to_charge_electric_gauntlets_level_4": {
+   "type": "gem",
+   "target": "gem_digital_circle_walk_to_charge_electric_gauntlets",
+   "count": 250
+  },
+  "reward_gem_digital_circle_walk_to_charge_electric_gauntlets_level_5": {
+   "type": "gem",
+   "target": "gem_digital_circle_walk_to_charge_electric_gauntlets",
+   "count": 750
+  },
+  "reward_gem_digital_circle_walk_to_charge_electric_gauntlets_level_6": {
+   "type": "gem",
+   "target": "gem_digital_circle_walk_to_charge_electric_gauntlets",
+   "count": 1500
+  },
+  "reward_gem_digital_circle_walk_to_charge_electric_gauntlets_level_7": {
+   "type": "gem",
+   "target": "gem_digital_circle_walk_to_charge_electric_gauntlets",
+   "count": 3500
+  },
+  "reward_gem_digital_circle_walk_to_charge_electric_gauntlets_level_8": {
+   "type": "gem",
+   "target": "gem_digital_circle_walk_to_charge_electric_gauntlets",
+   "count": 7500
+  },
+  "reward_gem_digital_circle_walk_to_charge_electric_gauntlets_level_9": {
+   "type": "gem",
+   "target": "gem_digital_circle_walk_to_charge_electric_gauntlets",
+   "count": 12500
+  },
+  "reward_gem_digital_square_weaken_bubble_prison": {
+   "type": "gem",
+   "target": "gem_digital_square_weaken_bubble_prison",
+   "count": 50
+  },
+  "reward_gem_digital_weaken_prison_bubble": {
+   "type": "gem",
+   "target": "gem_digital_square_weaken_bubble_prison",
+   "count": 1
+  },
+  "reward_gem_digitalcircle_tauntafterko": {
+   "type": "gem",
+   "target": "gem_digitalcircle_tauntafterko",
+   "count": 400
+  },
+  "reward_gem_discipline_additional_air_evade_5xp": {
+   "type": "gem",
+   "target": "gem_discipline_additional_air_evade",
+   "count": 5
+  },
+  "reward_gem_discipline_armored_charge_attacks_300xp": {
+   "type": "gem",
+   "target": "gem_discipline_armored_charge_attacks",
+   "count": 300
+  },
+  "reward_gem_discipline_charge_attack_tornado_500xp": {
+   "type": "gem",
+   "target": "gem_discipline_charge_attack_tornado",
+   "count": 500
+  },
+  "reward_gem_discipline_stand_still_rage_xp50": {
+   "type": "gem",
+   "target": "gem_discipline_stand_still_rage",
+   "count": 50
+  },
+  "reward_gem_horror_circle_bandage_level_1": {
+   "type": "gem",
+   "target": "gem_horror_circle_bandage",
+   "count": 1
+  },
+  "reward_gem_horror_circle_chance_on_hit_burnout_level_1": {
+   "type": "gem",
+   "target": "gem_horror_circle_chance_on_hit_burnout",
+   "count": 1
+  },
+  "reward_gem_horror_circle_chance_on_hit_ice_level_1": {
+   "type": "gem",
+   "target": "gem_horror_circle_chance_on_hit_ice",
+   "count": 1
+  },
+  "reward_gem_horror_circle_chance_on_hit_ice_level_4": {
+   "type": "gem",
+   "target": "gem_horror_circle_chance_on_hit_ice",
+   "count": 250
+  },
+  "reward_gem_horror_circle_chance_on_injury_disable_bounce_level_1": {
+   "type": "gem",
+   "target": "gem_horror_circle_chance_on_injury_disable_bounce",
+   "count": 1
+  },
+  "reward_gem_horror_circle_damage_aerial_level_1": {
+   "type": "gem",
+   "target": "gem_horror_circle_damage_aerial",
+   "count": 1
+  },
+  "reward_gem_horror_circle_damage_aerial_level_3": {
+   "type": "gem",
+   "target": "gem_horror_circle_damage_aerial",
+   "count": 100
+  },
+  "reward_gem_horror_circle_evade_boost": {
+   "type": "gem",
+   "target": "gem_horror_circle_evade_boost",
+   "count": 300
+  },
+  "reward_gem_horror_circle_evade_boost_level_1": {
+   "type": "gem",
+   "target": "gem_horror_circle_evade_boost",
+   "count": 1
+  },
+  "reward_gem_horror_circle_on_dodge_smoke_bomb_level_1": {
+   "type": "gem",
+   "target": "gem_horror_circle_on_dodge_smoke_bomb",
+   "count": 1
+  },
+  "reward_gem_horror_circle_on_opponent_burnt_out_enrage_level_1": {
+   "type": "gem",
+   "target": "gem_horror_square_on_opponent_fatigued_enrage",
+   "count": 1
+  },
+  "reward_gem_horror_circle_on_opponent_burnt_out_enrage_level_4": {
+   "type": "gem",
+   "target": "gem_horror_square_on_opponent_fatigued_enrage",
+   "count": 250
+  },
+  "reward_gem_horror_circle_share_elemental_debuffs_level_1": {
+   "type": "gem",
+   "target": "gem_horror_circle_share_elemental_debuffs",
+   "count": 1
+  },
+  "reward_gem_season3_anubiscompanion": {
+   "type": "gem",
+   "target": "gem_season3_anubiscompanion",
+   "count": 5
+  },
+  "reward_gem_season3_anubiscompanion_10": {
+   "type": "gem",
+   "target": "gem_season3_anubiscompanion",
+   "count": 10
+  },
+  "reward_gem_season3_anubiscompanion_1000": {
+   "type": "gem",
+   "target": "gem_season3_anubiscompanion",
+   "count": 1000
+  },
+  "reward_gem_season3_anubiscompanion_110": {
+   "type": "gem",
+   "target": "gem_season3_anubiscompanion",
+   "count": 110
+  },
+  "reward_gem_season3_anubiscompanion_1100": {
+   "type": "gem",
+   "target": "gem_season3_anubiscompanion",
+   "count": 1100
+  },
+  "reward_gem_season3_anubiscompanion_1500": {
+   "type": "gem",
+   "target": "gem_season3_anubiscompanion",
+   "count": 1500
+  },
+  "reward_gem_season3_anubiscompanion_1800": {
+   "type": "gem",
+   "target": "gem_season3_anubiscompanion",
+   "count": 1800
+  },
+  "reward_gem_season3_anubiscompanion_220": {
+   "type": "gem",
+   "target": "gem_season3_anubiscompanion",
+   "count": 220
+  },
+  "reward_gem_season3_anubiscompanion_3000": {
+   "type": "gem",
+   "target": "gem_season3_anubiscompanion",
+   "count": 3000
+  },
+  "reward_gem_season3_anubiscompanion_40": {
+   "type": "gem",
+   "target": "gem_season3_anubiscompanion",
+   "count": 40
+  },
+  "reward_gem_season3_anubiscompanion_4200": {
+   "type": "gem",
+   "target": "gem_season3_anubiscompanion",
+   "count": 4200
+  },
+  "reward_gem_season3_anubiscompanion_430": {
+   "type": "gem",
+   "target": "gem_season3_anubiscompanion",
+   "count": 430
+  },
+  "reward_gem_season3_anubiscompanion_5000": {
+   "type": "gem",
+   "target": "gem_season3_anubiscompanion",
+   "count": 4200
+  },
+  "reward_gem_season3_anubiscompanion_90": {
+   "type": "gem",
+   "target": "gem_season3_anubiscompanion",
+   "count": 90
+  },
+  "reward_gem_season3_bubblearmor": {
+   "type": "gem",
+   "target": "gem_season3_bubblearmor",
+   "count": 5
+  },
+  "reward_gem_season3_companion_1": {
+   "type": "gem",
+   "target": "gem_season3_companion_1",
+   "count": 500
+  },
+  "reward_gem_season3_companion_2": {
+   "type": "gem",
+   "target": "gem_season3_companion_2",
+   "count": 300
+  },
+  "reward_gem_season3_companion_3": {
+   "type": "gem",
+   "target": "gem_season3_companion_3",
+   "count": 400
+  },
+  "reward_gem_season3_explodingarmor": {
+   "type": "gem",
+   "target": "gem_season3_explodingarmor",
+   "count": 50
+  },
+  "reward_gem_season4_exhaustarmor_2000": {
+   "type": "gem",
+   "target": "Gem_season4_exhaustarmor",
+   "count": 2000
+  },
+  "reward_gem_season4_jumpsfromelee_2000": {
+   "type": "gem",
+   "target": "Gem_season4_jumpsfromgroundmelee",
+   "count": 2000
+  },
+  "reward_gem_season4_megalodogsrevenge_10": {
+   "type": "gem",
+   "target": "Gem_season4_megalodogrevenge",
+   "count": 10
+  },
+  "reward_gem_season4_megalodogsrevenge_1000": {
+   "type": "gem",
+   "target": "Gem_season4_megalodogrevenge",
+   "count": 1000
+  },
+  "reward_gem_season4_megalodogsrevenge_110": {
+   "type": "gem",
+   "target": "Gem_season4_megalodogrevenge",
+   "count": 110
+  },
+  "reward_gem_season4_megalodogsrevenge_1100": {
+   "type": "gem",
+   "target": "Gem_season4_megalodogrevenge",
+   "count": 1100
+  },
+  "reward_gem_season4_megalodogsrevenge_1500": {
+   "type": "gem",
+   "target": "Gem_season4_megalodogrevenge",
+   "count": 1500
+  },
+  "reward_gem_season4_megalodogsrevenge_1800": {
+   "type": "gem",
+   "target": "Gem_season4_megalodogrevenge",
+   "count": 1800
+  },
+  "reward_gem_season4_megalodogsrevenge_220": {
+   "type": "gem",
+   "target": "Gem_season4_megalodogrevenge",
+   "count": 220
+  },
+  "reward_gem_season4_megalodogsrevenge_3000": {
+   "type": "gem",
+   "target": "Gem_season4_megalodogrevenge",
+   "count": 3000
+  },
+  "reward_gem_season4_megalodogsrevenge_40": {
+   "type": "gem",
+   "target": "Gem_season4_megalodogrevenge",
+   "count": 40
+  },
+  "reward_gem_season4_megalodogsrevenge_4200": {
+   "type": "gem",
+   "target": "Gem_season4_megalodogrevenge",
+   "count": 4200
+  },
+  "reward_gem_season4_megalodogsrevenge_430": {
+   "type": "gem",
+   "target": "Gem_season4_megalodogrevenge",
+   "count": 430
+  },
+  "reward_gem_season4_megalodogsrevenge_5000": {
+   "type": "gem",
+   "target": "Gem_season4_megalodogrevenge",
+   "count": 5000
+  },
+  "reward_gem_season4_megalodogsrevenge_90": {
+   "type": "gem",
+   "target": "Gem_season4_megalodogrevenge",
+   "count": 90
+  },
+  "reward_gem_season4_stancegravityandsize_2000": {
+   "type": "gem",
+   "target": "Gem_season4_stancegravityandsize",
+   "count": 2000
+  },
+  "reward_gleamium_10": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 10
+  },
+  "reward_gleamium_100": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 100
+  },
+  "reward_gleamium_1000": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 1000
+  },
+  "reward_gleamium_15": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 15
+  },
+  "reward_gleamium_150": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 150
+  },
+  "reward_gleamium_20": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 20
+  },
+  "reward_gleamium_200": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 200
+  },
+  "reward_gleamium_25": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 25
+  },
+  "reward_gleamium_250": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 250
+  },
+  "reward_Gleamium_30": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 30
+  },
+  "reward_gleamium_300": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 300
+  },
+  "reward_gleamium_400": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 400
+  },
+  "reward_gleamium_450": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 450
+  },
+  "reward_gleamium_5": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 5
+  },
+  "reward_gleamium_500": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 500
+  },
+  "reward_gleamium_60": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 60
+  },
+  "reward_gleamium_80": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 80
+  },
+  "reward_gleamium_character_mastery": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 150
+  },
+  "reward_gleamium_large": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 150
+  },
+  "reward_gleamium_medium": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 100
+  },
+  "reward_gleamium_small": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 50
+  },
+  "reward_gleamium_verylarge": {
+   "type": "currency",
+   "target": "gleamium",
+   "count": 300
+  },
+  "reward_gold_small": {
+   "type": "currency",
+   "target": "gold",
+   "count": 50
+  },
+  "reward_hypergalacti-coin": {
+   "type": "currency",
+   "target": "eventcurrency_s3_1",
+   "count": 1
+  },
+  "reward_knit_bucks": {
+   "type": "currency",
+   "target": "currency_s4_event_uglysweater",
+   "count": 1
+  },
+  "reward_loot_chaos_challenge1": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_chaos",
+   "count": 1
+  },
+  "reward_loot_chaos_challenge2": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_chaos",
+   "count": 2
+  },
+  "reward_loot_chaos_challenge3": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_chaos",
+   "count": 3
+  },
+  "reward_loot_chaos_challenge4": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_chaos",
+   "count": 4
+  },
+  "reward_loot_chaos_challenge5": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_chaos",
+   "count": 5
+  },
+  "reward_loot_discipline_challenge1": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_discipline",
+   "count": 1
+  },
+  "reward_loot_discipline_challenge2": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_discipline",
+   "count": 2
+  },
+  "reward_loot_discipline_challenge3": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_discipline",
+   "count": 3
+  },
+  "reward_loot_discipline_challenge5": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_discipline",
+   "count": 5
+  },
+  "reward_loot_heroic_challenge1": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_heroic",
+   "count": 1
+  },
+  "reward_loot_heroic_challenge2": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_heroic",
+   "count": 2
+  },
+  "reward_loot_heroic_challenge3": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_heroic",
+   "count": 3
+  },
+  "reward_loot_heroic_challenge5": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_heroic",
+   "count": 5
+  },
+  "reward_loot_horror_challenge1": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_horror",
+   "count": 1
+  },
+  "reward_loot_horror_challenge2": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_horror",
+   "count": 2
+  },
+  "reward_loot_horror_challenge3": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_horror",
+   "count": 3
+  },
+  "reward_loot_horror_challenge5": {
+   "type": "lootbox",
+   "target": "lootbox_lootbox_s5_challenge_horror",
+   "count": 5
+  },
+  "reward_microchip_2000": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 2000
+  },
+  "reward_microchips_100": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 100
+  },
+  "reward_microchips_1000": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 1000
+  },
+  "reward_microchips_1200": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 1200
+  },
+  "reward_microchips_1400": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 1400
+  },
+  "reward_microchips_200": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 200
+  },
+  "reward_microchips_2000": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 2000
+  },
+  "reward_microchips_300": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 300
+  },
+  "reward_microchips_350": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 350
+  },
+  "reward_microchips_400": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 400
+  },
+  "reward_microchips_450": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 450
+  },
+  "reward_microchips_500": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 500
+  },
+  "reward_microchips_550": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 550
+  },
+  "reward_microchips_600": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 600
+  },
+  "reward_microchips_650": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 650
+  },
+  "reward_microchips_700": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 700
+  },
+  "reward_microchips_800": {
+   "type": "currency",
+   "target": "s2_event_currency_computerchips",
+   "count": 800
+  },
+  "reward_perk_currency_10": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 10
+  },
+  "reward_perk_currency_100": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 100
+  },
+  "reward_perk_currency_1000": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 1000
+  },
+  "reward_perk_currency_1200": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 1200
+  },
+  "reward_perk_currency_125": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 125
+  },
+  "reward_perk_currency_1400": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 1400
+  },
+  "reward_perk_currency_150": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 150
+  },
+  "reward_perk_currency_1500": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 1500
+  },
+  "reward_perk_currency_1600": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 1600
+  },
+  "reward_perk_currency_175": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 175
+  },
+  "reward_perk_currency_1800": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 1800
+  },
+  "reward_perk_currency_20": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 20
+  },
+  "reward_perk_currency_200": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 200
+  },
+  "reward_perk_currency_2000": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 2000
+  },
+  "reward_perk_currency_2200": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 2200
+  },
+  "reward_perk_currency_250": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 250
+  },
+  "reward_perk_currency_275": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 275
+  },
+  "reward_perk_currency_30": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 30
+  },
+  "reward_perk_currency_300": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 300
+  },
+  "reward_perk_currency_3000": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 3000
+  },
+  "reward_perk_currency_325": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 325
+  },
+  "reward_perk_currency_3600": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 3600
+  },
+  "reward_perk_currency_40": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 40
+  },
+  "reward_perk_currency_400": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 400
+  },
+  "reward_perk_currency_425": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 425
+  },
+  "reward_perk_currency_4800": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 4800
+  },
+  "reward_perk_currency_50": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 50
+  },
+  "reward_perk_currency_500": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 500
+  },
+  "reward_perk_currency_60": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 60
+  },
+  "reward_perk_currency_600": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 600
+  },
+  "reward_perk_currency_6000": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 6000
+  },
+  "reward_perk_currency_700": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 700
+  },
+  "reward_perk_currency_75": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 75
+  },
+  "reward_perk_currency_750": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 750
+  },
+  "reward_perk_currency_800": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 800
+  },
+  "reward_perk_currency_character_mastery_final": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 550
+  },
+  "reward_perk_currency_character_mastery_large": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 150
+  },
+  "reward_perk_currency_character_mastery_medium": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 120
+  },
+  "reward_perk_currency_character_mastery_small": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 60
+  },
+  "reward_perk_currency_large": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 1000
+  },
+  "reward_perk_currency_medium": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 100
+  },
+  "reward_perk_currency_medium_large": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 200
+  },
+  "reward_perk_currency_rift_cauldron_medium": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 65
+  },
+  "reward_perk_currency_rift_cauldron_small": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 18
+  },
+  "reward_perk_currency_small": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 50
+  },
+  "reward_perk_page_custom_1": {
+   "type": "item",
+   "target": "rfacade_perk_page_custom_1",
+   "count": 1
+  },
+  "reward_perk_page_custom_2": {
+   "type": "item",
+   "target": "rfacade_perk_page_custom_2",
+   "count": 1
+  },
+  "reward_perk_page_custom_3": {
+   "type": "item",
+   "target": "rfacade_perk_page_custom_3",
+   "count": 1
+  },
+  "reward_perk_page_preset_2": {
+   "type": "item",
+   "target": "rfacade_perk_page_preset_2",
+   "count": 1
+  },
+  "reward_perk_page_preset_3": {
+   "type": "item",
+   "target": "rfacade_perk_page_preset_3",
+   "count": 1
+  },
+  "reward_prestige_1000": {
+   "type": "currency",
+   "target": "prestige",
+   "count": 1000
+  },
+  "reward_prestige_10000": {
+   "type": "currency",
+   "target": "prestige",
+   "count": 10000
+  },
+  "reward_prestige_2000": {
+   "type": "currency",
+   "target": "prestige",
+   "count": 2000
+  },
+  "reward_prestige_4000": {
+   "type": "currency",
+   "target": "prestige",
+   "count": 4000
+  },
+  "reward_prestige_500": {
+   "type": "currency",
+   "target": "prestige",
+   "count": 500
+  },
+  "reward_prestige_large": {
+   "type": "currency",
+   "target": "prestige",
+   "count": 150
+  },
+  "reward_prestige_medium": {
+   "type": "currency",
+   "target": "prestige",
+   "count": 100
+  },
+  "reward_prestige_small": {
+   "type": "currency",
+   "target": "prestige",
+   "count": 50
+  },
+  "reward_pvp_gold_badge": {
+   "type": "item",
+   "target": "stat_tracking_bundle_S1_pvp_gold",
+   "count": 1
+  },
+  "reward_s4_challenge_rift_battle_pass_xp": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 50
+  },
+  "reward_s4_challenge_rift_battle_pass_xp_depleted": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 5
+  },
+  "reward_s4_challenge_rift_fighter_road_xp": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 75
+  },
+  "reward_s4_challenge_rift_fighter_road_xp_jackpot": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 500
+  },
+  "reward_s4_challenge_rift_perk_currency": {
+   "type": "currency",
+   "target": "perk_currency",
+   "count": 100
+  },
+  "reward_s4_challenge_rift_skin_chase_prize": {
+   "type": "item",
+   "target": "skin_c035_s05",
+   "count": 1
+  },
+  "reward_s4_riftlootbox": {
+   "type": "lootbox",
+   "target": "lootbox_s4_challenge_rift",
+   "count": 2
+  },
+  "reward_s4_riftlootbox3": {
+   "type": "lootbox",
+   "target": "lootbox_s4_challenge_rift",
+   "count": 3
+  },
+  "reward_s4_riftlootbox4": {
+   "type": "lootbox",
+   "target": "lootbox_s4_challenge_rift",
+   "count": 4
+  },
+  "reward_s4_riftlootbox5": {
+   "type": "lootbox",
+   "target": "lootbox_s4_challenge_rift",
+   "count": 5
+  },
+  "reward_s4_riftlootbox6": {
+   "type": "lootbox",
+   "target": "lootbox_s4_challenge_rift",
+   "count": 6
+  },
+  "reward_s5_challenge_chaos_aux_prize_1": {
+   "type": "unresolved",
+   "target": "/MvsSeason05/Cosmetics/RingoutVfx/AKUFire/ROV_AkuFIre.ROV_AkuFIre",
+   "count": 1
+  },
+  "reward_s5_challenge_chaos_aux_prize_2": {
+   "type": "item",
+   "target": "banner_mask_island",
+   "count": 1
+  },
+  "reward_s5_challenge_chaos_chase_prize": {
+   "type": "item",
+   "target": "skin_c026_s01",
+   "count": 1
+  },
+  "reward_s5_challenge_discipline_aux_prize_1": {
+   "type": "item",
+   "target": "banner_smooches_for_grumpy",
+   "count": 1
+  },
+  "reward_s5_challenge_discipline_aux_prize_2": {
+   "type": "unresolved",
+   "target": "/MvsSeason05/Cosmetics/RingoutVfx/Lazer_Blast/ROV_Lazer_Blast.ROV_Lazer_Blast",
+   "count": 1
+  },
+  "reward_s5_challenge_discipline_chase_prize": {
+   "type": "item",
+   "target": "skin_c008_s04",
+   "count": 1
+  },
+  "reward_s5_challenge_heroic_aux_prize_1": {
+   "type": "item",
+   "target": "profile_icon_toastmeheart",
+   "count": 1
+  },
+  "reward_s5_challenge_heroic_aux_prize_2": {
+   "type": "item",
+   "target": "emote_brokenheart",
+   "count": 1
+  },
+  "reward_s5_challenge_heroic_chase_prize": {
+   "type": "item",
+   "target": "c027_s04",
+   "count": 1
+  },
+  "reward_s5_challenge_horror_aux_prize_1": {
+   "type": "item",
+   "target": "banner_wbtower_epic",
+   "count": 1
+  },
+  "reward_s5_challenge_horror_aux_prize_2": {
+   "type": "unresolved",
+   "target": "/MvsSeason05/Cosmetics/RingoutVfx/Velma_GetAClue/ROV_Velma_GetAClue.ROV_Velma_GetAClue",
+   "count": 1
+  },
+  "reward_s5_challenge_horror_chase_prize": {
+   "type": "item",
+   "target": "skin_c025_s06",
+   "count": 1
+  },
+  "reward_S6_chase": {
+   "type": "item",
+   "target": "banner_s6grandmaster",
+   "count": 1
+  },
+  "reward_skin_c001_s16": {
+   "type": "unresolved",
+   "target": "/Game/Panda_Main/Characters/WonderWomanV2/Skins/S16/C001_S16.C001_S16",
+   "count": 1
+  },
+  "reward_skin_c001_s21": {
+   "type": "item",
+   "target": "skin_c001_s21",
+   "count": 1
+  },
+  "reward_skin_c002_s09": {
+   "type": "item",
+   "target": "skin_c002_s09old",
+   "count": 1
+  },
+  "reward_skin_c002_s15": {
+   "type": "item",
+   "target": "skin_c002_s15",
+   "count": 1
+  },
+  "reward_skin_c003_s07": {
+   "type": "item",
+   "target": "skin_c003_s07",
+   "count": 1
+  },
+  "reward_skin_c005_s26": {
+   "type": "item",
+   "target": "skin_c005_s26",
+   "count": 1
+  },
+  "reward_skin_c008_s18": {
+   "type": "unresolved",
+   "target": "/Game/Panda_Main/Characters/HarleyQuinn/skins/S18/C008_S18.C008_S18",
+   "count": 1
+  },
+  "reward_skin_c009_s12": {
+   "type": "item",
+   "target": "skin_c009_s12",
+   "count": 1
+  },
+  "reward_skin_c010_s08": {
+   "type": "item",
+   "target": "skin_c010_s08",
+   "count": 1
+  },
+  "reward_skin_C013_S22": {
+   "type": "item",
+   "target": "skin_c013_s22",
+   "count": 1
+  },
+  "reward_skin_C015_S26": {
+   "type": "item",
+   "target": "skin_c015_s26",
+   "count": 1
+  },
+  "reward_skin_c016_s03": {
+   "type": "item",
+   "target": "skin_c016_s03",
+   "count": 1
+  },
+  "reward_skin_c016_s20": {
+   "type": "item",
+   "target": "skin_c016_s20",
+   "count": 1
+  },
+  "reward_skin_c017_s20": {
+   "type": "item",
+   "target": "skin_c017_s20",
+   "count": 1
+  },
+  "reward_skin_c018_s22": {
+   "type": "item",
+   "target": "skin_c018_s22",
+   "count": 1
+  },
+  "reward_skin_c020_s06": {
+   "type": "item",
+   "target": "skin_c020_s06",
+   "count": 1
+  },
+  "reward_skin_c021_16": {
+   "type": "item",
+   "target": "skin_c021_s16",
+   "count": 1
+  },
+  "reward_skin_c20_s02": {
+   "type": "item",
+   "target": "skin_c020_s02",
+   "count": 1
+  },
+  "reward_spooky": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 1
+  },
+  "reward_spooky_1000": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 1000
+  },
+  "reward_spooky_1200": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 1200
+  },
+  "reward_spooky_1250": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 1250
+  },
+  "reward_spooky_1300": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 1300
+  },
+  "reward_spooky_1350": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 1350
+  },
+  "reward_spooky_1400": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 1400
+  },
+  "reward_spooky_1500": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 1500
+  },
+  "reward_spooky_2000": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 4000
+  },
+  "reward_spooky_250": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 250
+  },
+  "reward_spooky_300": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 300
+  },
+  "reward_spooky_3000": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 3000
+  },
+  "reward_spooky_4000": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 4000
+  },
+  "reward_spooky_500": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 500
+  },
+  "reward_spooky_600": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 600
+  },
+  "reward_spooky_650": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 650
+  },
+  "reward_spooky_700": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 700
+  },
+  "reward_spooky_750": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 750
+  },
+  "reward_spooky_800": {
+   "type": "currency",
+   "target": "eventcurrency_s3_3",
+   "count": 800
+  },
+  "reward_toast_10": {
+   "type": "currency",
+   "target": "match_toasts",
+   "count": 10
+  },
+  "reward_toast_15": {
+   "type": "currency",
+   "target": "match_toasts",
+   "count": 15
+  },
+  "reward_toast_20": {
+   "type": "currency",
+   "target": "match_toasts",
+   "count": 20
+  },
+  "reward_toast_30": {
+   "type": "currency",
+   "target": "match_toasts",
+   "count": 30
+  },
+  "reward_toastie_gem": {
+   "type": "gem",
+   "target": "gem_discipline_companion_toasty",
+   "count": 1
+  },
+  "reward_warmup_currency_1": {
+   "type": "currency",
+   "target": "s2_event_currency_warmup",
+   "count": 1
+  },
+  "reward_warmup_currency_1000": {
+   "type": "currency",
+   "target": "s2_event_currency_warmup",
+   "count": 1000
+  },
+  "reward_xp_battlepass_100": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 100
+  },
+  "reward_xp_battlepass_1000": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 1000
+  },
+  "reward_xp_battlepass_10000": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 10000
+  },
+  "reward_xp_battlepass_1200": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 1200
+  },
+  "reward_xp_battlepass_1500": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 1500
+  },
+  "reward_xp_battlepass_1750": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 1750
+  },
+  "reward_xp_battlepass_200": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 200
+  },
+  "reward_xp_battlepass_2000": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 2000
+  },
+  "reward_xp_battlepass_250": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 250
+  },
+  "reward_xp_battlepass_2500": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 2500
+  },
+  "reward_xp_battlepass_300": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 300
+  },
+  "reward_xp_battlepass_3000": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 3000
+  },
+  "reward_xp_battlepass_3500": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 3500
+  },
+  "reward_xp_battlepass_400": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 400
+  },
+  "reward_xp_battlepass_4000": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 4000
+  },
+  "reward_xp_battlepass_4500": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 4500
+  },
+  "reward_xp_battlepass_500": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 500
+  },
+  "reward_xp_battlepass_5000": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 5000
+  },
+  "reward_xp_battlepass_600": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 600
+  },
+  "reward_xp_battlepass_700": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 700
+  },
+  "reward_xp_battlepass_750": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 750
+  },
+  "reward_xp_battlepass_7500": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 7500
+  },
+  "reward_xp_battlepass_800": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 800
+  },
+  "reward_xp_battlepass_900": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 900
+  },
+  "reward_xp_battlepass_bonus_mission_weekly": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 2250
+  },
+  "reward_xp_battlepass_event_capper": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 1500
+  },
+  "reward_xp_battlepass_huge": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 2000
+  },
+  "reward_xp_battlepass_large": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 500
+  },
+  "reward_xp_battlepass_medium": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 400
+  },
+  "reward_xp_battlepass_pvp_1200": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 1200
+  },
+  "reward_xp_battlepass_pvp_200": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 200
+  },
+  "reward_xp_battlepass_pvp_2400": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 2400
+  },
+  "reward_xp_battlepass_pvp_3200": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 3200
+  },
+  "reward_xp_battlepass_pvp_400": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 400
+  },
+  "reward_xp_battlepass_pvp_top": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 4000
+  },
+  "reward_xp_battlepass_small": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 250
+  },
+  "reward_xp_battlepass_tiny": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 100
+  },
+  "reward_xp_battlepass_very_large": {
+   "type": "xp",
+   "target": "XP:Event:MRT:Battlepass",
+   "count": 1000
+  },
+  "reward_xp_fighter_road_100": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 100
+  },
+  "reward_xp_fighter_road_1000": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 1000
+  },
+  "reward_xp_fighter_road_1100": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 1100
+  },
+  "reward_xp_fighter_road_1200": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 1200
+  },
+  "reward_xp_fighter_road_125": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 125
+  },
+  "reward_xp_fighter_road_1250": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 1250
+  },
+  "reward_xp_fighter_road_150": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 150
+  },
+  "reward_xp_fighter_road_1500": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 1500
+  },
+  "reward_xp_fighter_road_15000": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 15000
+  },
+  "reward_xp_fighter_road_175": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 175
+  },
+  "reward_xp_fighter_road_200": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 200
+  },
+  "reward_xp_fighter_road_2000": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 2000
+  },
+  "reward_xp_fighter_road_25": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 25
+  },
+  "reward_xp_fighter_road_250": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 250
+  },
+  "reward_xp_fighter_road_2500": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 2500
+  },
+  "reward_xp_fighter_road_300": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 300
+  },
+  "reward_xp_fighter_road_50": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 50
+  },
+  "reward_xp_fighter_road_500": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 500
+  },
+  "reward_xp_fighter_road_5000": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 5000
+  },
+  "reward_xp_fighter_road_600": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 600
+  },
+  "reward_xp_fighter_road_700": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 700
+  },
+  "reward_xp_fighter_road_750": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 750
+  },
+  "reward_xp_fighter_road_7500": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 7500
+  },
+  "reward_xp_fighter_road_900": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 900
+  },
+  "reward_xp_fighter_road_banana_guard": {
+   "type": "xp",
+   "target": "XP:Event:MRT:FighterRoad",
+   "count": 1500
+  },
+  "reward_xp_mastery_levelup_character_flat": {
+   "type": "xp",
+   "target": "XP:Mastery:LevelUp:Character",
+   "count": 1
+  },
+  "reward_xp_seasonal_rift_event": {
+   "type": "xp",
+   "target": "XP:Event:MRT:SeasonalRiftEvent",
+   "count": 1
+  },
+  "reward_xp_seasonal_rift_event_s2_e1": {
+   "type": "xp",
+   "target": "XP:Event:MRT:SeasonalRiftEvent:S2:E1",
+   "count": 1
+  },
+  "reward_xp_seasonal_rift_event_s2_e2": {
+   "type": "xp",
+   "target": "XP:Event:MRT:SeasonalRiftEvent:S2:E2",
+   "count": 1
+  },
+  "reward_xp_seasonal_rift_event_s2_e3": {
+   "type": "xp",
+   "target": "XP:Event:MRT:SeasonalRiftEvent:S2:E3",
+   "count": 1
+  },
+  "reward_xp_seasonal_rift_event_s2_e4": {
+   "type": "xp",
+   "target": "XP:Event:MRT:SeasonalRiftEvent:S2:E4",
+   "count": 1
+  },
+  "slug_gem_chaos_out_of_aerial_specials_joker_balloon": {
+   "type": "gem",
+   "target": "gem_chaos_out_of_aerial_specials_joker_balloon",
+   "count": 250
+  },
+  "slug_gem_horror_circle_chance_on_hit_ice": {
+   "type": "gem",
+   "target": "gem_horror_circle_chance_on_hit_ice",
+   "count": 200
+  }
+ },
+ "xpSources": {
+  "xpsrc_accountmastery": {
+   "type": "InstancedModifier",
+   "base": null,
+   "winModifier": 1,
+   "lossModifier": 1,
+   "drawModifier": 1
+  },
+  "xpsrc_arenamatch": {
+   "type": "InstancedModifier",
+   "base": null,
+   "winModifier": 1,
+   "lossModifier": 1,
+   "drawModifier": 1
+  },
+  "xpsrc_base": {
+   "type": "BaseConfig",
+   "base": {
+    "BaseXpForWin": 150,
+    "BaseXpForLoss": 50
+   },
+   "winModifier": 1,
+   "lossModifier": 1,
+   "drawModifier": 1
+  },
+  "xpsrc_charactermastery": {
+   "type": "InstancedModifier",
+   "base": null,
+   "winModifier": 1,
+   "lossModifier": 1,
+   "drawModifier": 1
+  },
+  "xpsrc_circuitevent": {
+   "type": "InstancedModifier",
+   "base": null,
+   "winModifier": 1,
+   "lossModifier": 1,
+   "drawModifier": 1
+  },
+  "xpsrc_cyberevent": {
+   "type": "InstancedModifier",
+   "base": null,
+   "winModifier": 1,
+   "lossModifier": 1,
+   "drawModifier": 1
+  },
+  "xpsrc_events": {
+   "type": "InstancedModifier",
+   "base": null,
+   "winModifier": 1,
+   "lossModifier": 1,
+   "drawModifier": 1
+  },
+  "xpsrc_leaderboards": {
+   "type": "InstancedModifier",
+   "base": {
+    "BaseXpForWin": 150
+   },
+   "winModifier": 1,
+   "lossModifier": 0,
+   "drawModifier": 0
+  },
+  "xpsrc_pvp_milestone": {
+   "type": "InstancedModifier",
+   "base": null,
+   "winModifier": 5,
+   "lossModifier": 2.5,
+   "drawModifier": 1
+  },
+  "xpsrc_skinmastery": {
+   "type": "InstancedModifier",
+   "base": null,
+   "winModifier": 1,
+   "lossModifier": 1,
+   "drawModifier": 1
+  },
+  "xpsrc_warmupevent": {
+   "type": "InstancedModifier",
+   "base": null,
+   "winModifier": 1,
+   "lossModifier": 1,
+   "drawModifier": 1
+  }
+ },
+ "characterTracks": {
+  "character_arya": "mrt_mastery_arya",
+  "character_BananaGuard": "mrt_mastery_banana_guard",
+  "character_batman": "mrt_mastery_batman",
+  "character_bugs_bunny": "mrt_mastery_bugs_bunny",
+  "character_C017": "mrt_mastery_c017",
+  "character_C018": "mrt_mastery_c018",
+  "character_c019": "mrt_mastery_c019",
+  "character_C020": "mrt_mastery_c020",
+  "character_C021": "mrt_mastery_c021",
+  "character_C022": "mrt_mastery_c022",
+  "character_C023A": "mrt_mastery_c023a",
+  "character_C023B": "mrt_mastery_c023b",
+  "character_c024": "mrt_mastery_c024",
+  "character_C024_old": "mrt_mastery_c024",
+  "character_C025": "mrt_mastery_c025",
+  "character_C026": "mrt_mastery_c026",
+  "character_C027": "mrt_mastery_c027",
+  "character_C028": "mrt_mastery_c028",
+  "character_C029": "mrt_mastery_c029",
+  "character_C030": "mrt_mastery_c030",
+  "character_C031": "mrt_mastery_c031",
+  "character_c036": "mrt_mastery_c036",
+  "character_c038": "mrt_mastery_c038",
+  "character_c16": "mrt_mastery_lebron",
+  "character_creature": "mrt_mastery_creature",
+  "character_finn": "mrt_mastery_finn",
+  "character_garnet": "mrt_mastery_garnet",
+  "character_harleyquinn": "mrt_mastery_harleyquinn",
+  "character_jake": "mrt_mastery_jake",
+  "character_Jason": "mrt_mastery_jason",
+  "character_Meeseeks": "mrt_mastery_mr_meeseeks",
+  "character_shaggy": "mrt_mastery_shaggy",
+  "character_shaggy_cvs": "mrt_mastery_shaggy",
+  "character_steven": "mrt_mastery_steven",
+  "character_superman": "mrt_mastery_c003",
+  "character_supershaggy": "mrt_mastery_shaggy",
+  "character_taz": "mrt_mastery_taz",
+  "character_tom_and_jerry": "mrt_mastery_tom_and_jerry",
+  "character_velma": "mrt_mastery_velma",
+  "character_wonder_woman": "mrt_mastery_wonder_woman",
+  "Random": "mrt_mastery_batman"
+ }
+}

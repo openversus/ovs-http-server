@@ -1,0 +1,20 @@
+{
+  "slug": "wonderwoman-arena-keyart",
+  "name": "wonderwoman_arena_keyart",
+  "created_at": {
+    "_hydra_unix_date": 1741687678
+  },
+  "updated_at": {
+    "_hydra_unix_date": 1741687678
+  },
+  "s3_object_id": "dokken/production/8bf55e45-wonderwoman_arena_keyart.png",
+  "auto_sync": true,
+  "file_size": 7668786,
+  "file_type": "image/png",
+  "filename": "8bf55e45-wonderwoman_arena_keyart.png",
+  "md5_checksum": "f50fb84743627d3ad688c1a8726401c7",
+  "auth_exempt": false,
+  "data": {},
+  "id": "67d00b7efea8dda900cd7f6e",
+  "download_url": "https://wb-agora-hydra-file-storage-dokken.s3.amazonaws.com/dokken/production/8bf55e45-wonderwoman_arena_keyart.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5J6YDD2RMJ4AQTRN%2F20250318%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250318T023404Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=0042eb69fabdeca7231e68a5faf5aeb3d977d187b179070ffec79194cc35bc8b"
+}

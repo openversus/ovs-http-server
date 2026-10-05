@@ -1,0 +1,10 @@
+# Only what the build needs goes into the context; everything else stays out, above all local/ (database archives,
+# captures) and the tests.
+*
+!.editorconfig
+!Directory.Build.props
+!docs/routes.json
+!src
+src/**/bin
+src/**/obj
+src/OpenVersus.Server.Proxy

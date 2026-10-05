@@ -211,8 +211,8 @@ customLobbyRouter.put("/ssc/invoke/lobby_code", async (req: Request, res: Respon
 customLobbyRouter.put("/ssc/invoke/start_custom_match", async (req: Request, res: Response) => {
   try {
     const account = AuthUtils.DecodeClientToken(req);
-    await startCustomMatch(req.body.LobbyId, account.id);
-    res.send({ body: {}, metadata: null, return_code: 0 });
+    const match = await startCustomMatch(req.body.LobbyId, account.id);
+    res.send({ body: {}, metadata: null, return_code: match ? 0 : 1 });
   } catch (e) {
     logger.error(`${logPrefix} start_custom_match error: ${e}`);
     res.send({ body: {}, metadata: null, return_code: 1 });

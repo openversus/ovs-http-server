@@ -11,6 +11,14 @@ export interface IAccountToken {
   steamId: string;
   epicId: string;
   hardwareId: string;
+  hardwareIdVersion?: string;
+  hardwareIdQuality?: string;
+  installId?: string;
+  clientVersion?: string;
+  /** "1" only when this session was bootstrapped through /api/identify. */
+  identityRegistered?: string;
+  /** The UDP port of the client's rollback node, as a string; "0" or absent when it reported none. Connection record only. */
+  nodePort?: string;
   // token: AccountToken;
   // account: AccountToken;
 }
@@ -28,6 +36,12 @@ export class AccountToken implements IAccountToken {
   steamId: string;
   epicId: string;
   hardwareId: string;
+  hardwareIdVersion?: string;
+  hardwareIdQuality?: string;
+  installId?: string;
+  clientVersion?: string;
+  identityRegistered?: string;
+  nodePort?: string;
   // token: AccountToken;
   // account: AccountToken;
 
@@ -44,6 +58,11 @@ export class AccountToken implements IAccountToken {
     this.steamId = "";
     this.epicId = "";
     this.hardwareId = "";
+    this.hardwareIdVersion = "";
+    this.hardwareIdQuality = "";
+    this.installId = "";
+    this.clientVersion = "";
+    this.identityRegistered = "";
     // this.token = this;
     // this.account = this;
   }

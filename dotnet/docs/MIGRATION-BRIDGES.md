@@ -75,9 +75,10 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   rematch read it) and `bot_config:{bot}` (the TS websocket builds a bot's match config from it), TTLs as the TS
   server's. The match end and the rematch are ported (`MatchEnd` in the match flow opens the vote; `Rematches` in
   lobbies answers `rematch_accept`/`rematch_decline` and runs its timer, with the TS keys
-  `ssc_custom_lobby_rematch_timer:{lobby}` and `ssc_custom_lobby_rematch_accept:{lobby}`), but run only with
-  `MatchEnd:Enabled`; until then the TS websocket ends the match and times the vote, and the two routes stay on the TS
-  server (not in `Proxy:PortedRoutes`).
+  `ssc_custom_lobby_rematch_timer:{lobby}` and `ssc_custom_lobby_rematch_accept:{lobby}`). The match end runs only with
+  `MatchEnd:Enabled`; until then the TS websocket ends the match and opens the vote (those two keys, and its own 25 s
+  timer in its process), and the C# routes count the accepts on it: the last accept starts the rematch from C# (the
+  TS timer then finds its key gone), a decline ends it; with no decline and not every accept, the TS timer starts it.
 - **Matchmaking** (`MatchmakingWorker` in its own executable, `OpenVersus.Server.Matchmaking`; on unless `Matchmaking:Enabled` is false): the queues `1v1` and `2v2` (ticket JSON lists the TS
   websocket fills when a party queues and empties on a cancel or disconnect), `player_heartbeats`,
   `player:{id}:blocked` and `player:{id}` `ip` are read as the TS worker reads them; a match writes what the TS worker

@@ -135,7 +135,7 @@ sharedLobbyRouter.put("/ssc/invoke/leave_player_lobby", async (req: Request, res
             LeaderID: account.id, LobbyType: 0, ReadyPlayers: {},
             PlayerGameplayPreferences: { [account.id]: gameplayPrefs },
             PlayerAutoPartyPreferences: { [account.id]: false },
-            GameVersion: "local", HissCrc: 1167552915,
+            GameVersion: "local", HissCrc: 1167552916,
             Platforms: { [account.id]: "PC" },
             AllMultiplayParams: {
               "1": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252499", MultiplayRegionId: "" },

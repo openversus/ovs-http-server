@@ -191,7 +191,7 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
         },
         PlayerAutoPartyPreferences: { [existingLobby.ownerId]: false, [aID]: false },
         GameVersion: env.GAME_VERSION,
-        HissCrc: 1167552915,
+        HissCrc: 1167552916,
         Platforms: { [existingLobby.ownerId]: "PC", [aID]: "PC" },
         AllMultiplayParams: {
           "1": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252499", MultiplayRegionId: "" },
@@ -383,7 +383,7 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
         PlayerGameplayPreferences: refreshGameplayPrefs,
         PlayerAutoPartyPreferences: refreshAutoParty,
         GameVersion: env.GAME_VERSION,
-        HissCrc: 1167552915,
+        HissCrc: 1167552916,
         Platforms: refreshPlatforms,
         AllMultiplayParams: {
           "1": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252499", MultiplayRegionId: "" },
@@ -467,7 +467,7 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
       PlayerGameplayPreferences: { [aID]: gameplayPreferencesOf(rPlayerConnectionByID.GameplayPreferences) },
       PlayerAutoPartyPreferences: { [aID]: false },
       GameVersion: env.GAME_VERSION,
-      HissCrc: 1167552915,
+      HissCrc: 1167552916,
       Platforms: { [aID]: "PC" },
       AllMultiplayParams: {
         "1": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252499", MultiplayRegionId: "" },

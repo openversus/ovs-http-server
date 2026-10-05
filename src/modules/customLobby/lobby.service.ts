@@ -844,7 +844,7 @@ export async function createBaseLobby(accountId: string): Promise<BaseLobby> {
     PlayerGameplayPreferences: { [accountId]: gameplayPrefs },
     PlayerAutoPartyPreferences: { [accountId]: false },
     GameVersion: env.GAME_VERSION,
-    HissCrc: 1167552915,
+    HissCrc: 1167552916,
     Platforms: { [accountId]: "PC" },
     AllMultiplayParams: {
       "1": {

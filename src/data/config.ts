@@ -1,16 +1,16 @@
 import { ConfigDataModel } from "../database/Config";
 
-let CRC = 1267552956;
+let CRC = 1267552957;
 
 export function getCurrentCRC() {
   return CRC;
 }
-export const MATCHMAKING_CRC = 1;
+export const MATCHMAKING_CRC = 2;
 
 export async function LoadConfig() {
   const existing = await ConfigDataModel.findOne().exec();
   if (!existing) {
-    await ConfigDataModel.create({ CRC: 1 });
+    await ConfigDataModel.create({ CRC: 2 });
   }
 
   if (existing) {

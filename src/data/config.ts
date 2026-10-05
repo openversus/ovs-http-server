@@ -6,7 +6,7 @@ let CRC = 1267552956;
 // their DataAssets rows existed). 4: the game's unreleased cosmetics in the battle pass. 5: Painter Beetlejuice.
 // 6: the battle pass's last tier no longer recurs, so it can be claimed. 7: the OVS Dev badge.
 // 8: the One Tough Banana taunt. 9: the MultiVersus Ink profile icon. 10: the battle pass is "OVS Season 1".
-const HISS_CONTENT_REVISION = 10;
+const HISS_CONTENT_REVISION = 11;
 
 export function getCurrentCRC() {
   return CRC + HISS_CONTENT_REVISION;

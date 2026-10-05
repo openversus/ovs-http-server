@@ -88877,9 +88877,9 @@
                     {
                       "Constraints": [],
                       "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_jack_o_lantern",
+                      "InventoryHsda": "taunt_bananaguard_onetoughbanana",
                       "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "3DD8CEC69E63AFEBC3B2F3E0081C9B27"
+                      "RewardGuid": "286082FE531A11D796B4EF65DFD61F88"
                     }
                   ],
                   "ScoreThreshold": 4000,

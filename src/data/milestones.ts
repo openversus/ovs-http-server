@@ -3,6 +3,7 @@ import { CHROMIUM_FIGHTER_PASS } from "./chromiumSkins";
 import { FIGHTER_PASS_TIERS, FIGHTER_PASS_TOAST_SLUG } from "./fighterPass";
 import { PINK_MOUNTAINEER_JASON_SLUG } from "./pinkMountaineerJason";
 import { SHIRTLESS_TATTOO_SHAGGY_SLUG } from "./ovsBattlepassInventory";
+import { ONE_TOUGH_BANANA_SLUG } from "./oneToughBananaTaunt";
 
 export const MILESTONE_REWARDS = {
   mrt_mastery_account: {
@@ -86475,7 +86476,8 @@ const battlepassTiers = MILESTONE_REWARDS.mrt_battlepass_season_five.data.Tiers 
 export const OVS_BATTLEPASS_REWARD_SLUGS: string[] = [
   "banner_pve_unknown_rare",
   "emote_superman_smile",
-  "emote_jack_o_lantern",
+  // One Tough Banana, the first OVS taunt, replaced the Jack-O-Lantern emote, which never showed (2026-10-04).
+  ONE_TOUGH_BANANA_SLUG,
   "profileicon_ovs_duck_season",
   "emote_ovs_toastie_beaten",
   "emote_ovs_bugs_cry",

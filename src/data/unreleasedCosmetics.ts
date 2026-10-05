@@ -12,7 +12,6 @@ export const UNRELEASED_COSMETICS: UnreleasedCosmetic[] = [
   { slug: "banner_pve_unknown_rare", assetType: "BannerData", assetPath: "/Game/Panda_Main/PreMatch/Banners/PVE_Unknown/PVE_UnknownBanner_Rare.PVE_UnknownBanner_Rare", character_slug: "", displayName: "PVE Unknown" },
   { slug: "emote_arya_laugh", assetType: "EmoteData", assetPath: "/Game/Panda_Main/Characters/Arya/DataAssets/Emote_C006_Laugh.Emote_C006_Laugh", character_slug: "", displayName: "Arya - Laugh" },
   { slug: "emote_c016_mind", assetType: "EmoteData", assetPath: "/Game/Panda_Main/Characters/c016/DataAssets/Emote_C016_Mind.Emote_C016_Mind", character_slug: "", displayName: "Lebron - Mind" },
-  { slug: "emote_jack_o_lantern", assetType: "EmoteData", assetPath: "/Game/Panda_Main/Characters/Common/DataAssets/Emote_JackOLantern.Emote_JackOLantern", character_slug: "", displayName: "Jack-O-Lantern" },
   { slug: "emote_reindog_hearts", assetType: "EmoteData", assetPath: "/Game/Panda_Main/Characters/Creature/DataAssets/Emote_Reindog_Hearts.Emote_Reindog_Hearts", character_slug: "", displayName: "Reindog - Hearts" },
   { slug: "emote_superman_smile", assetType: "EmoteData", assetPath: "/Game/Panda_Main/Characters/Superman/DataAssets/Emote_C003_Smile.Emote_C003_Smile", character_slug: "", displayName: "Superman - Smile" },
   { slug: "emote_taz_tongue", assetType: "EmoteData", assetPath: "/Game/Panda_Main/Characters/C015/DataAssets/Emote_C015_Tongue.Emote_C015_Tongue", character_slug: "", displayName: "Taz - Tongue" },

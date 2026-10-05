@@ -12,12 +12,6 @@
     "character_slug": ""
   },
   {
-    "slug": "emote_jack_o_lantern",
-    "assetType": "EmoteData",
-    "assetPath": "/Game/Panda_Main/Characters/Common/DataAssets/Emote_JackOLantern.Emote_JackOLantern",
-    "character_slug": ""
-  },
-  {
     "slug": "profileicon_ovs_duck_season",
     "assetType": "ProfileIconData",
     "assetPath": "/OVS/Rewards/ProfileIcons/DuckSeason/profileicon_ovs_duck_season.profileicon_ovs_duck_season",

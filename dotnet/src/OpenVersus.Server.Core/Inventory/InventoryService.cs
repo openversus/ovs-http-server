@@ -77,7 +77,7 @@ internal sealed class InventoryService(IServiceProvider services, TimeProvider t
             items.Add(Item(accountId, perk.GetValue("slug", BsonNull.Value), new JsonObject { ["characters"] = characters.DeepClone() }, accountFirst: true));
         }
 
-        foreach (string taunt in s_taunts.Value)
+        foreach (string taunt in s_taunts.Value.Where(t => !Ownership.IsRestricted(t)))
         {
             items.Add(Item(accountId, taunt, serverData: null, accountFirst: true));
         }

@@ -20,7 +20,8 @@ public sealed class OwnershipTests
         Assert.True(Ownership.IsRestricted("stat_tracking_bundle_ovs_dev"));
         Assert.True(Ownership.IsDevBadge("stat_tracking_bundle_ovs_dev"));
         Assert.False(Ownership.IsRestricted("skin_shaggy_default"));
-        Assert.False(Ownership.IsRestricted("taunt_bananaguard_onetoughbanana")); // everyone's, as his other taunts
+        Assert.True(Ownership.IsRestricted("taunt_bananaguard_onetoughbanana"));  // the battle pass's tier 3
+        Assert.False(Ownership.IsRestricted("taunt_bananaguard_mamasaid"));
         Assert.False(Ownership.IsRestricted(null));
     }
 

@@ -10,6 +10,24 @@ and account levels as each player's own, from zero, earned in matches). A part t
 turning it on later starts everyone clean. Ranked and ELO are separate and unaffected. This file is what is known so far
 and the plan.
 
+**End Game launch settings** (2026-10-04). End Game turns the three switches on and moves level XP to ranked sets. Its
+services take these (environment form `Section__Key`):
+
+| Setting | End Game | Why |
+|---|---|---|
+| `Missions:Enabled` | `true` | the Season 5 daily and weekly missions feed the battle pass (`EventEndYears` 20 keeps its event running) |
+| `RewardTracks:PerPlayer` | `true` | each player's own battle pass (End Game's 49 tiers, `hiss-amalgamation.json`) |
+| `RewardTracks:CharacterMastery` | `true` | each player's own account and character levels (the Fighter Passes) |
+| `RewardTracks:MatchXp` | `false` | level XP comes from ranked sets only (`RankedSetXp.cs`, MIGRATION-BRIDGES.md 9): customs earn none |
+| `RewardTracks:RiftMatchXp` | `false` | as above |
+| `RewardTracks:BattlePassSetXp` / `BattlePassWinXp` | `300` / `150` (defaults) | battle pass XP per ranked set |
+| `RewardTracks:CharacterSetXp` / `CharacterWinXp` | `400` / `200` (defaults) | account and character level XP per ranked set |
+| `Ownership:OvsDevAccountIds` | the dev accounts (TS `OVS_DEV_ACCOUNT_IDS`) | the OVS Dev badge and its stat |
+| `Ffa:WeekendOnly` | `true` (default; TS `FFA_WEEKEND_ONLY`) | the public FFA queue runs Friday to Sunday, US Eastern |
+
+The catalog rows End Game needs go in once, through the TS server's `POST /syncAsset`:
+`DATA_ASSET_TOKEN=... node dotnet/tools/assets/sync_assets.mjs <tsUrl> --apply` (`end-game-assets.json`).
+
 Sources, each item says which: the game data the servers already send (HISS, `hiss-amalgamation.json`; the calendar,
 `Static/ssc-get-hiss-calendar-events.json`), the client binary (build `f97148ff`; headers in the UHT and jmap dumps),
 the TS server's literal (copied from a WB account), WB-era websocket messages (`src/interfaces/websocket-cmds_types.ts`,

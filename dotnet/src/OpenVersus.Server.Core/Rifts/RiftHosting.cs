@@ -41,13 +41,12 @@ public static class RiftHosting
     }
 
     /// <summary>
-    /// What a rift match's result changes (<see cref="RiftResultSubscriber"/>: the player's runtime data and rift state),
-    /// for the match flow service. The rift routes stay with <see cref="AddRifts"/>.
+    /// What a rift match's result changes (the player's runtime data and rift state), for the match flow service, which
+    /// hands it the results (MatchResultStream). The rift routes stay with <see cref="AddRifts"/>.
     /// </summary>
     public static WebApplicationBuilder AddRiftResults(this WebApplicationBuilder builder)
     {
         AddRiftProgress(builder);
-        builder.Services.AddHostedService<RiftResultSubscriber>();
         return builder;
     }
 

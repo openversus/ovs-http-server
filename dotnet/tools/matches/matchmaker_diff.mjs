@@ -125,7 +125,8 @@ async function capture(redis, lines, seeded) {
   for (const line of lines) {
     const parts = [...line.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1].replace(/\\(.)/g, "$1"));
     const cmd = parts[0]?.toLowerCase();
-    if (!WRITES.has(cmd) || parts[1]?.startsWith("matchmaking:lock:") || parts[1] === "refdiff:scratch") continue;
+    // A C# service's heartbeat into the instance registry lands in any scenario while it runs: not the worker's work.
+    if (!WRITES.has(cmd) || parts[1]?.startsWith("matchmaking:lock:") || parts[1]?.startsWith("ovs:instance") || parts[1] === "refdiff:scratch") continue;
     if (cmd === "publish") {
       published.push({ channel: parts[1], message: JSON.parse(parts[2]) });
       continue;
@@ -138,7 +139,7 @@ async function capture(redis, lines, seeded) {
   }
   const state = {};
   for await (const key of redis.scanIterator({ COUNT: 1000 })) {
-    if (key === "refdiff:scratch" || key.startsWith("matchmaking:lock:")) continue;
+    if (key === "refdiff:scratch" || key.startsWith("matchmaking:lock:") || key.startsWith("ovs:instance")) continue;
     const type = await redis.type(key);
     const ttl = await redis.ttl(key);
     let value;
@@ -214,11 +215,19 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// The deliberate difference, wherever a match was made: the port. The TS worker took INCR rollback:current_port even
-// with fixed rollback servers (a port none of them listens on); the port takes one of the fixed servers' ports. With
-// the TS ports put in range and its INCR left out, nothing else may differ.
+// The deliberate differences, wherever a match was made: the port, and the set keys' lifetime. The TS worker took INCR
+// rollback:current_port even with fixed rollback servers (a port none of them listens on); the port takes one of the
+// fixed servers' ports. The set keys (ranked_set, player_ranked_set) live 20 min where TS gave 10, which a game could
+// outlast before the websocket wrote them again. With the TS ports put in range, its INCR left out and both sides' set
+// TTLs checked and replaced, nothing else may differ.
+const setTtl = (record, ex, minutes) => {
+  const isSetKey = (key) => key.startsWith("ranked_set:") || key.startsWith("player_ranked_set:");
+  // (A renamed id has spaces: "set ranked_set:<new id 1> EX 600".)
+  record.writes = record.writes.map((w) => w.replace(new RegExp(`^set ((?:player_)?ranked_set:.+) EX ${ex}$`), "set $1 EX <set ttl>"));
+  for (const [key, v] of Object.entries(record.state)) if (isSetKey(key) && v.ttl === `~${minutes}m`) v.ttl = "<set ttl>";
+};
 const portOnly = {
-  why: "the rollback port is one of the fixed servers'; the TS worker counted up rollback:current_port",
+  why: "the rollback port is one of the fixed servers'; the TS worker counted up rollback:current_port. The set keys live 20 min (TS: 10)",
   holds: (ts, cs) => {
     const tsPorts = [], csPorts = [];
     const fix = (record, ports) => JSON.parse(JSON.stringify(record, (k, v) => {
@@ -228,6 +237,8 @@ const portOnly = {
     const t = fix(ts, tsPorts), c = fix(cs, csPorts);
     t.writes = t.writes.filter((w) => w !== "incr rollback:current_port");
     delete t.state["rollback:current_port"];
+    setTtl(t, 600, 10);
+    setTtl(c, 1200, 20);
     return tsPorts.length > 0 && tsPorts.every((v) => Number.isInteger(v) && (v < LOW || v >= HIGH)) && csPorts.every((v) => v === "<port>")
       && JSON.stringify(t) === JSON.stringify(c);
   },

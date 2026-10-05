@@ -377,6 +377,31 @@ public sealed class CustomLobbyServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ARematchNeedsAPlayerLeftInTheTeams()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        // Everyone else left; the leader watches; bots alone in the teams. The TS server started this match, and the
+        // game waited for it forever.
+        var launcher = new Launcher();
+        await SeedAsync("Duos",
+            (0, Bot, Player(Bot, "2026-10-01T10:00:00.500Z", "Hard")),
+            (4, Leader, Player(Leader, "2026-10-01T10:00:00.000Z")));
+
+        Assert.False(await Service(launcher).RematchAsync(Lobby));
+        Assert.Null(launcher.Launched);
+
+        await SeedAsync("Duos",
+            (0, Bot, Player(Bot, "2026-10-01T10:00:00.500Z", "Hard")),
+            (1, Leader, Player(Leader, "2026-10-01T10:00:00.000Z")));
+        Assert.True(await Service(launcher).RematchAsync(Lobby));
+        Assert.NotNull(launcher.Launched);
+    }
+
+    [Fact]
     public async Task ALobbyCodeNamesTheLobbyInAnyCase()
     {
         if (_redis is null)

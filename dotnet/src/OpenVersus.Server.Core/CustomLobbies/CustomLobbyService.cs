@@ -31,7 +31,7 @@ namespace OpenVersus.Server.Core.CustomLobbies;
 // any lobby read, goes through the TS server's repair (FixEmptyTables). cjson also writes keys in its own order: the
 // game reads the lobby by key, and has been taking that order all along.
 //
-// Redis, the TS server's keys (MIGRATION-BRIDGES.md 2; the TS match end and rematch still read them):
+// Redis, the TS server's keys (MIGRATION-BRIDGES.md 2; the TS match end and rematch read them while MatchEnd:Enabled is off):
 //   custom_lobby_ssc:{lobby}            the lobby, JSON; EX 2 days (every change renews it)
 //   ssc_custom_lobby_player:{player}    the lobby a player is in; EX 2 days, 20 min once a match starts
 //   lobby_code:{code}                   the lobby a code names, SET NX; EX 2 days (the last player out deletes it)
@@ -54,9 +54,12 @@ namespace OpenVersus.Server.Core.CustomLobbies;
 //     through the spectators).
 //   - lobby:joined (published on create and join) is not published: nothing subscribes to it.
 //   - a lobby code that is already taken is drawn again; the TS server gave the lobby the taken code.
+//   - a match's end takes the ready flags down with a script (MatchEndedAsync); the TS match end rewrote the lobby
+//     outside any script.
+//   - a rematch starts only while a player (not a bot) is left in the lobby's teams 0-3 (RematchAsync, Rematches); the
+//     TS server started one with nobody to play it, and the game waited forever.
 // Not yet: a player who disconnects is taken out of their lobby by the TS websocket with the TS leave script (the old
-// succession), and the TS match end resets the ready flags outside any script; both move with the websocket and the
-// match flow.
+// succession); that moves with the websocket.
 // Kept as the TS server has them, on purpose: who counts toward bAllPlayersReady (spectators' flags count, spectators
 // are not in the total, bots are and never ready), LobbyPlayerIndex (the count at join: it can repeat after a leave; it
 // is the lobby screen's, the match's player indexes are worked out at the start), and the start's player indexes and
@@ -84,6 +87,12 @@ public interface ICustomLobbyService
 
     /// <summary>GET /matches/{code}: the match document of the lobby a code (10 characters or fewer, any case) names, or null.</summary>
     Task<JsonObject?> ByCodeAsync(string code, CancellationToken ct = default);
+
+    /// <summary>
+    /// The lobby's rematch: its match started again as its leader's start_custom_match would. False when it cannot be
+    /// (no lobby, no player but bots left in teams 0-3, a client that must update, no rollback port).
+    /// </summary>
+    Task<bool> RematchAsync(string lobbyId, CancellationToken ct = default);
 
     /// <summary>The routes <see cref="AnswerAsync"/> answers.</summary>
     static readonly IReadOnlyList<string> Routes =
@@ -646,14 +655,70 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
     }
 
     // ── start_custom_match ──────────────────────────────────────────────────────────────────────────────────────────
-    private async Task<JsonObject> StartAsync(string me, JsonObject body, CancellationToken ct)
+    private async Task<JsonObject> StartAsync(string me, JsonObject body, CancellationToken ct) =>
+        LobbyDocuments.Ssc([], await StartMatchAsync(me, ArgString(body["LobbyId"]), ct) ? 0 : 1);
+
+    public async Task<bool> RematchAsync(string lobbyId, CancellationToken ct)
     {
         var redis = Redis();
-        string lobbyId = ArgString(body["LobbyId"]);
+        if (await GetLobbyAsync(redis, lobbyId) is not { } lobby || await HumansAsync(redis, lobbyId) is not { } humans)
+        {
+            log.LogWarning("No rematch in lobby {Lobby}: it is gone", lobbyId);
+            return false;
+        }
+
+        if (humans.Playing.Count == 0)
+        {
+            log.LogWarning("No rematch in lobby {Lobby}: no player but bots is left in its teams", lobbyId);
+            return false;
+        }
+
+        return await StartMatchAsync(Str(lobby, "LeaderID") ?? "", lobbyId, ct);
+    }
+
+    /// <summary>
+    /// A match's end in the lobby (MatchEnd): every ready flag taken down, so starting the next one needs everyone ready
+    /// again. False when the lobby is gone.
+    /// </summary>
+    internal static async Task<bool> MatchEndedAsync(IDatabase redis, string lobbyId) =>
+        !(await EvalAsync(redis, "reset_ready", [LobbyKey(lobbyId)], [])).IsNull;
+
+    /// <summary>
+    /// The lobby's players (not bots): those in teams 0-3, who play (and vote on a rematch), and all of them, spectators
+    /// (team 4) too. Null when there is no lobby.
+    /// </summary>
+    internal static async Task<(IReadOnlyList<string> Playing, IReadOnlyList<string> All)?> HumansAsync(IDatabase redis, string lobbyId)
+    {
+        if (await GetLobbyAsync(redis, lobbyId) is not { } lobby)
+        {
+            return null;
+        }
+
+        var playing = new List<string>();
+        var all = new List<string>();
+        foreach (var team in Teams(lobby))
+        {
+            foreach (var (id, player) in Players(team).Where(p => IsHuman(p.Value)))
+            {
+                all.Add(id);
+                if (Int(team["TeamIndex"]) is >= 0 and <= 3)
+                {
+                    playing.Add(id);
+                }
+            }
+        }
+
+        return (playing, all);
+    }
+
+    // The match started by the lobby's leader (me): false when it was not.
+    private async Task<bool> StartMatchAsync(string me, string lobbyId, CancellationToken ct)
+    {
+        var redis = Redis();
         var lobby = await GetLobbyAsync(redis, lobbyId);
         if (lobby is null || Str(lobby, "LeaderID") != me)
         {
-            return LobbyDocuments.Ssc([], 1);
+            return false;
         }
 
         // Every player (not a bot) must be on a current client, spectators included.
@@ -665,7 +730,7 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
             await gate.RequestModalsAsync(outdated.Select(o => o.AccountId));
             log.LogWarning("Blocked custom match start in {Lobby}: update required for {Players}", lobbyId,
                 string.Join(", ", outdated.Select(o => $"{o.AccountId}:{(o.ClientVersion.Length > 0 ? o.ClientVersion : "legacy")}")));
-            return LobbyDocuments.Ssc([], 1);
+            return false;
         }
 
         var maps = lobby["Maps"] as JsonArray ?? [];
@@ -797,10 +862,10 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
             BotPerks: BotDefaults.PerksArray(), NotificationFields: fields), ct);
         if (launched is null)
         {
-            return LobbyDocuments.Ssc([], 1);
+            return false;
         }
 
-        // For the match end and the rematch (still the TS server's).
+        // For the match end and the rematch (MatchEnd, Rematches).
         await redis.StringSetAsync($"ssc_custom_lobby_match:{launched.MatchId}", lobbyId, s_matchTtl);
         foreach (var player in all)
         {
@@ -808,7 +873,7 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
         }
 
         log.LogInformation("Custom match {Match} started from lobby {Lobby} on map {Map} with {Count} players", launched.MatchId, lobbyId, map, all.Count);
-        return LobbyDocuments.Ssc([]);
+        return true;
     }
 
     // ── The shared routes' custom lobby side ────────────────────────────────────────────────────────────────────────

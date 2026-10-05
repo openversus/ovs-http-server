@@ -19,8 +19,8 @@ namespace OpenVersus.Server.Core.Rifts;
 // account's two finished tutorial nodes): everyone starts from scratch, keeping the frozen copy's bots.
 //
 // After a match WB's server worked the progress out itself and pushed it; the client never asks (it sends no
-// complete_rift_node). The TS server handles submit_end_of_match_stats and publishes each result on
-// match:end_of_match_stats (docs/MIGRATION-BRIDGES.md); a rift match is known by rift_match:{match}, written when
+// complete_rift_node). Each report of a match (submit_end_of_match_stats) reaches the match flow on the stream
+// match:results (MatchResultStream); a rift match is known by rift_match:{match}, written when
 // start_rift_node starts it. A win adds the node to its chapter's NodeCompletionsByDifficulty["<difficulty>"] (the
 // format of the game's WB-era cache) and sets CurrentDifficulty; win or lose, the rift state's LastPlayed becomes the
 // node. The game is then told with the notifications its router takes for these (0x140d08390, build f97148ff):
@@ -269,42 +269,4 @@ internal sealed class RiftProgressService(IServiceProvider services, IRiftStateS
     }
 
     private static string? Str(JsonObject obj, string key) => obj[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
-}
-
-// The TS server's match results (match:end_of_match_stats: {matchId, playerId, winningTeamIndex}), for rift progress.
-internal sealed class RiftResultSubscriber(IServiceProvider services, IRiftProgressService progress, ILogger<RiftResultSubscriber> log) : IHostedService
-{
-    public const string Channel = "match:end_of_match_stats";
-
-    public async Task StartAsync(CancellationToken cancellationToken)
-    {
-        if (services.GetService<IConnectionMultiplexer>() is not { } redis)
-        {
-            return;
-        }
-
-        log.LogWarning("MIGRATION BRIDGE: rift progress is recorded from the TS server's {Channel} and sent through its websocket (ws:send); see dotnet/docs/MIGRATION-BRIDGES.md (4)", Channel);
-        await redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(Channel), (channel, message) => _ = HandleAsync(message.ToString()));
-    }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    private async Task HandleAsync(string message)
-    {
-        try
-        {
-            if (JsonNode.Parse(message) is not JsonObject result || result["matchId"] is not JsonValue id || !id.TryGetValue(out string? matchId))
-            {
-                return;
-            }
-
-            int? winning = result["winningTeamIndex"] is JsonValue w && w.TryGetValue(out double n) ? (int)n : null;
-            await progress.RecordResultAsync(matchId, winning, result["missionUpdates"] as JsonObject, CancellationToken.None);
-        }
-        catch (Exception e)
-        {
-            // Nothing else would ever see it: this runs on the subscription's callback, not a request.
-            log.LogError(e, "Rift result from {Message} not recorded: {Error}", message, e.Message);
-        }
-    }
 }

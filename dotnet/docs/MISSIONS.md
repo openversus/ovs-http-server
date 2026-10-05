@@ -18,7 +18,7 @@ services take these (environment form `Section__Key`):
 | `Missions:Enabled` | `true` | the Season 5 daily and weekly missions feed the battle pass (`EventEndYears` 20 keeps its event running) |
 | `RewardTracks:PerPlayer` | `true` | each player's own battle pass (End Game's 49 tiers, `hiss-amalgamation.json`) |
 | `RewardTracks:CharacterMastery` | `true` | each player's own account and character levels (the Fighter Passes) |
-| `RewardTracks:MatchXp` | `false` | level XP comes from ranked sets only (`RankedSetXp.cs`, MIGRATION-BRIDGES.md 9): customs earn none |
+| `RewardTracks:MatchXp` | `false` | level XP comes from ranked sets only (`RankedSetXp.cs`, MIGRATION-BRIDGES.md 10): customs earn none |
 | `RewardTracks:RiftMatchXp` | `false` | as above |
 | `RewardTracks:BattlePassSetXp` / `BattlePassWinXp` | `300` / `150` (defaults) | battle pass XP per ranked set |
 | `RewardTracks:CharacterSetXp` / `CharacterWinXp` | `400` / `200` (defaults) | account and character level XP per ranked set |

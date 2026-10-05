@@ -2,7 +2,7 @@ import { logger } from "../config/logger";
 import { redisClient } from "../config/redis";
 
 const logPrefix = "[Services.RankedSetXp]:";
-// The C# match flow pays it (RankedSetXpSubscriber, dotnet/docs/MIGRATION-BRIDGES.md 9): the battle pass, the account
+// The C# match flow pays it (RankedSetXpSubscriber, dotnet/docs/MIGRATION-BRIDGES.md 10): the battle pass, the account
 // level and the played character's level (its Fighter Pass), into the reward tracks the C# server keeps.
 export const RANKED_SET_XP_CHANNEL = "reward_tracks:ranked_set";
 

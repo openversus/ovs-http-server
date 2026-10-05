@@ -45,13 +45,16 @@ namespace OpenVersus.Server.Core.Matchmaking;
 // player index = place * 2 + team, a random index hosts, each player's ip from player:{id}); a map (Matchmaking/maps.json:
 // an enabled one for the mode; 1v1: 1 in 999 PVE_03); the notification at {id} EX 20 min and on match:notifications;
 // p2p in the notification (Rollback:P2P and P2P.IsEligible; a P2P match is deployed no rollback server);
-// ranked_set:{id} and player_ranked_set:{player} EX 10 min (every regular 1v1 and 2v2 match: game 1 of a set);
+// ranked_set:{id} and player_ranked_set:{player} EX 20 min (every regular 1v1 and 2v2 match: game 1 of a set);
 // matchmaking:complete once per ticket (its own request id and players). A Casual match is never rated: match:{id} has
 // isPasswordMatch (the TS match result skips those) and queue "casual" (for a Casual rating of its own, later), it starts no ranked set, and
 // its notification is unranked (BotDefaults.UnrankedNotificationFields: isCustomGame, with bIsCustomGame set back to false
 // in the game's config), so the TS websocket opens no set at its end either and no TS rating path rates it. The TS websocket does the rest (it tells the game, MIGRATION-BRIDGES.md 2).
 //
 // Differences from the TS worker (tools/matches/matchmaker_diff.mjs asserts them):
+//   - the set's keys live 20 min (TS: 10), as long as the match's own: the TS websocket refreshes them only at the
+//     game's end, and a game can take ~9.5 min from here (perks 30 s, connecting up to 45 s, up to 7.5 min of play,
+//     loading and the play after the end), past which TS lost the set ("orphan match").
 //   - the rollback port is IMatchLauncher's (fixed servers: a random one of theirs; on demand: the next port, deployed).
 //     The TS worker always took INCR rollback:current_port, even with fixed servers, which gave a port none listens on.
 //   - a matched ticket is taken out of its queue by the text it was read as; the TS worker wrote the parsed ticket out
@@ -79,7 +82,8 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
     public static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromMilliseconds(41_000);
     private static readonly TimeSpan s_lockTtl = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan s_matchTtl = TimeSpan.FromMinutes(20);
-    private static readonly TimeSpan s_setTtl = TimeSpan.FromMinutes(10);
+    // Until the game's end, when the TS websocket writes them again: as long as the match's own keys (see the header).
+    private static readonly TimeSpan s_setTtl = TimeSpan.FromMinutes(20);
     private readonly string _workerId = $"worker_{Environment.ProcessId}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
     private bool _announced;
     private bool _warnedNoRedis;
@@ -696,7 +700,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
     private static double Number(JsonNode? node) => node is JsonValue v && v.GetValueKind() == JsonValueKind.Number ? v.GetValue<double>() : double.NaN;
 }
 
-/// <summary>The maps a match is played on (Matchmaking/maps.json, from the TS server's data/maps1v1.json and maps2v2.json).</summary>
+/// <summary>The maps a match is played on, and which have hazards (Matchmaking/maps.json, from the TS server's data/maps1v1.json and maps2v2.json).</summary>
 internal static class MatchmakingMaps
 {
     private static readonly Lazy<JsonObject> s_maps = new(() =>
@@ -729,6 +733,23 @@ internal static class MatchmakingMaps
         var fallback = (s_maps.Value["fallback"]?[list] as JsonArray ?? []).Select(m => m!.GetValue<string>()).ToList();
         log.LogError("No enabled {List} maps: match {Match} gets one from the fallback list", list, matchId);
         return fallback[Random.Shared.Next(fallback.Count)];
+    }
+
+    /// <summary>
+    /// Whether <paramref name="map"/> has hazards, as the TS server's getMapHazards (data/maps.ts): PVE_03 always; else
+    /// its entry in the mode's list (2v2's for 2v2, 1v1's for anything else), the id compared without case; false when
+    /// it has none.
+    /// </summary>
+    public static bool Hazards(string map, string? mode)
+    {
+        if (map == "PVE_03")
+        {
+            return true;
+        }
+
+        string list = mode == "2v2" ? "2v2" : "1v1";
+        var entry = (s_maps.Value[list] as JsonArray ?? []).FirstOrDefault(m => string.Equals(m?["id"]?.GetValue<string>(), map, StringComparison.OrdinalIgnoreCase));
+        return entry?["hazards"] is JsonValue hazards && hazards.GetValueKind() == JsonValueKind.True;
     }
 }
 

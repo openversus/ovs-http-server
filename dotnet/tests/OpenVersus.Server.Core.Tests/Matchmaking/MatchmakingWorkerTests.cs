@@ -312,6 +312,12 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
         var regular = matches.Single(m => (string?)m["matchType"] == "1v1");
         Assert.False(await Db.KeyExistsAsync($"ranked_set:{(string)casual["matchId"]!}"));
         Assert.True(await Db.KeyExistsAsync($"ranked_set:{(string)regular["matchId"]!}"));
+        // Game 1's set keys outlive the longest game, until the TS websocket writes them again at its end (TS: 10 min).
+        foreach (string key in new[] { $"ranked_set:{(string)regular["matchId"]!}", $"player_ranked_set:{Id(5)}", $"player_ranked_set:{Id(6)}" })
+        {
+            Assert.InRange((await Db.KeyTimeToLiveAsync(key))!.Value, TimeSpan.FromMinutes(19), TimeSpan.FromMinutes(20));
+        }
+
         Assert.Null(regular["isPasswordMatch"]);
         var regularNotification = JsonNode.Parse((await Db.StringGetAsync((string)regular["matchId"]!)).ToString())!;
         Assert.Null(regularNotification["isCustomGame"]);

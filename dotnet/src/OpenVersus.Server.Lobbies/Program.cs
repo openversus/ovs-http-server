@@ -16,8 +16,9 @@ builder.AddMatchHistory();
 builder.AddMatchmakingRequests();
 // A player's equipped cosmetics are copied for their match when they join a lobby.
 builder.AddCosmetics();
-// Custom matches start here.
+// Custom matches start here, and the rematches of custom and Casual matches (their votes and timers).
 builder.AddMatchLauncher();
+builder.AddRematches();
 
 var app = builder.Build();
 app.UseGameHttp();

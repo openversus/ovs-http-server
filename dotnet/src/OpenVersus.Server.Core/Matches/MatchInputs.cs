@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,21 +45,17 @@ public interface IMatchInputs
 internal sealed class MatchInputs(IServiceProvider services, IOptionsMonitor<RollbackSettings> settings, TimeProvider time, ILogger<MatchInputs> log) : IMatchInputs
 {
     public const string Collection = "matchinputs";
-    private const string Placeholder = "MisconfiguredMatchUpdateKey";
 
     public async Task<(int Status, JsonObject Answer)> StoreAsync(string? matchUpdateKey, JsonObject? body, CancellationToken ct)
     {
-        string configured = settings.CurrentValue.MatchUpdateKey;
-        if (configured.Length == 0 || configured == Placeholder)
+        switch (MatchUpdateKeys.Refusal(matchUpdateKey, settings.CurrentValue.MatchUpdateKey))
         {
-            log.LogError("Match inputs refused: no Rollback:MatchUpdateKey (MATCHUPDATEKEY) is configured");
-            return (403, Error("Invalid signature"));
-        }
-
-        if (!KeysMatch(matchUpdateKey, configured))
-        {
-            log.LogWarning("Match inputs refused: {State} MatchUpdateKey", string.IsNullOrEmpty(matchUpdateKey) ? "missing" : "invalid");
-            return (403, Error("Invalid signature"));
+            case "not configured":
+                log.LogError("Match inputs refused: no Rollback:MatchUpdateKey (MATCHUPDATEKEY) is configured");
+                return (403, Error("Invalid signature"));
+            case { } state:
+                log.LogWarning("Match inputs refused: {State} MatchUpdateKey", state);
+                return (403, Error("Invalid signature"));
         }
 
         if (body is null || Text(body["matchId"]) is not { } matchId || body["players"] is not JsonArray players || players.Count == 0)
@@ -176,19 +170,6 @@ internal sealed class MatchInputs(IServiceProvider services, IOptionsMonitor<Rol
         var record = await mongo.GetCollection<BsonDocument>("playertesters").Find(new BsonDocument("_id", id))
             .Project(new BsonDocument("GameplayPreferences", 1)).FirstOrDefaultAsync(ct);
         return record?.GetValue("GameplayPreferences", BsonNull.Value) ?? BsonNull.Value;
-    }
-
-    // As the TS isValidMatchUpdateKey: lower-cased, same length, constant time.
-    private static bool KeysMatch(string? provided, string configured)
-    {
-        if (string.IsNullOrEmpty(provided))
-        {
-            return false;
-        }
-
-        byte[] a = Encoding.UTF8.GetBytes(provided.ToLowerInvariant());
-        byte[] b = Encoding.UTF8.GetBytes(configured.ToLowerInvariant());
-        return a.Length == b.Length && CryptographicOperations.FixedTimeEquals(a, b);
     }
 
     private static JsonObject Error(string error) => new() { ["error"] = error };

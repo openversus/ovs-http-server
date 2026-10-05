@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "config": {
     "Server": {
       "MaxPlayers": 8
@@ -20,8 +20,8 @@
       "TargetFrameRate": 60
     },
     "Networking": {
-      "ReceiveBufferSize": 65536,
-      "SendBufferSize": 65536,
+      "ReceiveBufferSize": 1048576,
+      "SendBufferSize": 1048576,
       "HttpTimeoutSeconds": 5
     },
     "GameLogic": {

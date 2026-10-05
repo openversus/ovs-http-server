@@ -118,15 +118,10 @@ public static class MissionHosting
     }
 
     /// <summary>
-    /// What a match's result changes in missions and match XP (<see cref="MissionResultSubscriber"/>), for the match flow
-    /// service. Needs AddRewardTracks.
+    /// What a match's result changes in missions and match XP, for the match flow service, which hands it the results
+    /// (MatchResultStream). Needs AddRewardTracks.
     /// </summary>
-    public static WebApplicationBuilder AddMissionResults(this WebApplicationBuilder builder)
-    {
-        builder.AddMissions();
-        builder.Services.AddHostedService<MissionResultSubscriber>();
-        return builder;
-    }
+    public static WebApplicationBuilder AddMissionResults(this WebApplicationBuilder builder) => builder.AddMissions();
 }
 
 /// <summary>

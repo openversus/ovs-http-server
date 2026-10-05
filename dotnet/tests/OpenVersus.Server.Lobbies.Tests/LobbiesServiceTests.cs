@@ -30,12 +30,13 @@ public sealed class LobbiesServiceTests : IClassFixture<ServiceFactory<Program>>
     }
 
     [Fact]
-    public void RunsNoBackgroundServiceOfItsOwn()
+    public void RunsTheRematchTimerAndNoOtherBackgroundServiceOfItsOwn()
     {
         var hosted = _factory.Services.GetServices<IHostedService>().Select(s => s.GetType())
             .Where(t => t.Namespace?.StartsWith("OpenVersus.", StringComparison.Ordinal) == true).Select(t => t.Name).Order().ToList();
 
-        Assert.Equal(["ClusterSettingsSync", "InstanceHeartbeat"], hosted);
+        // RematchSweep starts a rematch whose vote is still open when its timer runs out (rematch:due).
+        Assert.Equal(["ClusterSettingsSync", "InstanceHeartbeat", "RematchSweep"], hosted);
     }
 
     [Fact]

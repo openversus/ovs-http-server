@@ -504,18 +504,6 @@
     "character_slug": "character_c038"
   },
   {
-    "slug": "skin_ovs_top25_crownfire_shaggy",
-    "assetType": "SkinData",
-    "assetPath": "/OVS/Rewards/Skins/Top25/Crownfire/Shaggy/Catalog/skin_ovs_top25_crownfire_shaggy.skin_ovs_top25_crownfire_shaggy",
-    "character_slug": "character_shaggy"
-  },
-  {
-    "slug": "skin_ovs_purefire_shaggy",
-    "assetType": "SkinData",
-    "assetPath": "/OVS/Rewards/Skins/Top25/PureFire/Shaggy/Catalog/skin_ovs_purefire_shaggy.skin_ovs_purefire_shaggy",
-    "character_slug": "character_shaggy"
-  },
-  {
     "slug": "skin_ovs_goth_morty",
     "assetType": "SkinData",
     "assetPath": "/OVS/Rewards/Skins/GothMorty/Catalog/skin_ovs_goth_morty.skin_ovs_goth_morty",

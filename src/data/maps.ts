@@ -65,8 +65,6 @@ export async function getMapHazards(mapId: string, mode: string): Promise<boolea
 
 // Display names for maps (used by custom lobby map selector)
 export const MAP_NAMES: Record<string, string> = {
-  // OVS custom maps (custom lobbies only until tested)
-  "OVS_SkyFortress_V1": "Sky Fortress",
   // 1v1 maps
   "M001_V2": "Batcave 1v1",
   "M002_V2": "Treefort 1v1",
@@ -137,7 +135,6 @@ export const maps1v1 = [
   "M023_V2",    // (Rabbit Season 1v1) 
   "MTS001_V1",  // (Space) 
   "MTS003_V1",  // (Castle)
-  "OVS_SkyFortress_V1",    // (Sky Fortress, OVS custom map)
 ];
 
 export const maps2v2 = [
@@ -162,7 +159,6 @@ export const maps2v2 = [
   "MTS001_V1",  // (Space) 
   // "MTS002_V3",  // (Beach Boat) 
   "MTS003_V4",  // (Castle 3)
-  "OVS_SkyFortress_V1",    // (Sky Fortress, OVS custom map)
 ];
 
 export async function getRandomMapByType(mode: string, matchID: string): Promise<string> {
@@ -543,10 +539,6 @@ export const MAP_ROTATIONS = {
       bIsEnabled: true,
       MapsInRotation: [
         {
-          Map: "OVS_SkyFortress_V1",
-          SelectionWeight: 1,
-        },
-        {
           Map: "M000_V2_NEW",
           SelectionWeight: 1,
         },
@@ -734,10 +726,6 @@ export const MAP_ROTATIONS = {
     data: {
       bIsEnabled: true,
       MapsInRotation: [
-        {
-          Map: "OVS_SkyFortress_V1",
-          SelectionWeight: 1,
-        },
         {
           Map: "M000_V1_NEW",
           SelectionWeight: 1,
@@ -1050,10 +1038,6 @@ export const MAP_ROTATIONS = {
     data: {
       bIsEnabled: true,
       MapsInRotation: [
-        {
-          Map: "OVS_SkyFortress_V1",
-          SelectionWeight: 1,
-        },
         {
           Map: "M000_V1_NEW",
           SelectionWeight: 1,

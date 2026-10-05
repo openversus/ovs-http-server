@@ -444,37 +444,3 @@ export function getChromiumMasteryTrackForCharacter(characterSlug: string): stri
   )?.trackSlug ?? null;
 }
 
-// Top-25 prototype. The cooked package intentionally keeps the historical
-// Crownfire path/slug so existing test installs do not need a destructive
-// catalog migration; the presented skin is now Crown Circuit.
-export const TOP25_CROWN_CIRCUIT_SHAGGY_SLUG = "skin_ovs_top25_crownfire_shaggy";
-export const TOP25_CROWN_CIRCUIT_SHAGGY_PATH =
-  "/OVS/Rewards/Skins/Top25/Crownfire/Shaggy/Catalog/skin_ovs_top25_crownfire_shaggy.skin_ovs_top25_crownfire_shaggy";
-
-export const TOP25_CROWN_CIRCUIT_SHAGGY_ASSET = {
-  slug: TOP25_CROWN_CIRCUIT_SHAGGY_SLUG,
-  assetType: "SkinData",
-  assetPath: TOP25_CROWN_CIRCUIT_SHAGGY_PATH,
-  character_slug: "character_shaggy",
-  enabled: true,
-} as const;
-
-export const TOP25_CROWN_CIRCUIT_SHAGGY_INVENTORY: InventoryDef = {
-  ...CHROMIUM_SHAGGY_INVENTORY,
-  id: "6aacf012ec42cfc9577c1136",
-  name: TOP25_CROWN_CIRCUIT_SHAGGY_SLUG,
-  slug: TOP25_CROWN_CIRCUIT_SHAGGY_SLUG,
-  data: {
-    AssetPath: TOP25_CROWN_CIRCUIT_SHAGGY_PATH,
-    EnabledForShipping: true,
-    AssociatedCharacter: "Shaggy",
-    DisplayName: "Top 25 Crown Circuit Shaggy",
-    DisplayNameLocalizationKey: "",
-    DisplayNameLocalizationNamespace: "",
-    Rarity: "Legendary",
-    RewardThumbnail: "/Game/Character/Captures/Shaggy/Shaggy_Shaggy.Shaggy_Shaggy",
-    RewardThumbnailMaterial: "/Game/Panda_Main/Characters/Shaggy/Skins/MI_Shaggy_RewardThumbnail.MI_Shaggy_RewardThumbnail",
-  },
-  description: "Top-25 Crown Circuit finish for Shaggy.",
-  tags: ["character_shaggy", "unlock_location_event", "universe_scooby_doo", "skin", "unlockable"],
-};

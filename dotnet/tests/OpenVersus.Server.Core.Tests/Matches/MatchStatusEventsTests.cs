@@ -292,9 +292,24 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
 
         await SendAsync(Event("PlayerDisconnect", P2));
 
-        Assert.Equal("1", (string?)await Db.StringGetAsync($"ranked_disconnect:{P2}"));
+        // The flag names the set (game 1: the match itself, no set pointer yet), so it counts for this set only.
+        Assert.Equal(Match, (string?)await Db.StringGetAsync($"ranked_disconnect:{P2}"));
         Assert.Empty(await NotificationsAsync(P1));
         Assert.Equal(0, await RatingsAsync());
+    }
+
+    [SkippableFact]
+    public async Task AMidGameLeaverOfAGameThatIsNotASetGameIsNotFlagged()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        // A password match (a rift): RatedMatches does not count it, so there is no set to concede.
+        await SeedAsync(match: new JsonObject { ["isPasswordMatch"] = true });
+        await Db.SetAddAsync("online_players", P1);
+        await Db.StringSetAsync($"match_started:{Match}", "1");
+
+        await SendAsync(Event("PlayerDisconnect", P2));
+
+        Assert.False(await Db.KeyExistsAsync($"ranked_disconnect:{P2}"));
     }
 
     [SkippableFact]
@@ -313,7 +328,7 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
         Assert.Equal(1, (await ratings.Find(new BsonDocument("account_id", P2)).FirstAsync())["losses_1v1"].ToInt32());
         Assert.Equal($$"""{"playerIds":["{{P1}}","{{P2}}"]}""", Assert.Single(_published).Message.ToJsonString());
         Assert.Equal("rollback_pregame_dodge", (string?)await Db.StringGetAsync($"elo_processed_set:{Set}"));
-        Assert.Equal("1", (string?)await Db.StringGetAsync($"ranked_disconnect:{P2}"));
+        Assert.Equal(Set, (string?)await Db.StringGetAsync($"ranked_disconnect:{P2}"));
         await AssertSetDroppedAsync();
         Assert.Equal("idle", (string?)await Db.HashGetAsync($"player:{P2}", "status"));
         var cancel = Assert.Single(await NotificationsAsync(P1));
@@ -325,7 +340,8 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
     public async Task AnUnratedDodgeSkipsOnlyTheRating()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
-        // A password match (a rift): not rated (RatedMatches), but the rest is done as for a rated one (decided 2026-10-05).
+        // A password match (a rift): not rated (RatedMatches), but the rest is done as for a rated one (decided 2026-10-05),
+        // except the dodger's flag: it names a rated set only.
         await SeedAsync(match: new JsonObject { ["isPasswordMatch"] = true });
         await Db.SetAddAsync("online_players", P1);
 
@@ -335,7 +351,7 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
         Assert.Equal(0, await Mongo.GetCollection<BsonDocument>("playerstats").CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty));
         await Task.Delay(200);
         Assert.Empty(_published);
-        Assert.Equal("1", (string?)await Db.StringGetAsync($"ranked_disconnect:{P2}"));
+        Assert.False(await Db.KeyExistsAsync($"ranked_disconnect:{P2}"));
         Assert.Equal("idle", (string?)await Db.HashGetAsync($"player:{P1}", "status"));
         Assert.Single(await NotificationsAsync(P1));
     }

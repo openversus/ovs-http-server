@@ -20,7 +20,9 @@ namespace OpenVersus.Server.Core.Matches;
 // between, on the post-match screen.
 //
 //   check-in (Ready; absent = its timer ran out, the same): counted once per player and game. A player of the set whose
-//     websocket dropped (ranked_disconnect:{id}) and who is not online any more loses the set (concede). When all are in,
+//     websocket dropped (ranked_disconnect:{id}, naming this set) and who is not online any more loses the set (concede).
+//   a game's end (MatchEnd): the score as counted, then the set goes on (its state for the check-ins, conceded when a
+//     player's flag names it), or is over (rated once, dropped). When all are in,
 //     either the set is over (2 wins, 3 games, or conceded): rated, then everyone back to the menus; or the next game is
 //     made with the same teams.
 //   concede: the conceder's team loses the set; rated, then everyone back to the menus.
@@ -72,6 +74,8 @@ namespace OpenVersus.Server.Core.Matches;
 //     30 s, connecting up to 45 s, up to 7.5 min of play, loading and the play after the end).
 //   - nothing is written for a player whose set is gone (TS added the check-in to a key nobody read again).
 //   - a set is rated only when RatedMatches says it counts (MIGRATION-BRIDGES.md 6).
+//   - a ranked_disconnect flag counts only for the set it names (decided 2026-10-05): any other is stale (TS took any
+//     flag, "1" after any started match included, so a custom game's dodge conceded the player's next set).
 
 public interface IRankedSets
 {
@@ -89,6 +93,41 @@ public interface IRankedSets
     /// decided from every report so far, MatchWinner); the score of the set of the first of <paramref name="playerIds"/>
     /// (the reporter, then the match's players) that is in one follows it.</summary>
     Task RecordWinnerAsync(IReadOnlyList<string> playerIds, string matchId, int winner);
+
+    /// <summary>
+    /// A game's end (MatchEnd), for the set part of it: <paramref name="playerIds"/> (match:end's, in order) of
+    /// <paramref name="matchId"/>, whose config <paramref name="config"/> is a set game when <paramref name="counts"/>
+    /// (RatedMatches). Returns what happened, for the messages.
+    /// </summary>
+    Task<GameEndResult> GameEndedAsync(string matchId, IReadOnlyList<string> playerIds, JsonObject? config, bool counts);
+}
+
+/// <summary>What a game's end did to its set.</summary>
+public enum GameEnd
+{
+    /// <summary>Not a set game (it does not count): nothing done.</summary>
+    NotASet,
+
+    /// <summary>The match crashed (match_server_crash): its players' set pointers and dodge flags dropped.</summary>
+    Crashed,
+
+    /// <summary>A set game with no set and no recorded winner: pointers and flags dropped, no set made.</summary>
+    Orphan,
+
+    /// <summary>The set was already resolved (elo_processed_set): nothing changed.</summary>
+    Resolved,
+
+    /// <summary>The set goes on: its state written for the check-ins.</summary>
+    Continues,
+
+    /// <summary>The set is over: rated (once), and dropped.</summary>
+    Over,
+}
+
+/// <summary><paramref name="Kind"/>; for Over, the set's players (each once) and the rated ones (winners, then losers).</summary>
+public sealed record GameEndResult(GameEnd Kind, IReadOnlyList<string> SetPlayerIds, IReadOnlyList<string> RatedPlayerIds)
+{
+    public static GameEndResult Of(GameEnd kind) => new(kind, [], []);
 }
 
 internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launcher, ISetRatings ratings, IOptionsMonitor<RollbackSettings> rollback,
@@ -170,11 +209,20 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
             return;
         }
 
-        // A player whose websocket dropped and who is still offline concedes the set; one online again left a stale flag.
+        // A player whose websocket dropped and who is still offline concedes the set; one online again left a stale flag,
+        // and so did one whose flag names another set (decided 2026-10-05: a flag counts for the set it names).
         foreach (string other in all.Where(id => id != playerId))
         {
-            if (!(await redis.StringGetAsync($"ranked_disconnect:{other}")).HasValue)
+            var flag = await redis.StringGetAsync($"ranked_disconnect:{other}");
+            if (!flag.HasValue)
             {
+                continue;
+            }
+
+            if ((string?)flag != setId)
+            {
+                log.LogInformation("Stale ranked_disconnect flag for {Player} (set {Flag}, not {Set}), cleaning up", other, (string?)flag, setId);
+                await redis.KeyDeleteAsync($"ranked_disconnect:{other}");
                 continue;
             }
 
@@ -345,6 +393,183 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
         await redis.StringSetAsync($"ranked_set:{setId}", Js.Stringify(set), s_setTtl);
         await redis.StringSetAsync(scoreKey, winner.ToString(System.Globalization.CultureInfo.InvariantCulture), s_setTtl);
         log.LogInformation("Ranked set {Set} scores updated: {Team0}-{Team1}", setId, Js.Stringify(scores[0]), Js.Stringify(scores[1]));
+    }
+
+    // ── A game's end ───────────────────────────────────────────────────────────────────────────────────────────────
+
+    // As the TS websocket's handleOnMatchEnd from its common reads to the set's update (websocket.ts), with three changes
+    // (decided 2026-10-05): a set game is one RatedMatches counts (TS: any config without isCustomGame, so a rift was a
+    // set of its own); a dodge flag counts only when it names this set (TS: any flag, from any match, up to 10 min old);
+    // and the update holds the set's lock (TS read and wrote the set while a winner could be being counted).
+    public async Task<GameEndResult> GameEndedAsync(string matchId, IReadOnlyList<string> playerIds, JsonObject? config, bool counts)
+    {
+        if (Redis() is not { } redis)
+        {
+            return GameEndResult.Of(GameEnd.NotASet);
+        }
+
+        // The set of the first player, else the game's (match_to_set, written with each game), given back to all of them.
+        string? existingSetId = playerIds.Count > 0 && (string?)await redis.StringGetAsync($"player_ranked_set:{playerIds[0]}") is { Length: > 0 } own ? own : null;
+        if (existingSetId is null && (string?)await redis.StringGetAsync($"match_to_set:{matchId}") is { Length: > 0 } fallback)
+        {
+            existingSetId = fallback;
+            log.LogInformation("Recovered setId {Set} for match {Match} via match_to_set fallback", fallback, matchId);
+            foreach (string id in playerIds)
+            {
+                await redis.StringSetAsync($"player_ranked_set:{id}", fallback, s_setTtl);
+            }
+        }
+
+        if ((string?)await redis.StringGetAsync($"match_server_crash:{matchId}") is { } crash)
+        {
+            log.LogInformation("Match {Match} flagged as crash ({Flag}) — no set update, cleaning up stale state", matchId, crash);
+            foreach (string id in playerIds)
+            {
+                await redis.KeyDeleteAsync([new RedisKey($"player_ranked_set:{id}"), new RedisKey($"ranked_disconnect:{id}")]);
+            }
+
+            return GameEndResult.Of(GameEnd.Crashed);
+        }
+
+        if (!counts)
+        {
+            return GameEndResult.Of(GameEnd.NotASet);
+        }
+
+        string lockId = existingSetId ?? matchId;
+        await using var held = await LockAsync(redis, lockId);
+        if (held is null)
+        {
+            log.LogError("Set {Set} stayed locked for {Wait} s: the end of match {Match} was not counted", lockId, LockWait.TotalSeconds, matchId);
+            return GameEndResult.Of(GameEnd.Resolved);
+        }
+
+        var existingSet = existingSetId is null ? null : await SetAsync(redis, existingSetId);
+        if (existingSetId is not null && existingSet is null)
+        {
+            log.LogInformation("Stale player_ranked_set (set {Set} no longer exists), cleaning up", existingSetId);
+            foreach (string id in playerIds)
+            {
+                await redis.KeyDeleteAsync($"player_ranked_set:{id}");
+            }
+
+            existingSetId = null;
+        }
+
+        if (existingSetId is null && !(await redis.StringGetAsync($"ranked_set_pending_winner:{matchId}")).HasValue)
+        {
+            log.LogWarning("Match {Match} has no set and no pending winner — orphan match, no set made; players back to the menus", matchId);
+            foreach (string id in playerIds)
+            {
+                await redis.KeyDeleteAsync([new RedisKey($"player_ranked_set:{id}"), new RedisKey($"ranked_disconnect:{id}")]);
+            }
+
+            return GameEndResult.Of(GameEnd.Orphan);
+        }
+
+        string setId = existingSetId ?? matchId;
+        if ((string?)await redis.StringGetAsync($"elo_processed_set:{setId}") is { } resolved)
+        {
+            log.LogInformation("Set {Set} already resolved ({How}), nothing to update for match {Match}", setId, resolved, matchId);
+            return GameEndResult.Of(GameEnd.Resolved);
+        }
+
+        // gamesPlayed + 1 and the scores as stored (RecordWinnerAsync counted this game's winner into them); a game 1
+        // whose set was never made counts its pending winner.
+        double gamesPlayed = existingSet is null ? 1 : Number(existingSet["gamesPlayed"]) + 1;
+        var scores = existingSet?["scores"] is JsonArray stored && RollbackCallbacks.Truthy(stored) ? stored.DeepClone().AsArray() : new JsonArray(0, 0);
+        if (existingSet is null && (string?)await redis.StringGetAsync($"ranked_set_pending_winner:{matchId}") is { } pending)
+        {
+            double winIndex = Js.ParseInt(pending);
+            if (winIndex is 0 or 1)
+            {
+                scores = new JsonArray(0, 0);
+                scores[(int)winIndex] = 1;
+            }
+
+            await redis.KeyDeleteAsync($"ranked_set_pending_winner:{matchId}");
+            log.LogWarning("FALLBACK: match {Match} ended with no set — recovered via pending_winner={Winner}", matchId, pending);
+        }
+
+        double team0 = Number(scores.Count > 0 ? scores[0] : null), team1 = Number(scores.Count > 1 ? scores[1] : null);
+        if (team0 >= 2 || team1 >= 2 || gamesPlayed >= 3)
+        {
+            return await SetOverAsync(redis, existingSet, setId, matchId, playerIds, team0, team1);
+        }
+
+        // A player of this set whose flag names it left mid-game: the set is conceded at the check-in.
+        string? dodger = null;
+        foreach (string id in playerIds)
+        {
+            if ((string?)await redis.StringGetAsync($"ranked_disconnect:{id}") == setId)
+            {
+                dodger = id;
+                log.LogInformation("Match {Match} — player {Player} dodged, set will be marked conceded", matchId, id);
+                break;
+            }
+        }
+
+        var state = new JsonObject
+        {
+            ["players"] = config?["players"]?.DeepClone(),
+            ["mode"] = config?["mode"]?.DeepClone(),
+            ["gamesPlayed"] = gamesPlayed,
+            ["scores"] = scores,
+            ["checkins"] = new JsonArray(),
+        };
+        if (dodger is not null)
+        {
+            state["conceded"] = true;
+            state["concedingPlayer"] = dodger;
+        }
+
+        await redis.StringSetAsync($"ranked_set:{setId}", Js.Stringify(state), s_setTtl);
+        foreach (string id in (config?["players"] as JsonArray ?? []).Select(p => Text(p?["playerId"])).OfType<string>())
+        {
+            await redis.StringSetAsync($"player_ranked_set:{id}", setId, s_setTtl);
+        }
+
+        log.LogInformation("Ranked set {Set} — game {Games}/3 complete ({Team0}-{Team1}), waiting for check-ins", setId, gamesPlayed, team0, team1);
+        return GameEndResult.Of(GameEnd.Continues);
+    }
+
+    // The set is over: rated once (elo_processed_set "set_complete"), the winner the team with more wins, each fighter
+    // this game's (match_characters:{match}, else game 1's, else the connection); then dropped.
+    private async Task<GameEndResult> SetOverAsync(IDatabase redis, JsonObject? set, string setId, string matchId, IReadOnlyList<string> playerIds, double team0Wins, double team1Wins)
+    {
+        log.LogInformation("Ranked set {Set} — set complete ({Team0}-{Team1}), processing ELO", setId, team0Wins, team1Wins);
+        int winnerTeam = team0Wins > team1Wins ? 0 : 1;
+        var players = set?["players"] as JsonArray ?? [];
+        var team0 = players.Where(p => Number(p?["teamIndex"]) == 0).Select(p => Text(p?["playerId"]) ?? "").ToList();
+        var team1 = players.Where(p => Number(p?["teamIndex"]) == 1).Select(p => Text(p?["playerId"]) ?? "").ToList();
+        var winners = winnerTeam == 0 ? team0 : team1;
+        var losers = winnerTeam == 0 ? team1 : team0;
+        bool first = await redis.StringSetAsync($"elo_processed_set:{setId}", "set_complete", TimeSpan.FromMinutes(5), When.NotExists);
+        if (first && set is null)
+        {
+            // Never at 2 wins or 3 games; TS threw reading its players, and rated nobody.
+            log.LogError("Set {Set} is over but its state is gone: not rated", setId);
+        }
+        else if (first)
+        {
+            try
+            {
+                await ratings.RateAsync(new SetOutcome(winners, losers, Text(set?["mode"]) ?? "", (int)team0Wins, (int)team1Wins, winnerTeam, false,
+                    await CharactersAsync(redis, [.. winners, .. losers], setId, matchId), matchId), CancellationToken.None);
+            }
+            catch (Exception e) when (e is not OutOfMemoryException)
+            {
+                log.LogError("Error processing set ELO for set {Set}: {Error}", setId, e.Message);
+            }
+        }
+        else
+        {
+            log.LogInformation("ELO already processed for set {Set}, skipping set-complete processing", setId);
+        }
+
+        var setPlayers = set is null ? [.. playerIds.Distinct()] : PlayerIds(set);
+        await DropAsync(redis, setId, setPlayers, disconnectFlags: false);
+        return new GameEndResult(GameEnd.Over, setPlayers, [.. winners, .. losers]);
     }
 
     // ── Ratings ─────────────────────────────────────────────────────────────────────────────────────────────────────

@@ -22,8 +22,8 @@ namespace OpenVersus.Server.Core.Matches;
 // Before the answer (the set's check-ins read it):
 //   game_result_received:{match} NX EX 10 min (the TS rollback callbacks tell a crash from a finished game by it)
 //   the report, kept with the others (match_results:{match}, a hash: player -> {order, spectator, winner, stats}, the
-//     first report of each player only; EX 10 min), and the winner decided from all of them (MatchWinner). A match
-//     that is not a custom game: that winner into the set score (RankedSets.RecordWinnerAsync; the reporter's set, else
+//     first report of each player only; EX 10 min), and the winner decided from all of them (MatchWinner). A set game
+//     (one RatedMatches counts): that winner into the set score (RankedSets.RecordWinnerAsync; the reporter's set, else
 //     another player's of the match), as the TS server counted the first report's into the reporter's
 //   the result on the match flow's stream (match:results, a consumer group; the match flow records missions, match XP,
 //     rift progress, and the match's stats once every human has reported or 30 s after the first:
@@ -82,7 +82,10 @@ internal sealed class MatchResults(IServiceProvider services, IRankedSets sets, 
         if (playerId is not null)
         {
             int? winner = await ReportAsync(redis, matchId, playerId, config, claimed, stats);
-            if (winner is { } decided && !Truthy(config?["isCustomGame"]))
+            // A set game is one RatedMatches counts (decided 2026-10-05; TS: any config without isCustomGame, so a rift's
+            // winner opened a set of its own).
+            if (winner is { } decided && config is not null && Leaderboards.RatedMatches.WhyNotRated(config["mode"] is JsonValue modeValue && modeValue.TryGetValue(out string? mode) ? mode : null,
+                    config["players"] as JsonArray, Js.Parse((string?)await redis.StringGetAsync($"match:{matchId}") ?? "null") as JsonObject, config) is null)
             {
                 var players = (config?["players"] as JsonArray ?? []).Where(p => !Truthy(p?["isSpectator"]))
                     .Select(p => p?["playerId"] is JsonValue v && v.TryGetValue(out string? s) ? s : null).OfType<string>();

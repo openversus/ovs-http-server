@@ -13,6 +13,8 @@ using OpenVersus.Server.Http.Shared;
 // replicas: they read the stream as one consumer group, and each result is recorded once per match and player (SET NX keys).
 // And each match's gameplay config, kept per player (GameplayConfigs:Mode; built beside the TS websocket, which still sends
 // it: docs/MIGRATION-BRIDGES.md 9).
+// And a match's end (MatchEnd, when MatchEnd:Enabled; until the realtime gateway, the TS websocket ends them from match:end),
+// with its delayed websocket messages (DelayedMessages).
 var builder = OpenVersusHost.CreateBuilder(KnownServices.MatchFlow, args);
 builder.AddGameHttp(typeof(Program).Assembly);
 builder.AddRewardTracks();
@@ -27,6 +29,7 @@ builder.AddRollbackCallbacks();
 builder.AddMatchStatusEvents();
 builder.AddMatchResultStream();
 builder.AddGameplayConfigs();
+builder.AddMatchEnd();
 
 var app = builder.Build();
 app.UseGameHttp();

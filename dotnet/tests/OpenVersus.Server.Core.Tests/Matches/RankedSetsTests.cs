@@ -389,7 +389,7 @@ public sealed class RankedSetsTests : IAsyncLifetime
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         await SeedAsync(gamesPlayed: 1, 1, 0);
-        await Db.StringSetAsync($"ranked_disconnect:{P2}", "1");
+        await Db.StringSetAsync($"ranked_disconnect:{P2}", Set);
         await Sets().CheckinAsync(P1, Set);
 
         await AssertDroppedAsync();
@@ -403,12 +403,27 @@ public sealed class RankedSetsTests : IAsyncLifetime
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         await SeedAsync(gamesPlayed: 1, 1, 0);
-        await Db.StringSetAsync($"ranked_disconnect:{P2}", "1");
+        await Db.StringSetAsync($"ranked_disconnect:{P2}", Set);
         await Db.SetAddAsync("online_players", P2);
         await Sets().CheckinAsync(P1, Set);
 
         Assert.False(await Db.KeyExistsAsync($"ranked_disconnect:{P2}"));
         Assert.True(await Db.KeyExistsAsync($"ranked_set:{Set}"));
+        Assert.Equal(RankedSets.CheckinChannel, Assert.Single(await PublishedAsync()).Channel);
+    }
+
+    [SkippableFact]
+    public async Task AFlagNamingAnotherSetIsStale()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        // Left by an earlier set (or TS's "1" after any match): it never concedes this one, even with the player offline.
+        await SeedAsync(gamesPlayed: 1, 1, 0);
+        await Db.StringSetAsync($"ranked_disconnect:{P2}", Id(999));
+        await Sets().CheckinAsync(P1, Set);
+
+        Assert.False(await Db.KeyExistsAsync($"ranked_disconnect:{P2}"));
+        Assert.True(await Db.KeyExistsAsync($"ranked_set:{Set}"));
+        Assert.False(await Db.KeyExistsAsync($"elo_processed_set:{Set}"));
         Assert.Equal(RankedSets.CheckinChannel, Assert.Single(await PublishedAsync()).Channel);
     }
 

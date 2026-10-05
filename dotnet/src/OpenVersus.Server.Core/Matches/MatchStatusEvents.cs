@@ -28,10 +28,12 @@ namespace OpenVersus.Server.Core.Matches;
 //     - their websocket is still up (online_players): the rollback server failed them, not a dodge. Once per match
 //       (rollback_crash_cleanup:{match}): the match crashed, the set is dropped for every player of it, all are set idle
 //       and told the match was cancelled ("rollback_crash"); no rating.
-//     - after the start: ranked_disconnect:{player}, so the set's next check-in concedes for them (RankedSets).
+//     - after the start, in a game RatedMatches counts (a set game): ranked_disconnect:{player} = the set's id
+//       (player_ranked_set, else the match: game 1), so the set's next check-in concedes for them (RankedSets); the flag
+//       counts for that set only.
 //     - before the start (a dodge), unless the match is a custom game: the other team wins the set (rated when
-//       RatedMatches says it counts: SetRatings, a pregame dodge, then ranked_set:fullrankupdate), the dodger gets
-//       ranked_disconnect, the set is dropped, every player is set idle and the others are told ("opponent_dodge"). Once
+//       RatedMatches says it counts: SetRatings, a pregame dodge, ranked_set:fullrankupdate, and the dodger's
+//       ranked_disconnect naming the set), the set is dropped, every player is set idle and the others are told ("opponent_dodge"). Once
 //       per set and match (elo_processed_set:{set} "rollback_pregame_dodge" NX EX 5 min, elo_processed:{match} NX EX 5
 //       min: the TS websocket's disconnect path checks the same keys).
 // Answered {status: "ok"}; 403 {error: "Invalid signature"} without the key; 500 {error: "Failed to process match status
@@ -41,7 +43,7 @@ namespace OpenVersus.Server.Core.Matches;
 //                 {match} (players, mode, isCustomGame), match:{match} (RatedMatches), online_players,
 //                 player_ranked_set:{player}, elo_processed:{match}, match_characters:{set}, connections:{player} character
 // Redis, written  match_started:{match}, match_ended:{match}, match_server_crash:{match} "1" EX 10 min;
-//                 rollback_crash_cleanup:{match} NX EX 5 min; ranked_disconnect:{player} "1" EX 10 min; the dedup keys
+//                 rollback_crash_cleanup:{match} NX EX 5 min; ranked_disconnect:{player} (the set's id) EX 10 min; the dedup keys
 //                 above; player:{player} status "idle"; dll_notifications:{player} (match_cancel, PlayerMessages);
 //                 deleted: player_ranked_set:{each player}, ranked_set:{set}, ranked_set_checkins:{set},
 //                 ranked_set_match:{set}, and at a crash match_to_set:{match}, match_started:{match}
@@ -55,6 +57,9 @@ namespace OpenVersus.Server.Core.Matches;
 //   - a dodge is rated only when RatedMatches says the match counts (MIGRATION-BRIDGES.md 6; TS rated a rift match, and
 //     any match with bots); the rest of it runs as there (decided 2026-10-05: only the rating is skipped).
 //   - a dropped set's current game (ranked_set_match:{set}, RankedSets's) is deleted with it.
+//   - ranked_disconnect is written only in a rated set's game and holds the set's id (decided 2026-10-05; TS wrote "1" after
+//     any started match, custom and Casual ones included, and its readers took any flag: a stale one conceded the
+//     player's next set).
 //   - an unset key, or the TS placeholder, never matches (MatchUpdateKeys).
 
 public interface IMatchStatusEvents
@@ -205,11 +210,21 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
                 return;
             }
 
-            // Mid-game: the others play on; the set's next check-in concedes for the leaver (RankedSets).
+            // Mid-game: the others play on; in a rated set, its next check-in (or the game's end) concedes it for the leaver
+            // (RankedSets): the flag names the set, so it never counts against another one.
             if (await redis.KeyExistsAsync($"match_started:{matchId}"))
             {
-                await redis.StringSetAsync($"ranked_disconnect:{playerId}", "1", s_flagTtl);
-                log.LogInformation("Mid-match PlayerDisconnect of {Player} in {Match}: flagged for auto-concede", playerId, matchId);
+                string? why = config is null ? "no config"
+                    : RatedMatches.WhyNotRated(Str(config["mode"]), config["players"] as JsonArray, await RollbackCallbacks.JsonAsync(redis, $"match:{matchId}"), config);
+                if (why is not null)
+                {
+                    log.LogInformation("Mid-match PlayerDisconnect of {Player} in {Match}: not a set game ({Why}), nothing to concede", playerId, matchId, why);
+                    return;
+                }
+
+                string set = (string?)await redis.StringGetAsync($"player_ranked_set:{playerId}") is { Length: > 0 } pointer ? pointer : matchId;
+                await redis.StringSetAsync($"ranked_disconnect:{playerId}", set, s_flagTtl);
+                log.LogInformation("Mid-match PlayerDisconnect of {Player} in {Match}: flagged for auto-concede of set {Set}", playerId, matchId, set);
                 return;
             }
 
@@ -299,9 +314,9 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
             log.LogInformation("Pregame dodge rated (rollback PlayerDisconnect): {Player} left match {Match}", playerId, matchId);
             await redis.PublishAsync(RedisChannel.Literal(RankedSets.FullRankUpdateChannel),
                 Js.Stringify(new JsonObject { ["playerIds"] = RollbackCallbacks.PlayerIds(configPlayers) }));
+            // The dodger's flag names the set it dropped, so it never counts against their next one.
+            await redis.StringSetAsync($"ranked_disconnect:{playerId}", setId, s_flagTtl);
         }
-
-        await redis.StringSetAsync($"ranked_disconnect:{playerId}", "1", s_flagTtl);
 
         var all = configPlayers.Where(p => !RollbackCallbacks.Truthy(p["isSpectator"])).Select(p => Str(p["playerId"])).ToList();
         foreach (string id in all)

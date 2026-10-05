@@ -194,6 +194,14 @@ internal sealed class RollbackCallbacks(IServiceProvider services, IMatchLaunche
             return;
         }
 
+        // Ended here (MatchEnd:Enabled), else by the TS websocket, which hears match:end (docs/MIGRATION-BRIDGES.md 2).
+        if (services.GetService<IOptionsMonitor<MatchEndSettings>>()?.CurrentValue.Enabled == true && services.GetService<IMatchEnd>() is { } matchEnd)
+        {
+            log.LogInformation("Match {Match} ended on its rollback server ({Route}): ending it here", match.Id, route);
+            await matchEnd.EndAsync(match.Id, [.. all.Select(p => Text(p["playerId"])).OfType<string>()]);
+            return;
+        }
+
         var end = new JsonObject { ["playersIds"] = PlayerIds(all) };
         Copy(match.Config, "matchId", end, "matchId");
         await redis.PublishAsync(RedisChannel.Literal(EndOfMatchChannel), Js.Stringify(end));

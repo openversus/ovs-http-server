@@ -42,7 +42,8 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   also after a pre-game dodge, `MatchStatusEvents`), and the rollback callbacks' two (`RollbackCallbacks`):
   `game_server_ready:notifications` (`{containerMatchId, playerIds, resultId, rollbackPort}`: the TS websocket sends each
   player `game-server-instance-ready`, with 127.0.0.1 and their node's port in a P2P match) and `match:end`
-  (`{playersIds, matchId}`: the TS websocket's `handleOnMatchEnd`, the match's end on its side).
+  (`{playersIds, matchId}`: the TS websocket's `handleOnMatchEnd`, the match's end on its side; the C# match end,
+  `MatchEnd`, is built and off: `MatchEnd:Enabled`, on only where no TS websocket holds the players).
   Their payloads are JSON exactly as the TS server writes them. The party routes' other messages to players
   (`OnLobbyModeUpdated`, `InviteReceivedForLobby`, `PlayerJoinedLobby`, `PlayerLeftLobby`, `PlayerReadyForLobby`,
   `OnPlayerLoadoutLocked`) are built in C# and go through `ws:send` (4), as the TS websocket would have built them; so

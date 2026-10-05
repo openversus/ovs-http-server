@@ -34,7 +34,11 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   `perks:notifications` (`PerksLock`, every player of a match has locked their perks: `{containerMatchId, playerIds}`;
   the TS websocket puts the perks into each player's match config, which it holds in memory, and sends it again) and
   `toast:received` (`MatchToasts`, a toast after a match: `{toasterAccountId, toasterUsername, toasteeAccountId,
-  containerMatchId}`; the TS websocket grants the toastee 2 match_toasts and shows them the toast).
+  containerMatchId}`; the TS websocket grants the toastee 2 match_toasts and shows them the toast), and the ranked set's
+  three (`RankedSets`): `ranked_set:checkin` (`{playerIds, checkedInPlayer, checkins, totalPlayers, setId}`: the TS
+  websocket sends every player `MatchSetCheckinNotification`), `ranked_set:leaver` (`{playerIds, leaverPlayerId, matchId}`:
+  `MatchSetLeaverNotification`, then the empty config that sends the game back to its menus) and
+  `ranked_set:fullrankupdate` (`{playerIds}`: the TS websocket reads each player's ratings and sends `FullRankUpdate`).
   Their payloads are JSON exactly as the TS server writes them. The party routes' other messages to players
   (`OnLobbyModeUpdated`, `InviteReceivedForLobby`, `PlayerJoinedLobby`, `PlayerLeftLobby`, `PlayerReadyForLobby`,
   `OnPlayerLoadoutLocked`) are built in C# and go through `ws:send` (4), as the TS websocket would have built them; so
@@ -69,11 +73,21 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   websocket fills when a party queues and empties on a cancel or disconnect), `player_heartbeats`,
   `player:{id}:blocked` and `player:{id}` `ip` are read as the TS worker reads them; a match writes what the TS worker
   writes (`match:{id}` with the tickets as queued, the notification at `{id}`, `ranked_set:{id}`,
-  `player_ranked_set:{player}`) and publishes `match:notifications` and one `matchmaking:complete` per ticket. Each
+  `player_ranked_set:{player}`; the set's two for 20 min where TS gave 10, which a game could outlast before the
+  websocket wrote them again) and publishes `match:notifications` and one `matchmaking:complete` per ticket. Each
   queue is worked under the TS lock (`matchmaking:lock:{queue}`), so the C# and TS workers can run side by side. The
   maps it picks from are a copy of the TS `src/data/maps1v1.json` / `maps2v2.json` (`Matchmaking/maps.json`,
   `tools/matchmaking/gen_maps.mjs`): a map change goes to the TS files and is generated again (`--check` tells) until
   the TS worker and websocket (which reads those files for hazards) are gone.
+- **Ranked sets** (`RankedSets`, `SetRatings`: the set routes between a set's games): `ranked_set:{set}`,
+  `player_ranked_set:{player}`, `ranked_set_checkins:{set}`, `ranked_disconnect:{player}`, `match_server_crash:{match}`,
+  `elo_processed_set:{set}` (the TS websocket skips a set it finds there), `match_to_set:{match}` and `match_characters:{match}`,
+  as the TS routes read and write them; the TS websocket still writes the set's score at each game's end and rates a set
+  won at a game's end (6). The next game is written as the TS `createNextSetMatch` wrote it (`match:{id}` with one ticket
+  of every player, the notification at `{id}`, `match:notifications`), except that the set's keys written with it
+  (`ranked_set`, `player_ranked_set`, `match_to_set`) live 20 min where TS gave 10. `ranked_set_match:{set}` (the set's
+  current game) is C#'s alone. Ratings and set stats (`eloratings`, `playerstats`) keep mongoose's shape (int32 counts, `updated_at` a
+  double, the upsert's `$setOnInsert` defaults): `tools/matches/set_diff.mjs`.
 - **Cosmetics:** `player:{id}:cosmetics` (JSON, no TTL) and the `cosmetics` collection, read by
   `get_equipped_cosmetics` and written by the six equip routes (`CosmeticsService`): the stored document as
   `JSON.stringify` writes a lean read (`_id`, `account_id`, `__v` kept), with a taunt entry per character. The TS
@@ -160,23 +174,28 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   or the websocket service.
 - **Delete when:** the websocket is ported: C# closes the socket itself; the channel and its TS handler go.
 
-### 6. Ratings (ELO) are still the TS server's, and only one of its three paths knows C#'s matches
+### 6. Ratings (ELO) are still partly the TS server's, which asks "does this match count" its own ways
 
-- **What:** ratings change in three TS places: the match result (`processMatchResult`, services/eloService.ts, from
-  `/ovs_end_match`), a pre-game dodge (`handlers/match_status.ts`) and a disconnect after the start (`websocket.ts`).
-  The match result skips a match whose `match:{id}` has `isPasswordMatch`; the other two skip only a match config with
-  `isCustomGame`, and neither leaves bots out. Every match C# starts (`MatchLauncher`: rift nodes, custom lobbies; the
-  Casual queue's matches too) has `isPasswordMatch` and a mode of 1v1 or 2v2; a custom lobby's and the Casual queue's
-  (human or bots: `BotDefaults.UnrankedNotificationFields`) also have `isCustomGame`, which keeps them out of all three
-  and out of the TS best-of-3 sets. A rift match has not: a player who leaves one before or during it is charged on their
-  regular 1v1/2v2 rating, and the bot gets a rating document. Read in the code, not seen yet: the bench's eloratings had no bot ids
-  (2026-10-02). TS is not changed for it (it is going away).
+- **What:** a set ended between its games is rated in C# (`RankedSets`: the set over at its check-ins, a concede, an
+  opponent who disconnected and stayed offline; `SetRatings`, the TS `processSetResult` and `recordSetStats` value for
+  value), and only when `RatedMatches` says the set counts: the regular 1v1/2v2 queues, no bot, not a password match, not
+  a custom game. The TS server still rates in four places: a set won at a game's end (the websocket's `handleOnMatchEnd`,
+  with the set's `elo_processed_set` key between the two so a set is rated once), the match result (`processMatchResult`,
+  services/eloService.ts, from `/ovs_end_match`), a pre-game dodge (`handlers/match_status.ts`) and a disconnect after the
+  start (`websocket.ts`). Its match result skips a match whose `match:{id}` has `isPasswordMatch`; the dodge and
+  disconnect skip only a match config with `isCustomGame`, and none of them leaves bots out. Every match C# starts
+  (`MatchLauncher`: rift nodes, custom lobbies; the Casual queue's matches too) has `isPasswordMatch` and a mode of 1v1 or
+  2v2; a custom lobby's and the Casual queue's (human or bots: `BotDefaults.UnrankedNotificationFields`) also have
+  `isCustomGame`, which keeps them out of all of them and out of the TS best-of-3 sets. A rift match has not: a player who
+  leaves one before or during it is charged on their regular 1v1/2v2 rating, and the bot gets a rating document. Read in
+  the code, not seen yet: the bench's eloratings had no bot ids (2026-10-02). TS is not changed for it (it is going away).
 - **Rule (for the port):** ratings count for the regular 1v1/2v2 queues only (ranked sets included); never rifts, custom
-  lobbies or Casual (Casual may get a rating of its own, kept apart). The C# port of these three paths decides "does this
-  match count" in one place, used by all three, and never rates a bot.
-- **Until then:** do not ship rift matches to prod before these paths are ported, or accept the leak there (giving rift
+  lobbies or Casual (Casual may get a rating of its own, kept apart). Every C# rating path asks `RatedMatches`
+  (`Core/Leaderboards`), and it never rates a bot.
+- **Until then:** do not ship rift matches to prod before the TS paths are ported, or accept the leak there (giving rift
   matches `isCustomGame` would close it, untested: it also changes what the TS websocket does at a rift match's end).
-- **Delete when:** match results, dodges and disconnects are ported (match flow) with that one check.
+- **Delete when:** match results (the set won at a game's end included), dodges and disconnects are ported (match flow)
+  and ask `RatedMatches`.
 
 ### 7. A Casual match ends with no rematch: the TS websocket declines it for everyone
 
@@ -197,15 +216,15 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 
 - **What:** whether eligible matches run P2P (on the players' own nodes) is `Rollback:P2P` for the matches C# starts
   (`MatchLauncher`: custom lobbies, the Casual queue, rift nodes; the C# matchmaker) and the TS server's `P2P_ROLLBACK`
-  environment variable for the ones it still starts: a ranked set's next game (`createNextSetMatch`), a custom lobby's
-  rematch, and its own matchmaker when it runs. Both write `p2p` into the match config with the same rule
+  environment variable for the ones it still starts: a custom lobby's rematch, and its own matchmaker when it runs (a
+  ranked set's next game is C#'s: `RankedSets`). Both write `p2p` into the match config with the same rule
   (`Matches/P2P.cs`, `src/services/nodePort.ts` hasP2PHost: every match with a human who plays); the rest of a P2P match is TS: `/api/identify` (the node's port), the websocket
   (sends the game to `127.0.0.1` and that port), `/ovs_register` (holds game-server-instance-ready),
   `/ovs_p2p_ready` and `/ovs_p2p_failed` (C# stubs, forwarded by the proxy). `Rollback:P2P` takes `P2P_ROLLBACK` when it
   is not set itself, but a cluster setting changed through the control API is not seen by TS: with the two different, a
-  set's first game and its next ones can disagree.
+  custom lobby's game and its rematch can disagree, and so can a set's game 1 when the TS matchmaker made it.
 - **Until then:** change both together; each executable that starts matches logs the C# value at startup.
-- **Delete when:** set continuations, custom lobby rematches, `/api/identify`, `/ovs_register` and the two P2P routes
+- **Delete when:** custom lobby rematches, `/api/identify`, `/ovs_register` and the two P2P routes
   are ported (match flow), the TS matchmaker is retired, and the websocket reads `p2p` and the node port from C#'s
   config (the realtime gateway).
 

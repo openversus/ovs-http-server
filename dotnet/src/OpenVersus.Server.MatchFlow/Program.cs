@@ -20,6 +20,7 @@ builder.AddPerksLock();
 builder.AddMatchToasts();
 builder.AddMatchInputs();
 builder.AddNodeConfig();
+builder.AddRankedSets();
 
 var app = builder.Build();
 app.UseGameHttp();

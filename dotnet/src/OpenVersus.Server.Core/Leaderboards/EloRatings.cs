@@ -56,7 +56,8 @@ public sealed class EloRatings(IServiceProvider services, IOptionsMonitor<Ranked
         return rating;
     }
 
-    private static BsonValue JsNumber(double value) =>
+    /// <summary>A JS number as the node driver stores it: an int32 when it is a whole number in range, else a double.</summary>
+    internal static BsonValue JsNumber(double value) =>
         value == Math.Floor(value) && value is >= int.MinValue and <= int.MaxValue && !(value == 0 && double.IsNegative(value)) ? new BsonInt32((int)value) : new BsonDouble(value);
 }
 

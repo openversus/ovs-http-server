@@ -379,7 +379,7 @@ public static class MatchLauncherHosting
     {
         if (app.Services.GetService<IMatchLauncher>() is not null)
         {
-            app.Logger.LogWarning("MIGRATION BRIDGE: P2P is switched twice, Rollback:P2P (here, now {P2P}) for the matches C# starts and the TS server's P2P_ROLLBACK for set continuations, custom lobby rematches and its own matchmaker; keep them the same. See dotnet/docs/MIGRATION-BRIDGES.md (8)",
+            app.Logger.LogWarning("MIGRATION BRIDGE: P2P is switched twice, Rollback:P2P (here, now {P2P}) for the matches C# starts and the TS server's P2P_ROLLBACK for custom lobby rematches and its own matchmaker; keep them the same. See dotnet/docs/MIGRATION-BRIDGES.md (8)",
                 app.Services.GetRequiredService<IOptionsMonitor<RollbackSettings>>().CurrentValue.P2P);
         }
     }

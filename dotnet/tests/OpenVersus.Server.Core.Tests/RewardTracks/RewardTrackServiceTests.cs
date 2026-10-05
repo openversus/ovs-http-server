@@ -82,7 +82,7 @@ public sealed class RewardTrackServiceTests : IAsyncLifetime
         // A battle pass: its threshold-0 tier is reached (CurrentTier 1), and claimed.
         var pass = Track(answer, "mrt_battlepass_season_five");
         Assert.Equal(1, pass["CurrentTier"]!.GetValue<int>());
-        Assert.Equal(["5A44B3F9428A35AEE479AF923854E5D7"], pass["CompletedTiers"]!.AsArray().Select(t => t!.GetValue<string>()));
+        Assert.Equal(["5A44B3F9428A35AEE479AF923854E5DA"], pass["CompletedTiers"]!.AsArray().Select(t => t!.GetValue<string>()));
         Assert.NotEmpty(pass["ClaimedRewards"]!.AsArray());
         // A character level, the daily bonus track: nothing reached.
         foreach (string slug in new[] { "mrt_mastery_wonder_woman", "mrt_bonus_mission_new", "mrt_mastery_account" })

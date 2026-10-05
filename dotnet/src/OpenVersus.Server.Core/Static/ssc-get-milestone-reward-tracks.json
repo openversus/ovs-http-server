@@ -2374,7 +2374,7 @@
         "ClaimedRewards": [],
         "bHasPremium": false,
         "Guid": "",
-        "InfiniteTierThreshold": -1,
+        "InfiniteTierThreshold": 15,
         "HighestClaimedInifiniteTier": -1
       },
       {
@@ -2432,7 +2432,7 @@
         "ClaimedRewards": [],
         "bHasPremium": false,
         "Guid": "",
-        "InfiniteTierThreshold": -1,
+        "InfiniteTierThreshold": 15,
         "HighestClaimedInifiniteTier": -1
       },
       {
@@ -2493,7 +2493,7 @@
         ],
         "bHasPremium": false,
         "Guid": "e693b965-7c8c-40f7-b89f-14c79dd6a609",
-        "InfiniteTierThreshold": 70,
+        "InfiniteTierThreshold": 48,
         "HighestClaimedInifiniteTier": -1
       },
       {

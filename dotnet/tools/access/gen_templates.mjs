@@ -198,7 +198,8 @@ write("inventory-taunts.json", await literal("src/data/taunts.ts", "const AllTau
   const imports = [...fs.readFileSync(path.join(root, hiss), "utf8").matchAll(/^import \{ ([A-Z_, ]+) \} from "\.\.\/data\/(\w+)";$/gm)];
   const scope = {
     getCurrentCRC: () => marker("crc"),
-    MATCHMAKING_CRC: 1,
+    // As src/data/config.ts has it (bumped when queue or game-mode data changes, so clients drop their cached config).
+    MATCHMAKING_CRC: Number(fs.readFileSync(path.join(root, "src/data/config.ts"), "utf8").match(/^export const MATCHMAKING_CRC = (\d+);$/m)[1]),
     getAssetsByType: (type) => ({ map: () => marker(`assets:${type}`) }),
     getAllAssets: () => ({ map: () => marker("assets:all") }),
     getAllSkinsByChar: () => marker("skinsByCharacter"),

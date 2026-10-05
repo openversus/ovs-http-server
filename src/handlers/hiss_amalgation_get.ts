@@ -200,7 +200,7 @@ export function generate_hiss() {
           },
         },
         "inventory-item-definitions": {
-          _hydra_compressed: INVENTORY_DEFINITIONS,
+          _hydra_compressed: {}, //INVENTORY_DEFINITIONS,
         },
         "enabled-assets-data": {
           _hydra_compressed: {

@@ -82,7 +82,8 @@ public sealed class HissServiceTests : IAsyncLifetime
 
         Assert.DoesNotContain("{{", answer.ToJsonString(), StringComparison.Ordinal);
         Assert.Equal(42, answer["body"]!["Crc"]!.GetValue<double>());
-        Assert.Equal(1, answer["body"]!["MatchmakingCrc"]!.GetValue<int>());
+        // src/data/config.ts MATCHMAKING_CRC: 2 since End Game opened the FFA queue and closed casual.
+        Assert.Equal(2, answer["body"]!["MatchmakingCrc"]!.GetValue<int>());
         var data = answer["body"]!["Data"]!.AsObject();
         Assert.Equal(20, data.Count);
         Assert.All(data, section => Assert.NotNull(section.Value!["_hydra_compressed"]));

@@ -71,8 +71,9 @@ test("HISS visibility, definitions and owned inventory expose Chromium with meta
   t.mock.method(DataAssetModel, "find", () => ({ lean: () => ({ exec: async () => assets }) }) as any);
   await loadAssets();
   const hiss = generate_hiss().body.Data;
-  assert.equal(hiss["inventory-item-definitions"]._hydra_compressed.skin_ovs_chromium_shaggy,
-    INVENTORY_DEFINITIONS.skin_ovs_chromium_shaggy);
+  // The hiss sends no item definitions, as on the dotnet branch (2026-10-04: to be added back only if a
+  // cosmetic turns out to need them).
+  assert.deepEqual(hiss["inventory-item-definitions"]._hydra_compressed, {});
   const enabled = hiss["enabled-assets-data"]._hydra_compressed as any;
   const config = enabled.ClientAssetData;
   assert.ok(config, "enabled-assets config exists");

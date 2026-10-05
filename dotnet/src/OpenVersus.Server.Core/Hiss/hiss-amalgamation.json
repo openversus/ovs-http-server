@@ -1,7 +1,7 @@
 {
   "body": {
     "Crc": "{{crc}}",
-    "MatchmakingCrc": 1,
+    "MatchmakingCrc": 2,
     "Data": {
       "game-mode-config": {
         "_hydra_compressed": {
@@ -5357,7 +5357,7 @@
               "AssetBundleData": {
                 "Bundles": []
               },
-              "bAlwaysAvailable": false,
+              "bAlwaysAvailable": true,
               "bIsEnabled": true,
               "DisplayName": {
                 "localizations": {
@@ -5385,8 +5385,8 @@
               "AssetBundleData": {
                 "Bundles": []
               },
-              "bAlwaysAvailable": true,
-              "bIsEnabled": true,
+              "bAlwaysAvailable": false,
+              "bIsEnabled": false,
               "DisplayName": {
                 "localizations": {
                   "loc_Casual_Queue": "Casual Queue"
@@ -6032,6 +6032,10 @@
               "bIsEnabled": true,
               "MapsInRotation": [
                 {
+                  "Map": "OVS_SkyFortress_V1",
+                  "SelectionWeight": 1
+                },
+                {
                   "Map": "M000_V2_NEW",
                   "SelectionWeight": 1
                 },
@@ -6219,6 +6223,10 @@
             "data": {
               "bIsEnabled": true,
               "MapsInRotation": [
+                {
+                  "Map": "OVS_SkyFortress_V1",
+                  "SelectionWeight": 1
+                },
                 {
                   "Map": "M000_V1_NEW",
                   "SelectionWeight": 1
@@ -6531,6 +6539,10 @@
             "data": {
               "bIsEnabled": true,
               "MapsInRotation": [
+                {
+                  "Map": "OVS_SkyFortress_V1",
+                  "SelectionWeight": 1
+                },
                 {
                   "Map": "M000_V1_NEW",
                   "SelectionWeight": 1

@@ -99,8 +99,8 @@ public sealed class NodeConfigTests : IDisposable
         Assert.NotNull(answer);
         Assert.True(Verifies(answer.Value.Body, answer.Value.Signature));
         var json = JsonNode.Parse(answer.Value.Body)!;
-        Assert.Equal(1, (int)json["version"]!);
-        Assert.Equal(65536, (int)json["config"]!["Networking"]!["ReceiveBufferSize"]!);
+        Assert.Equal(2, (int)json["version"]!);
+        Assert.Equal(1048576, (int)json["config"]!["Networking"]!["ReceiveBufferSize"]!);
         // One byte changed and the node refuses it.
         byte[] tampered = (byte[])answer.Value.Body.Clone();
         tampered[^2] ^= 1;

@@ -269,7 +269,8 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
             log.LogInformation("Set {Set} is over ({Reason}), processing ELO and ending set", setId, conceded ? "concede" : $"score {team0Wins}-{team1Wins}");
             if (await redis.StringSetAsync($"elo_processed_set:{setId}", "set_over", TimeSpan.FromMinutes(5), When.NotExists))
             {
-                await RateAndAnnounceAsync(redis, set, setId, current, team0Wins > team1Wins ? 0 : 1, conceded, "set");
+                await RateAndAnnounceAsync(redis, set, setId, current, team0Wins > team1Wins ? 0 : 1, conceded, "set",
+                    conceded ? Text(set["concedingPlayer"]) : null);
             }
             else
             {
@@ -588,12 +589,13 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
             return;
         }
 
-        await RateAndAnnounceAsync(redis, set, setId, current, Number(team) == 0 ? 1 : 0, isConcede: true, reason);
+        await RateAndAnnounceAsync(redis, set, setId, current, Number(team) == 0 ? 1 : 0, isConcede: true, reason, conceder);
     }
 
     // Rates the set for winnerTeam, then ranked_set:fullrankupdate (the TS websocket sends each player their ranks). A
     // failure is logged and announces nothing, as there.
-    private async Task RateAndAnnounceAsync(IDatabase redis, JsonObject set, string setId, string current, int winnerTeam, bool isConcede, string reason)
+    private async Task RateAndAnnounceAsync(IDatabase redis, JsonObject set, string setId, string current, int winnerTeam, bool isConcede, string reason,
+        string? quitter = null)
     {
         try
         {
@@ -616,7 +618,8 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
                 var winners = winnerTeam == 0 ? team0 : team1;
                 var losers = winnerTeam == 0 ? team1 : team0;
                 await ratings.RateAsync(new SetOutcome(winners, losers, mode, team0Wins, team1Wins, winnerTeam, isConcede,
-                    await CharactersAsync(redis, [.. winners, .. losers], setId, current), setId), CancellationToken.None);
+                    await CharactersAsync(redis, [.. winners, .. losers], setId, current), setId,
+                    QuitterIds: quitter is { Length: > 0 } ? [quitter] : null), CancellationToken.None);
             }
 
             await PublishAsync(redis, FullRankUpdateChannel, new JsonObject { ["playerIds"] = Strings(PlayerIds(set)) });

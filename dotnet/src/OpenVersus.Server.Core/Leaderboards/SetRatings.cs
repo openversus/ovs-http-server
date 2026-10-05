@@ -38,7 +38,10 @@ namespace OpenVersus.Server.Core.Leaderboards;
 // per player either way. A per-character entry missing a number counts it as 0 (TS: NaN, written into the rating; none
 // of the 4,105 entries in the prod copy of 2026-09-29 is missing one).
 
-/// <summary>A finished set to rate: the teams, the mode, the score (team 0, team 1), who won and how.</summary>
+/// <summary>
+/// A finished set to rate: the teams, the mode, the score (team 0, team 1), who won and how. For End Game's set XP
+/// (RankedSetXpPayout): who quit, and for a pregame dodge the games its set finished before.
+/// </summary>
 public sealed record SetOutcome(
     IReadOnlyList<string> WinnerIds,
     IReadOnlyList<string> LoserIds,
@@ -49,7 +52,9 @@ public sealed record SetOutcome(
     bool IsConcede,
     IReadOnlyDictionary<string, string> Characters,
     string MatchId,
-    bool IsPregameDodge = false);
+    bool IsPregameDodge = false,
+    IReadOnlyList<string>? QuitterIds = null,
+    int GamesBeforeDodge = 0);
 
 public interface ISetRatings
 {
@@ -170,6 +175,12 @@ internal sealed class SetRatings(IServiceProvider services, EloRatings ratings, 
             string.Join(",", outcome.WinnerIds), string.Join(",", outcome.LoserIds), score, outcome.IsConcede, JsRound(avgWinnerElo), JsRound(avgLoserElo));
 
         await RecordSetStatsAsync(mongo, outcome, is1v1, charsField, expectedScores, ct);
+        // End Game's set XP, as the TS processSetResult awarded it once the set was rated.
+        if (redis is not null && outcome.MatchId.Length > 0)
+        {
+            await RewardTracks.RankedSetXpPayout.PublishSetAsync(redis, outcome);
+        }
+
         return deltas;
     }
 

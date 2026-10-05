@@ -270,6 +270,19 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
         log.LogInformation("Dropped set {Set} for {Players} player(s) after a rollback crash (no rating)", setId, all.Count);
     }
 
+    // The games a set's state says it finished: its gamesPlayed, or its score's sum when that is more.
+    private static int GamesFinished(JsonObject? set)
+    {
+        if (set is null)
+        {
+            return 0;
+        }
+
+        static int Count(JsonNode? value) => value is JsonValue v && v.TryGetValue(out double d) && double.IsFinite(d) ? (int)d : 0;
+        var scores = set["scores"] as JsonArray;
+        return Math.Max(Count(set["gamesPlayed"]), Count(scores?.ElementAtOrDefault(0)) + Count(scores?.ElementAtOrDefault(1)));
+    }
+
     // Before the start: the leaver dodged; the other team wins the set.
     private async Task PregameDodgeAsync(IDatabase redis, string matchId, string playerId, JsonObject? config, List<JsonObject>? configPlayers)
     {
@@ -310,7 +323,10 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
         else
         {
             var characters = await CharactersAsync(redis, [.. winners, .. losers], setId);
-            await ratings.RateAsync(new SetOutcome(winners, losers, mode!, 0, 0, winnerTeam, IsConcede: true, characters, matchId, IsPregameDodge: true), CancellationToken.None);
+            // End Game's set XP: the dodger is the quitter, and the games the set finished before decide whether it pays.
+            int gamesBefore = setId == matchId ? 0 : GamesFinished(await RollbackCallbacks.JsonAsync(redis, $"ranked_set:{setId}"));
+            await ratings.RateAsync(new SetOutcome(winners, losers, mode!, 0, 0, winnerTeam, IsConcede: true, characters, matchId, IsPregameDodge: true,
+                QuitterIds: [playerId], GamesBeforeDodge: gamesBefore), CancellationToken.None);
             log.LogInformation("Pregame dodge rated (rollback PlayerDisconnect): {Player} left match {Match}", playerId, matchId);
             await redis.PublishAsync(RedisChannel.Literal(RankedSets.FullRankUpdateChannel),
                 Js.Stringify(new JsonObject { ["playerIds"] = RollbackCallbacks.PlayerIds(configPlayers) }));

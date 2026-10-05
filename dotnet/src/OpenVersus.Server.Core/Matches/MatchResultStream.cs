@@ -150,6 +150,7 @@ internal sealed class MatchResultStream(IServiceProvider services, IMissionServi
                 if (Text(result["playerId"]) is { Length: > 0 } playerId)
                 {
                     await missions.RecordMatchXpAsync(matchId, playerId, winning, ct);
+                    await FfaXpAsync(redis, matchId, playerId, winning);
                     if (missionSettings.CurrentValue.Enabled)
                     {
                         await missions.RecordMatchAsync(matchId, playerId, winning, counters, ct);
@@ -169,6 +170,25 @@ internal sealed class MatchResultStream(IServiceProvider services, IMissionServi
         {
             log.LogError(e, "Match result {Id} not recorded yet (it stays pending): {Error}", entry.Id, e.Message);
         }
+    }
+
+    // End Game's XP for a public FFA game (the TS submit_end_of_match_stats paid it, rankedSetXpService.ts): the reporter,
+    // when a human of a public FFA match, the winner as a win. Paid once per match and player by the subscriber.
+    private static async Task FfaXpAsync(IDatabase redis, string matchId, string playerId, int? winning)
+    {
+        if (Js.Parse((string?)await redis.StringGetAsync(matchId) ?? "null") is not JsonObject config || Text(config["mode"]) != "FFA"
+            || config["isCustomGame"] is JsonValue custom && custom.GetValueKind() == System.Text.Json.JsonValueKind.True
+            || (config["players"] as JsonArray ?? []).FirstOrDefault(p => Text(p?["playerId"]) == playerId) is not JsonObject player
+            || player["isBot"] is JsonValue bot && bot.GetValueKind() == System.Text.Json.JsonValueKind.True
+            || player["isSpectator"] is JsonValue spectator && spectator.GetValueKind() == System.Text.Json.JsonValueKind.True)
+        {
+            return;
+        }
+
+        string character = Text((Js.Parse((string?)await redis.StringGetAsync($"match_characters:{matchId}") ?? "null") as JsonObject)?[playerId])
+            ?? (string?)await redis.HashGetAsync($"connections:{playerId}", "character") ?? "";
+        bool won = winning is { } team && MatchWinner.Number(player["teamIndex"]) is { } index && (int)index == team;
+        await RewardTracks.RankedSetXpPayout.PublishFfaAsync(redis, playerId, won, character, matchId);
     }
 
     // Every human of the match (the config's players that are not bots) has reported.

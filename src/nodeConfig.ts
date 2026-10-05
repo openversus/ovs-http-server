@@ -58,7 +58,9 @@ export function checkSigningKey(): void {
   const k = signingKey();
   if (!k) return;
   const name = env.P2P_NODE_PUBLIC_KEY;
-  const file = /[\\/]/.test(name) ? name : join(__dirname, "data", "pki", name, "node-config-public-key.txt");
+  const isPath = /[\\/]/.test(name);
+  const file = isPath ? name : join(__dirname, "data", "pki", name, "node-config-public-key.txt");
+  const which = isPath ? `public key ${file}` : `${name} public key, ${file}`;
   let expected: Buffer;
   try {
     const key = createPublicKey({ key: Buffer.from(readFileSync(file, "utf-8").trim(), "base64"), format: "der", type: "spki" });
@@ -69,9 +71,9 @@ export function checkSigningKey(): void {
   }
   const actual = createPublicKey(k).export({ type: "spki", format: "der" }) as Buffer;
   if (actual.equals(expected)) {
-    logger.info(`${logPrefix} the P2P node signing key matches the ${name} public key (${fingerprint(actual)})`);
+    logger.info(`${logPrefix} the P2P node signing key belongs to the ${which} (${fingerprint(actual)})`);
   } else {
-    logger.error(`${logPrefix} the P2P node signing key is NOT the ${name} key: nodes built for ${name} (${fingerprint(expected)}) refuse everything signed with this one (${fingerprint(actual)}) and send every P2P match to the relay`);
+    logger.error(`${logPrefix} the P2P node signing key does NOT belong to the ${which}: nodes built for it (${fingerprint(expected)}) refuse everything signed with this one (${fingerprint(actual)}) and send every P2P match to the relay`);
   }
 }
 

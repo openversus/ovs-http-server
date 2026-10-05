@@ -87,10 +87,12 @@ internal sealed class NodeConfig(IOptionsMonitor<RollbackSettings> settings, Tim
             }
 
             string name = settings.CurrentValue.NodePublicKey;
+            bool isPath = name.Contains('/') || name.Contains('\\');
+            string which = isPath ? $"public key {name}" : $"{name} public key, built in from pki/{name}/node-config-public-key.txt";
             byte[] expected;
             try
             {
-                string text = name.Contains('/') || name.Contains('\\') ? File.ReadAllText(name) : BuiltInPublicKey(name)
+                string text = isPath ? File.ReadAllText(name) : BuiltInPublicKey(name)
                     ?? throw new FileNotFoundException($"there is no built-in public key \"{name}\" (pki/<name>/node-config-public-key.txt)");
                 using var publicKey = ECDsa.Create();
                 publicKey.ImportSubjectPublicKeyInfo(Convert.FromBase64String(text.Trim()), out _);
@@ -105,12 +107,12 @@ internal sealed class NodeConfig(IOptionsMonitor<RollbackSettings> settings, Tim
             byte[] actual = key.ExportSubjectPublicKeyInfo();
             if (actual.AsSpan().SequenceEqual(expected))
             {
-                log.LogInformation("The P2P node signing key matches the {Name} public key ({Fingerprint})", name, Fingerprint(actual));
+                log.LogInformation("The P2P node signing key belongs to the {Which} ({Fingerprint})", which, Fingerprint(actual));
                 return KeyCheck.Matches;
             }
 
-            log.LogError("The P2P node signing key is NOT the {Name} key: nodes built for {Name} ({Expected}) refuse everything signed with this one ({Actual}) and send every P2P match to the relay",
-                name, name, Fingerprint(expected), Fingerprint(actual));
+            log.LogError("The P2P node signing key does NOT belong to the {Which}: nodes built for it ({Expected}) refuse everything signed with this one ({Actual}) and send every P2P match to the relay",
+                which, Fingerprint(expected), Fingerprint(actual));
             return KeyCheck.Differs;
         }
     }

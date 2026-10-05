@@ -15,6 +15,10 @@ export interface RankedSetResult {
   setKey: string;
   /** Games the set finished. A dodge's score is [0, 0], so it counts the games before the dodge. */
   gamesPlayed: number;
+  /** The set ended by a concede (or a walkout or dodge recorded as one). */
+  isConcede: boolean;
+  /** Who quit (conceded, walked out or dodged). A concede that names nobody counts every loser as a quitter. */
+  quitterIds: string[];
 }
 
 /** Games a ranked set has finished so far (0 when there is no set state), for a dodge before game 2 or 3. */
@@ -40,9 +44,10 @@ async function grantPlayerXp(accountId: string, won: boolean, characterSlug: str
  * Battle-pass and Fighter Pass XP are earned once per completed ranked set,
  * never per game. Custom games never create ranked sets, so they earn neither.
  * XP needs at least one game played: a set that ends before any game finished
- * (a pregame dodge) pays nobody, not even the side given the win. Once a game
- * was played, both sides are paid however the set ended (a concede, a walkout,
- * or a dodge before game 2 or 3). Fighter Pass XP goes to the character the
+ * (a pregame dodge) pays nobody, not even the side given the win. After that,
+ * whoever quit (a concede, a walkout, or a dodge before game 2 or 3) gets
+ * nothing, and everyone else is paid: the winners aren't at fault, and neither
+ * is a 2v2 teammate who stayed. Fighter Pass XP goes to the character the
  * player used for the set.
  */
 export async function awardRankedSetXp(result: RankedSetResult): Promise<void> {
@@ -50,10 +55,12 @@ export async function awardRankedSetXp(result: RankedSetResult): Promise<void> {
     logger.info(`${logPrefix} Set ${result.setKey} ended before any game was played: no XP`);
     return;
   }
+  const quitters = new Set(result.quitterIds.length ? result.quitterIds : result.isConcede ? result.loserIds : []);
   const recipients = [
     ...result.winnerIds.map((id) => ({ id, won: true })),
     ...result.loserIds.map((id) => ({ id, won: false })),
-  ];
+  ].filter(({ id }) => !quitters.has(id));
+  if (quitters.size) logger.info(`${logPrefix} Set ${result.setKey}: no XP for ${[...quitters].join(", ")} (quit)`);
   for (const { id, won } of recipients) {
     try {
       await grantPlayerXp(

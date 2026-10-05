@@ -202,7 +202,7 @@ sscRouter.put("/ssc/invoke/match_set_concede", async (req: Request, res: Respons
             const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
             try {
               const chars = await getPlayerCharacters([...winnerIds, ...loserIds], setId);
-              await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars, setId);
+              await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars, setId, false, 0, [playerId]);
               await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
             } catch (e) {
               logger.error(`[SSC.Routes]: Error processing concede ELO: ${e}`);
@@ -388,7 +388,7 @@ async function handleRankedSetCheckin(playerId: string) {
           const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
           try {
             const chars = await getPlayerCharacters([...winnerIds, ...loserIds], setId);
-            await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars, setId);
+            await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars, setId, false, 0, [pid]);
             await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
           } catch (e) {
             logger.error(`[SSC.Routes]: Error processing disconnect concede ELO: ${e}`);
@@ -457,6 +457,7 @@ async function handleRankedSetCheckin(playerId: string) {
             winnerIds, loserIds, setState.mode,
             scores as [number, number], winnerTeam,
             setState.conceded || false, chars, setId,
+            false, 0, setState.concedingPlayer ? [setState.concedingPlayer] : [],
           );
           await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
         } catch (e) {

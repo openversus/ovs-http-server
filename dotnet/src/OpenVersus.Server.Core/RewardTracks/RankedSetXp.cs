@@ -12,8 +12,8 @@ using StackExchange.Redis;
 namespace OpenVersus.Server.Core.RewardTracks;
 
 // End Game's ranked-set XP. The TS server settles ranked sets (and public FFA games) and decides who is paid and whether
-// they won (rankedSetXpService.ts: nothing before a game is played, so a pregame dodge pays nobody; after one, both
-// sides however the set ended); it publishes
+// they won (rankedSetXpService.ts: nothing before a game is played, so a pregame dodge pays nobody; after one, a set
+// player who quit gets nothing, everyone else is paid); it publishes
 // {playerId, won, character, setKey, source} for each player on reward_tracks:ranked_set (docs/MIGRATION-BRIDGES.md 9).
 // Once per player and set:
 //

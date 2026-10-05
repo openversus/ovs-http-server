@@ -567,7 +567,7 @@ export class WebSocketService {
                     const { processSetResult } = await import("./services/eloService.js");
                     const { gamesFinishedInSet } = await import("./services/rankedSetXpService.js");
                     const gamesBefore = setId !== matchId ? await gamesFinishedInSet(setId) : 0;
-                    await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId, true, gamesBefore);
+                    await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId, true, gamesBefore, [playerId]);
                     await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: matchConfig.players.map((p) => p.playerId) }));
                     logger.info(`[${serviceName}]: Pregame dodge: ${playerId} (${playerWS.account.username}) left match ${matchId} — ELO processed`);
                   } catch (eloErr) {
@@ -2754,7 +2754,9 @@ export class WebSocketService {
               }
             }
             const { processSetResult } = await import("./services/eloService.js");
-            await processSetResult(winnerIds, loserIds, existingSet.mode, scores as [number, number], winnerTeam, false, playerChars, notification.matchId);
+            // A walkout during the deciding game: the set completes on score, but the leaver quit (no XP for them).
+            await processSetResult(winnerIds, loserIds, existingSet.mode, scores as [number, number], winnerTeam, false, playerChars, notification.matchId,
+              false, 0, dodgedByPlayer ? [dodgedByPlayer] : []);
             } else {
               logger.info(`[${serviceName}]: ELO already processed for set ${setId}, skipping set-complete processing`);
             }

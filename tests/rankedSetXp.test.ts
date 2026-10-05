@@ -22,6 +22,8 @@ const set = (overrides: Partial<Parameters<typeof awardRankedSetXp>[0]> = {}) =>
   playerCharacters: new Map([["winner", "character_shaggy"], ["loser", "character_BananaGuard"]]),
   setKey: "set-1",
   gamesPlayed: 2,
+  isConcede: false,
+  quitterIds: [] as string[],
   ...overrides,
 });
 
@@ -36,17 +38,29 @@ test("a completed ranked set pays each player once, as winner or loser, on the c
 
 test("a set that ends before any game was played pays nobody, not even the side given the win", async (t) => {
   const h = harness(t);
-  await awardRankedSetXp(set({ setKey: "dodge", gamesPlayed: 0 }));
+  await awardRankedSetXp(set({ setKey: "dodge", gamesPlayed: 0, isConcede: true }));
   assert.equal(h.published.length, 0);
 });
 
-test("once a game was played, both sides are paid however the set ended (concede, walkout, later dodge)", async (t) => {
+test("after a game, whoever quit (concede, walkout, later dodge) gets nothing; the winner is still paid", async (t) => {
   const h = harness(t);
-  await awardRankedSetXp(set({ setKey: "after-one", gamesPlayed: 1 }));
-  assert.deepEqual(h.paid(), [
-    ["winner", true, "character_shaggy", "ranked:after-one"],
-    ["loser", false, "character_BananaGuard", "ranked:after-one"],
-  ]);
+  await awardRankedSetXp(set({ setKey: "concede", gamesPlayed: 1, isConcede: true, quitterIds: ["loser"] }));
+  assert.deepEqual(h.paid(), [["winner", true, "character_shaggy", "ranked:concede"]]);
+});
+
+test("a concede naming nobody counts every loser as a quitter", async (t) => {
+  const h = harness(t);
+  await awardRankedSetXp(set({ setKey: "unnamed", gamesPlayed: 1, isConcede: true }));
+  assert.deepEqual(h.paid().map(p => p[0]), ["winner"]);
+});
+
+test("a walkout in the deciding game pays everyone but the leaver, so a 2v2 teammate who stayed is paid", async (t) => {
+  const h = harness(t);
+  await awardRankedSetXp(set({
+    setKey: "2v2", gamesPlayed: 3, loserIds: ["leaver", "stayed"], quitterIds: ["leaver"],
+    playerCharacters: new Map([["winner", "character_shaggy"], ["leaver", "character_jake"], ["stayed", "character_finn"]]),
+  }));
+  assert.deepEqual(h.paid().map(p => [p[0], p[1]]), [["winner", true], ["stayed", false]]);
 });
 
 test("a dodge counts the games its set finished before it", async (t) => {

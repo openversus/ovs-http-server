@@ -45,6 +45,14 @@ public sealed class TsEnvironmentTests
     public void P2PRollbackReadsAsTheTsServerCompares(string value, string expected) =>
         Assert.Equal(expected, With(new() { ["P2P_ROLLBACK"] = value })["Rollback:P2P"]);
 
+    [Theory]
+    // FFA_WEEKEND_ONLY is envalid's bool too (src/env/env.ts).
+    [InlineData("f", "false")]
+    [InlineData("0", "false")]
+    [InlineData("true", "true")]
+    public void FfaWeekendOnlyReadsAsEnvalidDoes(string value, string expected) =>
+        Assert.Equal(expected, With(new() { ["FFA_WEEKEND_ONLY"] = value })["Ffa:WeekendOnly"]);
+
     [Fact]
     public void TheCatalogKeyWins() =>
         Assert.Equal("2.0", With(new() { ["MIN_CLIENT_VERSION"] = "1.0", ["Clients:MinimumVersion"] = "2.0" })["Clients:MinimumVersion"]);

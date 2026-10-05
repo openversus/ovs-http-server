@@ -30,7 +30,8 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   matchmakingId: "party-changed"}`; `MatchmakingRequestService`, the game's cancel: `{playersIds, matchmakingId}`; the TS
   websocket keeps the queue ticket and its tick in memory, so it cancels them) and `party:queued`
   (`MatchmakingRequestService`, the matchmaking request's ticket, as queueMatch builds it; the TS websocket sends the game
-  OnMatchmakerStarted and pushes the ticket onto the `1v1` or `2v2` list, which the matchmaker reads),
+  OnMatchmakerStarted and pushes the ticket onto the list its `matchType` names, `1v1`, `2v2`, `FFA` or Casual's, which
+  the matchmaker reads),
   `perks:notifications` (`PerksLock`, every player of a match has locked their perks: `{containerMatchId, playerIds}`;
   the TS websocket puts the perks into each player's match config, which it holds in memory, and sends it again) and
   `toast:received` (`MatchToasts`, a toast after a match: `{toasterAccountId, toasterUsername, toasteeAccountId,
@@ -65,7 +66,7 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   it), `ssc_custom_lobby_player:{player}`, `lobby_code:{code}`, `ssc_custom_lobby_match:{match}` (the TS match end and
   rematch read it) and `bot_config:{bot}` (the TS websocket builds a bot's match config from it), TTLs as the TS
   server's. `rematch_accept`, `rematch_decline` and the match end stay on the TS server until the match flow moves.
-- **Matchmaking** (`MatchmakingWorker` in its own executable, `OpenVersus.Server.Matchmaking`; on unless `Matchmaking:Enabled` is false): the queues `1v1` and `2v2` (ticket JSON lists the TS
+- **Matchmaking** (`MatchmakingWorker` in its own executable, `OpenVersus.Server.Matchmaking`; on unless `Matchmaking:Enabled` is false): the queues `1v1`, `2v2` and `FFA` (ticket JSON lists the TS
   websocket fills when a party queues and empties on a cancel or disconnect), `player_heartbeats`,
   `player:{id}:blocked` and `player:{id}` `ip` are read as the TS worker reads them; a match writes what the TS worker
   writes (`match:{id}` with the tickets as queued, the notification at `{id}`, `ranked_set:{id}`,
@@ -73,7 +74,11 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   queue is worked under the TS lock (`matchmaking:lock:{queue}`), so the C# and TS workers can run side by side. The
   maps it picks from are a copy of the TS `src/data/maps1v1.json` / `maps2v2.json` (`Matchmaking/maps.json`,
   `tools/matchmaking/gen_maps.mjs`): a map change goes to the TS files and is generated again (`--check` tells) until
-  the TS worker and websocket (which reads those files for hazards) are gone.
+  the TS worker and websocket (which reads those files for hazards) are gone. An `FFA` match is mode `FFA` in the
+  notification, from which the TS websocket sends it unranked as `evtq_ffa`; it has no ranked set. Outside the FFA
+  window (`Ffa:WeekendOnly`, `Matchmaking/FfaSchedule.cs`) the matchmaker empties the `FFA` list and publishes
+  `matchmaking:cancel` for each ticket, as the TS worker did. The TS website reads its own `FFA_WEEKEND_ONLY` (the FFA
+  searching count, shown only while open), which `Ffa:WeekendOnly` takes when not set itself: keep the two the same.
 - **Cosmetics:** `player:{id}:cosmetics` (JSON, no TTL) and the `cosmetics` collection, read by
   `get_equipped_cosmetics` and written by the six equip routes (`CosmeticsService`): the stored document as
   `JSON.stringify` writes a lean read (`_id`, `account_id`, `__v` kept), with a taunt entry per character. The TS

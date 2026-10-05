@@ -122,14 +122,20 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
             await Db.KeyDeleteAsync(key);
         }
 
-        await Db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, $"connections:{Ip}"]);
+        await Db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, MatchmakingWorker.Ffa, $"connections:{Ip}"]);
     }
 
     private IDatabase Db => _redis!.GetDatabase();
 
-    private MatchmakingRequestService Service(MongoDB.Driver.IMongoDatabase? mongo = null)
+    // FFA always open unless a test says otherwise (FfaScheduleTests has the window).
+    private MatchmakingRequestService Service(MongoDB.Driver.IMongoDatabase? mongo = null, FfaSettings? ffa = null, TimeProvider? time = null, bool withRedis = true)
     {
-        var collection = new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!);
+        var collection = new ServiceCollection();
+        if (withRedis && _redis is not null)
+        {
+            collection.AddSingleton<IConnectionMultiplexer>(_redis);
+        }
+
         if (mongo is not null)
         {
             collection.AddSingleton(mongo);
@@ -138,7 +144,13 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         var services = collection.BuildServiceProvider();
         return new MatchmakingRequestService(services, _gate, _cosmetics,
             new EloRatings(services, new TestOptions<RankedSettings>(new RankedSettings()), TimeProvider.System, NullLogger<EloRatings>.Instance), _launcher,
-            new TestOptions<LobbySettings>(new LobbySettings { GameVersion = "195303.1.1" }), TimeProvider.System, NullLogger<MatchmakingRequestService>.Instance);
+            new TestOptions<LobbySettings>(new LobbySettings { GameVersion = "195303.1.1" }), new TestOptions<FfaSettings>(ffa ?? new FfaSettings { WeekendOnly = false }),
+            time ?? TimeProvider.System, NullLogger<MatchmakingRequestService>.Instance);
+    }
+
+    private sealed class Clock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     private static PartyRequest Asking(string player) => new(player, new JsonObject { ["id"] = player, ["profile_id"] = "0000000000000000000b0900" }, Ip,
@@ -469,6 +481,61 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
 
         Assert.Equal("client_update_required", (string?)answer["body"]!["error"]);
         Assert.Null(_launcher.Launched);
+        Assert.Equal([Me], _gate.Modals);
+    }
+
+    [SkippableFact]
+    // FFA alone: the 1v1 request answered with criteria ffa, onto the FFA list with skill 0; a ticket of the player's in
+    // another queue goes first, and a stale FFA ticket goes when they ask for another queue.
+    public async Task AnFfaRequestAloneIsAnFfaTicket()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await PlayerAsync(Me);
+        await Db.ListRightPushAsync("2v2", """{"players":[{"id":"0000000000000000000b0001"}]}""");
+
+        var answer = (await Service().RequestAsync("ffa", Asking(Me), CancellationToken.None))!;
+
+        Assert.Equal((200, "ffa", 1), (answer.Status, (string?)answer.Body["criteria_slug"], (int)answer.Body["data"]!["player_count"]!));
+        Assert.Empty(await Db.ListRangeAsync("2v2"));
+        await answer.After!();
+        var ticket = Js.Parse(await PublishedAsync(MatchmakingRequestService.QueuedChannel))!;
+        Assert.Equal((MatchmakingWorker.Ffa, 0), ((string?)ticket["matchType"], (int)ticket["players"]![0]!["skill"]!));
+
+        await Db.ListRightPushAsync(MatchmakingWorker.Ffa, """{"players":[{"id":"0000000000000000000b0001"}]}""");
+        await Service().RequestAsync("1v1-retail", Asking(Me), CancellationToken.None);
+        Assert.Empty(await Db.ListRangeAsync(MatchmakingWorker.Ffa));
+    }
+
+    [SkippableFact]
+    // FFA is solo entry: a lobby of two is refused (not sent to 2v2), and nothing is queued.
+    public async Task AnFfaRequestFromALobbyOfTwoIsRefused()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await PlayerAsync(Me);
+        await PlayerAsync(Mate);
+        await LobbyAsync(Me, Mate);
+
+        var answer = (await Service().RequestAsync("ffa", Asking(Me), CancellationToken.None))!;
+
+        Assert.Equal((200, """{"error":"FFA matchmaking requires a solo party"}"""), (answer.Status, Js.Stringify(answer.Body)));
+        Assert.Null(answer.After);
+    }
+
+    [Fact]
+    // Closed (a Tuesday in New York): the TS ffaQueueClosedFailure, 200, before anything else is read; nothing queued.
+    // An outdated client is told to update first, as there. Needs no Redis: the service has none here.
+    public async Task AnFfaRequestOutsideTheWindowIsRefused()
+    {
+        var tuesday = new Clock(DateTimeOffset.Parse("2026-10-06T18:00:00Z"));
+        var service = Service(ffa: new FfaSettings(), time: tuesday, withRedis: false);
+
+        var answer = (await service.RequestAsync("ffa", Asking(Me), CancellationToken.None))!;
+        Assert.Equal((200, Js.Stringify(FfaSchedule.ClosedFailure())), (answer.Status, Js.Stringify(answer.Body)));
+        Assert.Null(answer.After);
+
+        _gate.Outdated.Add(Me);
+        answer = (await service.RequestAsync("ffa", Asking(Me), CancellationToken.None))!;
+        Assert.Equal("client_update_required", (string?)answer.Body["body"]!["error"]);
         Assert.Equal([Me], _gate.Modals);
     }
 

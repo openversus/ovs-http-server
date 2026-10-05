@@ -10,6 +10,7 @@ using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Cosmetics;
 using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Leaderboards;
+using OpenVersus.Server.Core.Settings;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Matches;
@@ -31,10 +32,18 @@ namespace OpenVersus.Server.Core.Matches;
 // never rated, MIGRATION-BRIDGES.md 6), unranked as Casual matches are (BotDefaults.UnrankedNotificationFields). The
 // answer is the TS catch-all's, which is what the game was always given and
 // which it takes as "match found"; the match itself reaches it over the websocket.
+// ffa (the public Free For All queue, the TS handleMatches_matchmaking_ffa_request): the 1v1 request onto the FFA list,
+// answered with criteria ffa; solo only (a lobby of two or more: 200 {error: "FFA matchmaking requires a solo party"},
+// nothing queued) and only while the queue is open (Matchmaking/FfaSchedule.cs; closed: FfaSchedule.ClosedFailure, 200,
+// right after the client check, before anything is cleaned up). Its tickets' skill is 0, as Casual's: the TS server read
+// the 2v2 rating (and made one when missing), which FFA matching never looks at.
 //
 // The request, in the TS server's order:
 //   1v1: the requester's client must be current (else the update modal and the gate's failure body, 200)
-//   both: the requester's tickets leave the 1v1 and 2v2 lists (LREM, silently), and a ranked set they were in is ended
+//   ffa: the queue must be open (else the closed failure, 200)
+//   both: the requester's tickets leave every list (1v1, 2v2, FFA and Casual's; LREM, silently), and a ranked set they
+//         were in is ended
+//   ffa: a lobby of two or more is refused (1v1: it is the 2v2 request)
 //   both: the requester's session (connections:{id}); when player:{id}:cosmetics is missing (never equipped), the
 //         equipped cosmetics become the match copy (connections:{id}:cosmetics); no player:{id} character or skin: 500
 //         {error: "player_loadout_not_found"}; else the loadout becomes the session's (PlayedLoadout)
@@ -77,7 +86,7 @@ public interface IMatchmakingRequestService
 }
 
 internal sealed class MatchmakingRequestService(IServiceProvider services, IClientUpdateGate gate, ICosmeticsService cosmetics, EloRatings ratings, IMatchLauncher launcher,
-    IOptionsMonitor<LobbySettings> settings, TimeProvider time, ILogger<MatchmakingRequestService> log) : IMatchmakingRequestService
+    IOptionsMonitor<LobbySettings> settings, IOptionsMonitor<Matchmaking.FfaSettings> ffa, TimeProvider time, ILogger<MatchmakingRequestService> log) : IMatchmakingRequestService
 {
     public const string QueuedChannel = "party:queued";
 
@@ -101,6 +110,8 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
                 return await TwoVersusTwoAsync(request, Regular, ct);
             case "casual-retail":
                 return await OneVersusOneAsync(request, Casual, ct);
+            case "ffa":
+                return await OneVersusOneAsync(request, FreeForAll, ct);
             default:
                 return null;
         }
@@ -110,30 +121,47 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
     private sealed record Queue(string Criteria1v1, string Criteria2v2, string List1v1, string List2v2)
     {
         public bool IsCasual => List1v1 == Matchmaking.MatchmakingWorker.Casual1v1;
+
+        public bool IsFfa => List1v1 == Matchmaking.MatchmakingWorker.Ffa;
     }
 
     private static readonly Queue Regular = new("1v1-retail", "2v2-retail", "1v1", "2v2");
     private static readonly Queue Casual = new("casual-retail", "casual-retail", Matchmaking.MatchmakingWorker.Casual1v1, Matchmaking.MatchmakingWorker.Casual2v2);
+    // Solo only: its 2v2 names are never used.
+    private static readonly Queue FreeForAll = new("ffa", "ffa", Matchmaking.MatchmakingWorker.Ffa, Matchmaking.MatchmakingWorker.Ffa);
 
     private async Task<MatchmakingAnswer> OneVersusOneAsync(PartyRequest request, Queue queue, CancellationToken ct)
     {
-        var redis = Redis();
         string me = request.AccountId;
-        log.LogInformation("Received 1v1 {Criteria} matchmaking request", queue.Criteria1v1);
+        string kind = queue.IsFfa ? "FFA" : "1v1";
+        log.LogInformation("Received {Kind} {Criteria} matchmaking request", kind, queue.Criteria1v1);
 
         var outdated = await gate.RequiringUpdateAsync([me]);
         if (outdated.Count > 0)
         {
             await gate.RequestModalsAsync(outdated.Select(o => o.AccountId));
-            log.LogWarning("Blocked 1v1 matchmaking for outdated client {Player}", me);
+            log.LogWarning("Blocked {Kind} matchmaking for outdated client {Player}", kind, me);
             return new MatchmakingAnswer(200, gate.FailureBody());
         }
 
+        if (queue.IsFfa && !Matchmaking.FfaSchedule.IsOpen(time.GetUtcNow(), ffa.CurrentValue.WeekendOnly))
+        {
+            log.LogInformation("Rejected FFA matchmaking for {Player}: outside the weekend window", me);
+            return new MatchmakingAnswer(200, Matchmaking.FfaSchedule.ClosedFailure());
+        }
+
+        var redis = Redis();
         await RemoveTicketsAsync(redis, me, s_allLists);
         await EndRankedSetAsync(redis, me);
 
         if (await LobbyPlayersAsync(redis, me) is { Count: >= 2 } players)
         {
+            if (queue.IsFfa)
+            {
+                log.LogWarning("Rejected FFA matchmaking for {Player}, whose lobby has {Count} players; FFA is solo-entry only", me, players.Count);
+                return new MatchmakingAnswer(200, new JsonObject { ["error"] = "FFA matchmaking requires a solo party" });
+            }
+
             log.LogInformation("Lobby of {Player} has {Count} players, redirecting 1v1 request to 2v2 handler", me, players.Count);
             return await TwoVersusTwoAsync(request, queue, ct);
         }
@@ -444,8 +472,9 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
     {
         if (matchType is not ("1v1" or "2v2"))
         {
-            // The Casual queue: the regular ratings are for the regular queues only, never read (or made) here. A Casual
-            // rating of its own would be read here; until then the matchmaker pairs Casual players without skill.
+            // The Casual and FFA queues: the regular ratings are for the regular queues only, never read (or made) here. A
+            // Casual rating of its own would be read here; until then the matchmaker pairs Casual players without skill.
+            // FFA matches without skill.
             return 0;
         }
 
@@ -484,7 +513,7 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
 
         await PublishCancelAsync(redis, players, requestId);
         log.LogInformation("Canceling matchmaking {Request} for all players: {Players}", requestId, string.Join(", ", players));
-        // The TS websocket takes a cancelled ticket out of the 1v1 and 2v2 lists only: the Casual ones go here.
+        // The TS websocket takes a cancelled ticket out of the 1v1, 2v2 and FFA lists only: the Casual ones go here.
         foreach (string pid in players)
         {
             await RemoveTicketsAsync(redis, pid, [Casual.List1v1, Casual.List2v2]);
@@ -568,9 +597,9 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             Js.Stringify(new JsonObject { ["playersIds"] = new JsonArray([.. players.Select(p => (JsonNode?)p)]), ["matchmakingId"] = requestId }));
 
     // Every queue's list: a player queueing anywhere leaves all of them.
-    private static readonly string[] s_allLists = [Regular.List1v1, Regular.List2v2, Casual.List1v1, Casual.List2v2];
+    private static readonly string[] s_allLists = [Regular.List1v1, Regular.List2v2, FreeForAll.List1v1, Casual.List1v1, Casual.List2v2];
 
-    // redisRemoveExistingTicketsForPlayer: any ticket of the player's leaves the lists (TS: 1v1 and 2v2), with no notice.
+    // redisRemoveExistingTicketsForPlayer: any ticket of the player's leaves the lists (TS: 1v1, 2v2 and FFA), with no notice.
     private async Task RemoveTicketsAsync(IDatabase redis, string playerId, IReadOnlyList<string> lists)
     {
         try
@@ -694,6 +723,7 @@ public static class MatchmakingRequestHosting
     public static WebApplicationBuilder AddMatchmakingRequests(this WebApplicationBuilder builder)
     {
         builder.AddEloRatings();
+        builder.AddSetting<Matchmaking.FfaSettings>("Ffa");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IMatchmakingRequestService, MatchmakingRequestService>();
         return builder;

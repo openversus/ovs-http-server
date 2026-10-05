@@ -64,14 +64,20 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
             await db.KeyDeleteAsync(key);
         }
 
-        await db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, "matchmaking:lock:casual1v1", "matchmaking:lock:casual2v2", MatchmakingWorker.HeartbeatsKey, "matchmaking:lock:1v1", "matchmaking:lock:2v2"]);
+        await db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, MatchmakingWorker.Ffa, "matchmaking:lock:casual1v1", "matchmaking:lock:casual2v2", "matchmaking:lock:FFA", MatchmakingWorker.HeartbeatsKey, "matchmaking:lock:1v1", "matchmaking:lock:2v2"]);
     }
 
     private IDatabase Db => _redis!.GetDatabase();
 
-    private MatchmakingWorker Worker(Ports? ports = null, bool p2p = false) => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
+    // FFA always open unless a test says otherwise (the window has tests of its own: FfaScheduleTests).
+    private MatchmakingWorker Worker(Ports? ports = null, bool p2p = false, FfaSettings? ffa = null, TimeProvider? time = null) => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
         ports ?? new Ports(), new TestOptions<MatchmakingSettings>(new MatchmakingSettings()), new TestOptions<RollbackSettings>(new RollbackSettings { P2P = p2p }),
-        TimeProvider.System, NullLogger<MatchmakingWorker>.Instance);
+        new TestOptions<FfaSettings>(ffa ?? new FfaSettings { WeekendOnly = false }), time ?? TimeProvider.System, NullLogger<MatchmakingWorker>.Instance);
+
+    private sealed class Clock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
 
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
@@ -352,5 +358,113 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
         string matchId = (string)(await MatchesAsync()).Single()["matchId"]!;
         Assert.True(JsonNode.Parse((await Db.StringGetAsync(matchId)).ToString())!["p2p"]!.GetValue<bool>());
         Assert.Empty(ports.Deployed);
+    }
+
+    [Fact]
+    // FFA: the four oldest solo tickets, whatever their skill; a party's ticket never plays. Each player a team of their
+    // own in that order, one host, a 2v2 map, mode FFA; no set, and not a password match (as the TS worker writes it).
+    public async Task FfaMatchesTheFourOldestSoloPlayersEachOnATeamOfTheirOwn()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        string party = await QueueAsync(MatchmakingWorker.Ffa, [2, 3], age: 9);
+        await QueueAsync(MatchmakingWorker.Ffa, [1], age: 5, skill: 3000);
+        await QueueAsync(MatchmakingWorker.Ffa, [4], age: 4);
+        await QueueAsync(MatchmakingWorker.Ffa, [5], age: 3);
+        await QueueAsync(MatchmakingWorker.Ffa, [6], age: 2);
+        string youngest = await QueueAsync(MatchmakingWorker.Ffa, [7], age: 1);
+        await Db.HashDeleteAsync($"player:{Id(6)}", "ip");
+        await Worker().TickAsync(Db);
+
+        Assert.Equal([party, youngest], await QueuedAsync(MatchmakingWorker.Ffa));
+        var match = Assert.Single(await MatchesAsync());
+        Assert.Equal((MatchmakingWorker.Ffa, 4), ((string?)match["matchType"], (int)match["totalPlayers"]!));
+        Assert.Null(match["isPasswordMatch"]);
+        string matchId = (string)match["matchId"]!;
+        var notification = JsonNode.Parse((await Db.StringGetAsync(matchId)).ToString())!;
+        Assert.Equal("FFA", (string?)notification["mode"]);
+        Assert.Null(notification["isCustomGame"]);
+        var players = notification["players"]!.AsArray().Select(p => p!.AsObject()).ToList();
+        Assert.Equal([Id(1), Id(4), Id(5), Id(6)], players.Select(p => p["playerId"]!.GetValue<string>()));
+        Assert.Equal([0, 1, 2, 3], players.Select(p => p["playerIndex"]!.GetValue<int>()));
+        Assert.Equal([0, 1, 2, 3], players.Select(p => p["teamIndex"]!.GetValue<int>()));
+        Assert.Equal(Id(701), players[0]["partyId"]!.GetValue<string>());
+        Assert.Single(players, p => p["isHost"]!.GetValue<bool>());
+        Assert.False(players[3].ContainsKey("ip"));
+        Assert.Equal("198.51.100.1", players[0]["ip"]!.GetValue<string>());
+
+        using var stream = typeof(MatchmakingWorker).Assembly.GetManifestResourceStream("OpenVersus.Server.Core.Matchmaking.maps.json")!;
+        var maps = JsonNode.Parse(stream)!["2v2"]!.AsArray().Where(m => (bool)m!["enabled"]!).Select(m => (string)m!["id"]!);
+        Assert.Contains((string)notification["map"]!, maps);
+        Assert.False(await Db.KeyExistsAsync($"ranked_set:{matchId}"));
+        Assert.False(await Db.KeyExistsAsync($"player_ranked_set:{Id(1)}"));
+    }
+
+    [Fact]
+    public async Task FfaWaitsForFourAndPassesOverABlockedGroup()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await QueueAsync(MatchmakingWorker.Ffa, [1], age: 4);
+        await QueueAsync(MatchmakingWorker.Ffa, [2], age: 3);
+        await QueueAsync(MatchmakingWorker.Ffa, [3], age: 2);
+        await Worker().TickAsync(Db);
+        Assert.Equal(3, (await QueuedAsync(MatchmakingWorker.Ffa)).Count);
+
+        await QueueAsync(MatchmakingWorker.Ffa, [4], age: 1);
+        await Db.StringSetAsync($"player:{Id(4)}:blocked", Js.Stringify(new JsonArray(Id(2))));
+        await Worker().TickAsync(Db);
+        Assert.Equal(4, (await QueuedAsync(MatchmakingWorker.Ffa)).Count);
+        Assert.Empty(await MatchesAsync());
+    }
+
+    [Fact]
+    // Outside the window (a Tuesday in New York) every FFA ticket goes and its search is cancelled for its players, as
+    // cancelMatchmakingForAll; the lobby has to ready again. The other queues are not touched.
+    public async Task AClosedFfaQueueCancelsEverySearchInIt()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        var cancels = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var channel = RedisChannel.Literal(PartyService.CancelMatchmakingChannel);
+        await _redis.GetSubscriber().SubscribeAsync(channel, (_, m) => cancels.Enqueue(m.ToString()));
+        try
+        {
+            await QueueAsync(MatchmakingWorker.Ffa, [1], age: 2);
+            await QueueAsync(MatchmakingWorker.Ffa, [2], age: 1);
+            await QueueAsync("1v1", [3], age: 1);
+            await Db.StringSetAsync($"player_lobby:{Id(1)}", Id(900));
+            await Db.StringSetAsync($"party_ready:{Id(900)}", "1");
+            var tuesday = new Clock(DateTimeOffset.Parse("2026-10-06T18:00:00Z"));
+            await Worker(ffa: new FfaSettings(), time: tuesday).TickAsync(Db);
+
+            Assert.Empty(await QueuedAsync(MatchmakingWorker.Ffa));
+            Assert.Single(await QueuedAsync("1v1"));
+            Assert.Empty(await MatchesAsync());
+            Assert.False(await Db.KeyExistsAsync($"party_ready:{Id(900)}"));
+            for (int i = 0; i < 50 && cancels.Count < 2; i++)
+            {
+                await Task.Delay(20);
+            }
+
+            Assert.Equal(
+            [
+                $$"""{"playersIds":["{{Id(1)}}"],"matchmakingId":"{{Id(501)}}"}""",
+                $$"""{"playersIds":["{{Id(2)}}"],"matchmakingId":"{{Id(502)}}"}""",
+            ], cancels.Order());
+        }
+        finally
+        {
+            await _redis.GetSubscriber().UnsubscribeAsync(channel);
+        }
     }
 }

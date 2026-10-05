@@ -43,11 +43,12 @@ public static class TsEnvironment
         ("P2P_NODE_SIGNING_KEY_FILE", "Rollback:NodeSigningKeyFile"),
         ("P2P_NODE_CONFIG_FILE", "Rollback:NodeConfigFile"),
         ("P2P_NODE_PUBLIC_KEY", "Rollback:NodePublicKey"),
+        ("FFA_WEEKEND_ONLY", "Ffa:WeekendOnly"),
     ];
 
     // Values the TS server reads with envalid's bool (true/t/1, false/f/0), which .NET's binding does not; anything else
     // is passed on and refused at startup, as there.
-    private static readonly HashSet<string> s_booleans = ["CLIENT_VERSION_CHECK"];
+    private static readonly HashSet<string> s_booleans = ["CLIENT_VERSION_CHECK", "FFA_WEEKEND_ONLY"];
 
     // Numbers the TS server compares with === 1 (envalid's num): 1 is on, any other number off; anything else is passed
     // on and refused at startup, as envalid refuses it.

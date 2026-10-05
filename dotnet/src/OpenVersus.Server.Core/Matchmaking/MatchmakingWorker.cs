@@ -19,10 +19,10 @@ namespace OpenVersus.Server.Core.Matchmaking;
 
 // The matchmaking worker, ported from the TS server's src/matchmaking-worker.ts. Its own executable, as there
 // (OpenVersus.Server.Matchmaking; never hosted in the HTTP service). On by default, Matchmaking:Enabled. Every 2 s it
-// looks at the 1v1 queue, then the 2v2 queue, and makes at most one match from each. The queues are Redis lists the
-// TS websocket fills (a party's ticket, when it queues) and empties (a cancel, a disconnect); this only reads them and
-// takes out the tickets it matches, so it can run beside the TS worker or as several replicas at once: each queue is
-// worked under a lock (matchmaking:lock:{queue}, SET NX EX 10), as the TS worker does.
+// looks at the 1v1 queue, then the 2v2 queue (then Casual's two and FFA), and makes at most one match from each. The
+// queues are Redis lists the TS websocket fills (a party's ticket, when it queues) and empties (a cancel, a disconnect);
+// this only reads them and takes out the tickets it matches, so it can run beside the TS worker or as several replicas
+// at once: each queue is worked under a lock (matchmaking:lock:{queue}, SET NX EX 10), as the TS worker does.
 //
 // Per queue: drop a ticket whose player has a newer one in the queue; drop the tickets of a player whose game stopped
 // answering the websocket (player_heartbeats, ms, older than 41 s; none of this while that set does not exist). Then:
@@ -34,13 +34,20 @@ namespace OpenVersus.Server.Core.Matchmaking;
 //   Either way, a group with a player who blocked another in it (player:{id}:blocked, a JSON list) is passed over.
 //   casual1v1, casual2v2  the Casual queue (MatchmakingRequestService): as 1v1 and 2v2, with no skill range at all
 //        (anyone not blocked); a player who waits too long gets bots from the game's casual_queue instead.
+//   FFA  the public Free For All queue (processFfaQueue): the 4 oldest solo tickets of distinct players, no skill; a
+//        blocked group waits (no other four are tried). Outside its window (FfaSchedule, Ffa:WeekendOnly) nothing is
+//        matched: every ticket in it goes, and each is cancelled as the TS cancelMatchmakingForAll does
+//        (matchmaking:cancel {playersIds, matchmakingId}, which the TS websocket turns into the game's cancel; each
+//        player's party_ready:{lobby} deleted). Each player is a team of their own (team and index 0..3, a random one
+//        hosts); the map is a 2v2 one; the match is unranked (no set; the TS websocket sends it as evtq_ffa, mode FFA,
+//        not ranked, from mode "FFA") but not a password match, as the TS worker writes it.
 // A match (createMatch): match:{id} (the tickets as queued) EX 20 min; teams (parties shuffled, team 0 filled first,
 // player index = place * 2 + team, a random index hosts, each player's ip from player:{id}); a map (Matchmaking/maps.json:
 // an enabled one for the mode; 1v1: 1 in 999 PVE_03); the notification at {id} EX 20 min and on match:notifications;
 // p2p in the notification (Rollback:P2P and P2P.IsEligible; a P2P match is deployed no rollback server);
-// ranked_set:{id} and player_ranked_set:{player} EX 10 min (every regular match: game 1 of a set); matchmaking:complete
-// once per ticket (its own request id and players). A Casual match is never rated: match:{id} has isPasswordMatch (the
-// TS match result skips those) and queue "casual" (for a Casual rating of its own, later), it starts no ranked set, and
+// ranked_set:{id} and player_ranked_set:{player} EX 10 min (every regular 1v1 and 2v2 match: game 1 of a set);
+// matchmaking:complete once per ticket (its own request id and players). A Casual match is never rated: match:{id} has
+// isPasswordMatch (the TS match result skips those) and queue "casual" (for a Casual rating of its own, later), it starts no ranked set, and
 // its notification is unranked (BotDefaults.UnrankedNotificationFields: isCustomGame, with bIsCustomGame set back to false
 // in the game's config), so the TS websocket opens no set at its end either and no TS rating path rates it. The TS websocket does the rest (it tells the game, MIGRATION-BRIDGES.md 2).
 //
@@ -50,11 +57,13 @@ namespace OpenVersus.Server.Core.Matchmaking;
 //   - a matched ticket is taken out of its queue by the text it was read as; the TS worker wrote the parsed ticket out
 //     again and removed that (the same text only while JSON round-trips it unchanged).
 //   - a blocked pair is logged by id; the TS worker also looked their names up (a log line only).
+//   - FFA drops the tickets of silent players (no heartbeat in 41 s) as 1v1 and 2v2 do; the TS processFfaQueue only
+//     dropped duplicates, so a player who had gone could be matched and leave three waiting in a match.
 
 /// <summary>Matchmaking settings.</summary>
 public sealed class MatchmakingSettings
 {
-    [Description("This matchmaker makes matches from the queues (1v1, 2v2). Off: it keeps running and makes none. Several replicas can work at once (each queue is worked under a lock), the TS worker included, but then either may make a given match.")]
+    [Description("This matchmaker makes matches from the queues (1v1, 2v2, Casual, FFA). Off: it keeps running and makes none. Several replicas can work at once (each queue is worked under a lock), the TS worker included, but then either may make a given match.")]
     public bool Enabled { get; set; } = true;
 
     [Description("Milliseconds between two looks at the queues (the TS worker's 2000).")]
@@ -63,7 +72,7 @@ public sealed class MatchmakingSettings
 }
 
 internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLauncher launcher, IOptionsMonitor<MatchmakingSettings> settings,
-    IOptionsMonitor<RollbackSettings> rollback, TimeProvider time,
+    IOptionsMonitor<RollbackSettings> rollback, IOptionsMonitor<FfaSettings> ffa, TimeProvider time,
     ILogger<MatchmakingWorker> log) : BackgroundService
 {
     public const string HeartbeatsKey = "player_heartbeats";
@@ -126,6 +135,11 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
     /// <summary>The Casual queue's lists (the tickets' matchType).</summary>
     public const string Casual1v1 = "casual1v1", Casual2v2 = "casual2v2";
 
+    /// <summary>The FFA queue's list, and its matches' mode (the TS MATCH_TYPES.FFA).</summary>
+    public const string Ffa = "FFA";
+
+    private const int FfaPlayers = 4;
+
     /// <summary>One look at every queue: at most one match from each.</summary>
     internal async Task TickAsync(IDatabase redis)
     {
@@ -133,9 +147,10 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
         bool twoVsTwo = await WithLockAsync(redis, "2v2", () => TwoVsTwoAsync(redis, "2v2", "2v2", skilled: true));
         bool casual1 = await WithLockAsync(redis, Casual1v1, () => OneVsOneAsync(redis, Casual1v1, "1v1", skilled: false));
         bool casual2 = await WithLockAsync(redis, Casual2v2, () => TwoVsTwoAsync(redis, Casual2v2, "2v2", skilled: false));
-        if (oneVsOne || twoVsTwo || casual1 || casual2)
+        bool ffaMatch = await WithLockAsync(redis, Ffa, () => FfaAsync(redis));
+        if (oneVsOne || twoVsTwo || casual1 || casual2 || ffaMatch)
         {
-            log.LogInformation("Matches made this tick: 1v1={OneVsOne} 2v2={TwoVsTwo} casual1v1={Casual1} casual2v2={Casual2}", oneVsOne, twoVsTwo, casual1, casual2);
+            log.LogInformation("Matches made this tick: 1v1={OneVsOne} 2v2={TwoVsTwo} casual1v1={Casual1} casual2v2={Casual2} FFA={Ffa}", oneVsOne, twoVsTwo, casual1, casual2, ffaMatch);
         }
     }
 
@@ -261,6 +276,82 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
         }
 
         return false;
+    }
+
+    // ── FFA ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+    private async Task<bool> FfaAsync(IDatabase redis)
+    {
+        var tickets = await TicketsAsync(redis, Ffa);
+
+        // Closed: nobody is left searching until the window opens again.
+        if (!FfaSchedule.IsOpen(time.GetUtcNow(), ffa.CurrentValue.WeekendOnly))
+        {
+            if (tickets.Count > 0)
+            {
+                await RemoveAsync(redis, Ffa, tickets);
+                foreach (var ticket in tickets)
+                {
+                    await CancelAsync(redis, ticket);
+                }
+
+                log.LogInformation("FFA queue closed (weekend window); cancelled {Count} queued ticket(s)", tickets.Count);
+            }
+
+            return false;
+        }
+
+        tickets = await DropDuplicatesAsync(redis, Ffa, tickets);
+        tickets = await DropSilentAsync(redis, Ffa, tickets);
+
+        // The oldest four distinct players. No skill range: a small queue would otherwise wait forever.
+        var candidates = new List<Ticket>();
+        foreach (var ticket in tickets.Where(t => t.PartySize == 1 && t.Players.Count == 1).OrderBy(t => t.CreatedAt))
+        {
+            if (candidates.Any(c => c.SharesPlayerWith(ticket)))
+            {
+                continue;
+            }
+
+            candidates.Add(ticket);
+            if (candidates.Count == FfaPlayers)
+            {
+                break;
+            }
+        }
+
+        if (candidates.Count < FfaPlayers)
+        {
+            return false;
+        }
+
+        if (await BlockedPairAsync(redis, candidates) is { } blocked)
+        {
+            log.LogWarning("Not matching {Requests} in {Queue}: {Blocker} blocked {Blocked}", string.Join(", ", candidates.Select(c => Str(c.Json, "matchmakingRequestId"))), Ffa, blocked.Blocker, blocked.Blocked);
+            return false;
+        }
+
+        await RemoveAsync(redis, Ffa, candidates);
+        await CreateMatchAsync(redis, candidates, Ffa, Ffa);
+        return true;
+    }
+
+    // cancelMatchmakingForAll for one ticket: the TS websocket ends each of its players' search; their lobbies unready.
+    private static async Task CancelAsync(IDatabase redis, Ticket ticket)
+    {
+        var cancel = new JsonObject { ["playersIds"] = new JsonArray([.. ticket.Players.Select(p => (JsonNode)p.Id)]) };
+        if (ticket.Json["matchmakingRequestId"] is { } request)
+        {
+            cancel["matchmakingId"] = request.DeepClone();
+        }
+
+        await redis.PublishAsync(RedisChannel.Literal(PartyService.CancelMatchmakingChannel), Js.Stringify(cancel));
+        foreach (var (id, _) in ticket.Players)
+        {
+            if ((string?)await redis.StringGetAsync($"player_lobby:{id}") is { Length: > 0 } lobby)
+            {
+                await redis.KeyDeleteAsync($"party_ready:{lobby}");
+            }
+        }
     }
 
     /// <summary>The range two skills may be apart after waiting <paramref name="seconds"/>: 250, 500, then anything.</summary>
@@ -431,7 +522,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
 
         await redis.StringSetAsync($"match:{matchId}", Js.Stringify(match), s_matchTtl);
 
-        var players = await TeamsAsync(redis, tickets);
+        var players = mode == Ffa ? await FfaTeamsAsync(redis, tickets) : await TeamsAsync(redis, tickets);
         var notification = new JsonObject
         {
             ["players"] = players,
@@ -464,9 +555,13 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
         await redis.PublishAsync(RedisChannel.Literal(MatchLauncher.NotificationChannel), json);
 
         // Every regular match is game 1 of a set: its state from the start, so a disconnect in game 1 is already a ranked
-        // one. A Casual match has no set: sets are what the TS server rates.
+        // one. A Casual or FFA match has no set: sets are what the TS server rates.
         var ids = tickets.SelectMany(t => t.Players.Select(p => p.Id)).ToList();
-        if (!casual)
+        if (mode == Ffa)
+        {
+            log.LogInformation("Skipping ranked-set state for non-ranked FFA match {Match}", matchId);
+        }
+        else if (!casual)
         {
             await redis.StringSetAsync($"ranked_set:{matchId}", Js.Stringify(new JsonObject
             {
@@ -563,6 +658,38 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
         return entries;
     }
 
+    /// <summary>
+    /// FFA's entries (createTeams' FFA branch): every player a team of their own, in the tickets' order (oldest first),
+    /// team and index the same, 0 to 3; the player at a random index hosts; ip as for the other modes.
+    /// </summary>
+    internal static async Task<JsonArray> FfaTeamsAsync(IDatabase redis, IReadOnlyList<Ticket> tickets)
+    {
+        var players = tickets.SelectMany(t => t.Players.Select(p => (Party: t, p.Id))).ToList();
+        int host = Random.Shared.Next(players.Count);
+        var entries = new JsonArray();
+        for (int index = 0; index < players.Count; index++)
+        {
+            var (party, id) = players[index];
+            var entry = new JsonObject { ["playerId"] = id };
+            if (party.Json["partyId"] is { } partyId)
+            {
+                entry["partyId"] = partyId.DeepClone();
+            }
+
+            entry["playerIndex"] = index;
+            entry["teamIndex"] = index;
+            entry["isHost"] = index == host;
+            if (await redis.HashGetAsync($"player:{id}", "ip") is { HasValue: true } ip)
+            {
+                entry["ip"] = ip.ToString();
+            }
+
+            entries.Add(entry);
+        }
+
+        return entries;
+    }
+
     private static string? Str(JsonObject? obj, string key) => obj?[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
 
     // A number as JavaScript would add it (a missing one is NaN there: never in range).
@@ -580,12 +707,12 @@ internal static class MatchmakingMaps
     });
 
     /// <summary>
-    /// An enabled map for the mode (2v2's for 2v2, 1v1's for anything else); for 1v1, 1 time in 999 PVE_03. None
-    /// enabled: one of the mode's fallback list.
+    /// An enabled map for the mode (2v2's for 2v2 and FFA, 1v1's for anything else); for 1v1, 1 time in 999 PVE_03.
+    /// None enabled: one of the mode's fallback list.
     /// </summary>
     public static string Pick(string mode, string matchId, ILogger log)
     {
-        string list = mode == "2v2" ? "2v2" : "1v1";
+        string list = mode is "2v2" or MatchmakingWorker.Ffa ? "2v2" : "1v1";
         // The TS randomInt(1, 1000) == 69.
         if (mode == "1v1" && Random.Shared.Next(1, 1000) == 69)
         {
@@ -610,6 +737,7 @@ public static class MatchmakingHosting
     public static WebApplicationBuilder AddMatchmaking(this WebApplicationBuilder builder)
     {
         builder.AddSetting<MatchmakingSettings>("Matchmaking");
+        builder.AddSetting<FfaSettings>("Ffa");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddHostedService<MatchmakingWorker>();
         return builder;

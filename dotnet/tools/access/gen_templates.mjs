@@ -49,6 +49,9 @@ const login = await literal("src/handlers/access.ts", "  return {\n    token: to
   getAssetsByType: () => [{ slug: marker("player.profile_icon"), assetPath: marker("profile_icon.assetPath") }],
   EloRatingModel: { findOne: () => ({ lean: async () => null }) },
   PlayerStatsModel: { findOne: () => ({ lean: async () => null }) },
+  // The OVS Dev badge's stat is per account (OVS_DEV_ACCOUNT_IDS): left out of the template, the C# login adds it.
+  isOvsDevAccount: () => false,
+  OVS_DEV_BADGE_PROFILE_FIELD: "OVSDev",
 });
 login.configuration.realtime = marker("realtime");
 login.account.identity.avatar = marker("identity.avatar");

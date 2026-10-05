@@ -13,10 +13,17 @@ export interface RankedSetResult {
   playerCharacters: Map<string, string>;
   /** Stable id for the set (set id or its deciding match id); used to grant once. */
   setKey: string;
-  /** Games won by each team in the set; their sum is the number of games played. */
-  setScore: [number, number];
-  isConcede: boolean;
-  isPregameDodge: boolean;
+  /** Games the set finished. A dodge's score is [0, 0], so it counts the games before the dodge. */
+  gamesPlayed: number;
+}
+
+/** Games a ranked set has finished so far (0 when there is no set state), for a dodge before game 2 or 3. */
+export async function gamesFinishedInSet(setId: string): Promise<number> {
+  const raw = await redisClient.get(`ranked_set:${setId}`);
+  if (!raw) return 0;
+  const set = JSON.parse(raw);
+  const scores: number[] = set.scores || [0, 0];
+  return Math.max(Number(set.gamesPlayed) || 0, (scores[0] || 0) + (scores[1] || 0));
 }
 
 /**
@@ -32,19 +39,20 @@ async function grantPlayerXp(accountId: string, won: boolean, characterSlug: str
 /**
  * Battle-pass and Fighter Pass XP are earned once per completed ranked set,
  * never per game. Custom games never create ranked sets, so they earn neither.
- * A pregame dodge (no game played) earns nothing. A concede (which includes the
- * loser walking out of the results screen before the set is settled) still pays
- * the losing side once at least one game was played; a concede before any game
- * finished pays only the side that stayed, so quitting is never a shortcut.
- * Fighter Pass XP goes to the character the player used for the set.
+ * XP needs at least one game played: a set that ends before any game finished
+ * (a pregame dodge) pays nobody, not even the side given the win. Once a game
+ * was played, both sides are paid however the set ended (a concede, a walkout,
+ * or a dodge before game 2 or 3). Fighter Pass XP goes to the character the
+ * player used for the set.
  */
 export async function awardRankedSetXp(result: RankedSetResult): Promise<void> {
-  if (result.isPregameDodge) return;
-  const gamesPlayed = result.setScore[0] + result.setScore[1];
-  const payLosers = !result.isConcede || gamesPlayed > 0;
+  if (result.gamesPlayed < 1) {
+    logger.info(`${logPrefix} Set ${result.setKey} ended before any game was played: no XP`);
+    return;
+  }
   const recipients = [
     ...result.winnerIds.map((id) => ({ id, won: true })),
-    ...(payLosers ? result.loserIds.map((id) => ({ id, won: false })) : []),
+    ...result.loserIds.map((id) => ({ id, won: false })),
   ];
   for (const { id, won } of recipients) {
     try {

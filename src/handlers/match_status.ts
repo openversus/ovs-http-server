@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import { IMatchStatus, IMatchStatusTimestamp } from "../interfaces/IMatchStatus";
 import { redisClient, redisGetMatchConfig, redisPushDLLNotification, redisUpdatePlayerStatus } from "../config/redis";
 import { processSetResult } from "../services/eloService";
+import { gamesFinishedInSet } from "../services/rankedSetXpService";
 
 const logPrefix = "[Handlers.MatchStatus]:";
 
@@ -261,8 +262,9 @@ async function handlePlayerDisconnectElo(
       }
     }
 
-    // Process ELO as pregame dodge
-    await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId, true);
+    // Process ELO as pregame dodge (XP only if the set already finished a game)
+    const gamesBefore = setId !== matchId ? await gamesFinishedInSet(setId) : 0;
+    await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId, true, gamesBefore);
     logger.info(`${logPrefix} Pregame dodge ELO processed via rollback PlayerDisconnect: ${disconnectedPlayerId} left match ${matchId}`);
 
     await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: matchConfig.players.map((p) => p.playerId) }));

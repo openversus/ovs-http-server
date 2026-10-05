@@ -565,7 +565,9 @@ export class WebSocketService {
                     }
                     // Pregame dodge — pass isPregameDodge=true so stats count it as a dodge
                     const { processSetResult } = await import("./services/eloService.js");
-                    await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId, true);
+                    const { gamesFinishedInSet } = await import("./services/rankedSetXpService.js");
+                    const gamesBefore = setId !== matchId ? await gamesFinishedInSet(setId) : 0;
+                    await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId, true, gamesBefore);
                     await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: matchConfig.players.map((p) => p.playerId) }));
                     logger.info(`[${serviceName}]: Pregame dodge: ${playerId} (${playerWS.account.username}) left match ${matchId} — ELO processed`);
                   } catch (eloErr) {

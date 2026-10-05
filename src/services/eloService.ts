@@ -128,6 +128,7 @@ export async function processSetResult(
   playerCharacters: Map<string, string> = new Map(), // playerId → character_slug
   matchId?: string, // optional — used to check for server crash flag
   isPregameDodge: boolean = false, // true only if dodge happened before match_started (no game played)
+  gamesBeforeDodge: number = 0, // a pregame dodge's set: the games it finished before (setScore is [0, 0])
 ): Promise<{ deltas: Map<string, number>; rankUpdates: Map<string, any> }> {
   const deltas = new Map<string, number>();
   const rankUpdates = new Map<string, any>(); // playerId → MvsRankedServerMatchPayload
@@ -346,7 +347,8 @@ export async function processSetResult(
 
   // Fire-and-forget: battle-pass and Fighter Pass XP are earned per ranked set, never per game.
   if (matchId) {
-    awardRankedSetXp({ winnerIds, loserIds, playerCharacters, setKey: matchId, setScore, isConcede, isPregameDodge })
+    const gamesPlayed = isPregameDodge ? gamesBeforeDodge : setScore[0] + setScore[1];
+    awardRankedSetXp({ winnerIds, loserIds, playerCharacters, setKey: matchId, gamesPlayed })
       .catch((err) => logger.error(`${logPrefix} Ranked set XP award failed: ${err}`));
   }
 

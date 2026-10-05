@@ -219,7 +219,8 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 - **Decided:** 2026-10-04 (End Game), on the condition that it is recorded here.
 - **What:** ratings and ranked sets are still the TS server's (6). When it settles a ranked set or a public FFA game,
   `awardRankedSetXp` / `awardFfaMatchXp` (`src/services/rankedSetXpService.ts`) decide who is paid and whether they
-  won: a pregame dodge pays nobody, and a concede pays the side that stayed. They publish
+  won: a set needs one game played, so a pregame dodge pays nobody (not even the side given the win); after a
+  game, both sides are paid however the set ended (a concede, a walkout, a dodge before game 2 or 3). They publish
   `{playerId, won, character, setKey, source}` for each player on `reward_tracks:ranked_set`. The C#
   `RankedSetXpSubscriber` (`Core/RewardTracks/RankedSetXp.cs`, in the match flow executable) pays it once per `setKey`
   and player (`ranked_set_xp:{setKey}:{playerId}`). The battle pass gets `RewardTracks:BattlePassSetXp`/`WinXp`, the

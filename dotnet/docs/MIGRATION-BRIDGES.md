@@ -214,6 +214,21 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   are ported (match flow), the TS matchmaker is retired, and the websocket reads `p2p` and the node port from C#'s
   config (the realtime gateway).
 
+### 9. End Game's ranked-set XP is settled by the TS server and paid by C#
+
+- **Decided:** 2026-10-04 (End Game), on the condition that it is recorded here.
+- **What:** ratings and ranked sets are still the TS server's (6). When it settles a ranked set or a public FFA game,
+  `awardRankedSetXp` / `awardFfaMatchXp` (`src/services/rankedSetXpService.ts`) decide who is paid and whether they
+  won: a pregame dodge pays nobody, and a concede pays the side that stayed. They publish
+  `{playerId, won, character, setKey, source}` for each player on `reward_tracks:ranked_set`. The C#
+  `RankedSetXpSubscriber` (`Core/RewardTracks/RankedSetXp.cs`, in the match flow executable) pays it once per `setKey`
+  and player (`ranked_set_xp:{setKey}:{playerId}`). The battle pass gets `RewardTracks:BattlePassSetXp`/`WinXp`, the
+  account and the played character's levels get `CharacterSetXp`/`WinXp`, and the levels' completed tiers are paid
+  at once. It tells the game on `ws:send` (RewardTrackStatesUpdated) and logs a `MIGRATION BRIDGE` warning.
+- **Why:** the reward tracks are C#'s (`rewardtracks`), the sets are TS's.
+- **Delete when:** ranked sets are settled in C# (with 6). The C# code that settles them calls the subscriber's
+  payment directly, and the channel, the TS publish and this entry go.
+
 ## Not bridges (kept after the migration)
 
 - `TsEnvironment`: the TS server's environment variable names (`JWT_SECRET`, `WB_DOMAIN`, ...) fill C# settings, so the

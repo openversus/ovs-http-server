@@ -44,6 +44,7 @@ public static class TsEnvironment
         ("P2P_NODE_CONFIG_FILE", "Rollback:NodeConfigFile"),
         ("P2P_NODE_PUBLIC_KEY", "Rollback:NodePublicKey"),
         ("FFA_WEEKEND_ONLY", "Ffa:WeekendOnly"),
+        ("OVS_DEV_ACCOUNT_IDS", "Ownership:OvsDevAccountIds"),
     ];
 
     // Values the TS server reads with envalid's bool (true/t/1, false/f/0), which .NET's binding does not; anything else

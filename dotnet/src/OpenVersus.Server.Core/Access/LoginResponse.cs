@@ -108,12 +108,14 @@ public sealed class StatTrackers
 {
     private readonly Dictionary<string, double> _wins = [], _matches = [], _ringouts = [], _damage = [], _highest = [];
     private double _totalWins, _totalRingouts, _highestDamage;
+    private bool _ovsDev;
 
-    public static StatTrackers From(BsonDocument? rating, BsonDocument? playerStats)
+    public static StatTrackers From(BsonDocument? rating, BsonDocument? playerStats, bool ovsDev = false)
     {
         var stats = new StatTrackers
         {
             _totalWins = Num(rating, "wins_1v1") + Num(rating, "wins_2v2"),
+            _ovsDev = ovsDev,
         };
 
         foreach (string mode in new[] { "characters_1v1", "characters_2v2" })
@@ -155,6 +157,11 @@ public sealed class StatTrackers
         trackers["character_total_damage_dealt"] = Map(_damage);
         trackers["character_wins"] = Map(_wins);
         trackers["character_matches"] = Map(_matches);
+        if (_ovsDev)
+        {
+            // The OVS Dev badge's ProfileDataField, for the accounts that own it (Ownership:OvsDevAccountIds).
+            trackers["OVSDev"] = 1;
+        }
 
         var season5 = trackers["season5"]!.AsObject();
         season5["ranked"]!["1v1"]!["Wins"] = _totalWins;

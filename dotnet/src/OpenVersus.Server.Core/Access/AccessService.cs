@@ -211,7 +211,8 @@ internal sealed class AccessService(
 
         var stats = StatTrackers.From(
             await mongo.GetCollection<BsonDocument>("eloratings").Find(new BsonDocument("account_id", id)).FirstOrDefaultAsync(ct),
-            await mongo.GetCollection<BsonDocument>("playerstats").Find(new BsonDocument("account_id", id)).FirstOrDefaultAsync(ct));
+            await mongo.GetCollection<BsonDocument>("playerstats").Find(new BsonDocument("account_id", id)).FirstOrDefaultAsync(ct),
+            Inventory.Ownership.IsDevAccount(services.GetService<IOptionsMonitor<Inventory.OwnershipSettings>>()?.CurrentValue ?? new(), id));
         string icon = player.Str("profile_icon") ?? "";
         var iconAsset = await mongo.GetCollection<BsonDocument>("dataassets")
             .Find(new BsonDocument { { "assetType", "ProfileIconData" }, { "enabled", true }, { "slug", icon } }).FirstOrDefaultAsync(ct);

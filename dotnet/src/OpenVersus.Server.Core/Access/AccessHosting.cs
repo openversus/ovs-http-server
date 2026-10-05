@@ -18,6 +18,8 @@ public static class AccessHosting
         builder.AddSetting<BanSettings>("Bans");
         // AccessService reads the current season: bound here, so it never falls back to the defaults unseen.
         builder.AddSetting<Seasons.SeasonSettings>("Seasons");
+        // The OVS Dev badge's OVSDev stat (Inventory/Ownership.cs).
+        builder.AddSetting<Inventory.OwnershipSettings>("Ownership");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IBanService, BanService>();
         builder.Services.AddHostedService<BanLoader>();

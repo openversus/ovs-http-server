@@ -2,16 +2,18 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Assets;
 using OpenVersus.Server.Core.Access;
+using OpenVersus.Server.Core.Settings;
 
 namespace OpenVersus.Server.Core.Inventory;
 
 // The player's inventory, ported from the TS server's handleProfiles_id_inventory (handlers/profiles.ts) with
 // unlockAll (data/characters.ts), getToastInventoryEntry (data/toast.ts) and loadAssets (loadAssets.ts), branch
-// infinity-war. Every player owns everything: one item per enabled data asset, then one per perk (with every
+// infinity-war. Every player owns everything (but End Game's restricted items, Ownership.cs): one item per enabled data asset, then one per perk (with every
 // character), one per taunt in the TS taunt list, then Gleamium (9001 for every player, on purpose) and the player's
 // toasts. This is the ownership the
 // store layouts will be computed from (docs/FROZEN-ACCOUNT-DATA.md).
@@ -50,8 +52,17 @@ internal sealed class InventoryService(IServiceProvider services, TimeProvider t
         var assets = await DataAssets.EnabledAsync(mongo, ct);
 
         var items = new JsonArray();
+        var ownership = services.GetService<IOptionsMonitor<OwnershipSettings>>()?.CurrentValue ?? new OwnershipSettings();
         foreach (var asset in assets)
         {
+            // End Game's battle pass and Fighter Pass rewards come from what rewards paid (below); the OVS Dev badge is
+            // the dev accounts' (Ownership).
+            string? slug = Str(asset, "slug");
+            if (Ownership.IsRestricted(slug) && !(Ownership.IsDevBadge(slug) && Ownership.IsDevAccount(ownership, accountId)))
+            {
+                continue;
+            }
+
             items.Add(Item(accountId, asset.GetValue("slug", BsonNull.Value), serverData: null, accountFirst: false));
         }
 
@@ -195,6 +206,7 @@ public static class InventoryHosting
 {
     public static WebApplicationBuilder AddInventory(this WebApplicationBuilder builder)
     {
+        builder.AddSetting<OwnershipSettings>("Ownership");
         builder.Services.AddSingleton<IInventoryService, InventoryService>();
         return builder;
     }

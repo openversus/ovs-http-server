@@ -173,7 +173,8 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         var values = new Dictionary<string, JsonNode?>
         {
             ["{{crc}}"] = JsonValue.Create(crc),
-            ["{{assets:all}}"] = Slugs(assets),
+            // OwnedByDefaultInventoryItems: End Game's restricted items are owned once paid (Ownership), not by default.
+            ["{{assets:all}}"] = Slugs(assets.Where(a => !Inventory.Ownership.IsRestricted(DataAssets.Str(a, "slug")))),
             ["{{skinsByCharacter}}"] = ByCharacter(assets, "SkinData"),
             ["{{tauntsByCharacter}}"] = ByCharacter(assets, "TauntData"),
         };

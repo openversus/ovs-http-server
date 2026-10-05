@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Settings;
@@ -17,7 +18,10 @@ namespace OpenVersus.Server.Core.Matches;
 //
 // Settings        Rollback:NodeSigningKey (P2P_NODE_SIGNING_KEY, PKCS#8 PEM text) or Rollback:NodeSigningKeyFile
 //                 (P2P_NODE_SIGNING_KEY_FILE); Rollback:NodeConfigFile (P2P_NODE_CONFIG_FILE), else the built-in copy
-//                 of the TS server's src/data/node-config.json.
+//                 of the TS server's src/data/node-config.json; Rollback:NodePublicKey (P2P_NODE_PUBLIC_KEY, "prod" by
+//                 default), the public key the signing key must belong to: checked at startup (NodeKeyCheck) and
+//                 logged, since a server holding another key is refused by every node, which nodes can only show as
+//                 matches going to the relay.
 // Answers         200 {"version": N, "config": {sections}} with X-OVS-Signature, the file read and signed at most every
 //                 five minutes (decided 2026-10-04: a settings change may take that long to reach new nodes); 503 when
 //                 there is no key or no readable update (logged), and the node uses the values built into it.
@@ -38,6 +42,7 @@ public interface INodeConfig
 internal sealed class NodeConfig(IOptionsMonitor<RollbackSettings> settings, TimeProvider time, ILogger<NodeConfig> log) : INodeConfig
 {
     public const string BuiltInResource = "OpenVersus.Server.Core.Matches.node-config.json";
+    public const string BuiltInPublicKeyPrefix = "OpenVersus.Server.Core.Matches.pki/";
     public static readonly TimeSpan CacheFor = TimeSpan.FromMinutes(5);
 
     private readonly Lock _lock = new();
@@ -66,6 +71,65 @@ internal sealed class NodeConfig(IOptionsMonitor<RollbackSettings> settings, Tim
         {
             return Key() is { } key ? Convert.ToBase64String(key.SignData(body, HashAlgorithmName.SHA256)) : null;
         }
+    }
+
+    /// <summary>
+    /// Logs whether the signing key is the private half of Rollback:NodePublicKey, and says which. Reported, not
+    /// enforced: signing goes on either way, so a stale built-in public key cannot switch off a server whose key is right.
+    /// </summary>
+    public KeyCheck CheckKey()
+    {
+        lock (_lock)
+        {
+            if (Key() is not { } key)
+            {
+                return KeyCheck.NoKey;
+            }
+
+            string name = settings.CurrentValue.NodePublicKey;
+            byte[] expected;
+            try
+            {
+                string text = name.Contains('/') || name.Contains('\\') ? File.ReadAllText(name) : BuiltInPublicKey(name)
+                    ?? throw new FileNotFoundException($"there is no built-in public key \"{name}\" (pki/<name>/node-config-public-key.txt)");
+                using var publicKey = ECDsa.Create();
+                publicKey.ImportSubjectPublicKeyInfo(Convert.FromBase64String(text.Trim()), out _);
+                expected = publicKey.ExportSubjectPublicKeyInfo();
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException or CryptographicException)
+            {
+                log.LogError("Cannot check the P2P node signing key against P2P_NODE_PUBLIC_KEY={Name}: {Error}", name, e.Message);
+                return KeyCheck.Unreadable;
+            }
+
+            byte[] actual = key.ExportSubjectPublicKeyInfo();
+            if (actual.AsSpan().SequenceEqual(expected))
+            {
+                log.LogInformation("The P2P node signing key matches the {Name} public key ({Fingerprint})", name, Fingerprint(actual));
+                return KeyCheck.Matches;
+            }
+
+            log.LogError("The P2P node signing key is NOT the {Name} key: nodes built for {Name} ({Expected}) refuse everything signed with this one ({Actual}) and send every P2P match to the relay",
+                name, name, Fingerprint(expected), Fingerprint(actual));
+            return KeyCheck.Differs;
+        }
+    }
+
+    /// <summary>A public key as the logs name it: the first 16 hex digits of SHA-256 over its SubjectPublicKeyInfo.</summary>
+    private static string Fingerprint(byte[] spki) => Convert.ToHexStringLower(SHA256.HashData(spki))[..16];
+
+    private static string? BuiltInPublicKey(string name)
+    {
+        var assembly = typeof(NodeConfig).Assembly;
+        string? resource = assembly.GetManifestResourceNames()
+            .FirstOrDefault(n => n.Replace('\\', '/') == $"{BuiltInPublicKeyPrefix}{name}/node-config-public-key.txt");
+        if (resource is null)
+        {
+            return null;
+        }
+
+        using var reader = new StreamReader(assembly.GetManifestResourceStream(resource)!);
+        return reader.ReadToEnd();
     }
 
     private (byte[] Body, string Signature)? Read()
@@ -154,13 +218,38 @@ internal sealed class NodeConfig(IOptionsMonitor<RollbackSettings> settings, Tim
     }
 }
 
+/// <summary>What <see cref="NodeConfig.CheckKey"/> found.</summary>
+public enum KeyCheck
+{
+    /// <summary>No signing key is configured (already logged): nothing is signed.</summary>
+    NoKey,
+    Matches,
+    Differs,
+    /// <summary>The expected public key could not be read, so nothing was compared.</summary>
+    Unreadable,
+}
+
+/// <summary>At startup, logs whether the signing key matches the public key the nodes are built with.</summary>
+internal sealed class NodeKeyCheck(NodeConfig config) : IHostedService
+{
+    public Task StartAsync(CancellationToken ct)
+    {
+        config.CheckKey();
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
+}
+
 public static class NodeConfigHosting
 {
     public static WebApplicationBuilder AddNodeConfig(this WebApplicationBuilder builder)
     {
         builder.AddSetting<RollbackSettings>("Rollback");
         builder.Services.TryAddSingleton(TimeProvider.System);
-        builder.Services.AddSingleton<INodeConfig, NodeConfig>();
+        builder.Services.AddSingleton<NodeConfig>();
+        builder.Services.AddSingleton<INodeConfig>(services => services.GetRequiredService<NodeConfig>());
+        builder.Services.AddHostedService<NodeKeyCheck>();
         return builder;
     }
 }

@@ -107,6 +107,9 @@ const env = cleanEnv(process.env, {
   P2P_NODE_SIGNING_KEY: str({ default: "" }),
   P2P_NODE_SIGNING_KEY_FILE: str({ default: "" }),
   P2P_NODE_CONFIG_FILE: str({ default: "data/node-config.json" }),
+  // The public key the signing key must belong to, checked at startup: a name under src/data/pki (prod, testing) or a
+  // path to a node-config-public-key.txt (the bench's).
+  P2P_NODE_PUBLIC_KEY: str({ default: "prod" }),
   USE_INTERNAL_ROLLBACK_CPP: num({ default: 0 }),
   USE_SECURE_WEBSOCKET: num({ default: 0 }),
   UDP_PORT: num(),

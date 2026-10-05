@@ -25,6 +25,8 @@
     <!-- A copy of the TS server's src/data/node-config.json (the image's build context is dotnet/ alone); NodeConfigTests
          fails when the two differ, so both servers hand P2P nodes the same settings update by default. -->
     <EmbeddedResource Include="Matches/node-config.json" LogicalName="OpenVersus.Server.Core.Matches.node-config.json" />
+    <!-- Copies of the TS server's src/data/pki/<name>/node-config-public-key.txt (NodeConfigTests keeps them equal). -->
+    <EmbeddedResource Include="Matches/pki/**/node-config-public-key.txt" LogicalName="OpenVersus.Server.Core.Matches.pki/%(RecursiveDir)%(Filename)%(Extension)" />
     <EmbeddedResource Include="Calendar/*.json" LogicalName="OpenVersus.Server.Core.Calendar.%(Filename)%(Extension)" />
     <EmbeddedResource Include="Cosmetics/*.json" LogicalName="OpenVersus.Server.Core.Cosmetics.%(Filename)%(Extension)" />
     <EmbeddedResource Include="Hiss/*.json" LogicalName="OpenVersus.Server.Core.Hiss.%(Filename)%(Extension)" />

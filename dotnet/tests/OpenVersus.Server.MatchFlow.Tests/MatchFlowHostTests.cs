@@ -94,7 +94,7 @@ public sealed class MatchFlowHostTests : IClassFixture<ServiceFactory<Program>>
     }
 
     [Fact]
-    public void Runs_the_match_result_subscribers_and_nothing_else_of_its_own()
+    public void Runs_the_match_result_subscribers_and_the_node_key_check_and_nothing_else_of_its_own()
     {
         var hosted = _factory.Services.GetServices<IHostedService>()
             .Select(s => s.GetType())
@@ -103,7 +103,8 @@ public sealed class MatchFlowHostTests : IClassFixture<ServiceFactory<Program>>
             .Order()
             .ToList();
 
-        Assert.Equal(["ClusterSettingsSync", "InstanceHeartbeat", "MissionResultSubscriber", "RiftResultSubscriber"], hosted);
+        // NodeKeyCheck runs once at startup and returns: it logs whether the P2P node signing key is the expected one.
+        Assert.Equal(["ClusterSettingsSync", "InstanceHeartbeat", "MissionResultSubscriber", "NodeKeyCheck", "RiftResultSubscriber"], hosted);
     }
 
     [Fact]

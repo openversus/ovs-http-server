@@ -42,6 +42,7 @@ public static class TsEnvironment
         ("P2P_NODE_SIGNING_KEY", "Rollback:NodeSigningKey"),
         ("P2P_NODE_SIGNING_KEY_FILE", "Rollback:NodeSigningKeyFile"),
         ("P2P_NODE_CONFIG_FILE", "Rollback:NodeConfigFile"),
+        ("P2P_NODE_PUBLIC_KEY", "Rollback:NodePublicKey"),
     ];
 
     // Values the TS server reads with envalid's bool (true/t/1, false/f/0), which .NET's binding does not; anything else

@@ -113,6 +113,9 @@ public sealed class RollbackSettings
 
     [Description("The P2P nodes' settings update, {\"version\": N, \"config\": {sections}}, read at most every five minutes (P2P_NODE_CONFIG_FILE; a relative path is from the working directory). Empty: the TS server's src/data/node-config.json, built in.")]
     public string NodeConfigFile { get; set; } = "";
+
+    [Description("The public key the signing key must belong to, checked at startup and logged (P2P_NODE_PUBLIC_KEY): a built-in name (prod, testing: the TS server's src/data/pki) or a path to a node-config-public-key.txt.")]
+    public string NodePublicKey { get; set; } = "prod";
 }
 
 /// <summary>

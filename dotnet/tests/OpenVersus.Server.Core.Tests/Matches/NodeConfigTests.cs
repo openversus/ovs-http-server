@@ -48,6 +48,50 @@ public sealed class NodeConfigTests : IDisposable
     }
 
     [Fact]
+    public void TheBuiltInPublicKeysAreTheTsServersFiles()
+    {
+        string? dir = AppContext.BaseDirectory;
+        while (dir is not null && !Directory.Exists(Path.Combine(dir, "src", "data", "pki")))
+        {
+            dir = Path.GetDirectoryName(dir);
+        }
+
+        Assert.NotNull(dir);
+        var names = Directory.GetDirectories(Path.Combine(dir, "src", "data", "pki")).Select(Path.GetFileName).ToList();
+        Assert.Contains("prod", names);
+        foreach (string? name in names)
+        {
+            string ts = File.ReadAllText(Path.Combine(dir, "src", "data", "pki", name!, "node-config-public-key.txt")).Trim();
+            string? resource = typeof(INodeConfig).Assembly.GetManifestResourceNames()
+                .FirstOrDefault(n => n.Replace('\\', '/') == $"{NodeConfig.BuiltInPublicKeyPrefix}{name}/node-config-public-key.txt");
+            Assert.True(resource is not null, $"no built-in copy of src/data/pki/{name}");
+            using var reader = new StreamReader(typeof(INodeConfig).Assembly.GetManifestResourceStream(resource)!);
+            Assert.Equal(ts, reader.ReadToEnd().Trim());
+        }
+    }
+
+    [Fact]
+    public void TheKeyCheckSaysWhetherTheSigningKeyBelongsToTheExpectedPublicKey()
+    {
+        string own = Path.Combine(_dir, "node-config-public-key.txt");
+        File.WriteAllText(own, Convert.ToBase64String(_key.ExportSubjectPublicKeyInfo()) + "\n");
+
+        RollbackSettings Expecting(string publicKey)
+        {
+            var settings = Signed();
+            settings.NodePublicKey = publicKey;
+            return settings;
+        }
+
+        Assert.Equal(KeyCheck.Matches, Service(Expecting(own)).CheckKey());
+        // The built-in prod key (the default) is readable, and it is not this test's key.
+        Assert.Equal(KeyCheck.Differs, Service(Signed()).CheckKey());
+        Assert.Equal(KeyCheck.Unreadable, Service(Expecting("no-such-environment")).CheckKey());
+        Assert.Equal(KeyCheck.Unreadable, Service(Expecting(Path.Combine(_dir, "missing.txt"))).CheckKey());
+        Assert.Equal(KeyCheck.NoKey, Service(new RollbackSettings()).CheckKey());
+    }
+
+    [Fact]
     public void TheUpdateIsSignedAsSent()
     {
         var answer = Service(Signed()).Answer();

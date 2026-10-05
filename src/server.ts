@@ -47,7 +47,7 @@ import { AccountToken, IAccountToken } from "./types/AccountToken";
 import { isNameBanned, isNameForceChange, stringContainsBannedName, stringContainsForceChangeName, banIP } from "./services/banService";
 import { handleMatchStatusUpdate } from "./handlers/match_status";
 import { p2pRelayKey, parseNodePort } from "./p2p";
-import { nodeConfigAnswer, signBody, SIGNATURE_HEADER } from "./nodeConfig";
+import { checkSigningKey, nodeConfigAnswer, signBody, SIGNATURE_HEADER } from "./nodeConfig";
 import { DeployInfo, getDefaultDeployInfo, useOnDemandRollback, IDeployInfo } from "./services/rollbackService";
 import { normalizeHardwareSignal, normalizeIdentity, refreshIpIdentityFromToken, resolveAccountWithSource } from "./services/identityService";
 import { mergeIpIdentity } from "./services/identityNormalization";
@@ -87,6 +87,7 @@ const MATCH_UPDATE_KEY = env.MATCHUPDATEKEY || "MisconfiguredMatchUpdateKey";
 if (MATCH_UPDATE_KEY === "MisconfiguredMatchUpdateKey") {
   logger.error(`${logPrefix} MATCHUPDATEKEY is unset; /ovs_match_status is only protected by the public placeholder key`);
 }
+checkSigningKey();
 const stringIsOnlyWhitespace = (string: string): boolean => string.trim().length === 0;
 
 process.on("warning", (e) => {

@@ -7,7 +7,11 @@
 //
 // The update is P2P_NODE_CONFIG_FILE ({"version": N, "config": {sections, as the node's node.appsettings.json}}),
 // relative to this file's directory unless absolute, read and signed at most once every five minutes.
-import { createPrivateKey, sign, KeyObject } from "crypto";
+//
+// At startup (checkSigningKey) the key is compared with P2P_NODE_PUBLIC_KEY, the public key the nodes are built with: a
+// name under data/pki (prod by default, testing) or a path to a node-config-public-key.txt. A server holding another key
+// would be refused by every node, which nodes can only show as matches going to the relay; the log says it here.
+import { createHash, createPrivateKey, createPublicKey, sign, KeyObject } from "crypto";
 import { readFileSync } from "fs";
 import { isAbsolute, join } from "path";
 import env from "./env/env";
@@ -39,6 +43,36 @@ function signingKey(): KeyObject | null {
     logger.error(`${logPrefix} the P2P node signing key could not be read: ${(e as Error).message}; signing nothing`);
   }
   return key;
+}
+
+/** A public key as the logs name it: the first 16 hex digits of SHA-256 over its SubjectPublicKeyInfo. */
+function fingerprint(spki: Buffer): string {
+  return createHash("sha256").update(spki).digest("hex").slice(0, 16);
+}
+
+/**
+ * Logs whether the signing key is the private half of P2P_NODE_PUBLIC_KEY; called once at startup. Reported, not
+ * enforced: signing goes on either way, so a stale committed public key cannot switch off a server whose key is right.
+ */
+export function checkSigningKey(): void {
+  const k = signingKey();
+  if (!k) return;
+  const name = env.P2P_NODE_PUBLIC_KEY;
+  const file = /[\\/]/.test(name) ? name : join(__dirname, "data", "pki", name, "node-config-public-key.txt");
+  let expected: Buffer;
+  try {
+    const key = createPublicKey({ key: Buffer.from(readFileSync(file, "utf-8").trim(), "base64"), format: "der", type: "spki" });
+    expected = key.export({ type: "spki", format: "der" }) as Buffer;
+  } catch (e) {
+    logger.error(`${logPrefix} cannot check the P2P node signing key: the expected public key ${file} (P2P_NODE_PUBLIC_KEY=${name}) could not be read: ${(e as Error).message}`);
+    return;
+  }
+  const actual = createPublicKey(k).export({ type: "spki", format: "der" }) as Buffer;
+  if (actual.equals(expected)) {
+    logger.info(`${logPrefix} the P2P node signing key matches the ${name} public key (${fingerprint(actual)})`);
+  } else {
+    logger.error(`${logPrefix} the P2P node signing key is NOT the ${name} key: nodes built for ${name} (${fingerprint(expected)}) refuse everything signed with this one (${fingerprint(actual)}) and send every P2P match to the relay`);
+  }
 }
 
 /** The X-OVS-Signature value for <body>, or null when there is no key. */

@@ -81059,9 +81059,11 @@ export const MILESTONE_REWARDS = {
           TierGuid: "F0F26B504A17E8E6315AE784EA5AABF5",
         },
       ],
+      // End Game's pass is OpenVersus's first season (a key of our own, so the client's string table doesn't swap in
+      // its "Season 5").
       Title: {
         localizations: {
-          loc_Season_5: "Season 5",
+          loc_OVS_Season_1: "OVS Season 1",
         },
       },
       XpIcon: "/Game/Panda_Main/UI/Assets/Icons/currencyicons_2024/t_ui_icon_battlepassxp.t_ui_icon_battlepassxp",

@@ -1,7 +1,7 @@
 // The "OVS Dev" profile badge (2026-10-03): a StatTrackingBundleData in OVS_P, made like the game's
 // EVO 2022 badges (no count shown, hidden from players who don't own it). Only the accounts in
-// OVS_DEV_ACCOUNT_IDS own it (cosmeticEntitlementService). Served from here (loadAssets), so no
-// DataAssets row is needed. The art and the Unreal script are in the Codex workspace:
+// OVS_DEV_ACCOUNT_IDS own it (cosmeticEntitlementService); its catalog row is in dotnet/tools/assets/end-game-assets.json (sync_assets.mjs).
+// The art and the Unreal script are in the Codex workspace:
 // work/badges/make_ovs_dev_badge.py and scripts/ue/create_ovs_dev_badge.py.
 import { createHash } from "crypto";
 import type { InvetoryKeysDefs } from "./inventoryDefs";

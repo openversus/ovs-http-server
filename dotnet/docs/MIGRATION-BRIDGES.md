@@ -73,7 +73,11 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   scripts that started as the TS server's; the TS match end, rematch vote and websocket disconnect still read and write
   it), `ssc_custom_lobby_player:{player}`, `lobby_code:{code}`, `ssc_custom_lobby_match:{match}` (the TS match end and
   rematch read it) and `bot_config:{bot}` (the TS websocket builds a bot's match config from it), TTLs as the TS
-  server's. `rematch_accept`, `rematch_decline` and the match end stay on the TS server until the match flow moves.
+  server's. The match end and the rematch are ported (`MatchEnd` in the match flow opens the vote; `Rematches` in
+  lobbies answers `rematch_accept`/`rematch_decline` and runs its timer, with the TS keys
+  `ssc_custom_lobby_rematch_timer:{lobby}` and `ssc_custom_lobby_rematch_accept:{lobby}`), but run only with
+  `MatchEnd:Enabled`; until then the TS websocket ends the match and times the vote, and the two routes stay on the TS
+  server (not in `Proxy:PortedRoutes`).
 - **Matchmaking** (`MatchmakingWorker` in its own executable, `OpenVersus.Server.Matchmaking`; on unless `Matchmaking:Enabled` is false): the queues `1v1` and `2v2` (ticket JSON lists the TS
   websocket fills when a party queues and empties on a cancel or disconnect), `player_heartbeats`,
   `player:{id}:blocked` and `player:{id}` `ip` are read as the TS worker reads them; a match writes what the TS worker
@@ -207,7 +211,10 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   single game starts against the same opponents (bots: the same fighters), never rated; any decline (`rematch_decline`)
   sends everyone back to the menus.
 - **Why:** match end is still the TS websocket's; C# cannot stop its decline without changing TS, which is going away.
-- **Delete when:** match end moves to C# (the match flow lifecycle and the realtime gateway), with the rematch above.
+- **Built:** the C# match end opens a Casual match's vote (`MatchEnd`, `RematchVotes`), and lobbies takes the accepts and
+  declines and starts the rematch (`Rematches`, with its timer), as above; on only with `MatchEnd:Enabled`, which stays
+  off while the TS websocket holds the players.
+- **Delete when:** the realtime gateway replaces the TS websocket and `MatchEnd:Enabled` is on.
 
 ### 8. P2P is switched in two places, and parts of a P2P match are still the TS server's
 
@@ -224,8 +231,8 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   and so can a set's game 1 when the TS matchmaker made it.
 - **Until then:** change both together; each executable that starts matches logs the C# value once it has started (the
   cluster settings are loaded by then).
-- **Delete when:** custom lobby rematches and `/api/identify` are ported, the TS matchmaker is retired, and the websocket
-  reads `p2p` and the node port from C#'s config (the realtime gateway).
+- **Delete when:** custom lobby rematches start in C# (`Rematches`, with `MatchEnd:Enabled`), `/api/identify` is ported,
+  the TS matchmaker is retired, and the websocket reads `p2p` and the node port from C#'s config (the realtime gateway).
 
 ### 9. The match flow builds match configs from the TS websocket's channels, and the TS websocket still sends them
 

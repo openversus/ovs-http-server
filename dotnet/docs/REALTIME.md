@@ -58,7 +58,7 @@ the matchmaking request, `match:notifications` and
 
 Done so far: rift progress, missions and reward tracks (MIGRATION-BRIDGES.md 4), the party lobby routes (invite,
 join, leave, mode, ready, loadout lock) and the custom lobby (its routes, its messages, the match start; its match end
-and rematch vote stay with the match flow), and the matchmaking worker (its own executable, `OpenVersus.Server.Matchmaking`; on by default, `Matchmaking:Enabled`; the queue side, the
+and rematch vote are ported too, `MatchEnd` and `Rematches`, on with `MatchEnd:Enabled`), and the matchmaking worker (its own executable, `OpenVersus.Server.Matchmaking`; on by default, `Matchmaking:Enabled`; the queue side, the
 tickets and their tick, stays with the websocket). The match config is built by the match flow (`GameplayConfigs`, kept per player; MIGRATION-BRIDGES.md 9), and still
 sent by the TS websocket.
 

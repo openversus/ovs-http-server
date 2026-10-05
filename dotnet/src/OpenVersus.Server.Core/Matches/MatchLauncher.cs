@@ -127,9 +127,10 @@ public sealed class RollbackSettings
 
 /// <summary>
 /// A player in a match, as the TS RedisTeamEntry. A spectator (a custom lobby's) is in the notification only, with
-/// isSpectator in place of isBot: not in the ticket, not counted.
+/// isSpectator in place of isBot: not in the ticket, not counted. <paramref name="PartyId"/>: the party the player came
+/// in with (a Casual rematch keeps the queue's); null, the match's id, as every launched match had.
 /// </summary>
-public sealed record MatchPlayer(string PlayerId, int PlayerIndex, int TeamIndex, bool IsHost, string Ip, bool IsBot, bool IsSpectator = false);
+public sealed record MatchPlayer(string PlayerId, int PlayerIndex, int TeamIndex, bool IsHost, string Ip, bool IsBot, bool IsSpectator = false, string? PartyId = null);
 
 /// <summary>A match to start: its players (humans at the lowest player indexes), map and mode, and what the websocket's
 /// PvP gameplay config needs replaced. <paramref name="BotPerks"/> are what each bot's perks are locked as (none when
@@ -228,7 +229,7 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
                 var entry = new JsonObject
                 {
                     ["playerId"] = p.PlayerId,
-                    ["partyId"] = matchId,
+                    ["partyId"] = p.PartyId ?? matchId,
                     ["playerIndex"] = p.PlayerIndex,
                     ["teamIndex"] = p.TeamIndex,
                     ["isHost"] = p.IsHost,

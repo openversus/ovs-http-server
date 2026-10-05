@@ -20,13 +20,15 @@ namespace OpenVersus.Server.Core.Matches;
 //
 //   1. Each player's game gets EndOfMatchPayload, the config it played (match_config:{player}, GameplayConfigs), which is
 //      then dropped; a player online is set idle (player:{id} status).
-//   2. A custom lobby's match: its rematch (ssc_custom_lobby_match:{match}) — slice 2b; until then nothing more here.
+//   2. A custom lobby's match (ssc_custom_lobby_match:{match}): its rematch vote opens (Rematches), and nothing more
+//      happens here (no set, no party preservation), even after a crash, as there. The lobby gone: nothing at all.
 //   3. The set (RankedSets.GameEndedAsync): a match that crashed sends everyone back to the menus (an empty config,
 //      +500 ms); a set game with no set (orphan) or a set already resolved: MatchSetLeaverNotification (+1000 ms) and the
 //      empty config (+1500 ms); a set that goes on: nothing (the game shows its check-in); a set over: each rated
 //      player's FullRankUpdate at once, then the leaver notification and the empty config to every player of the set.
-//      Not a set game: a Casual or custom game (isCustomGame), or one with no config, gets RematchDeclinedNotification
-//      (+1000 ms); any other (a rift) nothing more (decided 2026-10-05: what the game saw before).
+//      Not a set game: a Casual game (isCustomGame) gets its rematch vote (Rematches); one with no config
+//      RematchDeclinedNotification (+1000 ms); any other (a rift) nothing more (decided 2026-10-05: what the game saw
+//      before).
 //   4. Unless a player is still in a set: party preservation. A player whose party lobby has others in it keeps it (lobby
 //      and player_lobby saved again, 8 h; its ready set cleared) and is marked rejoin_pending:{player} (45 s), the window
 //      in which their reconnecting must not cost them the party. What happens when the window closes (cleanup of a
@@ -35,14 +37,16 @@ namespace OpenVersus.Server.Core.Matches;
 // Delayed messages go through DelayedMessages (Redis, swept every 100 ms), never an in-process timer.
 //
 // Redis, read     match_end:{match}; match_config:{player}; online_players; ssc_custom_lobby_match:{match}; {match};
-//                 match:{match}; player_ranked_set:{player}; player_lobby:{player}; lobby:{lobby} (and RankedSets')
+//                 match:{match}; player_ranked_set:{player}; player_lobby:{player}; lobby:{lobby} (and RankedSets' and
+//                 the rematch vote's: RematchVotes)
 // Redis, written  match_end:{match} NX EX 10 min (once per match); match_config:{player} deleted; player:{player} status;
 //                 lobby:{lobby}, player_lobby:{player} EX 8 h; party_ready:{lobby} deleted; rejoin_pending:{player} EX 45 s;
-//                 realtime:due (and RankedSets')
+//                 realtime:due (and RankedSets' and the rematch vote's)
 // Published       ws:send (each message, to its player)
 // Mongo           FullRankUpdate's reads (eloratings made when missing), and RankedSets' ratings
 //
 // Unlike there:
+//   a Casual game has a rematch (Rematches); TS declined it for everyone a second after its end (MIGRATION-BRIDGES.md 7).
 //   handled once per match (match_end:{match}): a second /ovs_end_match (a relay and a node, a retry) changes nothing; TS
 //     counted the game again for every publish (and each websocket replica would have).
 //   the echo is the config kept for this match only (TS echoed whatever its connection held, a newer match's included).
@@ -88,7 +92,15 @@ internal sealed class MatchEnd(IServiceProvider services, IRankedSets sets, EloR
 
         if ((string?)await redis.StringGetAsync($"ssc_custom_lobby_match:{matchId}") is { Length: > 0 } lobby)
         {
-            log.LogWarning("Match {Match} is custom lobby {Lobby}'s: its rematch is not ported yet (step 4 slice 2b)", matchId, lobby);
+            if (await RematchVotes.OpenLobbyAsync(redis, time, matchId, lobby))
+            {
+                log.LogInformation("Match {Match} ended in custom lobby {Lobby}: rematch vote open for {Seconds} s", matchId, lobby, RematchVotes.Timer.TotalSeconds);
+            }
+            else
+            {
+                log.LogWarning("Match {Match} ended in custom lobby {Lobby}, which is gone", matchId, lobby);
+            }
+
             return;
         }
 
@@ -124,7 +136,11 @@ internal sealed class MatchEnd(IServiceProvider services, IRankedSets sets, EloR
                 }
 
                 break;
-            case GameEnd.NotASet when config is null || RollbackCallbacks.Truthy(config["isCustomGame"]):
+            case GameEnd.NotASet when config is not null && RollbackCallbacks.Truthy(config["isCustomGame"]):
+                await RematchVotes.OpenCasualAsync(redis, time, matchId, config);
+                log.LogInformation("Casual match {Match} ended: rematch vote open for {Seconds} s", matchId, RematchVotes.Timer.TotalSeconds);
+                break;
+            case GameEnd.NotASet when config is null:
                 foreach (string id in playerIds)
                 {
                     await DelayedMessages.ScheduleAsync(redis, time, [id], RematchDeclined(id, matchId), TimeSpan.FromSeconds(1));

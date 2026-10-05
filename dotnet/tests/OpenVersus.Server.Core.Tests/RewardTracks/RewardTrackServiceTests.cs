@@ -143,10 +143,14 @@ public sealed class RewardTrackServiceTests : IAsyncLifetime
     {
         Skip.If(_mongo is null, "set OVS_TEST_MONGO to run");
         string id = ObjectId.GenerateNewId().ToString();
-        // Nothing earned: nothing to claim (the battle pass's free tier is claimed already).
-        var (pass, none) = await Service().ClaimAllAsync(id, "mrt_battlepass_season_five", default);
-        Assert.Empty(none);
+        // Nothing earned: End Game's battle pass has its tier 1 (at 0 XP) to claim, once (ClaimableFromStart).
+        var tier1 = ((JsonArray)HissTables.Data("milestone-reward-tracks", "mrt_battlepass_season_five")!["Tiers"]!).OfType<JsonObject>()
+            .Where(t => t["ScoreThreshold"]!.GetValue<double>() <= 0)
+            .SelectMany(t => t["Rewards"]!.AsArray().Select(r => r!["RewardGuid"]!.GetValue<string>()));
+        var (pass, first) = await Service().ClaimAllAsync(id, "mrt_battlepass_season_five", default);
+        Assert.Equal(tier1, first.Select(r => r["RewardGuid"]!.GetValue<string>()));
         Assert.Equal(1, pass!["CurrentTier"]!.GetValue<int>());
+        Assert.Empty((await Service().ClaimAllAsync(id, "mrt_battlepass_season_five", default)).Claimed);
 
         // One daily claimed: the bonus track's first tier (threshold 1) is completed, its reward claimable once.
         await Service().AddScoreAsync(id, new Dictionary<string, int> { ["mrt_bonus_mission_new"] = 1 }, default);

@@ -63,7 +63,14 @@ public sealed class RewardTrackServiceTests : IAsyncLifetime
         foreach (var track in States(answer).OfType<JsonObject>())
         {
             Assert.Equal(0, track["CurrentScore"]!.GetValue<int>());
-            // Every completed tier's rewards are claimed.
+            // Every completed tier's rewards are claimed, but on End Game's battle pass, whose tier 1 (at 0 XP) is a
+            // reward to claim (RewardTrackService.ClaimableFromStart).
+            if (RewardTrackService.ClaimableFromStart.Contains(track["TrackSlug"]!.GetValue<string>()))
+            {
+                Assert.Empty(track["ClaimedRewards"]!.AsArray());
+                continue;
+            }
+
             var claimed = track["ClaimedRewards"]!.AsArray().Select(r => r!.GetValue<string>()).ToHashSet();
             var tiers = HissTables.Data("milestone-reward-tracks", track["TrackSlug"]!.GetValue<string>())?["Tiers"] as JsonArray ?? [];
             foreach (var guid in track["CompletedTiers"]!.AsArray().Select(t => t!.GetValue<string>()))
@@ -79,11 +86,14 @@ public sealed class RewardTrackServiceTests : IAsyncLifetime
     public async Task TracksStartWhereWbCountedAScoreOfZero()
     {
         var answer = await Service().AnswerAsync("", default);
-        // A battle pass: its threshold-0 tier is reached (CurrentTier 1), and claimed.
+        // A battle pass: its threshold-0 tier is reached (CurrentTier 1), and claimed; End Game's leaves it to claim.
         var pass = Track(answer, "mrt_battlepass_season_five");
         Assert.Equal(1, pass["CurrentTier"]!.GetValue<int>());
         Assert.Equal(["5A44B3F9428A35AEE479AF923854E5DA"], pass["CompletedTiers"]!.AsArray().Select(t => t!.GetValue<string>()));
-        Assert.NotEmpty(pass["ClaimedRewards"]!.AsArray());
+        Assert.Empty(pass["ClaimedRewards"]!.AsArray());
+        var older = Track(answer, "mrt_battlepass_season_four");
+        Assert.NotEmpty(older["CompletedTiers"]!.AsArray());
+        Assert.NotEmpty(older["ClaimedRewards"]!.AsArray());
         // A character level, the daily bonus track: nothing reached.
         foreach (string slug in new[] { "mrt_mastery_wonder_woman", "mrt_bonus_mission_new", "mrt_mastery_account" })
         {

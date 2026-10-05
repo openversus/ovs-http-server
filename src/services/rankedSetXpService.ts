@@ -1,35 +1,10 @@
 import { logger } from "../config/logger";
-import { redisClient, redisPublishRewardTrackUpdate } from "../config/redis";
-import { getChromiumMasteryTrackForCharacter } from "../data/chromiumSkins";
-import {
-  ACTIVE_BP_TRACK_SLUG,
-  advanceTrack,
-  getRankedSetXp,
-  getTrackPushFields,
-  grantCrossedTierRewards,
-} from "../data/rewardTracks";
+import { redisClient } from "../config/redis";
 
 const logPrefix = "[Services.RankedSetXp]:";
-const GRANT_DEDUP_TTL_SECONDS = 7 * 24 * 60 * 60;
-
-/** Add XP to a reward track and push the new state to the player's client. */
-export async function advanceTrackAndPublish(accountId: string, trackSlug: string, xpDelta: number, source: string) {
-  const { state, previousScore, previousTier, tierUp } = await advanceTrack(accountId, xpDelta, trackSlug);
-  await redisPublishRewardTrackUpdate({
-    accountId,
-    trackSlug,
-    currentScore: state.currentScore,
-    currentTier: state.currentTier,
-    completedTiers: state.completedTiers,
-    claimedRewards: state.claimedRewards,
-    bHasPremium: trackSlug === ACTIVE_BP_TRACK_SLUG ? state.bHasPremium : false,
-    updateContext: 6,
-    xpDelta,
-    ...getTrackPushFields(trackSlug),
-  });
-  logger.info(`${logPrefix} ${trackSlug} ${accountId}: +${xpDelta} (${source}), tier ${previousTier}->${state.currentTier}${tierUp ? " TIER UP" : ""}`);
-  return { state, previousScore };
-}
+// The C# match flow pays it (RankedSetXpSubscriber, dotnet/docs/MIGRATION-BRIDGES.md 6): the battle pass, the account
+// level and the played character's level (its Fighter Pass), into the reward tracks the C# server keeps.
+export const RANKED_SET_XP_CHANNEL = "reward_tracks:ranked_set";
 
 export interface RankedSetResult {
   winnerIds: string[];
@@ -46,26 +21,12 @@ export interface RankedSetResult {
 
 /**
  * Pay one player for one ranked set or public FFA game: battle-pass XP, plus
- * Fighter Pass XP on the character they played. `dedupKey` makes it pay once.
+ * Fighter Pass XP on the character they played. C# pays it once per `setKey`
+ * and player.
  */
-async function grantPlayerXp(accountId: string, won: boolean, characterSlug: string, dedupKey: string, source: string) {
-  const claimed = await redisClient.set(dedupKey, "1", { NX: true, EX: GRANT_DEDUP_TTL_SECONDS });
-  if (claimed !== "OK") return;
-
-  const xp = getRankedSetXp(won);
-  await advanceTrackAndPublish(accountId, ACTIVE_BP_TRACK_SLUG, xp, source);
-
-  const trackSlug = getChromiumMasteryTrackForCharacter(characterSlug);
-  if (!trackSlug) {
-    logger.warn(`${logPrefix} No Fighter Pass for character '${characterSlug}' (${accountId}); ${source}`);
-    return;
-  }
-  const { state, previousScore } = await advanceTrackAndPublish(accountId, trackSlug, xp, `${source} as ${characterSlug}`);
-  // Crossed tiers pay out toasts; tiers 5, 10 and 15 feed the battle pass.
-  const { battlepassXp } = await grantCrossedTierRewards(accountId, trackSlug, previousScore, state.currentScore);
-  if (battlepassXp > 0) {
-    await advanceTrackAndPublish(accountId, ACTIVE_BP_TRACK_SLUG, battlepassXp, `${trackSlug} tier reward`);
-  }
+async function grantPlayerXp(accountId: string, won: boolean, characterSlug: string, setKey: string, source: string) {
+  await redisClient.publish(RANKED_SET_XP_CHANNEL, JSON.stringify({ playerId: accountId, won, character: characterSlug, setKey, source }));
+  logger.info(`${logPrefix} ${accountId}: ${won ? "win" : "loss"} as ${characterSlug} (${source}) sent for payment`);
 }
 
 /**
@@ -89,7 +50,7 @@ export async function awardRankedSetXp(result: RankedSetResult): Promise<void> {
     try {
       await grantPlayerXp(
         id, won, result.playerCharacters.get(id) || "",
-        `ranked_set_xp_granted:${result.setKey}:${id}`,
+        `ranked:${result.setKey}`,
         `ranked set ${won ? "win" : "loss"} ${result.setKey}`,
       );
     } catch (error) {
@@ -104,7 +65,7 @@ export async function awardRankedSetXp(result: RankedSetResult): Promise<void> {
  */
 export async function awardFfaMatchXp(accountId: string, won: boolean, characterSlug: string, matchId: string): Promise<void> {
   try {
-    await grantPlayerXp(accountId, won, characterSlug, `ffa_xp_granted:${matchId}:${accountId}`, `FFA ${won ? "win" : "game"} ${matchId}`);
+    await grantPlayerXp(accountId, won, characterSlug, `ffa:${matchId}`, `FFA ${won ? "win" : "game"} ${matchId}`);
   } catch (error) {
     logger.error(`${logPrefix} FFA XP grant failed for ${accountId} in ${matchId}: ${error}`);
   }

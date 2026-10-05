@@ -58,6 +58,18 @@ public sealed class RewardTrackSettings
 
     [Description("Rift matches add that XP too. The client's offline rift backend marks rifts as granting no progress (bModeGrantsProgress false), which says nothing about WB's online rifts.")]
     public bool RiftMatchXp { get; set; } = true;
+
+    [Description("XP a completed ranked set (or a public FFA game) adds to the battle pass, and the bonus for winning it (End Game: 300 + 150). The TS server decides who is paid (reward_tracks:ranked_set, RankedSetXp).")]
+    public int BattlePassSetXp { get; set; } = 300;
+
+    [Description("The battle pass's bonus for winning the ranked set.")]
+    public int BattlePassWinXp { get; set; } = 150;
+
+    [Description("XP a completed ranked set (or a public FFA game) adds to the account level and to the played character's level, which carries its Fighter Pass, and the bonus for winning it (End Game: 400 + 200).")]
+    public int CharacterSetXp { get; set; } = 400;
+
+    [Description("The account and character levels' bonus for winning the ranked set.")]
+    public int CharacterWinXp { get; set; } = 200;
 }
 
 public interface IRewardTrackService
@@ -73,6 +85,10 @@ public interface IRewardTrackService
     /// Returns the track as the answer lists it (null for a track the answer does not list) and the rewards newly
     /// claimed (the tiers' reward entries).</summary>
     Task<(JsonObject? Track, IReadOnlyList<JsonObject> Claimed)> ClaimAllAsync(string accountId, string trackSlug, CancellationToken ct);
+
+    /// <summary>As <see cref="ClaimAllAsync"/>, limited to the completed tiers in <paramref name="tierGuids"/> (null: all
+    /// of them): claim_milestone_reward_track_tiers.</summary>
+    Task<(JsonObject? Track, IReadOnlyList<JsonObject> Claimed)> ClaimAsync(string accountId, string trackSlug, IReadOnlyCollection<string>? tierGuids, CancellationToken ct);
 }
 
 internal sealed class RewardTrackService(IServiceProvider services, ILogger<RewardTrackService> log) : IRewardTrackService
@@ -130,7 +146,10 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
         return Changed(tracks, points.Keys);
     }
 
-    public async Task<(JsonObject? Track, IReadOnlyList<JsonObject> Claimed)> ClaimAllAsync(string accountId, string trackSlug, CancellationToken ct)
+    public Task<(JsonObject? Track, IReadOnlyList<JsonObject> Claimed)> ClaimAllAsync(string accountId, string trackSlug, CancellationToken ct) =>
+        ClaimAsync(accountId, trackSlug, null, ct);
+
+    public async Task<(JsonObject? Track, IReadOnlyList<JsonObject> Claimed)> ClaimAsync(string accountId, string trackSlug, IReadOnlyCollection<string>? tierGuids, CancellationToken ct)
     {
         if (!Settings.Governs(trackSlug))
         {
@@ -147,7 +166,8 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
             var have = had.Select(r => r?.GetValue<string>()).ToHashSet();
             foreach (var tier in (HissTables.Data("milestone-reward-tracks", trackSlug)?["Tiers"] as JsonArray ?? []).OfType<JsonObject>())
             {
-                if (!completed.Contains(tier["TierGuid"]?.GetValue<string>()))
+                string? tierGuid = tier["TierGuid"]?.GetValue<string>();
+                if (!completed.Contains(tierGuid) || (tierGuids is not null && (tierGuid is null || !tierGuids.Contains(tierGuid))))
                 {
                     continue;
                 }
@@ -240,10 +260,23 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
             .ToList();
         var next = (JsonObject)state.DeepClone();
         next["CurrentScore"] = score <= int.MaxValue ? JsonValue.Create((int)score) : JsonValue.Create(score);
-        next["CurrentTier"] = reached.Count;
+        next["CurrentTier"] = CappedTier(slug, reached.Count);
         next["CompletedTiers"] = new JsonArray(reached.Select(t => (JsonNode?)t["TierGuid"]?.DeepClone()).ToArray());
         return next;
     }
+
+    // The client reads CurrentTier as an index into the track's tiers (the tier being worked towards); a finished
+    // track's count of reached tiers is one past the last, and the match-end banner then showed a negative number
+    // (End Game, 2026). So it stops at the last tier.
+    internal static int CappedTier(string slug, int reached)
+    {
+        int tiers = (HissTables.Data("milestone-reward-tracks", slug)?["Tiers"] as JsonArray)?.Count ?? 0;
+        return tiers > 0 ? Math.Min(reached, tiers - 1) : reached;
+    }
+
+    /// <summary>Tracks whose threshold-0 tiers are real rewards for the player to claim, not WB's free first tier:
+    /// End Game's battle pass (its tier 1 at 0 XP).</summary>
+    internal static readonly HashSet<string> ClaimableFromStart = ["mrt_battlepass_season_five"];
 
     private static double? RiftsNumber(JsonNode? node) => Rifts.RiftMissions.Number(node);
 
@@ -262,7 +295,8 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
         ["HighestClaimedInifiniteTier"] = state["HighestClaimedInifiniteTier"]?.DeepClone() ?? -1,
     };
 
-    /// <summary>A track never earned: score 0, the tiers at threshold 0 reached and their rewards claimed.</summary>
+    /// <summary>A track never earned: score 0, the tiers at threshold 0 reached and their rewards claimed (except on
+    /// <see cref="ClaimableFromStart"/>'s tracks, where they wait to be claimed).</summary>
     internal static JsonObject Initial(string slug)
     {
         var free = (HissTables.Data("milestone-reward-tracks", slug)?["Tiers"] as JsonArray ?? [])
@@ -272,9 +306,9 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
         return new JsonObject
         {
             ["CurrentScore"] = 0,
-            ["CurrentTier"] = free.Count,
+            ["CurrentTier"] = CappedTier(slug, free.Count),
             ["CompletedTiers"] = new JsonArray(free.Select(t => (JsonNode?)t["TierGuid"]?.DeepClone()).ToArray()),
-            ["ClaimedRewards"] = new JsonArray(free
+            ["ClaimedRewards"] = ClaimableFromStart.Contains(slug) ? new JsonArray() : new JsonArray(free
                 .SelectMany(t => (t["Rewards"] as JsonArray ?? []).OfType<JsonObject>())
                 .Select(r => (JsonNode?)r["RewardGuid"]?.DeepClone()).ToArray()),
             ["HighestClaimedInifiniteTier"] = -1,

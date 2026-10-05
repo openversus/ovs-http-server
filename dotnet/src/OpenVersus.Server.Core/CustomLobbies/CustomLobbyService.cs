@@ -717,8 +717,8 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
         }
 
         // Player indexes as the TS server gives them (the rollback server depends on these): within a team, players
-        // before bots, index = place in team * 2 + team; the first player (not a bot) of the walk hosts; spectators
-        // 8888, 8889, ... on team -1.
+        // before bots, index = place in team * 2 + team, renumbered players first when that leaves one past the player
+        // count (HumansFirst); the first player (not a bot) of the walk hosts; spectators 8888, 8889, ... on team -1.
         var entries = new List<MatchPlayer>();
         var spectatorEntries = new List<MatchPlayer>();
         int humansSeen = 0;
@@ -772,6 +772,13 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
                     await redis.KeyExpireAsync($"bot_config:{id}", TimeSpan.FromDays(1));
                 }
             }
+        }
+
+        if (HumansFirst(entries) is { } renumbered)
+        {
+            entries = renumbered;
+            log.LogInformation("Custom match from lobby {Lobby}: renumbered players humans first (a player sat past the rollback's {Slots} input slot(s))",
+                lobbyId, entries.Count(p => !p.IsBot));
         }
 
         var config = lobby["match_config"] as JsonObject ?? [];
@@ -1040,6 +1047,26 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
 
     /// <summary>A script's JSON, parsed as JSON.parse would and repaired.</summary>
     private static JsonNode? Parse(RedisResult result) => FixEmptyTables(Js.Parse((string)result!));
+
+    /// <summary>
+    /// The start's player indexes with the players (not bots) first, or null when they need no change. The rollback
+    /// server gets one input slot per player (bots are left out of /ovs_register) and indexes them by player index, so
+    /// every player needs an index below the player count. The interleaved numbering breaks that when bots sit between
+    /// players: in FFA every player is their own team (index = team), and in 2v2 two players on one team against bots
+    /// get 0 and 2. Then the players are numbered first, then the bots, each in their index order (as the TS server).
+    /// </summary>
+    internal static List<MatchPlayer>? HumansFirst(IReadOnlyList<MatchPlayer> entries)
+    {
+        var humans = entries.Where(p => !p.IsBot).OrderBy(p => p.PlayerIndex).ToList();
+        if (humans.All(p => p.PlayerIndex < humans.Count))
+        {
+            return null;
+        }
+
+        var index = humans.Concat(entries.Where(p => p.IsBot).OrderBy(p => p.PlayerIndex))
+            .Select((p, i) => (p.PlayerId, i)).ToDictionary();
+        return [.. entries.Select(p => p with { PlayerIndex = index[p.PlayerId] })];
+    }
 
     /// <summary>
     /// cjson's empty tables put back (fixCjsonEmptyTables): an empty object or array is an object under the keys that

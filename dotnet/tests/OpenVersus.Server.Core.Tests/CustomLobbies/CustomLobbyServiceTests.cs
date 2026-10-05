@@ -325,6 +325,58 @@ public sealed class CustomLobbyServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    // The rollback server has one input slot per player (bots are not registered) and indexes them by player index: in
+    // FFA every player is their own team (index = team), so two players with bots between them got 1 and 3 of 2 slots.
+    // Players first, then bots, each in their index order; the walk's order, teams and host stay.
+    public void AnFfaWithBotsBetweenThePlayersNumbersThePlayersFirst()
+    {
+        const string Bot2 = "Bot0000000000000000000e00000000002";
+        var entries = new[]
+        {
+            new MatchPlayer(Bot, 0, 0, false, "", true), new MatchPlayer(Leader, 1, 1, true, "198.51.100.7", false),
+            new MatchPlayer(Bot2, 2, 2, false, "", true), new MatchPlayer(Guest, 3, 3, false, "198.51.100.9", false),
+        };
+
+        Assert.Equal(
+            [new MatchPlayer(Bot, 2, 0, false, "", true), new MatchPlayer(Leader, 0, 1, true, "198.51.100.7", false),
+             new MatchPlayer(Bot2, 3, 2, false, "", true), new MatchPlayer(Guest, 1, 3, false, "198.51.100.9", false)],
+            CustomLobbyService.HumansFirst(entries));
+    }
+
+    [Fact]
+    // Two players on one team against two bots got 0 and 2 (place * 2 + team) of 2 slots.
+    public void A2v2OfPlayersAgainstBotsNumbersThePlayersFirst()
+    {
+        const string Bot2 = "Bot0000000000000000000e00000000002";
+        var entries = new[]
+        {
+            new MatchPlayer(Leader, 0, 0, true, "", false), new MatchPlayer(Guest, 2, 0, false, "", false),
+            new MatchPlayer(Bot, 1, 1, false, "", true), new MatchPlayer(Bot2, 3, 1, false, "", true),
+        };
+
+        Assert.Equal(
+            [new MatchPlayer(Leader, 0, 0, true, "", false), new MatchPlayer(Guest, 1, 0, false, "", false),
+             new MatchPlayer(Bot, 2, 1, false, "", true), new MatchPlayer(Bot2, 3, 1, false, "", true)],
+            CustomLobbyService.HumansFirst(entries));
+    }
+
+    [Theory]
+    // Every player already below the player count: the TS server's indexes are kept as they are.
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PlayersAlreadyBelowThePlayerCountKeepTheirIndexes(bool withBot)
+    {
+        var entries = withBot
+            // A player and a bot against a player (the start test's lobby): 0 and 1 of 2 slots, the bot 2.
+            ? new[] { new MatchPlayer(Leader, 0, 0, true, "", false), new MatchPlayer(Bot, 2, 0, false, "", true), new MatchPlayer(Guest, 1, 1, false, "", false) }
+            // Four players in 2v2.
+            : [new MatchPlayer(Leader, 0, 0, true, "", false), new MatchPlayer(Guest, 2, 0, false, "", false),
+               new MatchPlayer(Third, 1, 1, false, "", false), new MatchPlayer("0000000000000000000e0004", 3, 1, false, "", false)];
+
+        Assert.Null(CustomLobbyService.HumansFirst(entries));
+    }
+
+    [Fact]
     public async Task ALobbyCodeNamesTheLobbyInAnyCase()
     {
         if (_redis is null)

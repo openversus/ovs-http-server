@@ -114,6 +114,26 @@ public sealed class HydraCodecTests
     }
 
     [Theory]
+    [InlineData("18446744073709551616")]
+    [InlineData("-9223372036854777856")]
+    [InlineData("1e21")]
+    [InlineData("-1e21")]
+    public void RefusesAWholeNumberOutside64Bits(string json)
+    {
+        // mvs-dump's 64-bit writes refuse these; a cast would saturate to the nearest 64-bit value instead.
+        Assert.Throws<HydraFormatException>(() => HydraEncoder.Encode(JsonNode.Parse(json)));
+        Assert.Throws<HydraFormatException>(() => HydraEncoder.Encode(JsonValue.Create(double.Parse(json, System.Globalization.CultureInfo.InvariantCulture))));
+    }
+
+    [Fact]
+    public void EncodesThe64BitBounds()
+    {
+        Assert.Equal("17ffffffffffffffff", Convert.ToHexStringLower(HydraEncoder.Encode(JsonNode.Parse("18446744073709551615"))));
+        Assert.Equal("168000000000000000", Convert.ToHexStringLower(HydraEncoder.Encode(JsonNode.Parse("-9223372036854775808"))));
+        Assert.Equal("168000000000000000", Convert.ToHexStringLower(HydraEncoder.Encode(JsonValue.Create(-9223372036854775808.0))));
+    }
+
+    [Theory]
     [InlineData("ee")]
     [InlineData("3005616263")]
     [InlineData("11")]

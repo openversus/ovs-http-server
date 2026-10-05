@@ -171,7 +171,9 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   `MIGRATION BRIDGE` warning for it at startup (each has the control API).
 - **Why:** a client stuck on an unanswered call has no way out of the menu; this frees it without restarting the game
   or the websocket service.
-- **Delete when:** the websocket is ported: C# closes the socket itself; the channel and its TS handler go.
+- **Delete when:** the realtime gateway holds the players (the bench switch): it already answers `ws:disconnect` itself
+  (`OpenVersus.Server.Realtime`, with a connection id or an exception when given), so the channel stays as the gateway's;
+  the TS handler and the startup warning go.
 
 ### 6. Ratings (ELO) are still partly the TS server's, which asks "does this match count" its own ways
 

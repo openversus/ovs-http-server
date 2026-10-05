@@ -180,22 +180,24 @@ public sealed class HydraEncoder
         }
     }
 
-    // mvs-dump's encodeNumber: JavaScript numbers, so the only question is whether the value is whole.
+    // mvs-dump's encodeNumber: JavaScript numbers, so the only question is whether the value is whole. A whole number
+    // outside 64 bits is refused, as mvs-dump's 64-bit writes refuse it: [-2^63, 2^64) (both bounds exact doubles; a
+    // cast outside them saturates, and ulong.MaxValue as a double is 2^64 itself).
     private void Number(double d)
     {
         if (double.IsFinite(d) && d == Math.Floor(d))
         {
-            if (d < 0)
+            if (d < 0 && d >= -9223372036854775808.0)
             {
                 Integer(true, (long)d, 0);
             }
-            else if (d <= ulong.MaxValue)
+            else if (d >= 0 && d < 18446744073709551616.0)
             {
                 Integer(false, 0, (ulong)d);
             }
             else
             {
-                throw new HydraFormatException($"{d} is too large for any Hydra integer");
+                throw new HydraFormatException($"{d} is outside every Hydra integer");
             }
 
             return;

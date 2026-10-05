@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using OpenVersus.Server.Core.CustomLobbies;
+using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Http.Shared.Endpoints;
 using OpenVersus.Server.Http.Shared.Hosting;

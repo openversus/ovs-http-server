@@ -47,6 +47,7 @@ public static class KnownServices
 {
     public static readonly ServiceDefinition Http = new("http", "HTTP_PORT", DefaultPublicPort: 8000, DefaultControlPort: 17801,
         ServiceStores.Redis | ServiceStores.Mongo);
+    /// <summary>The game's websocket (WEBSOCKET_PORT): the realtime gateway's nodes, docs/REALTIME.md.</summary>
     public static readonly ServiceDefinition Realtime = new("ws", "WEBSOCKET_PORT", DefaultPublicPort: 3000, DefaultControlPort: 17802,
         ServiceStores.Redis);
     public static readonly ServiceDefinition Matchmaking = new("matchmaking", PublicPortKey: null, DefaultPublicPort: 0, DefaultControlPort: 17803,

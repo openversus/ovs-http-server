@@ -573,7 +573,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
     private static double Number(JsonNode? node) => node is JsonValue v && v.GetValueKind() == JsonValueKind.Number ? v.GetValue<double>() : double.NaN;
 }
 
-/// <summary>The maps a match is played on (Matchmaking/maps.json, from the TS server's data/maps1v1.json and maps2v2.json).</summary>
+/// <summary>The maps a match is played on, and which have hazards (Matchmaking/maps.json, from the TS server's data/maps1v1.json and maps2v2.json).</summary>
 internal static class MatchmakingMaps
 {
     private static readonly Lazy<JsonObject> s_maps = new(() =>
@@ -606,6 +606,23 @@ internal static class MatchmakingMaps
         var fallback = (s_maps.Value["fallback"]?[list] as JsonArray ?? []).Select(m => m!.GetValue<string>()).ToList();
         log.LogError("No enabled {List} maps: match {Match} gets one from the fallback list", list, matchId);
         return fallback[Random.Shared.Next(fallback.Count)];
+    }
+
+    /// <summary>
+    /// Whether <paramref name="map"/> has hazards, as the TS server's getMapHazards (data/maps.ts): PVE_03 always; else
+    /// its entry in the mode's list (2v2's for 2v2, 1v1's for anything else), the id compared without case; false when
+    /// it has none.
+    /// </summary>
+    public static bool Hazards(string map, string? mode)
+    {
+        if (map == "PVE_03")
+        {
+            return true;
+        }
+
+        string list = mode == "2v2" ? "2v2" : "1v1";
+        var entry = (s_maps.Value[list] as JsonArray ?? []).FirstOrDefault(m => string.Equals(m?["id"]?.GetValue<string>(), map, StringComparison.OrdinalIgnoreCase));
+        return entry?["hazards"] is JsonValue hazards && hazards.GetValueKind() == JsonValueKind.True;
     }
 }
 

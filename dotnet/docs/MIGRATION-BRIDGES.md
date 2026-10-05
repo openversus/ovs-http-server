@@ -226,6 +226,22 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 - **Delete when:** custom lobby rematches and `/api/identify` are ported, the TS matchmaker is retired, and the websocket
   reads `p2p` and the node port from C#'s config (the realtime gateway).
 
+### 9. The match flow builds match configs from the TS websocket's channels, and the TS websocket still sends them
+
+- **What:** `GameplayConfigBridge` (`Core/Matches/GameplayConfigs.cs`, in the match flow) subscribes to
+  `match:notifications` and `perks:notifications`, the channels the TS websocket builds and sends each match's config
+  from, and builds the same config (`GameplayConfigs`), kept per player in `match_config:{player}`, as
+  `GameplayConfigs:Mode` says: `Off` (the default) nothing; `Shadow` the config only, writing nothing the TS server reads,
+  so it can be compared with what the TS websocket sends while that still sends it; `On` also what the TS websocket
+  writes beside it (`match_characters`, the cosmetics match copy, a missing rating). C# sends nothing: the game still gets
+  its config from the TS websocket, whose copy lives in its memory. Subscribing catches every match, the ones the TS
+  server still starts (a custom lobby's rematch) included; with more than one match flow replica, each builds the same
+  config.
+- **Until then:** `Off` by default; the bench runs `Shadow` while the C# config is compared with what TS sends.
+- **Delete when:** the realtime gateway replaces the TS websocket: then whatever starts a match (`MatchLauncher`) and the
+  perks lock (`PerksLock`) call `IGameplayConfigs` directly, as everything else that causes a message does, and the
+  gateway sends what they keep. The setting goes with it.
+
 ## Not bridges (kept after the migration)
 
 - The stream `match:results` (decided 2026-10-02): the http service that receives a match report appends it

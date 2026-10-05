@@ -14,8 +14,10 @@ namespace OpenVersus.Server.Core.Matches;
 
 // PUT /ssc/invoke/submit_end_of_match_stats {ContainerMatchId, EndOfMatchStats: {PlayerMissionUpdates, PlayerNetworkStats,
 // Score, WinningTeamIndex}, MatchLength}, ported from the TS server's handleSsc_invoke_submit_end_of_match_stats
-// (handlers/ssc.ts), branch infinity-war. Each human's game sends it on its post-match screen, after EndOfMatchPayload
-// (so after the TS websocket's match end), with the match as it simulated it: the winner and every player's counters.
+// (handlers/ssc.ts), branch infinity-war. Each human's game sends it when its match is over, before EndOfMatchPayload:
+// the rollback server ends the match (/ovs_end_match, then match end) only once every player has left it, seconds to
+// a minute after their reports (three matches on the bench, 2026-09-30 and 10-04). It carries the match as the game
+// simulated it: the winner and every player's counters.
 //
 // Before the answer (the set's check-ins read it):
 //   game_result_received:{match} NX EX 10 min (the TS rollback callbacks tell a crash from a finished game by it)

@@ -11,6 +11,8 @@ using OpenVersus.Server.Http.Shared;
 // MATCHFLOW_PORT, where the router sends them; and the results the http service's submit_end_of_match_stats appends to
 // the stream match:results (MatchResultStream): missions, match XP, rift progress and each match's stats. Any number of
 // replicas: they read the stream as one consumer group, and each result is recorded once per match and player (SET NX keys).
+// And each match's gameplay config, kept per player (GameplayConfigs:Mode; built beside the TS websocket, which still sends
+// it: docs/MIGRATION-BRIDGES.md 9).
 var builder = OpenVersusHost.CreateBuilder(KnownServices.MatchFlow, args);
 builder.AddGameHttp(typeof(Program).Assembly);
 builder.AddRewardTracks();
@@ -24,6 +26,7 @@ builder.AddRankedSets();
 builder.AddRollbackCallbacks();
 builder.AddMatchStatusEvents();
 builder.AddMatchResultStream();
+builder.AddGameplayConfigs();
 
 var app = builder.Build();
 app.UseGameHttp();

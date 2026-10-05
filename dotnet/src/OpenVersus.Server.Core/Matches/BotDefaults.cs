@@ -3,13 +3,16 @@ using System.Text.Json.Nodes;
 namespace OpenVersus.Server.Core.Matches;
 
 /// <summary>
-/// What a bot plays with unless told otherwise: the TS server's data/botDefaults.ts (BOT_DEFAULT_PERKS, BOT_DIFFICULTY),
-/// which its websocket also falls back to when it builds a bot's config. Custom lobbies and the Casual queue's bot
-/// matches use it.
+/// What a bot plays with unless told otherwise: the TS server's data/botDefaults.ts (BOT_DEFAULT_PERKS, BOT_DEFAULT_CHARACTER,
+/// BOT_DEFAULT_SKIN, BOT_DIFFICULTY), which its websocket also falls back to when it builds a bot's config (here,
+/// GameplayConfigs). Custom lobbies and the Casual queue's bot matches use it.
 /// </summary>
 public static class BotDefaults
 {
     public static readonly IReadOnlyList<string> Perks = ["perk_gen_boxer", "perk_team_speed_force_assist", "perk_purest_of_motivations", "perk_gen_well_rounded"];
+
+    /// <summary>The fighter and skin of a bot whose bot_config:{bot} names none.</summary>
+    public const string Character = "character_jason", Skin = "skin_jason_000";
 
     /// <summary>BotSettingSlug -> the difficulty the gameplay config's BotDifficultyMin and Max carry.</summary>
     public static readonly IReadOnlyDictionary<string, int> Difficulty = new Dictionary<string, int> { ["VeryEasy"] = 0, ["Easy"] = 1, ["Medium"] = 2, ["Hard"] = 3 };

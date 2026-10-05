@@ -36,7 +36,7 @@ version of the node, would need.
   | Kept in memory today | Read by | In Redis |
   |---|---|---|
   | the queue ticket (`ticket`) | disconnect, a replaced connection | a pointer per player to their ticket |
-  | the match's config (`matchConfig`) | perks lock, match end, disconnect | per player, beside the match notification, with the match's TTL |
+  | the match's config (`matchConfig`) | perks lock, match end, disconnect | per player, beside the match notification, with the match's TTL: `match_config:{player}` (the message as sent, 20 min; the perks lock rewrites it and keeps the TTL; `GameplayConfigs`) |
   | a forced rejoin in progress (`pendingRejoin`) | the handshake, disconnect | `rejoin_pending:{player}`, short TTL |
   | the last answer to the ping (`lastPong`) | the 20 s check | already there: `player_heartbeats` (zset, ms) |
   | the 1 s "still searching" tick (`matchTick`) | cancel, disconnect | nothing: one sweep per node over its players with a queued ticket |
@@ -59,7 +59,8 @@ the matchmaking request, `match:notifications` and
 Done so far: rift progress, missions and reward tracks (MIGRATION-BRIDGES.md 4), the party lobby routes (invite,
 join, leave, mode, ready, loadout lock) and the custom lobby (its routes, its messages, the match start; its match end
 and rematch vote stay with the match flow), and the matchmaking worker (its own executable, `OpenVersus.Server.Matchmaking`; on by default, `Matchmaking:Enabled`; the queue side, the
-tickets and their tick, stays with the websocket).
+tickets and their tick, stays with the websocket). The match config is built by the match flow (`GameplayConfigs`, kept per player; MIGRATION-BRIDGES.md 9), and still
+sent by the TS websocket.
 
 ## A node restart without disconnecting anyone
 

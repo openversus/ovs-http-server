@@ -1,6 +1,6 @@
 using FastEndpoints;
+using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Matches;
-using OpenVersus.Server.Http.Shared.Hosting;
 
 namespace OpenVersus.Server.MatchFlow.Endpoints.OpenVersus.Rollback;
 

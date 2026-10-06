@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The realtime gateway: holds the game's websocket (the TS websocket service's socket side). Its own executable and
+       image, so a deploy of any other service never drops a socket, and any number of replicas run side by side. -->
+  <ItemGroup>
+    <ProjectReference Include="..\OpenVersus.Server.Core\OpenVersus.Server.Core.csproj" />
+  </ItemGroup>
+
+</Project>

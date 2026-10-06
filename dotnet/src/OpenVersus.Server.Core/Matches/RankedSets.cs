@@ -6,9 +6,13 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
+using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Matchmaking;
+using OpenVersus.Server.Core.Realtime;
+using OpenVersus.Server.Core.Seasons;
+using OpenVersus.Server.Core.Settings;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Matches;
@@ -45,11 +49,15 @@ namespace OpenVersus.Server.Core.Matches;
 //                 so it is rated) EX 20 min; {game} (the notification: the set's players as they were, a map, p2p) EX 20
 //                 min; ranked_set:{set} with checkins [] and ranked_set_checkins:{set} deleted, player_ranked_set:{each}
 //                 and match_to_set:{game} (the TS websocket's fallback) EX 20 min; ranked_set_match:{set} EX 30 min
-// Published       ranked_set:checkin {playerIds, checkedInPlayer, checkins, totalPlayers, setId}; ranked_set:leaver
-//                 {playerIds, leaverPlayerId, matchId: the set} (the TS websocket: MatchSetLeaverNotification, then the
-//                 empty config that sends the game back to its menus; 500 ms after the answer when a set ends at
-//                 check-in); ranked_set:fullrankupdate {playerIds} after a rating; match:notifications (the next game)
-// Mongo, written  eloratings, playerstats (SetRatings)
+//                 realtime:due (DelayedMessages: a leaver's empty config, and a set over at check-in's leaver)
+// Sent (ws:send)  what the TS websocket built from the ranked_set channels, to every player of the set:
+//                 MatchSetCheckinNotification {CheckedInAccountId, CheckedInCount (the set's checkins), TotalPlayers} at
+//                 each counted check-in; MatchSetLeaverNotification {AccountId: the leaver, MatchId: the set}, then 500
+//                 ms later the empty config that sends the game back to its menus (a set over at check-in: both 500 ms
+//                 after the answer, as there); FullRankUpdate (FullRankUpdateVariant.SetResult) after a rating, to every
+//                 player of the set but bots, connected or not (FullRankUpdate.SendAsync)
+// Published       match:notifications (the next game)
+// Mongo, written  eloratings, playerstats (SetRatings); eloratings for a player with none (FullRankUpdate)
 //
 // The next game's rollback port is IMatchLauncher's (fixed servers: a random one of theirs; on demand: the next port,
 // deployed unless the game runs P2P), as the matchmaker's; its p2p is P2P.Mark (Rollback:P2P). The teams and player
@@ -76,6 +84,9 @@ namespace OpenVersus.Server.Core.Matches;
 //   - a set is rated only when RatedMatches says it counts (MIGRATION-BRIDGES.md 6).
 //   - a ranked_disconnect flag counts only for the set it names (decided 2026-10-05): any other is stale (TS took any
 //     flag, "1" after any started match included, so a custom game's dodge conceded the player's next set).
+//   - the messages a moment later (a leaver's empty config, a set over at check-in's leaver) are kept in Redis
+//     (DelayedMessages), not in a timer of one process: a restart still sends them. The FullRankUpdate goes out right
+//     after the rating, before the leaver; TS's order between the two was a race (its rank handler waited on Mongo).
 
 public interface IRankedSets
 {
@@ -130,12 +141,9 @@ public sealed record GameEndResult(GameEnd Kind, IReadOnlyList<string> SetPlayer
     public static GameEndResult Of(GameEnd kind) => new(kind, [], []);
 }
 
-internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launcher, ISetRatings ratings, IOptionsMonitor<RollbackSettings> rollback,
-    TimeProvider time, ILogger<RankedSets> log) : IRankedSets
+internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launcher, ISetRatings ratings, EloRatings eloRatings,
+    IOptionsMonitor<RollbackSettings> rollback, IOptionsMonitor<SeasonSettings> season, TimeProvider time, ILogger<RankedSets> log) : IRankedSets
 {
-    public const string CheckinChannel = "ranked_set:checkin";
-    public const string LeaverChannel = "ranked_set:leaver";
-    public const string FullRankUpdateChannel = "ranked_set:fullrankupdate";
     private static readonly TimeSpan s_setTtl = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan s_matchTtl = TimeSpan.FromMinutes(20);
     // Longer than a whole set: three games of up to 7.5 min, each with its perk screen (30 s), connecting to the rollback
@@ -144,6 +152,7 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
     private static readonly TimeSpan s_lockTtl = TimeSpan.FromSeconds(10);
     internal static TimeSpan LockWait { get; set; } = TimeSpan.FromSeconds(12);
     internal static TimeSpan LeaverDelay { get; set; } = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan s_emptyConfigDelay = TimeSpan.FromMilliseconds(500);
 
     public async Task CheckinAsync(string playerId, string? containerMatchId)
     {
@@ -205,7 +214,7 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
         {
             log.LogInformation("Set {Set} flagged as crash ({Flag}) — skipping auto-concede, cleaning up", setId, crash);
             await DropAsync(redis, setId, all, disconnectFlags: true);
-            await PublishAsync(redis, LeaverChannel, Leaver(all, playerId, setId));
+            await LeaverAsync(redis, all, playerId, setId, TimeSpan.Zero);
             return;
         }
 
@@ -237,18 +246,29 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
             await redis.KeyDeleteAsync($"ranked_disconnect:{other}");
             await ConcedeAndRateAsync(redis, set, setId, current, other, "disconnect_concede");
             await DropAsync(redis, setId, all, disconnectFlags: false);
-            await PublishAsync(redis, LeaverChannel, Leaver(all, other, setId));
+            await LeaverAsync(redis, all, other, setId, TimeSpan.Zero);
             return;
         }
 
-        await PublishAsync(redis, CheckinChannel, new JsonObject
+        // The count is the set's checkins as just written (as stored when the player was already in), as the TS websocket
+        // read it from the published set; a set with no such list sent nothing there (it threw).
+        if (set["checkins"] is JsonArray checkins)
         {
-            ["playerIds"] = Strings(all),
-            ["checkedInPlayer"] = playerId,
-            ["checkins"] = set["checkins"]?.DeepClone(),
-            ["totalPlayers"] = all.Count,
-            ["setId"] = setId,
-        });
+            foreach (string id in all)
+            {
+                await ProfileNotifications.SendAsync(redis, id, new JsonObject
+                {
+                    ["CheckedInAccountId"] = playerId,
+                    ["CheckedInCount"] = checkins.Count,
+                    ["TotalPlayers"] = all.Count,
+                    ["template_id"] = "MatchSetCheckinNotification",
+                });
+            }
+        }
+        else
+        {
+            log.LogError("Set {Set} has no checkins list: check-in from {Player} not announced", setId, playerId);
+        }
 
         if (checkinCount < all.Count)
         {
@@ -280,12 +300,7 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
             await DropAsync(redis, setId, all, disconnectFlags: false);
             // After the answer, as there.
             string leaver = set["concedingPlayer"] is JsonValue c && c.TryGetValue(out string? conceder) && conceder.Length > 0 ? conceder : all.FirstOrDefault() ?? "";
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(LeaverDelay, time);
-                await PublishAsync(redis, LeaverChannel, Leaver(all, leaver, setId));
-                log.LogInformation("Sent MatchSetLeaverNotification for set {Set}", setId);
-            });
+            await LeaverAsync(redis, all, leaver, setId, LeaverDelay);
             return;
         }
 
@@ -315,7 +330,7 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
         var all = PlayerIds(set);
         await ConcedeAndRateAsync(redis, set, setId, await CurrentGameAsync(redis, setId), playerId, "concede");
         await DropAsync(redis, setId, all, disconnectFlags: false);
-        await PublishAsync(redis, LeaverChannel, Leaver(all, playerId, setId));
+        await LeaverAsync(redis, all, playerId, setId, TimeSpan.Zero);
         log.LogInformation("Player {Player} conceded set {Set}, sending MatchSetLeaverNotification", playerId, setId);
     }
 
@@ -592,8 +607,9 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
         await RateAndAnnounceAsync(redis, set, setId, current, Number(team) == 0 ? 1 : 0, isConcede: true, reason, conceder);
     }
 
-    // Rates the set for winnerTeam, then ranked_set:fullrankupdate (the TS websocket sends each player their ranks). A
-    // failure is logged and announces nothing, as there.
+    // Rates the set for winnerTeam, then sends each player their ranks (FullRankUpdate, as the TS websocket did for
+    // ranked_set:fullrankupdate; to every player but bots, connected or not: a result is a result). A failure is logged
+    // and announces nothing, as there.
     private async Task RateAndAnnounceAsync(IDatabase redis, JsonObject set, string setId, string current, int winnerTeam, bool isConcede, string reason,
         string? quitter = null)
     {
@@ -622,7 +638,16 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
                     QuitterIds: quitter is { Length: > 0 } ? [quitter] : null), CancellationToken.None);
             }
 
-            await PublishAsync(redis, FullRankUpdateChannel, new JsonObject { ["playerIds"] = Strings(PlayerIds(set)) });
+            if (services.GetService<IMongoDatabase>() is { } mongo)
+            {
+                var humans = (set["players"] as JsonArray ?? []).Where(p => !Truthy(p?["isBot"])).Select(p => Text(p?["playerId"])).OfType<string>().Distinct();
+                await FullRankUpdate.SendAsync(redis, mongo, eloRatings, humans, season.CurrentValue.Current, FullRankUpdateVariant.SetResult,
+                    time, log, CancellationToken.None);
+            }
+            else
+            {
+                log.LogError("No FullRankUpdate for set {Set}: this service has no Mongo (MONGODB_URI)", setId);
+            }
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
@@ -805,15 +830,26 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
         await redis.KeyDeleteAsync($"ranked_set_match:{setId}");
     }
 
-    private static Task PublishAsync(IDatabase redis, string channel, JsonObject message) =>
-        redis.PublishAsync(RedisChannel.Literal(channel), Js.Stringify(message));
-
-    private static JsonObject Leaver(List<string> all, string leaver, string setId) => new()
+    // MatchSetLeaverNotification to every player (AccountId: the leaver) after `after`, then the empty config 500 ms later,
+    // which sends the game back to its menus: the TS websocket's ranked_set:leaver handler.
+    private async Task LeaverAsync(IDatabase redis, List<string> all, string leaver, string setId, TimeSpan after)
     {
-        ["playerIds"] = Strings(all),
-        ["leaverPlayerId"] = leaver,
-        ["matchId"] = setId,
-    };
+        foreach (string id in all)
+        {
+            var message = ProfileNotifications.Message(new JsonObject { ["AccountId"] = leaver, ["MatchId"] = setId, ["template_id"] = "MatchSetLeaverNotification" }, id);
+            if (after > TimeSpan.Zero)
+            {
+                await DelayedMessages.ScheduleAsync(redis, time, [id], message, after);
+            }
+            else
+            {
+                await PlayerMessages.SendAsync(redis, [id], message);
+            }
+        }
+
+        await DelayedMessages.ScheduleAsync(redis, time, all, MatchEnd.EmptyConfig(), after + s_emptyConfigDelay);
+        log.LogInformation("MatchSetLeaverNotification for set {Set} (leaver {Leaver}) sent to {Count} players", setId, leaver, all.Count);
+    }
 
     private static async Task<JsonObject?> SetAsync(IDatabase redis, string setId) => await JsonAsync(redis, $"ranked_set:{setId}");
 
@@ -843,8 +879,6 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
     private static (int Team0, int Team1) Scores(JsonObject set) =>
         set["scores"] is JsonArray { Count: >= 2 } scores ? ((int)Number(scores[0]), (int)Number(scores[1])) : (0, 0);
 
-    private static JsonArray Strings(IEnumerable<string> values) => new([.. values.Select(v => (JsonNode)v)]);
-
     private static string? Text(JsonNode? value) => value is JsonValue v && v.TryGetValue(out string? s) ? s : null;
 
     private static double Number(JsonNode? value) =>
@@ -872,6 +906,8 @@ public static class RankedSetsHosting
         }
 
         builder.AddSetRatings();
+        builder.AddEloRatings();
+        builder.AddSetting<SeasonSettings>("Season");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.TryAddSingleton<IRankedSets, RankedSets>();
         return builder;

@@ -39,7 +39,7 @@ namespace OpenVersus.Server.Core.CustomLobbies;
 //   bot_config:{bot}                    a bot's character, skin and difficulty for the match; EX 1 day
 //   connections:{player} (+ its IP copy) character and skin written at the start; read with player:{player} for the
 //                                       players' settings
-// The match itself is started by IMatchLauncher (match:notifications, matchmaking:complete), as the TS server did.
+// The match itself is started by IMatchLauncher (match:notifications, then matchmaking-complete to the players), as the TS server did.
 //
 // Differences from the TS server (each asserted by tools/matches/custom_lobby_diff.mjs):
 //   - a player who joins a lobby they are already in is answered the lobby; the TS server added them again, in another

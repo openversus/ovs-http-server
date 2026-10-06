@@ -1,5 +1,6 @@
-// PUT /matches/{id} (the party lobby) on the TS server and the C# port, scenario by scenario: the answer, every Redis
-// write and publish the server made (Redis MONITOR: TTLs, NX and published payloads included), and the state after.
+// PUT /matches/{id} (the party lobby) on the TS server and the C# port, scenario by scenario: the answer, what each
+// member's game was sent (a join: lobby-join, OnLobbyRuntimeDataUpdated, PlayerJoinedLobby), every Redis write and
+// publish the server made (Redis MONITOR: TTLs, NX and published payloads included), and the state after.
 // Run from the repository root (it uses the TS server's node_modules):
 //
 //   node dotnet/tools/matches/lobby_diff.mjs run <baseUrl> <out.json>
@@ -11,10 +12,14 @@
 //   REF_JWT_SECRET  the JWT secret both servers use
 //   REF_LOBBY_BODY  a captured PUT /matches request body (Hydra), e.g. <corpus>/req/...__matches_ID.bin from
 //                   tools/hydra/extract_corpus.py
+//   REF_WS_URL      the TS websocket (PR #49's code as committed), in both runs: it turns the TS server's
+//                   lobby:player_joined into the three messages and delivers what C# sends through ws:send. P1-P3 stay
+//                   connected for the whole run. Each run is checked to use only its own channel.
 // Both servers need the client gate on with a minimum of 2026.09.28.1 (MIN_CLIENT_VERSION=2026.09.28.1,
 // CLIENT_VERSION_CHECK=true). Never point these at data you want to keep.
 import fs from "node:fs";
 import { require, need, openScratch, toPlain, openMonitor, writes, state, hydraKeyOrders } from "../refdiff/refdiff.mjs";
+import { connectPlayers } from "../refdiff/gateway.mjs";
 
 const jwt = require(process.cwd() + "/node_modules/jsonwebtoken");
 // mvs-dump's modules run a CLI on import when argv[2] is set (they read it as a file): hide ours while they load.
@@ -45,6 +50,9 @@ async function run(baseUrl, outFile) {
   const { redis, close } = await openScratch("lobby_diff");
   const body = fs.readFileSync(need("REF_LOBBY_BODY"));
   const token = jwt.sign({ id: P1, profile_id: id(901), wb_network_id: P1, hydraUsername: "OpenVersus_1", username: "PlayerOne" }, need("REF_JWT_SECRET"));
+  const games = await connectPlayers(need("REF_WS_URL"), [P1, P2, P3].map((pid, i) => ({
+    id: pid, token: i === 0 ? token : jwt.sign({ id: pid, profile_id: id(901 + i), wb_network_id: pid, hydraUsername: `OpenVersus_${i + 1}` }, need("REF_JWT_SECRET")),
+  })));
 
   let recording = null;
   const monitor = await openMonitor(need("REF_REDIS_URL"), (line) => recording?.push(line));
@@ -74,6 +82,7 @@ async function run(baseUrl, outFile) {
       await redis.set("refdiff:scratch", "1");
       await setup?.();
     }
+    games.clear();
     recording = [];
     const started = Date.now();
     // A request the server never answers (the TS server, on a lobby that is not JSON) is recorded as such.
@@ -91,8 +100,8 @@ async function run(baseUrl, outFile) {
       bytes = Buffer.alloc(0);
     }
     process.stdout.write(`${name}: ${response.status}\n`);
-    // MONITOR lines can arrive just after the answer.
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    // MONITOR lines and the members' messages can arrive just after the answer.
+    await new Promise((resolve) => setTimeout(resolve, 600));
     const lines = recording;
     recording = null;
     let decoded;
@@ -105,8 +114,20 @@ async function run(baseUrl, outFile) {
       name, status: response.status, platformIds: fresh ? await platformIds(redis) : steps.at(-1).platformIds, response: normalize(decoded, started), bytes: bytes.length,
       // The wire order of the maps whose keys are integer-like (a decoded answer cannot show it).
       intKeyOrders: (() => { try { return Object.fromEntries(Object.entries(hydraKeyOrders(bytes)).filter(([, lists]) => lists.some((keys) => keys.some((k) => /^\d+$/.test(k))))); } catch (e) { return `<${e.message}>`; } })(),
-      writes: writes(lines, self), state: await state(redis),
+      // Left out: the TS websocket's presence for the fake games (a pong can land in any step), the C# services' instance
+      // registry (their heartbeat lands in whichever step it falls in), and the channel each server
+      // carries the members' messages on (recorded apart, compared as the frames).
+      frames: Object.fromEntries([P1, P2, P3].map((pid) => [pid, games.frames(pid).filter((f) => !f?.raw).map((f) => normalize(toPlain(f), started))])),
+      channels: writes(lines, self).filter((w) => w.startsWith("publish ")).map((w) => w.split(" ")[1]),
+      writes: writes(lines, self).filter((w) => !/^publish (ws:send|lobby:player_joined) |^zadd player_heartbeats|^(sadd|srem) online_players|^(zadd|expire) active_ip_accounts:|^(set|zadd|zrem|del) ovs:instance/.test(w)),
+      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^player_heartbeats$|^online_players$|^active_ip_accounts:|^ovs:instance/.test(k))),
     });
+    // The client gate's update toast closes the player's socket 10 s later (the TS websocket's client_update:modal): wait
+    // for that, and reconnect, so the next step starts with every game connected on both runs.
+    if (writes(lines, self).some((w) => w.startsWith("publish client_update:modal "))) {
+      await new Promise((resolve) => setTimeout(resolve, 10600));
+      await games.reopen();
+    }
   }
 
   await step("solo-no-lobby", LOBBY(0), everyone);
@@ -134,6 +155,7 @@ async function run(baseUrl, outFile) {
   await step("refresh-3-partial", LOBBY(8), async () => { await session(P1, 1); await loadout(P1, 1); await lobby(8, { ownerId: P1, ownerUsername: "PlayerOne", playerIds: [P1, P2, P3] }); });
 
   monitor.destroy();
+  games.close();
   fs.writeFileSync(outFile, JSON.stringify({ baseUrl, steps }, null, 1));
   console.log(`${steps.length} steps -> ${outFile}`);
   await close();
@@ -170,7 +192,16 @@ function normalize(value, started) {
 
 function diffRuns(fileA, fileB) {
   const a = JSON.parse(fs.readFileSync(fileA, "utf8")), b = JSON.parse(fs.readFileSync(fileB, "utf8"));
-  // The first run is the TS server's: its Steam entries get the ids the port sends instead.
+  // The first run is the TS server's: its Steam entries get the ids the port sends instead, in the answer and in every
+  // list of members a message carries (players.all, wherever it is).
+  const members = (v, out = []) => {
+    if (Array.isArray(v)) v.forEach((x) => members(x, out));
+    else if (v && typeof v === "object") {
+      if (Array.isArray(v.all) && v.all.every((m) => m?.identity)) out.push(...v.all);
+      Object.values(v).forEach((x) => members(x, out));
+    }
+    return out;
+  };
   for (const step of a.steps) {
     for (const member of Array.isArray(step.response?.players?.all) ? step.response.players.all : []) {
       const steam = member?.identity?.alternate?.steam?.[0];
@@ -181,11 +212,20 @@ function diffRuns(fileA, fileB) {
         steam.id = id;
       }
     }
+    for (const member of members(step.frames)) {
+      const steam = member.identity.alternate?.steam?.[0];
+      if (steam) steam.id = step.platformIds[member.account_id];
+    }
+  }
+  // Each run carries the members' messages on its own channel: TS on lobby:player_joined, C# on ws:send.
+  let crossed = 0;
+  for (const [run, other] of [[a, "ws:send"], [b, "lobby:player_joined"]]) {
+    for (const step of run.steps) if (step.channels.includes(other)) { crossed++; console.log(`${step.name}: ${other} published by ${run === a ? "A" : "B"}`); }
   }
   let differing = 0;
   for (let i = 0; i < Math.max(a.steps.length, b.steps.length); i++) {
     const x = a.steps[i], y = b.steps[i];
-    const parts = ["status", "response", "intKeyOrders", "writes", "state"].filter((p) => JSON.stringify(x?.[p]) !== JSON.stringify(y?.[p]));
+    const parts = ["status", "response", "intKeyOrders", "frames", "writes", "state"].filter((p) => JSON.stringify(x?.[p]) !== JSON.stringify(y?.[p]));
     if (!parts.length && x?.bytes === y?.bytes) continue;
     if (!parts.length) parts.push("bytes");
     const name = x?.name ?? y?.name;
@@ -201,6 +241,7 @@ function diffRuns(fileA, fileB) {
       console.log(`  ${p} B: ${JSON.stringify(y?.[p]).slice(0, 1500)}`);
     }
   }
+  differing += crossed;
   console.log(differing ? `${differing} unexpected difference(s)` : "no unexpected differences");
   process.exit(differing ? 1 : 0);
 }

@@ -10,6 +10,7 @@ using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.FunFacts;
 using OpenVersus.Server.Core.Preferences;
+using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.Settings;
 using StackExchange.Redis;
 
@@ -18,7 +19,8 @@ namespace OpenVersus.Server.Core.Matches;
 // The party lobby the game fetches after create_party_lobby, ported from the TS server's PUT /matches/:id
 // (handlers/matches.ts handleMatches_id, branch infinity-war). The game keeps its own lobby id (it sends it to
 // matchmaking later) and ignores the answer's id. Three answers:
-//   join           the lobby is someone else's: the player is added to it (the client gate first), the owner is told
+//   join           the lobby is someone else's: the player is added to it (the client gate first), and every member, the
+//                  joiner and the owner included, is sent the lobby (below)
 //   owner refresh  the player owns the lobby and it has 2+ players: everyone in it
 //   solo           anything else: the player alone (the TS server's fixed answer, a new random id each time)
 //
@@ -27,8 +29,11 @@ namespace OpenVersus.Server.Core.Matches;
 //                 player:{player} (character, skin: the owner's and the members' loadouts)
 // Redis, written  lobby:{id} on a join that adds the player: the JSON as read with the player pushed onto playerIds
 //                 (other fields kept as they were), EX 8 h when it then has 2+ players, else 1 h
-// Published       lobby:player_joined {"lobbyId","ownerId","joinedPlayerId","joinedPlayerUsername","allPlayerIds","mode"}
-//                 on every join that gets past the gate (the TS websocket tells the owner)
+// Sent (ws:send)  on every join that gets past the gate, to every member, the three messages the TS websocket built from
+//                 lobby:player_joined (handlePlayerJoinedLobby): lobby-join {lobby, match, party_id, players}, then the
+//                 updates OnLobbyRuntimeDataUpdated and PlayerJoinedLobby, each carrying the lobby and its players. Built
+//                 from each member's connections:{player} (preferences, character, skin, names, wb id), one rand and one
+//                 time for all three; the lobby's GameVersion is "local" and it names its MatchID, as there
 // Client gate     see ClientUpdateGate: a join where anyone in the lobby must update is refused with its failure body
 //                 and each of them is sent the update toast
 //
@@ -42,7 +47,8 @@ namespace OpenVersus.Server.Core.Matches;
 // Differences from the TS server: a lobby:{id} that is not JSON is treated as no lobby (the TS request fails and never answers); a
 // token with no id is refused (the TS server would build a lobby for the player "undefined"); a token claim that is
 // missing is sent as "" (the TS server sends undefined, a NaN double where the game expects a string); each player's
-// Steam entry carries their Steam id, else Epic id, else account id (the TS server sends 76561195177950873 for everyone).
+// Steam entry carries their Steam id, else Epic id, else account id (the TS server sends 76561195177950873 for everyone),
+// in the answer and in the messages a join sends.
 
 /// <summary>What the lobby answers carry about the game build (GAME_VERSION).</summary>
 public sealed class LobbySettings
@@ -65,7 +71,6 @@ public interface IPartyLobbyService
 
 internal sealed class PartyLobbyService(IServiceProvider services, IClientUpdateGate gate, IOptionsMonitor<LobbySettings> settings, TimeProvider time, ILogger<PartyLobbyService> log) : IPartyLobbyService
 {
-    public const string PlayerJoinedChannel = "lobby:player_joined";
     private const string Avatar = "https://s3.amazonaws.com/wb-agora-hydra-ugc-dokken/identicons/identicon.584.png";
     // The TS server sends this avatar for every player.
     private const string SteamAvatar = "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg";
@@ -148,15 +153,7 @@ internal sealed class PartyLobbyService(IServiceProvider services, IClientUpdate
         string ownerUsername = Str(lobby, "ownerUsername") ?? "";
         var now = time.GetUtcNow();
 
-        await redis.PublishAsync(RedisChannel.Literal(PlayerJoinedChannel), Js.Stringify(new JsonObject
-        {
-            ["lobbyId"] = matchId,
-            ["ownerId"] = ownerId,
-            ["joinedPlayerId"] = me,
-            ["joinedPlayerUsername"] = Or(player.Username, player.HydraUsername, "Unknown"),
-            ["allPlayerIds"] = ids.DeepClone(),
-            ["mode"] = mode,
-        }));
+        await TellMembersAsync(redis, player, matchId, ownerId, Or(player.Username, player.HydraUsername, "Unknown"), playerIds, mode);
 
         string ownerName = Or(Get(ownerConnection, "username"), ownerUsername);
         var teamPlayers = new JsonObject
@@ -166,16 +163,16 @@ internal sealed class PartyLobbyService(IServiceProvider services, IClientUpdate
         };
         return Lobby(
             updatedAt: now.ToUnixTimeSeconds(), createdAt: CreatedAt(lobby), rand: Random.Shared.NextDouble(),
-            teamPlayers, teamLength: 2, leaderId: ownerId,
-            gameplay: new JsonObject { [ownerId] = Preferences(ownerConnection), [me] = Preferences(connection) },
-            autoParty: new JsonObject { [ownerId] = false, [me] = false },
-            platforms: new JsonObject { [ownerId] = "PC", [me] = "PC" },
-            loadouts: new JsonObject
-            {
-                [ownerId] = Loadout(Or(Get(ownerLoadout, "character"), "character_shaggy"), Or(Get(ownerLoadout, "skin"), "skin_shaggy_default")),
-                [me] = Loadout(Or(Get(connection, "character"), "character_shaggy"), Or(Get(connection, "skin"), "skin_shaggy_default")),
-            },
-            modeString: mode,
+            ServerData(teamPlayers, teamLength: 2, leaderId: ownerId,
+                gameplay: new JsonObject { [ownerId] = Preferences(ownerConnection), [me] = Preferences(connection) },
+                autoParty: new JsonObject { [ownerId] = false, [me] = false },
+                platforms: new JsonObject { [ownerId] = "PC", [me] = "PC" },
+                loadouts: new JsonObject
+                {
+                    [ownerId] = Loadout(Or(Get(ownerLoadout, "character"), "character_shaggy"), Or(Get(ownerLoadout, "skin"), "skin_shaggy_default")),
+                    [me] = Loadout(Or(Get(connection, "character"), "character_shaggy"), Or(Get(connection, "skin"), "skin_shaggy_default")),
+                },
+                modeString: mode, gameVersion: settings.CurrentValue.GameVersion),
             all: new JsonArray(
                 Member(ownerId, hydraName: Or(Get(ownerConnection, "hydraUsername"), ownerUsername), wbId: Or(Get(ownerConnection, "wb_network_id"), ownerId), name: ownerName, hydraListed: Or(Get(ownerConnection, "hydraUsername"), ownerUsername), PlatformId(ownerId, ownerConnection)),
                 Member(me, hydraName: player.HydraUsername, wbId: player.WbNetworkId, name: player.Username, hydraListed: player.HydraUsername, PlatformId(me, connection, player))),
@@ -209,10 +206,10 @@ internal sealed class PartyLobbyService(IServiceProvider services, IClientUpdate
 
         return Lobby(
             updatedAt: now.ToUnixTimeSeconds(), createdAt: CreatedAt(lobby), rand: Random.Shared.NextDouble(),
-            teamPlayers, teamLength: playerIds.Count, leaderId: Str(lobby, "ownerId") ?? "",
-            gameplay, autoParty, platforms, loadouts,
-            // playerIds.length >= 2 ? "2v2" : mode, and there are always 2+ here.
-            modeString: "2v2",
+            ServerData(teamPlayers, teamLength: playerIds.Count, leaderId: Str(lobby, "ownerId") ?? "",
+                gameplay, autoParty, platforms, loadouts,
+                // playerIds.length >= 2 ? "2v2" : mode, and there are always 2+ here.
+                modeString: "2v2", gameVersion: settings.CurrentValue.GameVersion),
             all, current: new JsonArray(lobby["playerIds"]!.AsArray().Select(n => n?.DeepClone()).ToArray()), count: playerIds.Count,
             templateAt: now.ToUnixTimeSeconds(), templateId: matchId, id: matchId);
     }
@@ -224,21 +221,64 @@ internal sealed class PartyLobbyService(IServiceProvider services, IClientUpdate
         var now = time.GetUtcNow();
         return Lobby(
             updatedAt: 1742265244, createdAt: 1742265244, rand: 0.6975513760957894,
-            new JsonObject { [me] = TeamPlayer(me, now.ToUnixTimeSeconds(), 0) }, teamLength: 1, leaderId: me,
-            gameplay: new JsonObject { [me] = Preferences(connection) },
-            autoParty: new JsonObject { [me] = false },
-            platforms: new JsonObject { [me] = "PC" },
-            loadouts: new JsonObject { [me] = Loadout("character_wonder_woman", "skin_wonder_woman_default") },
-            modeString: "1v1",
+            ServerData(new JsonObject { [me] = TeamPlayer(me, now.ToUnixTimeSeconds(), 0) }, teamLength: 1, leaderId: me,
+                gameplay: new JsonObject { [me] = Preferences(connection) },
+                autoParty: new JsonObject { [me] = false },
+                platforms: new JsonObject { [me] = "PC" },
+                loadouts: new JsonObject { [me] = Loadout("character_wonder_woman", "skin_wonder_woman_default") },
+                modeString: "1v1", gameVersion: settings.CurrentValue.GameVersion),
             all: new JsonArray(Member(me, hydraName: player.HydraUsername, wbId: player.WbNetworkId, name: player.Username, hydraListed: player.HydraUsername, PlatformId(me, connection, player))),
             current: new JsonArray(me), count: 1,
             templateAt: now.ToUnixTimeSeconds(), templateId: ObjectId.GenerateNewId().ToString(), id: ObjectId.GenerateNewId().ToString());
     }
 
-    /// <summary>The party_lobby match document all three answers share; its keys in the TS server's order.</summary>
-    private JsonObject Lobby(long updatedAt, long createdAt, double rand, JsonObject teamPlayers, int teamLength, string leaderId,
-        JsonObject gameplay, JsonObject autoParty, JsonObject platforms, JsonObject loadouts, string modeString,
-        JsonArray all, JsonArray current, int count, long templateAt, string templateId, string id)
+    /// <summary>The party_lobby match document all three answers and a join's messages share; its keys in the TS server's order.</summary>
+    private static JsonObject Lobby(long updatedAt, long createdAt, double rand, JsonObject serverData,
+        JsonArray all, JsonArray current, int count, long templateAt, string templateId, string id) => new()
+    {
+        ["updated_at"] = Date(updatedAt),
+        ["created_at"] = Date(createdAt),
+        ["account_id"] = null,
+        ["completion_time"] = null,
+        ["name"] = "white-green-wind-breeze-OS5dF",
+        ["state"] = "open",
+        ["access_level"] = "public",
+        ["origin"] = "client",
+        ["rand"] = rand,
+        ["winning_team"] = new JsonArray(),
+        ["win"] = new JsonArray(),
+        ["loss"] = new JsonArray(),
+        ["draw"] = null,
+        ["arbitration"] = null,
+        ["data"] = new JsonObject(),
+        ["server_data"] = serverData,
+        ["players"] = new JsonObject { ["all"] = all, ["current"] = current, ["count"] = count },
+        ["matchmaking"] = null,
+        ["cluster"] = "ec2-us-east-1-dokken",
+        ["last_warning_time"] = null,
+        ["template"] = new JsonObject
+        {
+            ["type"] = "async",
+            ["name"] = "party_lobby",
+            ["slug"] = "party_lobby",
+            ["min_players"] = 2,
+            ["max_players"] = 2,
+            ["game_server_integration_enabled"] = false,
+            ["game_server_config"] = null,
+            ["created_at"] = Date(templateAt),
+            ["updated_at"] = Date(templateAt),
+            ["data"] = new JsonObject(),
+            ["id"] = templateId,
+        },
+        ["criteria"] = new JsonObject { ["slug"] = null },
+        ["shortcode"] = null,
+        ["id"] = id,
+        ["access"] = "public",
+    };
+
+    /// <summary>The lobby itself (server_data), its keys in the TS server's order; a join's messages also name its MatchID.</summary>
+    private static JsonObject ServerData(JsonObject teamPlayers, int teamLength, string leaderId, JsonObject gameplay, JsonObject autoParty,
+        JsonObject platforms, JsonObject loadouts, string modeString, string gameVersion, string? matchId = null)
     {
         var teams = new JsonArray(new JsonObject { ["TeamIndex"] = 0, ["Players"] = teamPlayers, ["Length"] = teamLength });
         for (int t = 1; t <= 4; t++)
@@ -246,68 +286,98 @@ internal sealed class PartyLobbyService(IServiceProvider services, IClientUpdate
             teams.Add(new JsonObject { ["TeamIndex"] = t, ["Players"] = new JsonObject(), ["Length"] = 0 });
         }
 
-        return new JsonObject
+        var data = new JsonObject
         {
-            ["updated_at"] = Date(updatedAt),
-            ["created_at"] = Date(createdAt),
-            ["account_id"] = null,
-            ["completion_time"] = null,
-            ["name"] = "white-green-wind-breeze-OS5dF",
-            ["state"] = "open",
-            ["access_level"] = "public",
-            ["origin"] = "client",
-            ["rand"] = rand,
-            ["winning_team"] = new JsonArray(),
-            ["win"] = new JsonArray(),
-            ["loss"] = new JsonArray(),
-            ["draw"] = null,
-            ["arbitration"] = null,
-            ["data"] = new JsonObject(),
-            ["server_data"] = new JsonObject
+            ["Teams"] = teams,
+            ["LeaderID"] = leaderId,
+            ["LobbyType"] = 0,
+            ["ReadyPlayers"] = new JsonObject(),
+            ["PlayerGameplayPreferences"] = gameplay,
+            ["PlayerAutoPartyPreferences"] = autoParty,
+            ["GameVersion"] = gameVersion,
+            ["HissCrc"] = 1167552915,
+            ["Platforms"] = platforms,
+            ["AllMultiplayParams"] = new JsonObject
             {
-                ["Teams"] = teams,
-                ["LeaderID"] = leaderId,
-                ["LobbyType"] = 0,
-                ["ReadyPlayers"] = new JsonObject(),
-                ["PlayerGameplayPreferences"] = gameplay,
-                ["PlayerAutoPartyPreferences"] = autoParty,
-                ["GameVersion"] = settings.CurrentValue.GameVersion,
-                ["HissCrc"] = 1167552915,
-                ["Platforms"] = platforms,
-                ["AllMultiplayParams"] = new JsonObject
-                {
-                    ["1"] = Multiplay("ec2-us-east-1-dokken", "1252499", ""),
-                    ["2"] = Multiplay("ec2-us-east-1-dokken", "1252922", "19c465a7-f21f-11ea-a5e3-0954f48c5682"),
-                    ["3"] = Multiplay("", "1252925", ""),
-                    ["4"] = Multiplay("ec2-us-east-1-dokken", "1252928", "19c465a7-f21f-11ea-a5e3-0954f48c5682"),
-                },
-                ["LockedLoadouts"] = loadouts,
-                ["ModeString"] = modeString,
-                ["IsLobbyJoinable"] = true,
+                ["1"] = Multiplay("ec2-us-east-1-dokken", "1252499", ""),
+                ["2"] = Multiplay("ec2-us-east-1-dokken", "1252922", "19c465a7-f21f-11ea-a5e3-0954f48c5682"),
+                ["3"] = Multiplay("", "1252925", ""),
+                ["4"] = Multiplay("ec2-us-east-1-dokken", "1252928", "19c465a7-f21f-11ea-a5e3-0954f48c5682"),
             },
-            ["players"] = new JsonObject { ["all"] = all, ["current"] = current, ["count"] = count },
-            ["matchmaking"] = null,
-            ["cluster"] = "ec2-us-east-1-dokken",
-            ["last_warning_time"] = null,
-            ["template"] = new JsonObject
-            {
-                ["type"] = "async",
-                ["name"] = "party_lobby",
-                ["slug"] = "party_lobby",
-                ["min_players"] = 2,
-                ["max_players"] = 2,
-                ["game_server_integration_enabled"] = false,
-                ["game_server_config"] = null,
-                ["created_at"] = Date(templateAt),
-                ["updated_at"] = Date(templateAt),
-                ["data"] = new JsonObject(),
-                ["id"] = templateId,
-            },
-            ["criteria"] = new JsonObject { ["slug"] = null },
-            ["shortcode"] = null,
-            ["id"] = id,
-            ["access"] = "public",
+            ["LockedLoadouts"] = loadouts,
+            ["ModeString"] = modeString,
+            ["IsLobbyJoinable"] = true,
         };
+        if (matchId is not null)
+        {
+            data["MatchID"] = matchId;
+        }
+
+        return data;
+    }
+
+    // What a join sends every member (the TS websocket's handlePlayerJoinedLobby): the lobby with everyone on team 0 in
+    // lobby order, each from their own session (connections:{player}), and the same three messages to each of them.
+    private async Task TellMembersAsync(IDatabase redis, LobbyPlayer joiner, string lobbyId, string ownerId, string joinedUsername, List<string> memberIds, string mode)
+    {
+        long now = time.GetUtcNow().ToUnixTimeSeconds();
+        JsonObject teamPlayers = [], gameplay = [], autoParty = [], platforms = [], loadouts = [];
+        var connections = new Dictionary<string, Dictionary<string, string>>();
+        for (int i = 0; i < memberIds.Count; i++)
+        {
+            string pid = memberIds[i];
+            var connection = connections[pid] = await HashAsync(redis, $"connections:{pid}");
+            teamPlayers[pid] = TeamPlayer(pid, now, i);
+            gameplay[pid] = Preferences(connection);
+            autoParty[pid] = false;
+            platforms[pid] = "PC";
+            loadouts[pid] = Loadout(Or(Get(connection, "character"), "character_shaggy"), Or(Get(connection, "skin"), "skin_shaggy_default"));
+        }
+
+        var lobby = ServerData(teamPlayers, memberIds.Count, ownerId, gameplay, autoParty, platforms, loadouts, mode, gameVersion: "local", matchId: lobbyId);
+        var all = new JsonArray();
+        foreach (string pid in memberIds)
+        {
+            var connection = connections[pid];
+            string name = Or(Get(connection, "username"), Get(connection, "hydraUsername"), joinedUsername, "Unknown");
+            string hydraName = Or(Get(connection, "hydraUsername"), name);
+            all.Add(Member(pid, hydraName, wbId: Or(Get(connection, "wb_network_id"), pid), name, hydraListed: hydraName,
+                PlatformId(pid, connection, pid == joiner.Id ? joiner : null)));
+        }
+
+        var players = new JsonObject { ["all"] = all, ["current"] = new JsonArray([.. memberIds.Select(id => (JsonNode)id)]), ["count"] = memberIds.Count };
+        var match = Lobby(now, now, Random.Shared.NextDouble(), (JsonObject)lobby.DeepClone(), (JsonArray)all.DeepClone(),
+            (JsonArray)players["current"]!.DeepClone(), memberIds.Count, now, lobbyId, lobbyId);
+        var lobbyJoin = new JsonObject
+        {
+            ["data"] = new JsonObject(),
+            ["payload"] = new JsonObject { ["lobby"] = lobby.DeepClone(), ["match"] = match, ["party_id"] = lobbyId, ["players"] = players.DeepClone() },
+            ["header"] = "",
+            ["cmd"] = "lobby-join",
+        };
+        var runtimeData = PlayerMessages.Update(new JsonObject
+        {
+            ["template_id"] = "OnLobbyRuntimeDataUpdated",
+            ["LobbyId"] = lobbyId,
+            ["ModeString"] = mode,
+            ["lobby"] = lobby.DeepClone(),
+            ["players"] = players.DeepClone(),
+        }, new JsonObject { ["match"] = new JsonObject { ["id"] = lobbyId } });
+        var joined = PlayerMessages.Update(new JsonObject
+        {
+            ["template_id"] = "PlayerJoinedLobby",
+            ["LobbyId"] = lobbyId,
+            ["ModeString"] = mode,
+            ["lobby"] = lobby,
+            ["JoinedPlayerId"] = joiner.Id,
+            ["players"] = players,
+        }, new JsonObject { ["match"] = new JsonObject { ["id"] = lobbyId } });
+        foreach (var message in new[] { lobbyJoin, runtimeData, joined })
+        {
+            await PlayerMessages.SendAsync(redis, memberIds, message);
+        }
+
+        log.LogInformation("Sent lobby {Lobby} to its {Count} members (joined: {Player})", lobbyId, memberIds.Count, joiner.Id);
     }
 
     private static JsonObject Date(long seconds) => new() { ["_hydra_unix_date"] = seconds };

@@ -43,6 +43,37 @@ version of the node, would need.
 
   Only "this socket is closed" stays local.
 
+## The gateway (`OpenVersus.Server.Realtime`, the `ws` service)
+
+Built, not yet handed out by /access (the TS websocket still holds the players; the switch comes when every channel
+below has moved). Each node:
+
+- takes every websocket upgrade on its public port (WEBSOCKET_PORT), any path; the client's IP is the reverse proxy's
+  forwarded one (`ClientAddress`, the rule every service uses). Any other request there but `/health/*` is answered
+  `200 HTTP server is running`, as the TS server answered it;
+- checks the first frame's session token as every service checks it (`AccessTokens.Verify`, Access:JwtSecret); a frame
+  that holds none, or a bad or expired token, is closed with nothing sent (code 1000: the TS server's close had no code,
+  which .NET cannot send). A socket that sends no first frame within Gateway:HandshakeTimeoutMs (30 s) is closed;
+- answers with the id frame and a ping, pings every Gateway:PingIntervalMs (20 s; at most 25 s, the game gives up at
+  about 30 s), and drops a game silent for Gateway:SilenceCutoffMs (61 s, checked at each ping);
+- delivers `ws:send` to the players whose current connection it holds, encoding each message once
+  (`HydraEncoder.Encode(..., webSocket: true)`, from the JSON read with a JS object's key order), and closes on
+  `ws:disconnect {playerId, connectionId?, except?, code?, reason?}` (no code: dropped at once, the ops command's).
+
+`GatewayPresence` (Core) keeps who is connected where:
+
+- `realtime:conn:{player}`: the player's current connection (id, node, ip, at), its TTL renewed by the ping's answer.
+  A second login claims it, and the connection it replaced is closed wherever it is (`ws:disconnect` with `except`;
+  the TS websocket left it open). A close that is not the current connection's changes nothing.
+- `online_players`, `player_heartbeats`, `active_ip_accounts:{ip}`: written at the handshake and each answer, and
+  removed at once when the current connection closes (before anything else; the TS websocket removed `online_players`
+  last), except while `rejoin_pending:{player}` lives. Nothing is cleared when a node starts.
+- `realtime:connections`: a stream of connected, replaced and disconnected events (player, connection id, node, ip, the
+  session token's SHA-256), for the services that act on them (party, lobby and queue cleanup, a pre-game dodge, the
+  daily toast bonus popup; not yet consumed).
+
+Parity with the TS websocket: `tools/realtime/gateway_diff.mjs` (raw frames, closes, Redis writes).
+
 ## Moving it without a big switch
 
 A TS websocket handler only runs when something publishes its channel. When an HTTP route moves to C#, it stops
@@ -53,8 +84,9 @@ the sockets.
 The exception is the part that shares the in-memory state above: queueing, match configs, perks, match end, disconnect
 and rejoin. Those handlers move together with the gateway and the matchmaker. Until then, C# publishes the TS channels
 they listen to as the TS server does (`matchmaking:cancel` from a party join and the game's cancel, `party:queued` from
-the matchmaking request, `match:notifications` and
-`matchmaking:complete` from a rift start; MIGRATION-BRIDGES.md 2).
+the matchmaking request, `match:notifications` from a match's start; MIGRATION-BRIDGES.md 2). The channels whose TS
+handler only built a message (a lobby join, matchmaking-complete, a toast, a ranked set's check-in, leaver and ranks)
+are built by their C# publishers and sent through `ws:send` since slice 3b.
 
 Done so far: rift progress, missions and reward tracks (MIGRATION-BRIDGES.md 4), the party lobby routes (invite,
 join, leave, mode, ready, loadout lock) and the custom lobby (its routes, its messages, the match start; its match end
@@ -76,16 +108,27 @@ closes. Two ways to close that gap:
    relying on it: a session token can expire (`Access:TokenTtl`) while the player stays connected; a replay needs a
    token the server still accepts.
 
+Decided 2026-10-05: the edge, so that a node that dies (not only one being updated) drops nobody. A load balancer in
+front cannot do it: after the upgrade it is a byte tunnel, and a node that goes closes the game's side. The chain is the
+TLS-terminating router, then the edges (their own executable), then the gateway nodes. Facts it is built on: the game
+keeps one websocket for its whole session, and goes back to its title screen when it has not been pinged for about 30 s
+(so a re-attach must be done well within the 20 s ping's slack, or the edge pings the game itself meanwhile); a game
+that reconnects logs in again first (/access). The gateway already keeps a connection's identity apart from the node
+(its id, minted where the socket is held, in `realtime:conn:{player}` and every event), and takes the client's IP from
+the forwarded headers; the edge will mint the id, pass the IP, and resume a connection on a new node with a check of the
+session (not of the token's expiry). Whether messages sent during a re-attach are kept (a per-player sequence and a short
+replay log) is still to decide.
+
 ## Still assuming one instance (not to be ported as it is)
 
 - The TS websocket empties the whole online set when it starts: with two nodes, that removes the other node's players.
-  Presence has to be per node or kept alive by the heartbeat.
+  Presence has to be per node or kept alive by the heartbeat. (The gateway clears nothing at start.)
 - Disconnect cleanup (queue ticket, lobby, session) runs only when the node that held the socket sees it close. A node
   that dies runs none of it: a reaper, under a lock, has to clean up after players whose heartbeat stopped
   (`ZRANGEBYSCORE player_heartbeats` older than 80 s).
 - `player_heartbeats` is per player, not per connection: a stale socket on one node is kept alive by the player's new
   connection on another. It needs a connection id (in the member, or a current-connection key), which also lets a node
-  close a connection that has been replaced elsewhere.
+  close a connection that has been replaced elsewhere. (The gateway's `realtime:conn:{player}`.)
 - Lobby updates read the whole lobby, change it and write it back. Two requests at once can lose one of the changes.
   Not new, and rare with two players in a party; worth a transaction when the lobby code is next reworked.
 

@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
-using OpenVersus.Server.Http.Shared.Hosting;
+using OpenVersus.Server.Core.Hosting;
 
 namespace OpenVersus.Server.Http.Tests;
 

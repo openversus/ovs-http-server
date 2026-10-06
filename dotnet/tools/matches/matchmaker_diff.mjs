@@ -116,6 +116,17 @@ async function run(outFile, filter) {
   await redis.quit();
 }
 
+// The TS worker publishes matchmaking:complete and its websocket builds the message (handleMatchMakingComplete,
+// websocket.ts, branch infinity-war: the same message to each player named); C# sends that message through ws:send. No
+// websocket runs here, so the TS publish is turned into what that handler sends, and the two compare as ws:send.
+function asSent(channel, message) {
+  if (channel !== "matchmaking:complete") return { channel, message };
+  const payload = { result: { id: message.resultId }, match: { id: message.containerMatchId } };
+  if (message.matchmakingRequestId !== undefined) payload.id = message.matchmakingRequestId;
+  payload.state = 2;
+  return { channel: "ws:send", message: { playerIds: message.playerIds, message: { data: {}, payload, header: "Matchmaking request completed!", cmd: "matchmaking-complete" } } };
+}
+
 const WRITES = new Set(["set", "setex", "psetex", "del", "unlink", "lrem", "rpush", "lpush", "hset", "zadd", "zrem", "incr", "expire", "publish"]);
 
 async function capture(redis, lines, seeded) {
@@ -128,7 +139,7 @@ async function capture(redis, lines, seeded) {
     // A C# service's heartbeat into the instance registry lands in any scenario while it runs: not the worker's work.
     if (!WRITES.has(cmd) || parts[1]?.startsWith("matchmaking:lock:") || parts[1]?.startsWith("ovs:instance") || parts[1] === "refdiff:scratch") continue;
     if (cmd === "publish") {
-      published.push({ channel: parts[1], message: JSON.parse(parts[2]) });
+      published.push(asSent(parts[1], JSON.parse(parts[2])));
       continue;
     }
     // A removed ticket by its party; a SET with its expiry (seconds), whatever the client's spelling.

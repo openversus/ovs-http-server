@@ -73,6 +73,15 @@ export async function connectPlayers(url, players) {
     all: () => Object.fromEntries([...received].map(([id, list]) => [id, list])),
     clear: () => { for (const list of received.values()) list.length = 0; },
     close: () => { for (const ws of sockets.values()) ws.terminate(); },
+    /** Closes these players' games (as a game that went away: no close frame); resolves once each socket is closed. */
+    async drop(ids) {
+      await Promise.all(ids.map((id) => new Promise((resolve) => {
+        const ws = sockets.get(id);
+        if (!ws || ws.readyState === WebSocket.CLOSED) return resolve();
+        ws.once("close", resolve);
+        ws.terminate();
+      })));
+    },
     /** The players whose socket the server closed. */
     closed: () => players.filter((p) => sockets.get(p.id).readyState === WebSocket.CLOSED).map((p) => p.id),
     /** Connects again every player whose socket the server closed; their ids. */

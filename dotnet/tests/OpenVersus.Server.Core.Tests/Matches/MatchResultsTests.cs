@@ -157,9 +157,10 @@ public sealed class MatchResultsTests : IAsyncLifetime
         var services = Services();
         var ranked = new TestOptions<RankedSettings>(new RankedSettings());
         var elo = new EloRatings(services, ranked, TimeProvider.System, NullLogger<EloRatings>.Instance);
-        var sets = new RankedSets(services, new Launcher(), new SetRatings(services, elo, ranked, TimeProvider.System, NullLogger<SetRatings>.Instance),
-            new TestOptions<RollbackSettings>(new RollbackSettings()), TimeProvider.System, NullLogger<RankedSets>.Instance);
-        return new MatchResults(services, sets, elo, new TestOptions<SeasonSettings>(new SeasonSettings { Current = "Season:SeasonSix" }), TimeProvider.System,
+        var season = new TestOptions<SeasonSettings>(new SeasonSettings { Current = "Season:SeasonSix" });
+        var sets = new RankedSets(services, new Launcher(), new SetRatings(services, elo, ranked, TimeProvider.System, NullLogger<SetRatings>.Instance), elo,
+            new TestOptions<RollbackSettings>(new RollbackSettings()), season, TimeProvider.System, NullLogger<RankedSets>.Instance);
+        return new MatchResults(services, sets, elo, season, TimeProvider.System,
             NullLogger<MatchResults>.Instance);
     }
 

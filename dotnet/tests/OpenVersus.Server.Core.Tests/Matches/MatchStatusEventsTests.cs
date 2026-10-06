@@ -7,6 +7,8 @@ using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Matches;
+using OpenVersus.Server.Core.Realtime;
+using OpenVersus.Server.Core.Seasons;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Tests.Matches;
@@ -48,11 +50,12 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
         _mongo = new MongoClient(s_mongo);
         await _mongo.DropDatabaseAsync(TestMongoDb);
         await CleanAsync();
-        await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(RankedSets.FullRankUpdateChannel), (_, m) =>
+        // Channels ignore the database: only this class's players' rank updates count.
+        await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(ProfileNotifications.WsSendChannel), (_, m) =>
         {
-            if (m.ToString().Contains(P1, StringComparison.Ordinal))
+            if (m.ToString().Contains("00000000000000000017", StringComparison.Ordinal) && m.ToString().Contains("\"FullRankUpdate\"", StringComparison.Ordinal))
             {
-                _published.Enqueue((RankedSets.FullRankUpdateChannel, (JsonObject)JsonNode.Parse(m.ToString())!));
+                _published.Enqueue((ProfileNotifications.WsSendChannel, (JsonObject)JsonNode.Parse(m.ToString())!));
             }
         });
     }
@@ -91,8 +94,9 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
         var ranked = new TestOptions<RankedSettings>(new RankedSettings());
         var ratings = new SetRatings(services, new EloRatings(services, ranked, TimeProvider.System, NullLogger<EloRatings>.Instance), ranked,
             TimeProvider.System, NullLogger<SetRatings>.Instance);
-        return new MatchStatusEvents(services, ratings, new TestOptions<RollbackSettings>(new RollbackSettings { MatchUpdateKey = matchUpdateKey }),
-            TimeProvider.System, NullLogger<MatchStatusEvents>.Instance);
+        return new MatchStatusEvents(services, ratings, new EloRatings(services, ranked, TimeProvider.System, NullLogger<EloRatings>.Instance),
+            new TestOptions<RollbackSettings>(new RollbackSettings { MatchUpdateKey = matchUpdateKey }),
+            new TestOptions<SeasonSettings>(new SeasonSettings { Current = "Season:SeasonSix" }), TimeProvider.System, NullLogger<MatchStatusEvents>.Instance);
     }
 
     private static JsonArray OneVOne() =>
@@ -326,7 +330,10 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
         var ratings = Mongo.GetCollection<BsonDocument>("eloratings");
         Assert.Equal(1, (await ratings.Find(new BsonDocument("account_id", P1)).FirstAsync())["wins_1v1"].ToInt32());
         Assert.Equal(1, (await ratings.Find(new BsonDocument("account_id", P2)).FirstAsync())["losses_1v1"].ToInt32());
-        Assert.Equal($$"""{"playerIds":["{{P1}}","{{P2}}"]}""", Assert.Single(_published).Message.ToJsonString());
+        // Each player's ranks, the dodger's included (connected or not: a result is a result).
+        var updates = _published.Select(p => p.Message).ToList();
+        Assert.Equal([P1, P2], updates.Select(u => u["message"]!["payload"]!["account_id"]!.GetValue<string>()));
+        Assert.All(updates, u => Assert.NotNull(u["message"]!["data"]!["SeasonalData"]!["Season:SeasonSix"]));
         Assert.Equal("rollback_pregame_dodge", (string?)await Db.StringGetAsync($"elo_processed_set:{Set}"));
         Assert.Equal(Set, (string?)await Db.StringGetAsync($"ranked_disconnect:{P2}"));
         await AssertSetDroppedAsync();

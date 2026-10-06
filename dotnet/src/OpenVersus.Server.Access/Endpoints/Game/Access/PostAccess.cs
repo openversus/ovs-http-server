@@ -1,5 +1,6 @@
 using FastEndpoints;
 using OpenVersus.Server.Core.Access;
+using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Http.Shared.Hosting;
 
 namespace OpenVersus.Server.Access.Endpoints.Game.Access;

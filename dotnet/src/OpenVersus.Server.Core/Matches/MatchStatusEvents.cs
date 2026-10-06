@@ -6,7 +6,10 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Leaderboards;
+using MongoDB.Driver;
 using OpenVersus.Server.Core.Realtime;
+using OpenVersus.Server.Core.Seasons;
+using OpenVersus.Server.Core.Settings;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Matches;
@@ -32,7 +35,7 @@ namespace OpenVersus.Server.Core.Matches;
 //       (player_ranked_set, else the match: game 1), so the set's next check-in concedes for them (RankedSets); the flag
 //       counts for that set only.
 //     - before the start (a dodge), unless the match is a custom game: the other team wins the set (rated when
-//       RatedMatches says it counts: SetRatings, a pregame dodge, ranked_set:fullrankupdate, and the dodger's
+//       RatedMatches says it counts: SetRatings, a pregame dodge, each player's FullRankUpdate, and the dodger's
 //       ranked_disconnect naming the set), the set is dropped, every player is set idle and the others are told ("opponent_dodge"). Once
 //       per set and match (elo_processed_set:{set} "rollback_pregame_dodge" NX EX 5 min, elo_processed:{match} NX EX 5
 //       min: the TS websocket's disconnect path checks the same keys).
@@ -47,8 +50,9 @@ namespace OpenVersus.Server.Core.Matches;
 //                 above; player:{player} status "idle"; dll_notifications:{player} (match_cancel, PlayerMessages);
 //                 deleted: player_ranked_set:{each player}, ranked_set:{set}, ranked_set_checkins:{set},
 //                 ranked_set_match:{set}, and at a crash match_to_set:{match}, match_started:{match}
-// Published       ranked_set:fullrankupdate {playerIds} after a rating
-// Mongo, written  eloratings, playerstats (SetRatings)
+// Sent (ws:send)  FullRankUpdate (FullRankUpdateVariant.SetResult) after a rating, to the match's players but bots,
+//                 connected or not, as the TS websocket built it from ranked_set:fullrankupdate (FullRankUpdate.SendAsync)
+// Mongo, written  eloratings, playerstats (SetRatings); eloratings for a player with none (FullRankUpdate)
 //
 // Unlike there:
 //   - a spectator's disconnect changes nothing (decided 2026-10-05). TS asked "still online?" before "spectator?", so a
@@ -69,8 +73,8 @@ public interface IMatchStatusEvents
     Task<(int Status, JsonObject Answer)> HandleAsync(string? matchUpdateKey, JsonNode? body, string? from);
 }
 
-internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings ratings, IOptionsMonitor<RollbackSettings> settings, TimeProvider time,
-    ILogger<MatchStatusEvents> log) : IMatchStatusEvents
+internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings ratings, EloRatings eloRatings, IOptionsMonitor<RollbackSettings> settings,
+    IOptionsMonitor<SeasonSettings> season, TimeProvider time, ILogger<MatchStatusEvents> log) : IMatchStatusEvents
 {
     private static readonly HashSet<string> s_quiet = ["TickPerformance", "HeartBeat"];
     private static readonly TimeSpan s_flagTtl = TimeSpan.FromMinutes(10);
@@ -328,8 +332,17 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
             await ratings.RateAsync(new SetOutcome(winners, losers, mode!, 0, 0, winnerTeam, IsConcede: true, characters, matchId, IsPregameDodge: true,
                 QuitterIds: [playerId], GamesBeforeDodge: gamesBefore), CancellationToken.None);
             log.LogInformation("Pregame dodge rated (rollback PlayerDisconnect): {Player} left match {Match}", playerId, matchId);
-            await redis.PublishAsync(RedisChannel.Literal(RankedSets.FullRankUpdateChannel),
-                Js.Stringify(new JsonObject { ["playerIds"] = RollbackCallbacks.PlayerIds(configPlayers) }));
+            if (services.GetService<IMongoDatabase>() is { } mongo)
+            {
+                await FullRankUpdate.SendAsync(redis, mongo, eloRatings, configPlayers.Where(p => !RollbackCallbacks.Truthy(p["isBot"])).Select(p => Str(p["playerId"])),
+                    season.CurrentValue.Current,
+                    FullRankUpdateVariant.SetResult, time, log, CancellationToken.None);
+            }
+            else
+            {
+                log.LogError("No FullRankUpdate after the dodge in {Match}: this service has no Mongo (MONGODB_URI)", matchId);
+            }
+
             // The dodger's flag names the set it dropped, so it never counts against their next one.
             await redis.StringSetAsync($"ranked_disconnect:{playerId}", setId, s_flagTtl);
         }
@@ -425,6 +438,8 @@ public static class MatchStatusEventsHosting
     public static WebApplicationBuilder AddMatchStatusEvents(this WebApplicationBuilder builder)
     {
         builder.AddSetRatings();
+        builder.AddEloRatings();
+        builder.AddSetting<SeasonSettings>("Season");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.TryAddSingleton<IMatchStatusEvents, MatchStatusEvents>();
         return builder;

@@ -1,8 +1,9 @@
 // A ranked set between its games (PUT /ssc/invoke/match_set_checkin, match_set_absent, match_set_concede,
-// faceoff_timeout) on the TS server and the C# port (match flow, RankedSets and SetRatings), scenario by scenario: the
-// answers, every Redis write and publish the server made (MONITOR; writes compared as a set, publishes in order), the
-// Redis state after, and the ratings and set stats in Mongo with their stored types (eloratings, playerstats). Run from
-// the repository root (it uses the TS server's node_modules):
+// faceoff_timeout) and a toast after a game (toast_player) on the TS server and the C# port (match flow: RankedSets,
+// SetRatings, MatchToasts), scenario by scenario: the answers, what each player's game was sent, every Redis write and
+// publish the server made (MONITOR; writes compared as a set, publishes in order), the Redis state after, and the
+// ratings, set stats and toast counters in Mongo with their stored types (eloratings, playerstats, playercounters). Run
+// from the repository root (it uses the TS server's node_modules):
 //
 //   node dotnet/tools/matches/set_diff.mjs run <baseUrl> <out.json>
 //   node dotnet/tools/matches/set_diff.mjs diff <ts.json> <cs.json>
@@ -12,15 +13,28 @@
 //
 // Scratch stores, wiped before every step (never point these at data you want to keep):
 //   REF_REDIS_URL, REF_MONGO_URI, REF_JWT_SECRET  as for the other harnesses
+//   REF_PORT_LOW, REF_PORT_HIGH  the servers' fixed rollback ports (ROLLBACK_UDP_PORT_LOW/HIGH; default 57000, 57019):
+//                     where C#'s next game takes its port from (read by diff)
 //   REF_SNAPSHOT_URI  optional: a copy of prod's Mongo (read only). Its ratings and set stats, under the harness's ids
 //                     and names, are rated through whole sets ("replay" steps): real characters maps, streaks and counts.
-// No websocket is needed: what the TS websocket would do with the publishes is not this harness's.
+//   REF_WS_URL        the TS websocket (PR #49's code as committed), in both runs: it turns the TS server's ranked_set
+//                     and toast:received publishes into messages, and delivers what C# sends through ws:send. Four fake
+//                     games (P1-P4) stay connected for the whole run, so a player is connected exactly when they are in
+//                     online_players; a step's `offline` players have their game closed first (before the stores are
+//                     wiped: the TS websocket's disconnect handling runs on the step before) and reopened after.
+//
+// The messages a game is sent are compared, not the channels that carried them: TS publishes ranked_set:checkin,
+// ranked_set:leaver, ranked_set:fullrankupdate and toast:received, C# sends ws:send (each run is checked to use only its
+// own). A next game's GameServerReadyNotification and config (OnGameplayConfigNotified naming the match) are counted,
+// not compared: config_diff compares those. FullRankUpdate and MatchSetLeaverNotification are compared as if the
+// ranks came first: TS's order between them was a race (its rank handler waited on Mongo, its leaver handler did not).
 //
 // The lock (ranked_set_lock:{set}) is compared apart from the writes: TS sets "1" and deletes it, C# sets a token and
 // deletes it with a script, and C# takes it before its first write instead of after the check-in. Both must take it and
 // leave it released.
 import fs from "node:fs";
 import { require, need, openScratch, openMonitor, writes, state } from "../refdiff/refdiff.mjs";
+import { connectPlayers } from "../refdiff/gateway.mjs";
 
 const jwt = require(process.cwd() + "/node_modules/jsonwebtoken");
 const { MongoClient, ObjectId } = require(process.cwd() + "/node_modules/mongodb");
@@ -36,7 +50,9 @@ const [P1, P2, P3, P4] = [1, 2, 3, 4].map(oid);
 const PLAYERS = [P1, P2, P3, P4];
 const SET = oid(100);
 const IP = "198.51.100.8";
-const CHANNELS = new Set(["ranked_set:checkin", "ranked_set:leaver", "ranked_set:fullrankupdate", "match:notifications", "matchmaking:complete"]);
+const CHANNELS = new Set(["match:notifications", "matchmaking:complete"]);
+// The channels the TS server's set and toast routes publish for its websocket; C# sends their messages through ws:send.
+const TS_ONLY = new Set(["ranked_set:checkin", "ranked_set:leaver", "ranked_set:fullrankupdate", "toast:received"]);
 const token = (pid) => jwt.sign({ id: pid, profile_id: oid(900 + PLAYERS.indexOf(pid)), wb_network_id: pid, hydraUsername: `OpenVersus_${PLAYERS.indexOf(pid) + 1}`, username: `Player${PLAYERS.indexOf(pid) + 1}`, current_ip: IP }, need("REF_JWT_SECRET"));
 
 async function call(baseUrl, route, pid, body) {
@@ -76,6 +92,9 @@ async function run(baseUrl, outFile) {
   const self = (await redis.sendCommand(["CLIENT", "INFO"])).match(/\baddr=(\S+)/)[1];
   const snapshot = process.env.REF_SNAPSHOT_URI ? new MongoClient(process.env.REF_SNAPSHOT_URI, { appName: "set_diff" }) : null;
   await snapshot?.connect();
+  const games = await connectPlayers(need("REF_WS_URL"), PLAYERS.map((id) => ({ id, token: token(id) })));
+  // The websocket's presence writes for the new games land after their id frame: before the first step wipes the store.
+  await sleep(500);
 
   // A set as the matchmaker made it and the TS websocket left it after a game: game 1's match and config still there,
   // every player online with a fighter.
@@ -89,17 +108,25 @@ async function run(baseUrl, outFile) {
     await redis.set(`match_characters:${SET}`, JSON.stringify(fighters), { EX: 1200 });
     for (const [i, pid] of ids.entries()) {
       await redis.hSet(`connections:${pid}`, { id: pid, username: `Player${i + 1}`, hydraUsername: `OpenVersus_${i + 1}`, character: fighters[pid] ?? "character_jake", current_ip: IP });
+      // The match copy of their cosmetics, as a logged-in player has it: a next game's config reads it, where a missing
+      // one makes both the TS websocket and the C# match flow (Shadow) create the cosmetics document, whichever first.
+      await redis.hSet(`connections:${pid}:cosmetics`, { Banner: JSON.stringify("banner_one"), Taunts: JSON.stringify({}) });
     }
     await redis.sAdd("online_players", ids);
   };
   const body = (match = SET) => ({ ContainerMatchId: match });
 
   const steps = [];
-  async function step(name, setup, calls, { waitMs = 1000 } = {}) {
+  async function step(name, setup, calls, { waitMs = 2000, offline = [] } = {}) {
+    if (offline.length) {
+      await games.drop(offline);
+      await sleep(600);
+    }
     await redis.flushDb();
     await redis.set("refdiff:scratch", "1");
     await db.dropDatabase();
     await setup?.();
+    games.clear();
     recording = [];
     const started = Date.now();
     const answers = [];
@@ -111,7 +138,14 @@ async function run(baseUrl, outFile) {
     await sleep(waitMs);
     const lines = recording;
     recording = null;
-    const registry = (w) => /^(set|zadd|zrem|del) ovs:instance/.test(w);
+    const frames = Object.fromEntries(PLAYERS.map((id) => [id, games.frames(id).filter((f) => !f?.raw)]));
+    if (offline.length) {
+      await games.reopen();
+      await sleep(300);
+    }
+    // Each server's own bookkeeping: the C# instance registry and delayed sends, the TS websocket's presence for the
+    // fake games (a pong can land in any step).
+    const registry = (w) => /^(set|zadd|zrem|del) ovs:instance|^zadd realtime:due |^zadd player_heartbeats|^(sadd|srem) online_players|^(zadd|expire) active_ip_accounts:/.test(w);
     // MONITOR escapes quotes and backslashes inside arguments: undone, so the JSON in a write reads (and normalizes) as JSON.
     const all = writes(lines, self).filter((w) => !registry(w)).map((w) => w.replace(/\\(["\\])/g, "$1"));
     const lock = all.filter((w) => w.includes("ranked_set_lock:"));
@@ -119,6 +153,8 @@ async function run(baseUrl, outFile) {
       name,
       answers,
       writes: all.filter((w) => !w.startsWith("publish ") && !w.includes("ranked_set_lock:")).sort(),
+      channels: [...new Set(all.filter((w) => w.startsWith("publish ")).map((w) => w.split(" ")[1]))],
+      ...matchFrames(frames),
       published: all.filter((w) => w.startsWith("publish ")).map((w) => {
         const [, channel, ...rest] = w.split(" ");
         const text = rest.join(" ");
@@ -127,10 +163,10 @@ async function run(baseUrl, outFile) {
         return { channel, message };
       }).filter((p) => CHANNELS.has(p.channel)),
       lock: { taken: lock.some((w) => /^set ranked_set_lock:\S+ \S+ /.test(w)), heldAfter: await redis.exists(`ranked_set_lock:${SET}`) },
-      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^ovs:instance|^ranked_set_lock:/.test(k))),
+      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^ovs:instance|^ranked_set_lock:|^realtime:due$|^player_heartbeats$|^active_ip_accounts:/.test(k))),
       sets: Object.fromEntries(await Promise.all([`ranked_set_checkins:${SET}`, "online_players"].map(async (k) => [k, (await redis.sMembers(k)).sort()]))),
-      mongo: Object.fromEntries(await Promise.all(["eloratings", "playerstats"].map(async (c) => [c,
-        JSON.parse(EJSON.stringify(await db.collection(c).find({}, { promoteValues: false, sort: { account_id: 1 } }).toArray(), { relaxed: false }))]))),
+      mongo: Object.fromEntries(await Promise.all(["eloratings", "playerstats", "playercounters"].map(async (c) => [c,
+        JSON.parse(EJSON.stringify(await db.collection(c).find({}, { promoteValues: false, sort: { account_id: 1, accountId: 1 } }).toArray(), { relaxed: false }))]))),
     };
     steps.push(normalize(raw, started));
     process.stdout.write(`${name}: ${answers.map((a) => a.status).join(" ")}\n`);
@@ -155,7 +191,8 @@ async function run(baseUrl, outFile) {
     [{ do: () => redis.set(`ranked_set_lock:${SET}`, "1", { EX: 10 }) }, checkin(P2)], { waitMs: 1500 });
 
   // ── Disconnects and crashes ──────────────────────────────────────────────────────────────────────────────────────
-  await step("disconnected-offline-concedes", async () => { await seed(); await redis.set(`ranked_disconnect:${P2}`, "1", { EX: 600 }); await redis.sRem("online_players", P2); }, [checkin(P1)]);
+  // The flag names the set, as both servers write it for a set game's disconnect (C# counts no other since 2026-10-05).
+  await step("disconnected-offline-concedes", async () => { await seed(); await redis.set(`ranked_disconnect:${P2}`, SET, { EX: 600 }); await redis.sRem("online_players", P2); }, [checkin(P1)], { offline: [P2] });
   await step("disconnected-online-stale-flag", async () => { await seed(); await redis.set(`ranked_disconnect:${P2}`, "1", { EX: 600 }); }, [checkin(P1)]);
   await step("crash-flag-on-set", async () => { await seed(); await redis.set(`match_server_crash:${SET}`, "1", { EX: 600 }); await redis.set(`ranked_disconnect:${P2}`, "1"); }, [checkin(P1)]);
   await step("crash-flag-on-game-2", async () => {
@@ -176,9 +213,20 @@ async function run(baseUrl, outFile) {
   await step("concede-2v2", () => seed({ players: TWO_V_TWO, mode: "2v2", scores: [1, 0] }), [{ route: "match_set_concede", pid: P3, body: body() }]);
   await step("concede-after-crash", async () => { await seed(); await redis.set(`match_server_crash:${SET}`, "1"); }, [{ route: "match_set_concede", pid: P1, body: body() }]);
   await step("concede-no-set", null, [{ route: "match_set_concede", pid: P1, body: body() }]);
-  await step("concede-with-a-bot", () => seed({ players: [team(P1, 0, 0), team(P2, 1, 1, { isBot: true })] }), [{ route: "match_set_concede", pid: P1, body: body() }]);
+  // The bot (P2) has no game and is not online, as a bot never is.
+  await step("concede-with-a-bot", async () => { await seed({ players: [team(P1, 0, 0), team(P2, 1, 1, { isBot: true })] }); await redis.sRem("online_players", P2); },
+    [{ route: "match_set_concede", pid: P1, body: body() }], { offline: [P2] });
   await step("faceoff-timeout", async () => { await seed({ gamesPlayed: 0, scores: [0, 0] }); await redis.set(`ranked_disconnect:${P2}`, "1"); }, [{ route: "faceoff_timeout", pid: P1 }]);
   await step("faceoff-timeout-no-set", null, [{ route: "faceoff_timeout", pid: P1 }]);
+
+  // ── Toasts after a game (the toaster pays 1, the toastee gets 2 and is shown it) ──────────────────────────────────
+  const toast = (from, to) => ({ route: "toast_player", pid: from, body: { ContainerMatchId: SET, ToasteeId: to } });
+  await step("toast", async () => { await redis.sAdd("online_players", [P1, P2]); }, [toast(P1, P2)]);
+  await step("toast-toaster-has-none", async () => {
+    await redis.sAdd("online_players", [P1, P2]);
+    await db.collection("playercounters").insertOne({ accountId: P1, match_toasts: 0, lastToastBonusUnix: 0, __v: 0 });
+  }, [toast(P1, P2)]);
+  await step("toast-twice", async () => { await redis.sAdd("online_players", [P1, P2]); }, [toast(P1, P2), toast(P2, P1)]);
 
   // ── Real ratings (REF_SNAPSHOT_URI) ──────────────────────────────────────────────────────────────────────────────
   if (snapshot) {
@@ -220,6 +268,7 @@ async function run(baseUrl, outFile) {
   }
 
   monitor.destroy();
+  games.close();
   fs.writeFileSync(outFile, JSON.stringify({ baseUrl, steps }, null, 1));
   console.log(`${steps.length} steps -> ${outFile}`);
   await snapshot?.close();
@@ -230,23 +279,41 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// A next game's GameServerReadyNotification and config (its MatchId names the game) are counted, not compared (random
+// address, port and key; config_diff's); the rest is compared, FullRankUpdate moved just before the leaver message when
+// it came after it (TS's order between the two was a race).
+function matchFrames(frames) {
+  const isMatch = (f) => f?.data?.template_id === "GameServerReadyNotification" || (f?.data?.template_id === "OnGameplayConfigNotified" && f.data.MatchId !== "");
+  const matchSent = {}, kept = {};
+  for (const [id, list] of Object.entries(frames)) {
+    matchSent[id] = list.filter(isMatch).map((f) => f.data.template_id);
+    const rest = list.filter((f) => !isMatch(f));
+    const leaver = rest.findIndex((f) => f?.data?.template_id === "MatchSetLeaverNotification");
+    const ranks = rest.findIndex((f) => f?.data?.template_id === "FullRankUpdate");
+    if (leaver >= 0 && ranks > leaver) rest.splice(leaver, 0, ...rest.splice(ranks, 1));
+    kept[id] = rest;
+  }
+  return { frames: kept, matchSent };
+}
+
 // What is new on every request: times near the request, fresh ids (the harness's own start 0000) renamed in order of
-// first appearance, a match's key and map (random), and the lock's token.
+// first appearance, a match's key and map (random; Map in the config C# keeps), and the lock's token.
 function normalize(step, started) {
   const ids = new Map();
   const nearSeconds = (n) => Math.abs(n * 1000 - started) < 120000;
   const nearMs = (n) => Math.abs(n - started) < 120000;
   const rename = (s) => s.replace(/\b[0-9a-f]{24}\b/g, (id) => (id.startsWith("0000") ? id : (ids.has(id) || ids.set(id, `<new id ${ids.size + 1}>`), ids.get(id))))
     .replace(/"matchKey":"[A-Za-z0-9+/]{43}="/g, '"matchKey":"<key>"')
-    .replace(/"map":"(?!M001")[^"]+"/g, '"map":"<map>"')
+    .replace(/"(map|Map)":"(?!M001")[^"]+"/g, '"$1":"<map>"')
     .replace(/\b1\d{12}(\.\d+)?\b/g, (n) => (nearMs(Number(n)) ? "<now ms>" : n))
     .replace(/(?<![\d.])1\d{9}(?![\d.])/g, (n) => (nearSeconds(Number(n)) ? "<now s>" : n));
   const walk = (v, key) => {
     if (Array.isArray(v)) return v.map((x) => walk(x));
     if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [rename(k), walk(x, k)]));
     if (typeof v === "number" && nearMs(v)) return "<now ms>";
+    if (typeof v === "number" && nearSeconds(v)) return "<now s>";
     if (typeof v === "string" && key === "matchKey" && /^[A-Za-z0-9+/]{43}=$/.test(v)) return "<key>";
-    if (typeof v === "string" && key === "map" && v !== "M001") return "<map>";
+    if (typeof v === "string" && (key === "map" || key === "Map") && v !== "M001") return "<map>";
     if (typeof v === "string") return rename(v);
     return v;
   };
@@ -258,14 +325,16 @@ function normalize(step, started) {
 const clone = (v) => JSON.parse(JSON.stringify(v));
 const NEW_GAME = "<new id 1>";
 // The next game's rollback port: TS took INCR rollback:current_port whatever the deploy mode (1 on an empty Redis:
-// the set-match port bug); C# takes the matchmaker's (fixed servers: a random one of 57000..57018). C# also keeps the
+// the set-match port bug); C# takes the matchmaker's (fixed servers: a random one of [REF_PORT_LOW, REF_PORT_HIGH), the
+// servers' ROLLBACK_UDP_PORT_LOW/HIGH; default 57000..57018). C# also keeps the
 // set's current game (ranked_set_match:{set}), and gives the set's keys written with the next game (ranked_set,
 // player_ranked_set, match_to_set) 20 min where TS gave 10.
+const PORT_LOW = Number(process.env.REF_PORT_LOW ?? 57000), PORT_HIGH = Number(process.env.REF_PORT_HIGH ?? 57019);
 function nextGamePort(ts, cs) {
   const portOf = (run) => [...JSON.stringify(run).matchAll(/\\?"rollbackPort\\?":(\d+)/g)].map((m) => Number(m[1])).filter((p) => p !== 50003);
   const tsPorts = portOf(ts), csPorts = portOf(cs);
   const tsIncr = Number(ts.state["rollback:current_port"]?.value);
-  const ok = tsPorts.length > 0 && tsPorts.every((p) => p === tsIncr) && csPorts.length === tsPorts.length && csPorts.every((p) => p >= 57000 && p < 57019)
+  const ok = tsPorts.length > 0 && tsPorts.every((p) => p === tsIncr) && csPorts.length === tsPorts.length && csPorts.every((p) => p >= PORT_LOW && p < PORT_HIGH)
     && !("rollback:current_port" in cs.state) && cs.state[`ranked_set_match:${SET}`]?.value === NEW_GAME && !(`ranked_set_match:${SET}` in ts.state);
   const strip = (run) => {
     const out = JSON.parse(JSON.stringify(run).replace(/(\\?"rollbackPort\\?":)(\d+)/g, (m, k, p) => (p === "50003" ? m : `${k}0`)));
@@ -294,7 +363,9 @@ function nextGamePort(ts, cs) {
   const tsOut = ttl(strip(ts), 600, 10, true), csOut = ttl(strip(cs), 1200, 20, true);
   return { ok: ok && ttlOk, ts: tsOut, cs: csOut };
 }
-const leaverIds = (run) => run.published.filter((p) => p.channel === "ranked_set:leaver").map((p) => p.message.playerIds);
+// The templates each player was sent, in order.
+const sentTo = (run, id) => run.frames[id].map((f) => f?.data?.template_id ?? f?.cmd);
+const BACK = ["MatchSetLeaverNotification", "OnGameplayConfigNotified"];
 const EXPECTED = {
   "set-gone": {
     why: "the player's set is gone: TS still added the check-in to ranked_set_checkins (nobody reads it again); C# writes nothing",
@@ -311,17 +382,17 @@ const EXPECTED = {
     why: "a late absent for game 1 after game 2 was made: TS counted it toward game 2 (1/2, announced); C# ignores it. And the next game's port",
     check: (ts, cs) => {
       const port = nextGamePort(ts, cs);
-      const announced = (run) => run.published.filter((p) => p.channel === "ranked_set:checkin").length;
+      const announced = (run, id) => sentTo(run, id).filter((t) => t === "MatchSetCheckinNotification").length;
       const ok = port.ok && JSON.stringify(ts.sets[`ranked_set_checkins:${SET}`]) === JSON.stringify([P1]) && cs.sets[`ranked_set_checkins:${SET}`].length === 0
-        && announced(ts) === announced(cs) + 1;
+        && [P1, P2].every((id) => announced(ts, id) === announced(cs, id) + 1);
       const strip = (run, late) => {
         const o = clone(run);
         delete o.state[`ranked_set_checkins:${SET}`];
         o.sets[`ranked_set_checkins:${SET}`] = [];
         if (late) {
-          // The late check-in's own work, once each: its announcement, SADD, EXPIRE, and the set rewritten with checkins
-          // [P1] (the same text as game 1's first check-in wrote: gamesPlayed changes only at a game's end).
-          o.published.splice(o.published.findLastIndex((p) => p.channel === "ranked_set:checkin"), 1);
+          // The late check-in's own work, once each: its announcement to each player, SADD, EXPIRE, and the set rewritten
+          // with checkins [P1] (the same text as game 1's first check-in wrote: gamesPlayed changes only at a game's end).
+          for (const id of [P1, P2]) o.frames[id].splice(o.frames[id].findLastIndex((f) => f?.data?.template_id === "MatchSetCheckinNotification"), 1);
           removeOne(o.writes, (w) => w === `sadd ranked_set_checkins:${SET} ${P1}`);
           removeOne(o.writes, (w) => w === `expire ranked_set_checkins:${SET} 600`);
           removeOne(o.writes, (w) => w.startsWith(`set ranked_set:${SET} `) && w.includes(`"checkins":["${P1}"]`));
@@ -346,8 +417,8 @@ const EXPECTED = {
   "crash-flag-on-set": {
     why: "a crash: TS sent only the player checking in back to the menus (the other's check-in then found nothing); C# sends every player of the set",
     check: (ts, cs) => {
-      const ok = JSON.stringify(leaverIds(ts)) === JSON.stringify([[P1]]) && JSON.stringify(leaverIds(cs)) === JSON.stringify([[P1, P2]]);
-      const strip = (run) => { const o = clone(run); for (const p of o.published) if (p.channel === "ranked_set:leaver") p.message.playerIds = "<players>"; return o; };
+      const ok = JSON.stringify(sentTo(ts, P1)) === JSON.stringify(BACK) && sentTo(ts, P2).length === 0 && JSON.stringify(sentTo(cs, P2)) === JSON.stringify(BACK);
+      const strip = (run) => { const o = clone(run); o.frames[P2] = "<the other player>"; return o; };
       return { ok, ts: strip(ts), cs: strip(cs) };
     },
   },
@@ -355,18 +426,26 @@ const EXPECTED = {
     why: "a crash in game 2 (flagged under its own id): TS read only the set's flag and counted the check-in; C# drops the set unrated and sends both back",
     check: (ts, cs) => ({
       ok: `ranked_set:${SET}` in ts.state && JSON.stringify(ts.sets[`ranked_set_checkins:${SET}`]) === JSON.stringify([P1])
-        && JSON.stringify(ts.published.map((p) => p.channel)) === JSON.stringify(["ranked_set:checkin"])
+        && [P1, P2].every((id) => JSON.stringify(sentTo(ts, id)) === JSON.stringify(["MatchSetCheckinNotification"]))
         && !(`ranked_set:${SET}` in cs.state) && !(`player_ranked_set:${P2}` in cs.state) && !(`ranked_set_match:${SET}` in cs.state)
-        && JSON.stringify(leaverIds(cs)) === JSON.stringify([[P1, P2]]) && cs.published.length === 1
+        && [P1, P2].every((id) => JSON.stringify(sentTo(cs, id)) === JSON.stringify(BACK)) && ts.published.length === 0 && cs.published.length === 0
         && ts.mongo.eloratings.length === 0 && cs.mongo.eloratings.length === 0,
       ts: null, cs: null,
     }),
   },
   "concede-with-a-bot": {
-    why: "a set with a bot: TS rated it (the bot got a rating); C# rates nobody (RatedMatches) and ends the set the same way",
+    why: "a set with a bot: TS rated it (the bot got a rating); C# rates nobody (RatedMatches) and ends the set the same way; "
+      + "both send P1 its ranks (TS from its new rating, C# from the default rating it makes for P1, as getOrCreateRating would)",
     check: (ts, cs) => {
-      const ok = ts.mongo.eloratings.length === 2 && ts.mongo.playerstats.length === 2 && cs.mongo.eloratings.length === 0 && cs.mongo.playerstats.length === 0;
-      const strip = (run) => { const o = clone(run); o.mongo = null; return o; };
+      const ratings = (run) => run.mongo.eloratings.map((d) => d.account_id).join();
+      const ok = ratings(ts) === [P1, P2].join() && ts.mongo.playerstats.length === 2 && ratings(cs) === P1 && cs.mongo.playerstats.length === 0
+        && [ts, cs].every((run) => sentTo(run, P1).includes("FullRankUpdate") && sentTo(run, P2).length === 0);
+      const strip = (run) => {
+        const o = clone(run);
+        o.mongo = null;
+        for (const f of o.frames[P1]) if (f?.data?.template_id === "FullRankUpdate") f.data = "<ranks>";
+        return o;
+      };
       return { ok, ts: strip(ts), cs: strip(cs) };
     },
   },
@@ -377,12 +456,48 @@ function removeOne(list, predicate) {
   list.splice(at, 1);
 }
 
+// FinalLeaderboardRank between players tied on a mode's rating: ties sort by _id, and TS made a set's rating documents
+// with Promise.all (processSetResult: the winners, then the losers), so which of two new teammates came first was the
+// order its concurrent inserts finished in; C# makes them in team order. Within a tie group the ranks compare as a set,
+// given out again in player order on both sides.
+function untie(step) {
+  if (!step?.frames) return;
+  for (const mode of ["1v1", "2v2"]) {
+    const rating = Object.fromEntries((step.mongo?.eloratings ?? []).map((d) => [d.account_id, JSON.stringify(d[`elo_${mode}`])]));
+    const ranked = Object.entries(step.frames).flatMap(([id, list]) => list.filter((f) => f?.data?.template_id === "FullRankUpdate")
+      .map((f) => ({ id, data: f.data.SeasonalData["<season>"]?.Ranked?.DataByMode?.[mode] })))
+      .filter((e) => e.data && rating[e.id] !== undefined);
+    for (const tie of Object.values(Object.groupBy(ranked, (e) => rating[e.id])).filter((g) => g.length > 1)) {
+      const ranks = tie.map((e) => e.data.FinalLeaderboardRank).sort((x, y) => x - y);
+      tie.sort((x, y) => x.id.localeCompare(y.id)).forEach((e, i) => { e.data.FinalLeaderboardRank = ranks[i]; });
+    }
+  }
+}
+
 function diffRuns(fileA, fileB) {
   const a = JSON.parse(fs.readFileSync(fileA, "utf8")), b = JSON.parse(fs.readFileSync(fileB, "utf8"));
   let differing = 0;
-  const parts = (x, y) => ["answers", "writes", "published", "lock", "state", "sets", "mongo"].filter((p) => JSON.stringify(x?.[p]) !== JSON.stringify(y?.[p]));
+  const parts = (x, y) => ["answers", "frames", "matchSent", "writes", "published", "lock", "state", "sets", "mongo"].filter((p) => JSON.stringify(x?.[p]) !== JSON.stringify(y?.[p]));
   for (let i = 0; i < Math.max(a.steps.length, b.steps.length); i++) {
     const name = a.steps[i]?.name ?? b.steps[i]?.name;
+    // FullRankUpdate's season: TS's is always Season:SeasonFive, C#'s Season:Current (decided: as ranked_data and the login).
+    for (const [run, wanted] of [[a.steps[i], (k) => k === "Season:SeasonFive"], [b.steps[i], (k) => /^Season:\w+$/.test(k)]]) {
+      for (const f of Object.values(run?.frames ?? {}).flat()) {
+        if (f?.data?.template_id !== "FullRankUpdate") continue;
+        const keys = Object.keys(f.data.SeasonalData ?? {});
+        if (keys.length !== 1 || !wanted(keys[0])) {
+          differing++;
+          console.log(`${name}: FullRankUpdate season ${keys} in ${run === a.steps[i] ? "A" : "B"}`);
+        }
+        f.data.SeasonalData = { "<season>": f.data.SeasonalData[keys[0]] };
+      }
+      untie(run);
+    }
+    // Each run carries its messages on its own channels: TS on the ranked_set and toast channels, C# on ws:send.
+    if (a.steps[i]?.channels.includes("ws:send") || b.steps[i]?.channels.some((c) => TS_ONLY.has(c))) {
+      differing++;
+      console.log(`${name}: a message on the other server's channel (A: ${a.steps[i]?.channels}; B: ${b.steps[i]?.channels})`);
+    }
     // ranked_set_match:{set} is C#'s alone (the set's current game): TS never writes it, and C# deletes it with the set.
     // Its SET is asserted where a next game is made (nextGamePort); a C# pointer left behind would still show in state.
     if (a.steps[i]?.writes.some((w) => w.includes("ranked_set_match:"))) {

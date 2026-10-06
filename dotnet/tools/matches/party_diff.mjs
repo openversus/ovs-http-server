@@ -32,7 +32,7 @@ const PLAYERS = [P1, P2, P3];
 const IP = "198.51.100.7";
 // Channels whose TS websocket handlers keep per-connection state (docs/REALTIME.md): a port publishes these as the TS
 // server does until that state moves, so they are compared as writes.
-const STATEFUL = new Set(["matchmaking:cancel", "party:queued", "match:notifications", "matchmaking:complete", "perks:notifications", "match:end", "lobby:rejoin"]);
+const STATEFUL = new Set(["matchmaking:cancel", "party:queued", "match:notifications", "perks:notifications", "match:end", "lobby:rejoin"]);
 
 // The fields every party request carries (from the captures).
 const COMMON = { AutoPartyPreference: false, CrossplayPreference: 1, GameplayPreferences: 448, HissCrc: 1, LobbyTemplate: "party_lobby", Platform: "PC", Version: "CLIENT:2FAE7-Retail DATA:1 PERKS:1" };

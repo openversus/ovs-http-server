@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Http;
 
-namespace OpenVersus.Server.Http.Shared.Hosting;
+namespace OpenVersus.Server.Core.Hosting;
 
 /// <summary>
 /// The client's address behind the reverse proxy: the first of X-Real-IP, X-Forwarded-Host and the last entry of

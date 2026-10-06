@@ -1,4 +1,5 @@
 using FastEndpoints;
+using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Http.Shared.Endpoints;
 using OpenVersus.Server.Http.Shared.Hosting;

@@ -94,7 +94,7 @@ public sealed class MatchFlowHostTests : IClassFixture<ServiceFactory<Program>>
     }
 
     [Fact]
-    public void Runs_the_match_result_subscribers_the_gameplay_config_bridge_the_launched_matches_the_delayed_messages_and_the_node_key_check_and_nothing_else_of_its_own()
+    public void Runs_the_match_result_subscribers_the_gameplay_config_bridge_the_launched_matches_the_delayed_messages_the_disconnects_and_the_node_key_check_and_nothing_else_of_its_own()
     {
         var hosted = _factory.Services.GetServices<IHostedService>()
             .Select(s => s.GetType())
@@ -107,7 +107,8 @@ public sealed class MatchFlowHostTests : IClassFixture<ServiceFactory<Program>>
         // GameplayConfigBridge builds match configs from the TS websocket's channels (MIGRATION-BRIDGES.md 9).
         // DelayedMessageSweep sends the match end's delayed websocket messages (realtime:due).
         // MatchLaunchStream tells each launched match's players about it (match:launched, Realtime:Gateway on).
-        Assert.Equal(["ClusterSettingsSync", "DelayedMessageSweep", "GameplayConfigBridge", "InstanceHeartbeat", "MatchLaunchStream", "MatchResultStream", "NodeKeyCheck"], hosted);
+        // MatchDisconnects acts on a game that closed its websocket mid-match (realtime:connections).
+        Assert.Equal(["ClusterSettingsSync", "DelayedMessageSweep", "GameplayConfigBridge", "InstanceHeartbeat", "MatchDisconnects", "MatchLaunchStream", "MatchResultStream", "NodeKeyCheck"], hosted);
     }
 
     [Fact]

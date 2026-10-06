@@ -75,7 +75,9 @@ below has moved). Each node:
   (`rejoin_pending:{player}`) is handled when the window ends. A disconnected or replaced connection's queue ticket goes
   at once (`MatchmakingQueue.DropAsync`), and the rest of its party is cancelled and told. The session (`connections:{player}`,
   its cosmetics copy, `player:{player}*` and the IP's copy) goes last, only while it is still the closed connection's.
-  Not yet consumed: a pre-game dodge, the daily toast bonus popup.
+  The match flow's (`MatchDisconnects`, group `matchflow`) does what the TS close did for the match: a pregame dodge, a
+  mid-game leave of a set game, a leave between a set's games (`MatchStatusEvents.GameClosedAsync`); for a P2P match it is
+  the only such signal (a node sends no PlayerDisconnect). Not yet consumed: the daily toast bonus popup.
 
 Parity with the TS websocket: `tools/realtime/gateway_diff.mjs` (raw frames, closes, Redis writes) and
 `tools/realtime/disconnect_diff.mjs` (what a dropped game's close does to the lobbies).

@@ -33,9 +33,13 @@ namespace OpenVersus.Server.Core.Leaderboards;
 //                 teammates.{the teammate's character} (no dodges, no tossups)}: 1}. An upset is a win expected below
 //                 0.44, a choke a loss expected above 0.56, a tossup anything in between.
 // Redis, read     connections:{id} username (the rating's username)
+// Mongo, read     playertesters {_id} name: the username of a player whose session is gone (the same value: /access copies
+//                 it into the session)
 //
 // Unlike there: the set stats are written before this returns (TS started them and did not wait); a failure is logged
-// per player either way. A per-character entry missing a number counts it as 0 (TS: NaN, written into the rating; none
+// per player either way. A player rated after their session went (a dodge their own disconnect also cleans up after, a
+// set that ends while they are away) keeps their name from their player record; TS rated them with none, and their
+// leaderboard entry made with no name at their match's start stayed nameless. A per-character entry missing a number counts it as 0 (TS: NaN, written into the rating; none
 // of the 4,105 entries in the prod copy of 2026-09-29 is missing one).
 
 /// <summary>A finished set to rate: the teams, the mode, the score (team 0, team 1), who won and how.</summary>
@@ -78,13 +82,13 @@ internal sealed class SetRatings(IServiceProvider services, EloRatings ratings, 
         var winners = new List<BsonDocument>();
         foreach (string id in outcome.WinnerIds)
         {
-            winners.Add(await ratings.GetOrCreateAsync(collection, id, await UsernameAsync(redis, id), ct));
+            winners.Add(await ratings.GetOrCreateAsync(collection, id, await UsernameAsync(redis, mongo, id, ct), ct));
         }
 
         var losers = new List<BsonDocument>();
         foreach (string id in outcome.LoserIds)
         {
-            losers.Add(await ratings.GetOrCreateAsync(collection, id, await UsernameAsync(redis, id), ct));
+            losers.Add(await ratings.GetOrCreateAsync(collection, id, await UsernameAsync(redis, mongo, id, ct), ct));
         }
 
         string Slug(string id) => outcome.Characters.TryGetValue(id, out string? slug) ? slug : "";
@@ -279,16 +283,28 @@ internal sealed class SetRatings(IServiceProvider services, EloRatings ratings, 
         log.LogInformation("Recorded set stats for {Count} players, match {Match}", all.Count, outcome.MatchId);
     }
 
-    private static async Task<string> UsernameAsync(IDatabase? redis, string playerId)
+    // The session's username, else the player record's name (a player whose session is gone).
+    private static async Task<string> UsernameAsync(IDatabase? redis, IMongoDatabase mongo, string playerId, CancellationToken ct)
     {
         try
         {
-            return redis is null ? "" : (string?)await redis.HashGetAsync($"connections:{playerId}", "username") ?? "";
+            if (redis is not null && (string?)await redis.HashGetAsync($"connections:{playerId}", "username") is { Length: > 0 } username)
+            {
+                return username;
+            }
         }
         catch (RedisException)
         {
+        }
+
+        if (!ObjectId.TryParse(playerId, out var id))
+        {
             return "";
         }
+
+        var record = await mongo.GetCollection<BsonDocument>(Access.PlayerRecord.Collection).Find(new BsonDocument("_id", id))
+            .Project(new BsonDocument("name", 1)).FirstOrDefaultAsync(ct);
+        return record?.GetValue("name", "") is BsonString name ? name.Value : "";
     }
 
     /// <summary>The winner's bonus for a win streak of <paramref name="streak"/> (this win counted).</summary>

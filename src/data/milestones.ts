@@ -86552,3 +86552,48 @@ battlepassTiers.splice(OVS_BATTLEPASS_REWARD_SLUGS.length);
 // The native pass ended in a recurring tier (lootbox_battlepass_end) the game treats as its
 // infinite tier rather than a claimable one; here the last tier is a reward like the rest.
 MILESTONE_REWARDS.mrt_battlepass_season_five.data.bDoesLastTierRecurInfinitely = false;
+// A fighter level's XP toast shows the fighter's portrait, so it reads apart from the account level's XP book (the
+// game labels both "Event XP"; XpIcon is a Texture2D). The fighter's own end-of-game mastery icon (CharacterData
+// EOGPortrait) where it has one; else its default skin's roster portrait (the texture of its reward thumbnail);
+// Banana Guard his full portrait. Read from the game files 2026-10-06; the Witch (hidden) has none.
+export const FIGHTER_XP_ICONS: Record<string, string> = {
+  mrt_mastery_arya: "/Game/Panda_Main/Characters/Arya/UI/UI_C006_EoGMastery_Icon.UI_C006_EoGMastery_Icon",
+  mrt_mastery_banana_guard: "/Game/Character/BananaGuard/UI/FullPortrait_C034.FullPortrait_C034",
+  mrt_mastery_batman: "/Game/Panda_Main/Characters/BatmanV2/UI/UI_C004_EoGMastery_Icon.UI_C004_EoGMastery_Icon",
+  mrt_mastery_bugs_bunny: "/Game/Panda_Main/Characters/BugsBunnyV2/UI/UI_C007_EoGMastery_Icon.UI_C007_EoGMastery_Icon",
+  mrt_mastery_c003: "/Game/Panda_Main/Characters/Superman/UI/UI_C003_EoGMastery_Icon.UI_C003_EoGMastery_Icon",
+  mrt_mastery_c017: "/Game/Panda_Main/Characters/C017/UI/portrait_mastery_c017.portrait_mastery_c017",
+  mrt_mastery_c018: "/Game/Character/Captures/C018/C018_C018_S00.C018_C018_S00",
+  mrt_mastery_c019: "/Game/Panda_Main/Characters/C019/UI/portrait_mastery_c019.portrait_mastery_c019",
+  mrt_mastery_c020: "/Game/Panda_Main/Characters/C020/UI/UI_C020_EoGMastery_Icon.UI_C020_EoGMastery_Icon",
+  mrt_mastery_c021: "/Game/Character/Captures/C021/C021_C021_S00.C021_C021_S00",
+  mrt_mastery_c023a: "/Game/Character/Captures/C023A/C023A_C023A_S00.C023A_C023A_S00",
+  mrt_mastery_c023b: "/Game/Character/Captures/C023B/C023B_C023B_S00.C023B_C023B_S00",
+  mrt_mastery_c024: "/Game/Character/Captures/C024/C024_C024_S00.C024_C024_S00",
+  mrt_mastery_c025: "/Character_C025/Character/C025/Skins/T_C025_S00.T_C025_S00",
+  mrt_mastery_c026: "/Game/Character/Captures/C026/C026_C026_S00.C026_C026_S00",
+  mrt_mastery_c027: "/Game/Character/Captures/C027/C027_C027_S00.C027_C027_S00",
+  mrt_mastery_c028: "/Game/Character/Captures/C028/C028_C028_S00.C028_C028_S00",
+  mrt_mastery_c029: "/CharacterC029/C029/aquaman_roster.aquaman_roster",
+  mrt_mastery_c030: "/MvsSeason03/Character/C030/UI/t_fighterthumbnail_powerpuffgirls.t_fighterthumbnail_powerpuffgirls",
+  mrt_mastery_c031: "/Character_C031/C031/Skins/C031_placeholder_capture.C031_placeholder_capture",
+  mrt_mastery_c036: "/Game/Character/C036/UI/FullPortrait_C036_S00.FullPortrait_C036_S00",
+  mrt_mastery_c038: "/Character_C038/lola_roster_02.lola_roster_02",
+  mrt_mastery_creature: "/Game/Panda_Main/Characters/Creature/UI/UI_C009_EoGMastery_Icon.UI_C009_EoGMastery_Icon",
+  mrt_mastery_finn: "/Game/Panda_Main/Characters/Finn/UI/UI_C013_EoGMastery_Icon.UI_C013_EoGMastery_Icon",
+  mrt_mastery_garnet: "/Game/Panda_Main/Characters/Garnet/UI/portrait_mastery_garnet.portrait_mastery_garnet",
+  mrt_mastery_harleyquinn: "/Game/Panda_Main/Characters/HarleyQuinn/UI/UI_C008_EoGMastery_Icon.UI_C008_EoGMastery_Icon",
+  mrt_mastery_jake: "/Game/Panda_Main/Characters/Jake/UI/UI_C005_EoGMastery_Icon.UI_C005_EoGMastery_Icon",
+  mrt_mastery_jason: "/Game/Character/Captures/Jason/Jason_Jason_Skin_000.Jason_Jason_Skin_000",
+  mrt_mastery_lebron: "/Game/Panda_Main/Characters/c016/UI/portrait_mastery_C016.portrait_mastery_C016",
+  mrt_mastery_shaggy: "/Game/Panda_Main/Characters/Shaggy/UI/UI_C002_EoGMastery_Icon.UI_C002_EoGMastery_Icon",
+  mrt_mastery_steven: "/Game/Panda_Main/Characters/Steven/UI/UI_C011_EoGMastery_Icon.UI_C011_EoGMastery_Icon",
+  mrt_mastery_taz: "/Game/Panda_Main/Characters/C015/UI/UI_C015_EoGMastery_Icon.UI_C015_EoGMastery_Icon",
+  mrt_mastery_tom_and_jerry: "/Game/Panda_Main/Characters/TomAndJerry/UI/UI_C010_EoGMastery_Icon.UI_C010_EoGMastery_Icon",
+  mrt_mastery_velma: "/Game/Panda_Main/Characters/Velma/UI/portrait_mastery_Velma.portrait_mastery_Velma",
+  mrt_mastery_wonder_woman: "/Game/Panda_Main/Characters/WonderWomanV2/UI/UI_C001_EoGMastery_Icon.UI_C001_EoGMastery_Icon",
+};
+for (const [slug, icon] of Object.entries(FIGHTER_XP_ICONS)) {
+  const track = (MILESTONE_REWARDS as Record<string, { data: Record<string, unknown> }>)[slug];
+  if (track) track.data.XpIcon = icon;
+}

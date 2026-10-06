@@ -34556,7 +34556,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/WonderWomanV2/UI/UI_C001_EoGMastery_Icon.UI_C001_EoGMastery_Icon"
             }
           },
           "mrt_mastery_velma": {
@@ -34803,7 +34804,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/Velma/UI/portrait_mastery_Velma.portrait_mastery_Velma"
             }
           },
           "mrt_mastery_tom_and_jerry": {
@@ -35050,7 +35052,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/TomAndJerry/UI/UI_C010_EoGMastery_Icon.UI_C010_EoGMastery_Icon"
             }
           },
           "mrt_mastery_taz": {
@@ -35297,7 +35300,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/C015/UI/UI_C015_EoGMastery_Icon.UI_C015_EoGMastery_Icon"
             }
           },
           "mrt_mastery_steven": {
@@ -35544,7 +35548,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/Steven/UI/UI_C011_EoGMastery_Icon.UI_C011_EoGMastery_Icon"
             }
           },
           "mrt_mastery_shaggy": {
@@ -35791,7 +35796,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/Shaggy/UI/UI_C002_EoGMastery_Icon.UI_C002_EoGMastery_Icon"
             }
           },
           "mrt_mastery_lebron": {
@@ -36038,7 +36044,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/c016/UI/portrait_mastery_C016.portrait_mastery_C016"
             }
           },
           "mrt_mastery_jason": {
@@ -36285,7 +36292,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Character/Captures/Jason/Jason_Jason_Skin_000.Jason_Jason_Skin_000"
             }
           },
           "mrt_mastery_jake": {
@@ -36532,7 +36540,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/Jake/UI/UI_C005_EoGMastery_Icon.UI_C005_EoGMastery_Icon"
             }
           },
           "mrt_mastery_harleyquinn": {
@@ -36779,7 +36788,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/HarleyQuinn/UI/UI_C008_EoGMastery_Icon.UI_C008_EoGMastery_Icon"
             }
           },
           "mrt_mastery_garnet": {
@@ -37026,7 +37036,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/Garnet/UI/portrait_mastery_garnet.portrait_mastery_garnet"
             }
           },
           "mrt_mastery_finn": {
@@ -37273,7 +37284,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/Finn/UI/UI_C013_EoGMastery_Icon.UI_C013_EoGMastery_Icon"
             }
           },
           "mrt_mastery_creature": {
@@ -37520,7 +37532,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/Creature/UI/UI_C009_EoGMastery_Icon.UI_C009_EoGMastery_Icon"
             }
           },
           "mrt_mastery_c036": {
@@ -37767,7 +37780,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Character/C036/UI/FullPortrait_C036_S00.FullPortrait_C036_S00"
             }
           },
           "mrt_mastery_c028": {
@@ -38014,7 +38028,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Character/Captures/C028/C028_C028_S00.C028_C028_S00"
             }
           },
           "mrt_mastery_c026": {
@@ -38261,7 +38276,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Character/Captures/C026/C026_C026_S00.C026_C026_S00"
             }
           },
           "mrt_mastery_c024": {
@@ -38508,7 +38524,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Character/Captures/C024/C024_C024_S00.C024_C024_S00"
             }
           },
           "mrt_mastery_c023b": {
@@ -38755,7 +38772,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Character/Captures/C023B/C023B_C023B_S00.C023B_C023B_S00"
             }
           },
           "mrt_mastery_c023a": {
@@ -39002,7 +39020,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Character/Captures/C023A/C023A_C023A_S00.C023A_C023A_S00"
             }
           },
           "mrt_mastery_c021": {
@@ -39249,7 +39268,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Character/Captures/C021/C021_C021_S00.C021_C021_S00"
             }
           },
           "mrt_mastery_c020": {
@@ -39496,7 +39516,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/C020/UI/UI_C020_EoGMastery_Icon.UI_C020_EoGMastery_Icon"
             }
           },
           "mrt_mastery_c019": {
@@ -39743,7 +39764,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/C019/UI/portrait_mastery_c019.portrait_mastery_c019"
             }
           },
           "mrt_mastery_c018": {
@@ -39990,7 +40012,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Character/Captures/C018/C018_C018_S00.C018_C018_S00"
             }
           },
           "mrt_mastery_c017": {
@@ -40237,7 +40260,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/C017/UI/portrait_mastery_c017.portrait_mastery_c017"
             }
           },
           "mrt_mastery_c003": {
@@ -40484,7 +40508,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/Superman/UI/UI_C003_EoGMastery_Icon.UI_C003_EoGMastery_Icon"
             }
           },
           "mrt_mastery_bugs_bunny": {
@@ -40731,7 +40756,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/BugsBunnyV2/UI/UI_C007_EoGMastery_Icon.UI_C007_EoGMastery_Icon"
             }
           },
           "mrt_mastery_batman": {
@@ -40978,7 +41004,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/BatmanV2/UI/UI_C004_EoGMastery_Icon.UI_C004_EoGMastery_Icon"
             }
           },
           "mrt_mastery_banana_guard": {
@@ -41225,7 +41252,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Character/BananaGuard/UI/FullPortrait_C034.FullPortrait_C034"
             }
           },
           "mrt_mastery_arya": {
@@ -41472,7 +41500,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "ClaimType": 0,
-              "RiftStarProgress": []
+              "RiftStarProgress": [],
+              "XpIcon": "/Game/Panda_Main/Characters/Arya/UI/UI_C006_EoGMastery_Icon.UI_C006_EoGMastery_Icon"
             }
           },
           "mrt_skin_c004_comic": {
@@ -64910,7 +64939,8 @@
                   "TierGuid": "05D81C95459C1029728121B8DEF80A52"
                 }
               ],
-              "XpRewardGrantTag": ""
+              "XpRewardGrantTag": "",
+              "XpIcon": "/MvsSeason03/Character/C030/UI/t_fighterthumbnail_powerpuffgirls.t_fighterthumbnail_powerpuffgirls"
             }
           },
           "mrt_mastery_c027": {
@@ -65157,7 +65187,8 @@
                   "TierGuid": "05D81C95459C1029728121B8DEF80A52"
                 }
               ],
-              "XpRewardGrantTag": ""
+              "XpRewardGrantTag": "",
+              "XpIcon": "/Game/Character/Captures/C027/C027_C027_S00.C027_C027_S00"
             }
           },
           "MRT_BaseRosterFighterRoad": {
@@ -72368,7 +72399,8 @@
                   "TierGuid": "05D81C95459C1029728121B8DEF80A52"
                 }
               ],
-              "XpRewardGrantTag": ""
+              "XpRewardGrantTag": "",
+              "XpIcon": "/Character_C031/C031/Skins/C031_placeholder_capture.C031_placeholder_capture"
             }
           },
           "mrt_mastery_c025": {
@@ -72615,7 +72647,8 @@
                   "TierGuid": "05D81C95459C1029728121B8DEF80A52"
                 }
               ],
-              "XpRewardGrantTag": ""
+              "XpRewardGrantTag": "",
+              "XpIcon": "/Character_C025/Character/C025/Skins/T_C025_S00.T_C025_S00"
             }
           },
           "mrt_b002_skin_data": {
@@ -84363,7 +84396,8 @@
               "MrtsThatForwardXpToThisTrack": [],
               "bDisplayMatchXpWithToastNotification": false,
               "RiftStarProgress": [],
-              "ClaimType": 0
+              "ClaimType": 0,
+              "XpIcon": "/CharacterC029/C029/aquaman_roster.aquaman_roster"
             }
           },
           "mrt_mastery_c020b": {
@@ -88810,7 +88844,8 @@
                   "TierGuid": "99C3DF014FE3C31CDBD5C5B09359473A"
                 }
               ],
-              "XpRewardGrantTag": ""
+              "XpRewardGrantTag": "",
+              "XpIcon": "/Character_C038/lola_roster_02.lola_roster_02"
             }
           },
           "mrt_battlepass_season_five": {

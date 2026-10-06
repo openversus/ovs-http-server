@@ -51,6 +51,7 @@ import { PlayerTester, PlayerTesterModel } from "../database/PlayerTester";
 import { AccountToken, IAccountToken } from "../types/AccountToken";
 import { resolveAccountFromRequest } from "../services/identityService";
 import { getRandomFunFact } from "../services/funFactsService";
+import { isTwosdayActive } from "../services/twosdayService";
 // import { IGameInstall } from "../types/shared-types";
 
 const serviceName = "SSC.SSC";
@@ -945,6 +946,14 @@ export async function handleSsc_invoke_invite_to_player_lobby(req: Request<{}, {
   let rPlayerConnectionByID = (await redisClient.hGetAll(`connections:${inviterAccountId}`)) as unknown as RedisPlayerConnection;
   const inviterUsername = rPlayerConnectionByID?.username || rPlayerConnectionByID?.hydraUsername || account.username || "Unknown";
 
+  // Twosday: no party lobbies, so the invite is answered as sent and never delivered (custom lobby invites never
+  // reach this handler: the shared lobby router answers them).
+  if (await isTwosdayActive()) {
+    logger.info(`${logPrefix} Twosday: party invite from ${inviterAccountId} to ${invitedAccountId} for lobby ${lobbyId} not delivered`);
+    res.send({ body: {}, metadata: null, return_code: 0 });
+    return;
+  }
+
   // Send the party invite notification via Redis → WebSocket
   // This sends MatchInviteNotification to the invited player's game client
   const notification: RedisPartyInviteNotification = {
@@ -1060,6 +1069,15 @@ export async function handleSsc_invoke_join_party_lobby(req: Request<{}, {}, {},
     if (pendingLobbyId) await redisDeletePendingJoinLobby(joiningPlayerId);
 
     res.send({ body: { lobby: staleLobby, Cluster: "ec2-us-east-1-dokken" }, metadata: null, return_code: 0 });
+    return;
+  }
+
+  // Twosday: no new party members (an invite sent before the window and accepted in it). The answer an expired invite
+  // gets; a party formed before the window keeps working.
+  if (!lobbyState.playerIds.includes(joiningPlayerId) && lobbyState.ownerId !== joiningPlayerId && (await isTwosdayActive())) {
+    logger.info(`${logPrefix} Twosday: ${joiningPlayerId} not joined to party lobby ${targetLobbyId}`);
+    if (pendingLobbyId) await redisDeletePendingJoinLobby(joiningPlayerId);
+    res.send({ body: {}, metadata: null, return_code: 1 });
     return;
   }
 

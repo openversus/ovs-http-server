@@ -28,6 +28,7 @@ import { HYDRA_ACCESS_TOKEN, SECRET, decodeToken } from "../middleware/auth";
 import * as AuthUtils from "../utils/auth";
 import * as KitchenSink from "../utils/garbagecan";
 import { PlayerStatsModel, RecentMatchPlayerStats } from "../database/PlayerStats";
+import { isTwosdayActive } from "../services/twosdayService";
 
 const serviceName = "Handlers.Matches";
 const logPrefix = `[${serviceName}]:`;
@@ -106,7 +107,9 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
   // Skip if lobby data is from the new custom lobby system (has Teams/LeaderID instead of ownerId/playerIds)
   if (existingLobby && !existingLobby.playerIds) {
     logger.info(`${logPrefix} Lobby ${matchId} is a custom SSC lobby (no playerIds), skipping old join path`);
-  } else if (existingLobby && existingLobby.ownerId !== aID) {
+  } else if (existingLobby && existingLobby.ownerId !== aID
+    // Twosday: no new party members (a party formed before the window keeps working); the player gets their own lobby.
+    && (existingLobby.playerIds.includes(aID) || !(await isTwosdayActive()))) {
     // This is a JOIN — player is accepting an invite to an existing lobby
     logger.info(`${logPrefix} Player ${aID} (${playerUsername}) joining existing lobby ${matchId} owned by ${existingLobby.ownerId}`);
 

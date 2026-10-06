@@ -14,6 +14,7 @@ import { logger } from "../config/logger";
 import { MVSTime } from "../utils/date";
 import { getOrCreateRating } from "./eloService";
 import { leaveLobby } from "./customLobbyService";
+import { isTwosdayActive } from "./twosdayService";
 
 export enum MATCH_TYPES {
   ONE_V_ONE = "1v1",
@@ -36,6 +37,14 @@ export async function queueMatch(
   matchType: MATCH_TYPES,
 ): Promise<void> {
   try {
+    // Twosday: every 1v1 and 2v2 queue goes to the 2v2 queue (its skill from the players' 2v2 ratings).
+    if ((matchType === MATCH_TYPES.ONE_V_ONE || matchType === MATCH_TYPES.TWO_V_TWO) && (await isTwosdayActive())) {
+      if (matchType !== MATCH_TYPES.TWO_V_TWO) {
+        logger.info(`[Twosday]: ${matchType} queue by party ${partyId} (players ${playerIds.join(",")}) goes to the 2v2 queue`);
+      }
+      matchType = MATCH_TYPES.TWO_V_TWO;
+    }
+
     // Flush players from any custom lobby they're in before queuing
     for (const pid of playerIds) {
       try {

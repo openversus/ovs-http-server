@@ -21,6 +21,12 @@
 // server's ranked_set:fullrankupdate into each connected player's FullRankUpdate and delivers what C# sends through
 // ws:send. In those steps the players online get a fake game for the step (connected after the setup, closed after), and
 // what their games were sent is compared; each run is checked to use only its own channel.
+//
+// Release mode (REF_GAMES_URL set: the TS websocket for the TS run, the C# gateway for the C# run, whose match flow runs
+// with Realtime:Gateway on): only the steps that tell the players to connect, with a fake game for each player and the
+// spectator of the match (P2's reports no address: a player on the server's own machine), and what the games were sent
+// (game-server-instance-ready) compared instead of the TS server's game_server_ready:notifications publish. Run the TS
+// websocket with USE_INTERNAL_ROLLBACK=1 and the same UDP_SERVER_IP as the C# side, as every deployment.
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { require, need, openScratch, openMonitor, writes, state } from "../refdiff/refdiff.mjs";
@@ -34,7 +40,11 @@ const [P1, P2, BOT, SPEC] = [1, 2, 3, 4].map(oid);
 const MATCH = oid(100), SET = oid(101), OTHER = oid(102);
 const KEY = "matchkey-from-the-game";
 const IP = "198.51.100.8";
-const CHANNELS = new Set(["game_server_ready:notifications", "match:end"]);
+const RELEASE = !!process.env.REF_GAMES_URL;
+const CHANNELS = new Set(RELEASE ? ["match:end"] : ["game_server_ready:notifications", "match:end"]);
+// The steps release mode runs; register-player-gone only there.
+const RELEASE_STEPS = new Set(["register-relay", "register-twice", "register-no-match-port", "register-match-port-zero", "register-p2p-held",
+  "register-p2p-after-relay-asked", "p2p-ready", "p2p-failed-then-relay-registers", "mvsi-register", "register-player-gone"]);
 let publicKey;
 const verifies = (bytes, signature) => {
   publicKey ??= crypto.createPublicKey({ key: Buffer.from(fs.readFileSync(need("REF_NODE_PUBLIC_KEY"), "utf8").trim(), "base64"), format: "der", type: "spki" });
@@ -102,15 +112,20 @@ async function run(baseUrl, outFile) {
   const disconnect = (pid) => status("PlayerDisconnect", { PlayerId: pid, PlayerIds: [pid] });
 
   const steps = [];
-  async function step(name, setup, calls, { waitMs = 700, games: withGames = false } = {}) {
+  async function step(name, setup, calls, { waitMs = 700, games: withGames = false, connected = [P1, P2, SPEC] } = {}) {
+    if (RELEASE ? !RELEASE_STEPS.has(name) : name === "register-player-gone") return;
     await redis.flushDb();
     await redis.set("refdiff:scratch", "1");
     await db.dropDatabase();
     await setup?.();
-    // A fake game for each player online, so that the TS websocket holds a socket exactly for them.
-    const games = withGames
-      ? await connectPlayers(need("REF_WS_URL"), (await redis.sMembers("online_players")).sort().map((id) => ({ id, token: jwt.sign({ id, profile_id: id, wb_network_id: id }, need("REF_JWT_SECRET")) })))
-      : null;
+    const token = (id) => jwt.sign({ id, profile_id: id, wb_network_id: id }, need("REF_JWT_SECRET"));
+    // A fake game for each player online, so that the TS websocket holds a socket exactly for them; in release mode, the
+    // match's players' and spectator's (P2's from the server's own machine).
+    const games = RELEASE
+      ? await connectPlayers(need("REF_GAMES_URL"), connected.map((id) => ({ id, token: token(id), headers: id === P2 ? {} : { "x-real-ip": IP } })))
+      : withGames
+        ? await connectPlayers(need("REF_WS_URL"), (await redis.sMembers("online_players")).sort().map((id) => ({ id, token: token(id) })))
+        : null;
     if (games) await sleep(200);
     recording = [];
     const started = Date.now();
@@ -123,9 +138,9 @@ async function run(baseUrl, outFile) {
     await sleep(waitMs);
     const lines = recording;
     recording = null;
-    const frames = games && Object.fromEntries((await redis.sMembers("online_players")).sort().map((id) => [id, games.frames(id).filter((f) => !f?.raw)]));
-    // The TS websocket's presence for the fake games (a pong can land in a step) is left out.
-    const all = writes(lines, self).filter((w) => !/^(set|zadd|zrem|del) ovs:instance|^zadd player_heartbeats|^(sadd|srem) online_players|^(zadd|expire) active_ip_accounts:/.test(w))
+    const frames = games && Object.fromEntries((RELEASE ? [...connected].sort() : (await redis.sMembers("online_players")).sort()).map((id) => [id, games.frames(id).filter((f) => !f?.raw)]));
+    // The websocket's presence for the fake games (a pong can land in a step) is left out; the C# gateway's too.
+    const all = writes(lines, self).filter((w) => !/^(set|zadd|zrem|del) ovs:instance|^zadd player_heartbeats|^(sadd|srem) online_players|^(zadd|expire) active_ip_accounts:|^(hset|expire|del) realtime:conn:/.test(w))
       .map((w) => w.replace(/\\(["\\])/g, "$1"));
     const raw = {
       name,
@@ -140,7 +155,8 @@ async function run(baseUrl, outFile) {
         try { message = JSON.parse(text); } catch { message = text; }
         return { channel, message };
       }).filter((p) => CHANNELS.has(p.channel)),
-      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^ovs:instance|^player_heartbeats$|^active_ip_accounts:/.test(k))),
+      // ... and the match flow's own streams (their consumer groups are made again after a flush).
+      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^ovs:instance|^player_heartbeats$|^active_ip_accounts:|^realtime:conn:|^realtime:connections$|^match:launched$|^match:results$/.test(k))),
       lists: Object.fromEntries(await Promise.all([P1, P2, BOT, SPEC].map(async (p) => [p, await redis.lRange(`dll_notifications:${p}`, 0, -1)]))),
       mongo: Object.fromEntries(await Promise.all(["eloratings", "playerstats"].map(async (c) => [c,
         JSON.parse(EJSON.stringify(await db.collection(c).find({}, { promoteValues: false, sort: { account_id: 1 } }).toArray(), { relaxed: false }))]))),
@@ -173,6 +189,8 @@ async function run(baseUrl, outFile) {
     ],
   }), [call("/ovs_register", keyed())]);
   await step("register-no-match-port", () => seed({ noMatch: true }), [call("/ovs_register", keyed())]);
+  // Release mode only: P2's game is gone when the rollback server registers (the spectator's is there).
+  await step("register-player-gone", () => seed(), [call("/ovs_register", keyed())], { connected: [P1, SPEC] });
   await step("register-match-port-zero", () => seed({ match: { rollbackPort: 0 } }), [call("/ovs_register", keyed())]);
   await step("register-p2p-held", () => seed({ p2p: true }), [call("/ovs_register", keyed())]);
   await step("register-p2p-after-relay-asked", async () => { await seed({ p2p: true }); await redis.set(`p2p_relay:${MATCH}`, "1", { EX: 1200 }); }, [call("/ovs_register", keyed())]);
@@ -240,7 +258,7 @@ async function run(baseUrl, outFile) {
 
   monitor.destroy();
   await close();
-  fs.writeFileSync(outFile, JSON.stringify({ baseUrl, ranAt: new Date().toISOString(), steps }, null, 1));
+  fs.writeFileSync(outFile, JSON.stringify({ baseUrl, ranAt: new Date().toISOString(), release: RELEASE, steps }, null, 1));
   console.log(`${steps.length} steps -> ${outFile}`);
 }
 
@@ -299,6 +317,45 @@ function unrated(ts, cs) {
   };
   return { ok, ts: strip(ts), cs: strip(cs) };
 }
+
+// Release mode's decided differences.
+const instanceReady = (f) => f?.cmd === "game-server-instance-ready";
+const RELEASE_EXPECTED = {
+  // A player gone at release (decided 2026-10-06): TS told nobody and left the others waiting on their loading screen; C#
+  // tells nobody either, and shows each game still connected (P1, the spectator) why, then closes it after 5 s.
+  "register-player-gone": {
+    why: "the players still waiting are shown why and closed in C#; TS left them on their loading screen",
+    check: (ts, cs) => {
+      const silent = (run) => Object.values(run.frames).every((f) => f.length === 0);
+      // The normalizer's <now ms> leaves the entry no longer JSON: read as text.
+      const banner = (id) => cs.lists[id]?.length === 1 && cs.lists[id][0].startsWith('{"type":"admin_banner"') && cs.lists[id][0].includes("returned to the title screen");
+      const close = (id) => cs.writes.some((w) => w.startsWith("zadd realtime:due ") && w.includes('"channel":"ws:disconnect"') && w.includes(`"playerId":"${id}"`));
+      const ok = silent(ts) && silent(cs) && banner(P1) && banner(SPEC) && !cs.lists[P2]?.length && close(P1) && close(SPEC) && !close(P2)
+        && Object.values(ts.lists).every((l) => l.length === 0);
+      const strip = (run) => {
+        const o = clone(run);
+        o.lists = {};
+        o.writes = o.writes.filter((w) => !/^(rpush|expire) dll_notifications:|^zadd realtime:due /.test(w));
+        o.state = Object.fromEntries(Object.entries(o.state).filter(([k]) => !k.startsWith("dll_notifications:") && k !== "realtime:due"));
+        return o;
+      };
+      return { ok, ts: strip(ts), cs: strip(cs) };
+    },
+  },
+  // The legacy registry lists the bots (decided 2026-10-06): TS waited for their games too, so a match with a bot never
+  // released anyone; C# waits for the players only and tells each game (players and spectator) as for /ovs_register.
+  "mvsi-register": {
+    why: "a bot is not waited for in C#; TS aborted every match with one",
+    check: (ts, cs) => {
+      const ok = Object.values(ts.frames).every((f) => f.length === 0)
+        && [P1, P2, SPEC].every((id) => cs.frames[id]?.length === 1 && instanceReady(cs.frames[id][0])
+          && cs.frames[id][0].payload.game_server_instance.host !== "127.0.0.1" && cs.frames[id][0].payload.game_server_instance.port === 57003)
+        && new Set([P1, P2, SPEC].map((id) => cs.frames[id][0].payload.game_server_instance.host)).size === 1;
+      const strip = (run) => ({ ...clone(run), frames: {} });
+      return { ok, ts: strip(ts), cs: strip(cs) };
+    },
+  },
+};
 
 const EXPECTED = {
   "disconnect-still-online": { why: "C# also deletes the set's current game (ranked_set_match, its own pointer)", check: pointer },
@@ -402,7 +459,7 @@ function diffRuns(fileA, fileB) {
         console.log(`${name}: ${side} sent a signature that does not verify`);
       }
     }
-    const expected = EXPECTED[name];
+    const expected = (a.release ? RELEASE_EXPECTED : EXPECTED)[name];
     if (expected) {
       const { ok, ts, cs } = expected.check(x, y);
       const rest = ts && cs ? parts(ts, cs) : [];

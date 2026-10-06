@@ -119,6 +119,57 @@ public static class MatchLaunches
 
     /// <summary>An address the TS websocket took for "this machine": its loopback, either family.</summary>
     public static bool IsLoopback(string? ip) => ip is "127.0.0.1" or "::1";
+
+    /// <summary>
+    /// The port of the P2P node on a player's machine: the one their client reported (connections:{player} nodePort),
+    /// else Rollback:P2PNodePort, the fixed port a node takes when it can (the TS nodePortFor).
+    /// </summary>
+    public static async Task<int> NodePortAsync(IDatabase redis, string playerId, RollbackSettings settings)
+    {
+        int node = P2P.ParseNodePort((string?)await redis.HashGetAsync($"connections:{playerId}", "nodePort"));
+        return node > 0 ? node : settings.P2PNodePort;
+    }
+
+    /// <summary>game-server-instance-ready for one player, as the TS websocket's handleGameServerInstanceReady built it.</summary>
+    public static JsonObject GameServerInstanceReady(string matchId, string resultId, JsonNode port, string host) => new()
+    {
+        ["data"] = new JsonObject(),
+        ["payload"] = new JsonObject
+        {
+            ["game_server_instance"] = new JsonObject
+            {
+                ["game_server_type_slug"] = "multiplay",
+                ["port"] = port,
+                ["owner_id"] = matchId,
+                ["host"] = host,
+                ["id"] = resultId,
+            },
+            ["proxied_data"] = null,
+        },
+        ["header"] = "Your game server is ready to join.",
+        ["cmd"] = "game-server-instance-ready",
+    };
+
+    /// <summary>
+    /// A game on its loading screen whose match will not be played: nothing the server sends takes it out of there, so
+    /// it is told why (the OpenVersus client's banner) and its connection, the one open now, is closed after
+    /// <see cref="CloseAfter"/> (the game goes back to its title screen). A game that reconnects meanwhile is left alone;
+    /// without a connection of the gateway's (the TS websocket's), whichever it has is closed.
+    /// </summary>
+    public static async Task CloseAfterBannerAsync(IDatabase redis, TimeProvider time, string playerId)
+    {
+        var request = new JsonObject { ["playerId"] = playerId };
+        if ((string?)await redis.HashGetAsync(GatewayPresence.ConnectionKey(playerId), "id") is { Length: > 0 } connectionId)
+        {
+            request["connectionId"] = connectionId;
+        }
+
+        request["code"] = 1000;
+        request["reason"] = ClosedReason;
+        await PlayerMessages.NotifyClientAsync(redis, playerId, "admin_banner", CancelledTitle, ClosedMessage,
+            new JsonObject { ["timeout"] = 10 }, time.GetUtcNow().ToUnixTimeMilliseconds());
+        await DelayedMessages.ScheduleDisconnectAsync(redis, time, request, CloseAfter);
+    }
 }
 
 /// <summary>
@@ -357,18 +408,7 @@ internal sealed class MatchLaunchStream(IServiceProvider services, IGameplayConf
                 continue;
             }
 
-            // Only the connection open now: a game that reconnects meanwhile is left alone (none named: whichever it has).
-            var request = new JsonObject { ["playerId"] = playerId };
-            if ((string?)await redis.HashGetAsync(GatewayPresence.ConnectionKey(playerId), "id") is { Length: > 0 } connectionId)
-            {
-                request["connectionId"] = connectionId;
-            }
-
-            request["code"] = 1000;
-            request["reason"] = MatchLaunches.ClosedReason;
-            await PlayerMessages.NotifyClientAsync(redis, playerId, "admin_banner", MatchLaunches.CancelledTitle, MatchLaunches.ClosedMessage,
-                new JsonObject { ["timeout"] = 10 }, now);
-            await DelayedMessages.ScheduleDisconnectAsync(redis, time, request, MatchLaunches.CloseAfter);
+            await MatchLaunches.CloseAfterBannerAsync(redis, time, playerId);
             closed.Add(playerId);
         }
 
@@ -382,8 +422,7 @@ internal sealed class MatchLaunchStream(IServiceProvider services, IGameplayConf
     {
         if (p2p)
         {
-            int node = P2P.ParseNodePort((string?)await redis.HashGetAsync($"connections:{playerId}", "nodePort"));
-            return ("127.0.0.1", node > 0 ? node : settings.P2PNodePort);
+            return ("127.0.0.1", await MatchLaunches.NodePortAsync(redis, playerId, settings));
         }
 
         JsonNode port;

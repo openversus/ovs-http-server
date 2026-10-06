@@ -5,6 +5,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Matches;
+using Microsoft.Extensions.Options;
+using OpenVersus.Server.Core.Access;
+using OpenVersus.Server.Core.Realtime;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Tests.Matches;
@@ -74,6 +77,14 @@ public sealed class RollbackCallbacksTests : IAsyncLifetime
                 }
             });
         }
+
+        await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(ProfileNotifications.WsSendChannel), (_, m) =>
+        {
+            if (m.ToString().Contains("00000000000000000016", StringComparison.Ordinal))
+            {
+                _sent.Enqueue((JsonObject)JsonNode.Parse(m.ToString())!);
+            }
+        });
     }
 
     public async Task DisposeAsync()
@@ -92,13 +103,34 @@ public sealed class RollbackCallbacksTests : IAsyncLifetime
         {
             await Db.KeyDeleteAsync(key);
         }
+
+        // realtime:due is shared with other classes: only this class's entries go.
+        foreach (var member in await Db.SortedSetRangeByScoreAsync(DelayedMessages.Key))
+        {
+            if (member.ToString().Contains("00000000000000000016", StringComparison.Ordinal))
+            {
+                await Db.SortedSetRemoveAsync(DelayedMessages.Key, member);
+            }
+        }
     }
 
     private IDatabase Db => _redis!.GetDatabase();
 
-    private RollbackCallbacks Callbacks(Launcher? launcher = null, Signer? signer = null, RollbackSettings? settings = null) =>
-        new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(), launcher ?? new Launcher(), signer ?? new Signer(),
-            new TestOptions<RollbackSettings>(settings ?? new RollbackSettings { UdpServerIp = "203.0.113.5", UdpPort = 41234 }), NullLogger<RollbackCallbacks>.Instance);
+    private RollbackCallbacks Callbacks(Launcher? launcher = null, Signer? signer = null, RollbackSettings? settings = null, bool gateway = false) =>
+        new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!)
+                .AddSingleton<IOptionsMonitor<RealtimeSettings>>(new TestOptions<RealtimeSettings>(new RealtimeSettings { Gateway = gateway })).BuildServiceProvider(),
+            launcher ?? new Launcher(), signer ?? new Signer(),
+            new TestOptions<RollbackSettings>(settings ?? new RollbackSettings { UdpServerIp = "203.0.113.5", UdpPort = 41234, P2PNodePort = 41999 }), TimeProvider.System,
+            NullLogger<RollbackCallbacks>.Instance);
+
+    // What the games were sent through ws:send (Realtime:Gateway on), by player.
+    private readonly ConcurrentQueue<JsonObject> _sent = new();
+
+    private async Task<List<(string Player, JsonObject Message)>> SentAsync(int waitMs = 200)
+    {
+        await Task.Delay(waitMs);
+        return [.. _sent.SelectMany(s => (s["playerIds"] as JsonArray ?? []).Select(id => ((string)id!, (JsonObject)s["message"]!)))];
+    }
 
     private static JsonArray Roster() =>
     [
@@ -224,6 +256,79 @@ public sealed class RollbackCallbacksTests : IAsyncLifetime
         Assert.Matches("^[0-9a-f]{24}$", message["resultId"]!.GetValue<string>());
         // match:{id}'s port (the TS redisGetGamePort), not the notification's.
         Assert.Equal(57005, message["rollbackPort"]!.GetValue<int>());
+    }
+
+    [SkippableFact]
+    public async Task WithTheGatewayEachGameIsToldItsServerHere()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS to run");
+        await SeedAsync();
+        // Both players connected; the spectator is not (not waited for), the bot has no game.
+        await Db.HashSetAsync(GatewayPresence.ConnectionKey(P1), "id", "c1");
+        await Db.HashSetAsync(GatewayPresence.ConnectionKey(P2), "id", "c2");
+        var callbacks = Callbacks(gateway: true);
+
+        await callbacks.ReleaseAsync((await callbacks.RegisterAsync(Body()))!.Ready!);
+
+        Assert.Empty(await PublishedAsync(0));
+        var sent = await SentAsync();
+        Assert.Equal([P1, P2, Spectator], sent.Select(s => s.Player));
+        string id = sent[0].Message["payload"]!["game_server_instance"]!["id"]!.GetValue<string>();
+        Assert.Matches("^[0-9a-f]{24}$", id);
+        // As the TS websocket built it: the relay host (no player-on-this-machine branch) and match:{id}'s port.
+        Assert.All(sent, s => Assert.Equal(
+            $$"""{"data":{},"payload":{"game_server_instance":{"game_server_type_slug":"multiplay","port":57005,"owner_id":"{{Match}}","host":"203.0.113.5","id":"{{id}}"},"proxied_data":null},"header":"Your game server is ready to join.","cmd":"game-server-instance-ready"}""",
+            Js.Stringify(s.Message)));
+    }
+
+    [SkippableFact]
+    public async Task WithTheGatewayAP2PGameIsSentToItsOwnNode()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS to run");
+        await SeedAsync(p2p: true);
+        await Db.HashSetAsync(GatewayPresence.ConnectionKey(P1), "id", "c1");
+        await Db.HashSetAsync(GatewayPresence.ConnectionKey(P2), "id", "c2");
+        await Db.HashSetAsync($"connections:{P1}", "nodePort", "41000");
+
+        await Callbacks(gateway: true).P2PReadyAsync(Body());
+
+        var sent = await SentAsync();
+        Assert.Equal([(P1, "127.0.0.1", 41000), (P2, "127.0.0.1", 41999), (Spectator, "127.0.0.1", 41999)],
+            sent.Select(s => (s.Player, s.Message["payload"]!["game_server_instance"]!["host"]!.GetValue<string>(), s.Message["payload"]!["game_server_instance"]!["port"]!.GetValue<int>())));
+    }
+
+    [SkippableFact]
+    public async Task WithTheGatewayAPlayerGoneReleasesTheOthers()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS to run");
+        await SeedAsync();
+        // P2 is gone; P1 and the spectator are on their loading screens.
+        await Db.HashSetAsync(GatewayPresence.ConnectionKey(P1), "id", "c1");
+        await Db.HashSetAsync(GatewayPresence.ConnectionKey(Spectator), "id", "c4");
+        await Db.StringSetAsync($"player_lobby:{P1}", Id(50));
+        await Db.StringSetAsync($"party_ready:{Id(50)}", "1");
+        var callbacks = Callbacks(gateway: true);
+
+        await callbacks.ReleaseAsync((await callbacks.RegisterAsync(Body()))!.Ready!);
+
+        Assert.Empty(await SentAsync());
+        Assert.Empty(await PublishedAsync(0));
+        Assert.False(await Db.KeyExistsAsync($"party_ready:{Id(50)}"));
+        foreach (string player in new[] { P1, Spectator })
+        {
+            var banner = Js.Parse((string?)await Db.ListGetByIndexAsync($"dll_notifications:{player}", 0) ?? "null")!;
+            Assert.Equal(("admin_banner", MatchLaunches.ClosedMessage), ((string?)banner["type"], (string?)banner["message"]));
+        }
+
+        Assert.False(await Db.KeyExistsAsync($"dll_notifications:{P2}"));
+        var closes = (await Db.SortedSetRangeByScoreAsync(DelayedMessages.Key))
+            .Select(m => Js.Parse(m.ToString()) as JsonObject)
+            .Where(e => (string?)e?["channel"] == GatewayChannels.Disconnect && e!["message"]!.ToJsonString().Contains("00000000000000000016", StringComparison.Ordinal))
+            .Select(e => Js.Stringify(e!["message"])).Order().ToList();
+        Assert.Equal(
+            [$$"""{"playerId":"{{P1}}","connectionId":"c1","code":1000,"reason":"match-cancelled"}""",
+             $$"""{"playerId":"{{Spectator}}","connectionId":"c4","code":1000,"reason":"match-cancelled"}"""],
+            closes);
     }
 
     [SkippableFact]

@@ -156,6 +156,43 @@ public sealed class MatchmakingQueueTests : IAsyncLifetime
         Assert.Empty(await SentAsync());
     }
 
+    [SkippableFact]
+    // A party member's game is gone: the ticket leaves its list for good; the member who is still there is told (the
+    // ticket's request, as their own cancel) instead of being left searching for a ticket that is gone.
+    public async Task ADroppedTicketLeavesItsListAndTheRestOfThePartyIsCancelledAndTold()
+    {
+        Skip.If(_redis is null, "OVS_TEST_REDIS not set");
+        string ticket = Ticket(List, "req-4", P1, P2);
+        await Db.ListRightPushAsync(List, ticket);
+        await Db.HashSetAsync(MatchmakingQueue.QueuedKey, [new(P1, ticket), new(P2, ticket)]);
+
+        Assert.True(await MatchmakingQueue.DropAsync(Db, P1, 1790000001000));
+
+        Assert.Empty(await Db.ListRangeAsync(List));
+        Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, P1));
+        Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, P2));
+        var (player, message) = Assert.Single(await SentAsync());
+        Assert.Equal((P2, """{"data":{},"payload":{"id":"req-4","state":3},"header":"Matchmaking request cancelled.","cmd":"matchmaking-cancel"}"""),
+            (player, Js.Stringify(message)));
+        Assert.Equal(("idle", "idle"), (await StatusAsync(P1), await StatusAsync(P2)));
+    }
+
+    [SkippableFact]
+    // A ticket queued after the game went (the new game's, after a quick login) is not the one to drop.
+    public async Task ATicketQueuedAfterTheGameWentIsKept()
+    {
+        Skip.If(_redis is null, "OVS_TEST_REDIS not set");
+        string ticket = Ticket(List, "req-5", P1);
+        await Db.ListRightPushAsync(List, ticket);
+        await Db.HashSetAsync(MatchmakingQueue.QueuedKey, P1, ticket);
+
+        Assert.False(await MatchmakingQueue.DropAsync(Db, P1, 1789999999000));
+
+        Assert.Equal([ticket], (await Db.ListRangeAsync(List)).Select(v => v.ToString()));
+        Assert.Equal(ticket, (string?)await Db.HashGetAsync(MatchmakingQueue.QueuedKey, P1));
+        Assert.Empty(await SentAsync());
+    }
+
     [Fact]
     public void TheTickNamesTheTicketsRequest()
     {

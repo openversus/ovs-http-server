@@ -17,27 +17,33 @@ namespace OpenVersus.Server.Core.Realtime;
 // once, whatever the number of replicas) and, in the TS order:
 //   1. the party (IPartyService.PlayerDisconnectedAsync): a party of two loses the player; the other is told.
 //   2. the custom lobby (ICustomLobbyService.PlayerDisconnectedAsync): out of it as leave_player_lobby takes a player.
-//   3. their own lobby's records (IPartyService.ForgetLobbyAsync: player_lobby, and a solo lobby).
+//   3. the queue (MatchmakingQueue.DropAsync): the ticket the player held leaves its list, their tick stops, and the rest
+//      of their party is cancelled and told.
 //   4. online_players, unless they are connected again (the gateway keeps it through the post-match window, below).
+//   5. their own lobby's records (IPartyService.ForgetLobbyAsync: player_lobby, and a solo lobby).
+// A replaced event (a newer login took the connection over) drops the ticket too, as the TS websocket's handshake did
+// (dropReplacedTicket), and nothing else.
 //
-// An event is about a connection, and acting on it later must not undo a return. Nothing is done when the player has
-// connected again (realtime:conn:{player}: the gateway deletes it when the current connection closes, so any entry is a
-// newer one) or has logged in again (connections:{player} holds another session's token: /access comes before the
-// websocket, and the event carries the hash of the token its connection was opened with).
+// An event is about a connection, and acting on it later must not undo a return. The lobbies are left alone when the
+// player has connected again (realtime:conn:{player}: the gateway deletes it when the current connection closes, so any
+// entry is a newer one) or has logged in again (connections:{player} holds another session's token: /access comes before
+// the websocket, and the event carries the hash of the token its connection was opened with). The ticket goes whatever
+// happened since, unless it was queued after the event: a game that logs in again is not searching any more.
 //
 // The post-match window (rejoin_pending:{player}, MatchEnd: 45 s in which a party is kept for its players) defers the
-// event: it waits in realtime:disconnects:due until the window closes, then is handled as any other, unless the player
-// came back meanwhile.
+// lobbies: the event waits in realtime:disconnects:due until the window closes, then is handled as any other, unless the
+// player came back meanwhile. The ticket goes at once (the gateway drops the heartbeat at the close for the same reason).
 //
 // Redis, read     realtime:connections (XREADGROUP, group "lobbies", made at the stream's end: events appended before
 //                 the group existed are not replayed against players who are back); realtime:conn:{player} (id);
 //                 connections:{player} (jwt); rejoin_pending:{player} (its TTL)
 // Redis, written  realtime:disconnects:due (ZSET: score the time it is due in ms, member the event as JSON); online_players
-//                 (SREM); the party's and the custom lobby's writes (PartyService, CustomLobbyService)
+//                 (SREM); the party's, the custom lobby's and the queue's writes (PartyService, CustomLobbyService,
+//                 MatchmakingQueue)
 //
-// Not yet (slice 3d): the queue ticket, the session keys (connections:{player}*, player:{player}*, the IP's copy), the
-// match (a dodge, the ranked set's flag: the match flow's reader), connected (the daily toast), replaced (the old
-// ticket), and the players of a gateway node that died without closing its connections.
+// Not yet (slice 3d): the session keys (connections:{player}*, player:{player}*, the IP's copy), the match (a dodge, the
+// ranked set's flag: the match flow's reader), connected (the daily toast), and the players of a gateway node that died
+// without closing its connections.
 //
 // Unlike the TS websocket:
 //   - a close in the post-match window is handled when the window closes, as any other (the other party member is
@@ -45,21 +51,27 @@ namespace OpenVersus.Server.Core.Realtime;
 //   - the custom lobby is found by the player's ssc_custom_lobby_player, then by a SCAN when that is gone; TS read every
 //     stored custom lobby (KEYS) on every disconnect. The leave script is C#'s (CustomLobbyService's header).
 //   - the web custom lobby (custom_lobby_player:{player}) is not left: its pages were retired (docs/REALTIME.md).
+//   - the queue: see MatchmakingQueue's header (the rest of the party is cancelled and told; any list, Casual included).
 
-/// <summary>A disconnected event: the player, the connection that closed, the hash of its session token, and how often handling it failed.</summary>
-internal sealed record Disconnect(string PlayerId, string ConnectionId, string TokenHash, int Failures = 0)
+/// <summary>
+/// A disconnected event: the player, the connection that closed, the hash of its session token, when it closed (ms), and
+/// how often handling it failed.
+/// </summary>
+internal sealed record Disconnect(string PlayerId, string ConnectionId, string TokenHash, long At, int Failures = 0)
 {
     public string ToJson() => Js.Stringify(new JsonObject
     {
         ["player"] = PlayerId,
         ["connection"] = ConnectionId,
         ["token"] = TokenHash,
+        ["at"] = At,
         ["failures"] = Failures,
     });
 
     public static Disconnect? FromJson(string json) =>
         Js.Parse(json) is JsonObject o && o["player"]?.GetValue<string>() is { Length: > 0 } player
-            ? new Disconnect(player, o["connection"]?.GetValue<string>() ?? "", o["token"]?.GetValue<string>() ?? "", o["failures"]?.GetValue<int>() ?? 0)
+            ? new Disconnect(player, o["connection"]?.GetValue<string>() ?? "", o["token"]?.GetValue<string>() ?? "", o["at"]?.GetValue<long>() ?? 0,
+                o["failures"]?.GetValue<int>() ?? 0)
             : null;
 }
 
@@ -211,9 +223,19 @@ internal sealed class LobbyDisconnects(IServiceProvider services, IPartyService 
     {
         try
         {
-            if ((string?)entry["type"] == "disconnected" && (string?)entry["player"] is { Length: > 0 } player)
+            if ((string?)entry["player"] is { Length: > 0 } player)
             {
-                await DisconnectedAsync(redis, new Disconnect(player, (string?)entry["connection"] ?? "", (string?)entry["token"] ?? ""));
+                // No time (never written so): no ticket is older than it, so none is dropped.
+                long at = (long?)entry["at"] ?? 0;
+                switch ((string?)entry["type"])
+                {
+                    case "disconnected":
+                        await DisconnectedAsync(redis, new Disconnect(player, (string?)entry["connection"] ?? "", (string?)entry["token"] ?? "", at));
+                        break;
+                    case "replaced" when await MatchmakingQueue.DropAsync(redis, player, at):
+                        log.LogInformation("Dropped the ticket of {Player}'s replaced connection {Connection}", player, (string?)entry["connection"]);
+                        break;
+                }
             }
 
             await redis.StreamAcknowledgeAsync(StreamKey, Group, entry.Id);
@@ -263,21 +285,24 @@ internal sealed class LobbyDisconnects(IServiceProvider services, IPartyService 
         string player = disconnect.PlayerId;
         if (await BackAsync(redis, disconnect) is { } back)
         {
-            log.LogInformation("Disconnect of {Player} ({Connection}) not cleaned up: {Why}", player, disconnect.ConnectionId, back);
+            await MatchmakingQueue.DropAsync(redis, player, disconnect.At);
+            log.LogInformation("Disconnect of {Player} ({Connection}) not cleaned up but for the ticket: {Why}", player, disconnect.ConnectionId, back);
             return Outcome.Back;
         }
 
         if (await redis.KeyTimeToLiveAsync($"rejoin_pending:{player}") is { } window && window > TimeSpan.Zero)
         {
+            await MatchmakingQueue.DropAsync(redis, player, disconnect.At);
             await redis.SortedSetAddAsync(DueKey, disconnect.ToJson(), (time.GetUtcNow() + window).ToUnixTimeMilliseconds());
-            log.LogInformation("Disconnect of {Player} waits for the end of their post-match window ({Seconds:0.#} s)", player, window.TotalSeconds);
+            log.LogInformation("Disconnect of {Player}: their lobbies wait for the end of their post-match window ({Seconds:0.#} s)", player, window.TotalSeconds);
             return Outcome.Deferred;
         }
 
         await party.PlayerDisconnectedAsync(player);
         await customLobbies.PlayerDisconnectedAsync(player);
-        await party.ForgetLobbyAsync(player);
+        await MatchmakingQueue.DropAsync(redis, player, disconnect.At);
         await redis.ScriptEvaluateAsync(OfflineScript, [GatewayPresence.ConnectionKey(player), GatewayPresence.OnlinePlayers], [player]);
+        await party.ForgetLobbyAsync(player);
         log.LogInformation("Player {Player} disconnected ({Connection}): lobbies cleaned up", player, disconnect.ConnectionId);
         return Outcome.Done;
     }

@@ -20,13 +20,19 @@ namespace OpenVersus.Server.Core.Matches;
 //     the TS handler did nothing without a running tick.
 //   Found (the match flow, when it tells a launched match's players): each player's tick stops, and a player who held a
 //     ticket is set in_match (the TS stopMatchTick wrote it only with a tick running).
+//   Dropped (LobbyDisconnects: the player's game closed, or a newer login replaced its connection): the ticket the player
+//     held, if it was queued before that, leaves its list, their tick stops and they are set idle; the others holding the
+//     same ticket (the rest of the party) are cancelled as by the game's cancel, with the ticket's request id.
 //
 // Redis, written  {matchType} (LREM, RPUSH); player:{id} status; realtime:queued (HSET, HDEL)
 // Redis, read     realtime:conn:{player}; realtime:queued
 // Sent (ws:send)  OnMatchmakerStarted; matchmaking-cancel
 //
 // Unlike the TS websocket: a cancel takes the ticket out of whichever list it is on (TS: 1v1 and 2v2 only, so a Casual
-// ticket outlived a disconnect); a second queueing replaces the tick (TS started a second interval and lost the first).
+// ticket outlived a disconnect); a second queueing replaces the tick (TS started a second interval and lost the first);
+// a party member's dropped ticket is cancelled for the rest of the party, who are told (TS took it off the list and left
+// their games searching for it, ticked every second, until they cancelled); a dropped player is set idle (TS: in_match,
+// then deleted with the player's keys).
 
 /// <summary>A party in a matchmaking queue (see the header of MatchmakingQueue.cs).</summary>
 public static class MatchmakingQueue
@@ -66,7 +72,7 @@ public static class MatchmakingQueue
     }
 
     /// <summary>Cancels the tickets <paramref name="players"/> hold; their games are told <paramref name="cancelId"/>.</summary>
-    public static async Task CancelAsync(IDatabase redis, IEnumerable<string> players, JsonNode cancelId)
+    public static async Task CancelAsync(IDatabase redis, IEnumerable<string> players, JsonNode? cancelId)
     {
         foreach (string player in players.Distinct())
         {
@@ -81,9 +87,47 @@ public static class MatchmakingQueue
             }
 
             await redis.HashDeleteAsync(QueuedKey, player);
-            await PlayerMessages.SendAsync(redis, [player], MatchLauncher.MatchmakingCancelled(cancelId.DeepClone()));
+            await PlayerMessages.SendAsync(redis, [player], MatchLauncher.MatchmakingCancelled(cancelId?.DeepClone()));
             await redis.HashSetAsync($"player:{player}", "status", "idle");
         }
+    }
+
+    /// <summary>
+    /// <paramref name="player"/>'s game is gone, at <paramref name="goneAtMs"/> (its close, or the login that replaced it):
+    /// the ticket they hold, unless it was queued later (the new game's), leaves its list and they are set idle; the rest of
+    /// their party is cancelled (<see cref="CancelAsync"/>). False when they held no such ticket.
+    /// </summary>
+    public static async Task<bool> DropAsync(IDatabase redis, string player, long goneAtMs)
+    {
+        if ((string?)await redis.HashGetAsync(QueuedKey, player) is not { } ticket)
+        {
+            return false;
+        }
+
+        var parsed = Js.Parse(ticket) as JsonObject;
+        if (parsed?["created_at"] is JsonValue created && created.TryGetValue(out long seconds) && seconds * 1000 > goneAtMs)
+        {
+            return false;
+        }
+
+        if (parsed?["matchType"] is JsonValue list && list.TryGetValue(out string? name))
+        {
+            await redis.ListRemoveAsync(name, ticket);
+        }
+
+        await redis.HashDeleteAsync(QueuedKey, player);
+        await redis.HashSetAsync($"player:{player}", "status", "idle");
+        var others = new List<string>();
+        foreach (string other in parsed is null ? [] : PlayersOf(parsed).Where(p => p != player).Distinct())
+        {
+            if ((string?)await redis.HashGetAsync(QueuedKey, other) == ticket)
+            {
+                others.Add(other);
+            }
+        }
+
+        await CancelAsync(redis, others, RequestIdOf(ticket));
+        return true;
     }
 
     /// <summary>A match was found for <paramref name="players"/>: their ticks stop, and those who held a ticket are in_match.</summary>

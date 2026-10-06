@@ -313,7 +313,7 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
     /// matchmaking-cancel, as the TS websocket's cancelMatchMaking sent it: the request it ends (<paramref name="requestId"/>),
     /// state 3. A game searching for that request goes back to the lobby.
     /// </summary>
-    internal static JsonObject MatchmakingCancelled(JsonNode requestId) => new()
+    internal static JsonObject MatchmakingCancelled(JsonNode? requestId) => new()
     {
         ["data"] = new JsonObject(),
         ["payload"] = new JsonObject { ["id"] = requestId, ["state"] = 3 },

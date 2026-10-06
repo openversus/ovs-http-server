@@ -22,7 +22,8 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
     private ConnectionMultiplexer? _redis;
 
     // Ids no real player has; every key a test makes holds one of them.
-    private const string Player = "0000000000000000000e0001", Connection = "0000000000000000000e0c01";
+    private const string Player = "0000000000000000000e0001", Partner = "0000000000000000000e0002", Connection = "0000000000000000000e0c01";
+    private const string Queue = "2v2";
     private const string Stream = "realtime:connections:0000000000000000000e", Due = "realtime:disconnects:due:0000000000000000000e";
     private const string Token = "the-session-token";
 
@@ -100,6 +101,14 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
         }
 
         await _redis.GetDatabase().SetRemoveAsync(GatewayPresence.OnlinePlayers, Player);
+        await _redis.GetDatabase().HashDeleteAsync(MatchmakingQueue.QueuedKey, [Player, Partner]);
+        foreach (var raw in await _redis.GetDatabase().ListRangeAsync(Queue))
+        {
+            if (raw.ToString().Contains("0000000000000000000e", StringComparison.Ordinal))
+            {
+                await _redis.GetDatabase().ListRemoveAsync(Queue, raw);
+            }
+        }
     }
 
     private IDatabase Db => _redis!.GetDatabase();
@@ -108,11 +117,34 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
         _lobbies, _lobbies, TimeProvider.System, NullLogger<LobbyDisconnects>.Instance)
     { StreamKey = Stream, DueKey = Due };
 
-    private static Disconnect Closed(string token = Token) => new(Player, Connection, GatewayPresence.TokenHash(token));
+    // A close now; a ticket queued a minute before it.
+    private static readonly long s_closedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+    private static Disconnect Closed(string token = Token) => new(Player, Connection, GatewayPresence.TokenHash(token), s_closedAt);
 
     // As the gateway appends it (GatewayPresence.ClosedAsync), for the session /access left.
     private Task AppendAsync(string type) => Db.StreamAddAsync(Stream,
-        [new("type", type), new("player", Player), new("connection", Connection), new("at", 1), new("node", "test"), new("ip", ""), new("token", GatewayPresence.TokenHash(Token))]);
+        [new("type", type), new("player", Player), new("connection", Connection), new("at", s_closedAt), new("node", "test"), new("ip", ""), new("token", GatewayPresence.TokenHash(Token))]);
+
+    // The player and their partner queued as a party, a minute before the close (MatchmakingQueue.QueueAsync).
+    private async Task<string> QueuedAsync()
+    {
+        string ticket = Js.Stringify(new JsonObject
+        {
+            ["created_at"] = s_closedAt / 1000 - 60,
+            ["matchType"] = Queue,
+            ["partyLeaderId"] = Player,
+            ["matchmakingRequestId"] = "0000000000000000000e0800",
+            ["players"] = new JsonArray(new JsonObject { ["id"] = Player }, new JsonObject { ["id"] = Partner }),
+        });
+        await Db.ListRightPushAsync(Queue, ticket);
+        await Db.HashSetAsync(MatchmakingQueue.QueuedKey, [new(Player, ticket), new(Partner, ticket)]);
+        return ticket;
+    }
+
+    private async Task<bool> TicketGoneAsync() =>
+        !await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Player) && !await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Partner)
+        && !(await Db.ListRangeAsync(Queue)).Any(t => t.ToString().Contains(Player, StringComparison.Ordinal));
 
     private Task SessionAsync(string token = Token) => Db.HashSetAsync($"connections:{Player}", "jwt", token);
 
@@ -280,5 +312,49 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
         await Db.SortedSetAddAsync(Due, again.Element, 0);
         Assert.Equal(1, await reader.SweepAsync(Db));
         Assert.Equal(s_cleaned, _lobbies.Calls);
+    }
+
+    [Fact]
+    // A newer login took the connection over (the game was relaunched): its old ticket goes, as the TS websocket's
+    // handshake dropped it; the lobbies are the new login's.
+    public async Task AReplacedConnectionDropsItsTicketAndNothingElse()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        var reader = Reader();
+        await reader.EnsureGroupAsync(Db);
+        await QueuedAsync();
+
+        await AppendAsync("replaced");
+        Assert.Equal(1, await reader.ReadAsync(Db));
+
+        Assert.True(await TicketGoneAsync());
+        Assert.Empty(_lobbies.Calls);
+    }
+
+    [Fact]
+    // The lobbies stay with a player who came back, but not the search their old game was in: a login starts at the
+    // title. So too in the post-match window, where the lobbies wait.
+    public async Task TheTicketGoesEvenWhenTheLobbiesStay()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await SessionAsync("a-newer-session-token");
+        await QueuedAsync();
+        Assert.Equal(LobbyDisconnects.Outcome.Back, await Reader().DisconnectedAsync(Db, Closed()));
+        Assert.True(await TicketGoneAsync());
+
+        await SessionAsync();
+        await QueuedAsync();
+        await Db.StringSetAsync($"rejoin_pending:{Player}", "1", TimeSpan.FromSeconds(45));
+        Assert.Equal(LobbyDisconnects.Outcome.Deferred, await Reader().DisconnectedAsync(Db, Closed()));
+        Assert.True(await TicketGoneAsync());
+        Assert.Empty(_lobbies.Calls);
     }
 }

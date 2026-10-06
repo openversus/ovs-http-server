@@ -20,9 +20,10 @@ namespace OpenVersus.Server.Core.Realtime;
 //                 disconnected also node, ip, token (its SHA-256); replaced also replacedBy)
 // Redis, read     rejoin_pending:{player} (MatchEnd: while it lives, a close keeps the player online and their IP's
 //                 session, as the TS websocket's pendingRejoin did, for the party's rejoin, which reads online_players;
-//                 what happens at its expiry is the disconnect consumer's. The heartbeat goes all the same, unlike TS:
-//                 only the matchmaker reads it, and the game keeps one socket for its whole session, so a close in that
-//                 window is a game that is gone, whose party's ticket is dropped at once instead of 41 s later)
+//                 at its expiry LobbyDisconnects takes a player who did not come back offline. The heartbeat goes all
+//                 the same, unlike TS: only the matchmaker reads it, and the game keeps one socket for its whole
+//                 session, so a close in that window is a game that is gone, whose party's ticket is dropped at once
+//                 instead of 41 s later)
 // Published       ws:disconnect {playerId, except, code, reason} when a connection replaces one (the node holding the
 //                 old one closes it; the TS websocket left a replaced socket open and stopped pinging it)
 //

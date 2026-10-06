@@ -40,6 +40,7 @@ public sealed class RematchesTests : IAsyncLifetime
         public Task<JsonObject> AnswerAsync(string route, PartyRequest request, CancellationToken ct) => throw new NotSupportedException();
         public Task<JsonObject?> SharedAsync(string route, PartyRequest request, string lobbyId, CancellationToken ct) => throw new NotSupportedException();
         public Task<JsonObject?> ByCodeAsync(string code, CancellationToken ct) => throw new NotSupportedException();
+        public Task PlayerDisconnectedAsync(string playerId) => throw new NotSupportedException();
     }
 
     private sealed class Launcher : IMatchLauncher

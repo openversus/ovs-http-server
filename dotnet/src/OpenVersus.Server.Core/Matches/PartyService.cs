@@ -43,6 +43,9 @@ namespace OpenVersus.Server.Core.Matches;
 // is never refused. A custom lobby's or a rift lobby's ready is not gated: starting its match is (in a rift lobby the game
 // does not back out of a refused ready; it waits on its loading screen).
 //
+// A player whose game is gone leaves their party as the TS websocket's close took them out of it (PlayerDisconnectedAsync,
+// then ForgetLobbyAsync), called by the lobbies' reader of the realtime gateway's disconnects (Realtime/LobbyDisconnects.cs).
+//
 // Differences from the TS server, none on the wire:
 //   - lobby_id is written to the session as one field; the TS server read the whole session and wrote it all back,
 //     losing a change made in between (a GameplayPreferences update, say).
@@ -76,6 +79,16 @@ public interface IPartyService
     Task<JsonObject> SetNotJoinableAsync(PartyRequest request, CancellationToken ct = default);
     Task<JsonObject> SetReadyAsync(PartyRequest request, CancellationToken ct = default);
     Task<JsonObject> LockLoadoutAsync(PartyRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// The player's game is gone (LobbyDisconnects): a party of two loses them. The other is told (PlayerLeftLobby) and
+    /// the ready set goes; the owner gone, the lobby goes and the other gets a solo lobby to join; the other gone, the
+    /// owner keeps the lobby, alone. Nothing for a solo lobby (<see cref="ForgetLobbyAsync"/>).
+    /// </summary>
+    Task PlayerDisconnectedAsync(string playerId);
+
+    /// <summary>After a disconnect: the player's player_lobby goes, and their place in that lobby (the lobby too, when it is left empty).</summary>
+    Task ForgetLobbyAsync(string playerId);
 }
 
 internal sealed class PartyService(IServiceProvider services, ICosmeticsService cosmetics, IFunFacts funFacts, IClientUpdateGate gate, IOptionsMonitor<LobbySettings> settings,
@@ -445,28 +458,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             await redis.KeyDeleteAsync($"party_ready:{named}");
             if (left.PlayerIds.Count > 0)
             {
-                // This one message has its payload and its last two keys the other way round (shared.routes.ts).
-                await PlayerMessages.SendAsync(redis, left.PlayerIds, new JsonObject
-                {
-                    ["data"] = new JsonObject
-                    {
-                        ["MatchID"] = named,
-                        ["template_id"] = "PlayerLeftLobby",
-                        ["Player"] = new JsonObject
-                        {
-                            ["Account"] = new JsonObject { ["id"] = me },
-                            ["LobbyPlayerIndex"] = 0,
-                            ["JoinedAt"] = LobbyDocuments.Date(Now()),
-                            ["BotSettingSlug"] = "",
-                            ["CrossplayPreference"] = 1,
-                        },
-                        ["ReadyPlayers"] = new JsonObject(),
-                        ["NewLeader"] = left.PlayerIds[0],
-                    },
-                    ["payload"] = new JsonObject { ["custom_notification"] = "realtime", ["match"] = new JsonObject { ["id"] = named } },
-                    ["cmd"] = "update",
-                    ["header"] = "",
-                });
+                await PlayerMessages.SendAsync(redis, left.PlayerIds, PlayerLeftNotice(named, me, left.PlayerIds[0]));
             }
 
             string soloId = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(12));
@@ -543,6 +535,110 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             await PlayerMessages.NotifyClientAsync(redis, pid, "party_left", "Party Update", pid == leaving ? "Returning to solo lobby" : "Your party member left",
                 new JsonObject { ["newLobbyId"] = solo.Id }, NowMs());
         }
+    }
+
+    // A party member left (leave_player_lobby, a disconnect): to the players left, with who leads now. The payload's keys
+    // and the last two come in this order here (shared.routes.ts and the websocket's close alike), not Update's.
+    private JsonObject PlayerLeftNotice(string lobbyId, string playerId, string newLeader) => new()
+    {
+        ["data"] = new JsonObject
+        {
+            ["MatchID"] = lobbyId,
+            ["template_id"] = "PlayerLeftLobby",
+            ["Player"] = new JsonObject
+            {
+                ["Account"] = new JsonObject { ["id"] = playerId },
+                ["LobbyPlayerIndex"] = 0,
+                ["JoinedAt"] = LobbyDocuments.Date(Now()),
+                ["BotSettingSlug"] = "",
+                ["CrossplayPreference"] = 1,
+            },
+            ["ReadyPlayers"] = new JsonObject(),
+            ["NewLeader"] = newLeader,
+        },
+        ["payload"] = new JsonObject { ["custom_notification"] = "realtime", ["match"] = new JsonObject { ["id"] = lobbyId } },
+        ["cmd"] = "update",
+        ["header"] = "",
+    };
+
+    // ── A disconnect (LobbyDisconnects; the TS websocket's handleDisconnect) ─────────────────────────────────────────────
+
+    // The party disband of the TS close (websocket.ts 422-509). Unlike a leave (GenuineLeaveAsync), the owner who is gone
+    // does not keep the lobby, and no party_left notice is pushed: the other game is told PlayerLeftLobby.
+    public async Task PlayerDisconnectedAsync(string playerId)
+    {
+        var redis = Redis();
+        if ((string?)await redis.StringGetAsync($"player_lobby:{playerId}") is not { Length: > 0 } lobbyId
+            || await LobbyAsync(redis, lobbyId) is not { } lobby || lobby.PlayerIds.Count <= 1)
+        {
+            return;
+        }
+
+        var others = lobby.PlayerIds.Where(p => p != playerId).ToList();
+        if (others.Count == 0)
+        {
+            // The player twice and nobody else: a solo lobby (ForgetLobbyAsync). TS told nobody, NewLeader undefined.
+            return;
+        }
+
+        log.LogInformation("Player {Player} disconnected from party lobby {Lobby}: disbanding it; remaining: [{Others}]", playerId, lobbyId, string.Join(", ", others));
+        await PlayerMessages.SendAsync(redis, others, PlayerLeftNotice(lobbyId, playerId, others[0]));
+        await redis.KeyDeleteAsync($"party_ready:{lobbyId}");
+        if (playerId == lobby.OwnerId)
+        {
+            await redis.KeyDeleteAsync($"lobby:{lobbyId}");
+            await redis.KeyDeleteAsync($"player_lobby:{playerId}");
+            foreach (string pid in others)
+            {
+                // Each on its own, as there: one player's failure does not cost the others their lobby.
+                try
+                {
+                    var solo = await NewLobbyAsync(redis, pid, await HashAsync(redis, $"connections:{pid}"));
+                    await redis.StringSetAsync($"pending_join_lobby:{pid}", solo.Id, TimeSpan.FromSeconds(60));
+                }
+                catch (Exception e) when (e is RedisException or TimeoutException)
+                {
+                    log.LogError("Creating a solo lobby for {Player} after {Owner} disconnected: {Error}", pid, playerId, e.Message);
+                }
+            }
+        }
+        else
+        {
+            // Every other member goes, not only this one: a party has two (InviteAsync refuses a third).
+            lobby.PlayerIds.Clear();
+            lobby.PlayerIds.Add(lobby.OwnerId);
+            lobby.Mode = "1v1";
+            await SaveLobbyAsync(redis, lobby);
+            await redis.KeyDeleteAsync($"player_lobby:{playerId}");
+            await redis.StringSetAsync($"pending_join_lobby:{lobby.OwnerId}", lobbyId, TimeSpan.FromSeconds(60));
+        }
+    }
+
+    // redisCleanupPlayerLobby (websocket.ts 690). Its lobby_redirect:{lobby} DEL is not ported: nothing writes that key
+    // (redisSaveLobbyRedirect has no caller).
+    public async Task ForgetLobbyAsync(string playerId)
+    {
+        var redis = Redis();
+        if ((string?)await redis.StringGetAsync($"player_lobby:{playerId}") is not { Length: > 0 } lobbyId)
+        {
+            return;
+        }
+
+        await redis.KeyDeleteAsync($"player_lobby:{playerId}");
+        if (await LobbyAsync(redis, lobbyId) is { } lobby)
+        {
+            lobby.PlayerIds.RemoveAll(p => p == playerId);
+            if (lobby.PlayerIds.Count == 0)
+            {
+                await redis.KeyDeleteAsync($"lobby:{lobbyId}");
+            }
+            else
+            {
+                await SaveLobbyAsync(redis, lobby);
+            }
+        }
+
+        log.LogInformation("Cleaned up lobby data for disconnected player {Player}", playerId);
     }
 
     // ── set_lobby_not_joinable (matchmaking starts: a stale join must fail) ──────────────────────────────────────────

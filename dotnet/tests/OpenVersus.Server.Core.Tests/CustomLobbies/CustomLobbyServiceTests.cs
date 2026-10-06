@@ -401,4 +401,67 @@ public sealed class CustomLobbyServiceTests : IAsyncLifetime
         Assert.Throws<UnknownGameModeException>(() => GameModes.DefaultSettings("classic_game_mode"));
         Assert.Throws<UnknownGameModeException>(() => GameModes.DefaultSettings("gm_not_a_mode"));
     }
+
+    // What ws:send carries for these players (the channel is global: the messages are filtered to this test's ids).
+    private async Task<ConcurrentQueue<JsonObject>> ListenAsync()
+    {
+        var heard = new ConcurrentQueue<JsonObject>();
+        await _redis!.GetSubscriber().SubscribeAsync(RedisChannel.Literal("ws:send"), (_, message) =>
+        {
+            if (JsonNode.Parse(message.ToString()) is JsonObject sent && sent["playerIds"]!.ToJsonString().Contains("0000000000000000000e"))
+            {
+                heard.Enqueue(sent);
+            }
+        });
+        return heard;
+    }
+
+    [Fact]
+    // A player whose game is gone leaves as leave_player_lobby takes them, without the solo lobby (the TS close's
+    // leaveLobby(lobby, player, false)). Their pointer goes with them: a later login's create_party_lobby was answered
+    // this lobby, and the game hung at "Creating Lobby".
+    public async Task ADisconnectedPlayerLeavesTheLobbyTheirPointerNames()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        var heard = await ListenAsync();
+        await SeedAsync("Duos", (0, Leader, Player(Leader, "2026-10-01T10:00:00.000Z")), (1, Guest, Player(Guest, "2026-10-01T10:00:01.000Z")));
+        await Db.StringSetAsync($"ssc_custom_lobby_player:{Guest}", Lobby);
+
+        await Service().PlayerDisconnectedAsync(Guest);
+
+        Assert.DoesNotContain(Members(await StoredAsync()), m => m.Id == Guest);
+        Assert.False(await Db.KeyExistsAsync($"ssc_custom_lobby_player:{Guest}"));
+        JsonObject? told = null;
+        for (int i = 0; i < 50 && !heard.TryPeek(out told); i++)
+        {
+            await Task.Delay(50);
+        }
+
+        Assert.NotNull(told);
+        Assert.Equal(Leader, told["playerIds"]!.AsArray().Single()!.GetValue<string>());
+        Assert.Equal("PlayerLeftLobby", told["message"]!["data"]!["template_id"]!.GetValue<string>());
+    }
+
+    [Fact]
+    // The pointer lives 20 minutes from a match's start: a player still in the lobby after that is found among the stored
+    // lobbies, as the TS close found every player. A player in no lobby changes nothing.
+    public async Task ADisconnectedPlayerWithoutAPointerIsFoundInTheStoredLobbies()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await SeedAsync("Duos", (0, Leader, Player(Leader, "2026-10-01T10:00:00.000Z")), (1, Guest, Player(Guest, "2026-10-01T10:00:01.000Z")));
+
+        await Service().PlayerDisconnectedAsync(Third);
+        Assert.Equal(2, Counted(await StoredAsync()));
+
+        await Service().PlayerDisconnectedAsync(Guest);
+        Assert.Equal([(0, Leader)], Members(await StoredAsync()));
+    }
 }

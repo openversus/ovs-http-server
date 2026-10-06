@@ -58,8 +58,9 @@ namespace OpenVersus.Server.Core.CustomLobbies;
 //     outside any script.
 //   - a rematch starts only while a player (not a bot) is left in the lobby's teams 0-3 (RematchAsync, Rematches); the
 //     TS server started one with nobody to play it, and the game waited forever.
-// Not yet: a player who disconnects is taken out of their lobby by the TS websocket with the TS leave script (the old
-// succession); that moves with the websocket.
+// A player whose game is gone is taken out of their lobby as leave_player_lobby takes them (PlayerDisconnectedAsync,
+// called by the lobbies' reader of the realtime gateway's disconnects, Realtime/LobbyDisconnects.cs), with this leave
+// script; with the TS websocket in place of the gateway, the TS close does it with the TS script (the old succession).
 // Kept as the TS server has them, on purpose: who counts toward bAllPlayersReady (spectators' flags count, spectators
 // are not in the total, bots are and never ready), LobbyPlayerIndex (the count at join: it can repeat after a leave; it
 // is the lobby screen's, the match's player indexes are worked out at the start), and the start's player indexes and
@@ -93,6 +94,13 @@ public interface ICustomLobbyService
     /// (no lobby, no player but bots left in teams 0-3, a client that must update, no rollback port).
     /// </summary>
     Task<bool> RematchAsync(string lobbyId, CancellationToken ct = default);
+
+    /// <summary>
+    /// The player's game is gone (LobbyDisconnects): out of their custom lobby as leave_player_lobby takes them (the others
+    /// told), without the solo lobby that route answers. The lobby is the one their ssc_custom_lobby_player names, else
+    /// the first stored lobby that holds them.
+    /// </summary>
+    Task PlayerDisconnectedAsync(string playerId);
 
     /// <summary>The routes <see cref="AnswerAsync"/> answers.</summary>
     static readonly IReadOnlyList<string> Routes =
@@ -880,6 +888,56 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
         await redis.KeyDeleteAsync(PlayerKey(me));
         var solo = await BaseLobbyAsync(redis, me);
         solo["ModeString"] = "1v1";
+        await LeaveLobbyAsync(redis, lobbyId, lobby, me);
+        return solo;
+    }
+
+    // A disconnect (the TS close's leaveLobby(lobbyId, playerId, false), websocket.ts 625-639). The TS close read every
+    // stored lobby (KEYS) for one holding the player; the pointer finds it first, and the search (SCAN) is kept for a
+    // player whose pointer is gone while they are still in the lobby (it lives 20 minutes from a match's start).
+    public async Task PlayerDisconnectedAsync(string playerId)
+    {
+        var redis = Redis();
+        string? lobbyId = await redis.StringGetAsync(PlayerKey(playerId));
+        var lobby = lobbyId is { Length: > 0 } ? await GetLobbyAsync(redis, lobbyId) : null;
+        if (lobby is null && await FindLobbyHoldingAsync(playerId) is { } found)
+        {
+            (lobbyId, lobby) = (found, await GetLobbyAsync(redis, found));
+        }
+
+        if (lobby is null)
+        {
+            return;
+        }
+
+        log.LogInformation("Removing disconnected player {Player} from custom lobby {Lobby}", playerId, lobbyId);
+        await redis.KeyDeleteAsync(PlayerKey(playerId));
+        await LeaveLobbyAsync(redis, lobbyId!, lobby, playerId);
+    }
+
+    // The first stored lobby whose JSON holds the id, as the TS close looked (raw.includes); null when none does.
+    private async Task<string?> FindLobbyHoldingAsync(string playerId)
+    {
+        var multiplexer = services.GetRequiredService<IConnectionMultiplexer>();
+        var redis = multiplexer.GetDatabase();
+        foreach (var server in multiplexer.GetServers().Where(s => s.IsConnected && !s.IsReplica))
+        {
+            await foreach (var key in server.KeysAsync(redis.Database, LobbyKey("*"), pageSize: 1000))
+            {
+                if ((string?)await redis.StringGetAsync(key) is { } raw && raw.Contains(playerId, StringComparison.Ordinal))
+                {
+                    return key.ToString()["custom_lobby_ssc:".Length..];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    // Out of the lobby, its pointer already gone: the leave script and the others told, or, a lobby that never got its
+    // match_config, the lobby goes (leaveLobby).
+    private async Task LeaveLobbyAsync(IDatabase redis, string lobbyId, JsonObject lobby, string me)
+    {
         if (lobby["match_config"] is JsonObject)
         {
             var result = await EvalAsync(redis, "leave_custom_lobby", [LobbyKey(lobbyId)], [me]);
@@ -904,8 +962,6 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
         {
             await redis.KeyDeleteAsync(LobbyKey(lobbyId));
         }
-
-        return solo;
     }
 
     /// <summary>invite_to_player_lobby: the invite, to the invited player.</summary>

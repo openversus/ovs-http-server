@@ -390,4 +390,103 @@ public sealed class PartyServiceTests : IAsyncLifetime
         await Service().SetModeAsync(Asking(Owner, """{"ModeString": "1v1"}"""));
         Assert.Equal(Lobby, (string?)await Db.HashGetAsync($"connections:{ip}", "lobby_id"));
     }
+
+    [Fact]
+    // The TS close (websocket.ts 422-509): with the owner's game gone the lobby goes; the other is told, gets a solo lobby
+    // and is sent to it (pending_join_lobby). Unlike a leave, no party_left notice.
+    public async Task WhenTheOwnersGameIsGoneThePartyEndsAndTheOtherIsGivenALobby()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        var heard = await ListenAsync();
+        await SeedLobbyAsync(Owner, Guest);
+        await Db.StringSetAsync($"player_lobby:{Owner}", Lobby);
+        await Db.StringSetAsync($"player_lobby:{Guest}", Lobby);
+        await Db.SetAddAsync($"party_ready:{Lobby}", Guest);
+
+        await Service().PlayerDisconnectedAsync(Owner);
+
+        Assert.False(await Db.KeyExistsAsync($"lobby:{Lobby}"));
+        Assert.False(await Db.KeyExistsAsync($"player_lobby:{Owner}"));
+        Assert.False(await Db.KeyExistsAsync($"party_ready:{Lobby}"));
+        string solo = (string?)await Db.StringGetAsync($"pending_join_lobby:{Guest}") ?? "";
+        try
+        {
+            Assert.NotEqual("", solo);
+            Assert.NotEqual(Lobby, solo);
+            Assert.Equal(solo, (string?)await Db.StringGetAsync($"player_lobby:{Guest}"));
+            Assert.Contains(Guest, await LobbyJson(solo));
+            var told = await Eventually(() => heard.TryPeek(out var m) ? m : null);
+            Assert.Equal(Guest, told["playerIds"]!.AsArray().Single()!.GetValue<string>());
+            Assert.Equal("PlayerLeftLobby", told["message"]!["data"]!["template_id"]!.GetValue<string>());
+            Assert.Equal(Owner, told["message"]!["data"]!["Player"]!["Account"]!["id"]!.GetValue<string>());
+            Assert.Equal(Guest, told["message"]!["data"]!["NewLeader"]!.GetValue<string>());
+            Assert.Equal(["data", "payload", "cmd", "header"], told["message"]!.AsObject().Select(e => e.Key));
+            Assert.False(await Db.KeyExistsAsync($"dll_notifications:{Guest}"));
+        }
+        finally
+        {
+            await Db.KeyDeleteAsync($"lobby:{solo}");
+        }
+    }
+
+    [Fact]
+    // The other's game gone: the owner keeps the lobby, alone, and is sent back to it.
+    public async Task WhenTheOthersGameIsGoneTheOwnerKeepsTheLobbyAlone()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        var heard = await ListenAsync();
+        await SeedLobbyAsync(Owner, Guest);
+        await Db.StringSetAsync($"player_lobby:{Owner}", Lobby);
+        await Db.StringSetAsync($"player_lobby:{Guest}", Lobby);
+
+        await Service().PlayerDisconnectedAsync(Guest);
+
+        var lobby = (JsonObject)JsonNode.Parse(await LobbyJson(Lobby))!;
+        Assert.Equal([Owner], lobby["playerIds"]!.AsArray().Select(p => p!.GetValue<string>()));
+        Assert.Equal("1v1", lobby["mode"]!.GetValue<string>());
+        Assert.False(await Db.KeyExistsAsync($"player_lobby:{Guest}"));
+        Assert.Equal(Lobby, (string?)await Db.StringGetAsync($"player_lobby:{Owner}"));
+        Assert.Equal(Lobby, (string?)await Db.StringGetAsync($"pending_join_lobby:{Owner}"));
+        var told = await Eventually(() => heard.TryPeek(out var m) ? m : null);
+        Assert.Equal(Owner, told["playerIds"]!.AsArray().Single()!.GetValue<string>());
+        Assert.Equal(Owner, told["message"]!["data"]!["NewLeader"]!.GetValue<string>());
+    }
+
+    [Fact]
+    // Both games gone (both closed in a post-match window, say, handled one after the other when it ends), in either
+    // order: nothing of the party is left.
+    public async Task WhenBothGamesAreGoneNothingOfThePartyIsLeft()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        foreach (var (first, second) in new[] { (Owner, Guest), (Guest, Owner) })
+        {
+            await SeedLobbyAsync(Owner, Guest);
+            await Db.StringSetAsync($"player_lobby:{Owner}", Lobby);
+            await Db.StringSetAsync($"player_lobby:{Guest}", Lobby);
+            var party = Service();
+
+            await party.PlayerDisconnectedAsync(first);
+            await party.ForgetLobbyAsync(first);
+            string? solo = await Db.StringGetAsync($"player_lobby:{second}");
+            await party.PlayerDisconnectedAsync(second);
+            await party.ForgetLobbyAsync(second);
+
+            Assert.False(await Db.KeyExistsAsync($"lobby:{Lobby}"));
+            Assert.False(await Db.KeyExistsAsync($"player_lobby:{first}"));
+            Assert.False(await Db.KeyExistsAsync($"player_lobby:{second}"));
+            Assert.False(await Db.KeyExistsAsync($"lobby:{solo}"));
+        }
+    }
 }

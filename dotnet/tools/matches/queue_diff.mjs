@@ -123,8 +123,9 @@ async function run(baseUrl, outFile) {
   const rating = (pid, fields) => db.collection("eloratings").insertOne({ account_id: pid, username: "", elo_1v1: 1000, elo_2v2: 1000, wins_1v1: 0, losses_1v1: 0, wins_2v2: 0, losses_2v2: 0, ...fields });
 
   const steps = [];
+  // `path` is the route the step calls, or what the step does instead (a function: the answer is what it returns).
   async function step(name, path, pid, body, setup) {
-    if (!GAMES && name === "queued-then-cancelled") return;
+    if (!GAMES && (name === "queued-then-cancelled" || name === "queued-then-dropped")) return;
     games.close();
     await sleep(500);
     if (!GAMES) {
@@ -142,7 +143,7 @@ async function run(baseUrl, outFile) {
     games.clear();
     recording = [];
     const started = Date.now();
-    const answer = await call(baseUrl, path, pid, body);
+    const answer = typeof path === "function" ? await path() : await call(baseUrl, path, pid, body);
     // The ticket is published after the answer; the websocket then sends and pushes.
     await sleep(900);
     const lines = GAMES ? recording : recording.filter((l) => l.match(/\[\d+ ([^\]]+)\]/)?.[1] !== wsAddr);
@@ -224,6 +225,14 @@ async function run(baseUrl, outFile) {
     await call(baseUrl, request("2v2-retail"), P1, REQUEST);
     await sleep(900);
   });
+  // Gateway mode only: a queued party whose second player's game goes away (the TS websocket's close, the C# gateway's
+  // disconnect and the lobbies' reader of it).
+  await step("queued-then-dropped", async () => { await games.drop([P2]); return { status: "dropped" }; }, P1, undefined, async () => {
+    await everyone();
+    await lobby([P1, P2]);
+    await call(baseUrl, request("2v2-retail"), P1, REQUEST);
+    await sleep(900);
+  });
 
   games.close();
   monitor.destroy();
@@ -269,6 +278,27 @@ const EXPECTED = {
     holds: (ts, cs) => JSON.stringify(sorted(ts)) === JSON.stringify(sorted(cs))
       && ["status", "type", "bytes", "answer", "frames", "ticked", "state", "queues", "eloratings"].every((p) => JSON.stringify(ts[p]) === JSON.stringify(cs[p]))
       && Object.values(cs.frames).flat().filter((f) => f?.cmd === "matchmaking-cancel").length === 2,
+  },
+  "queued-then-dropped": {
+    why: "gateway mode, a queued party's second game drops: both take the party apart (PlayerLeftLobby to the leader) and the ticket off its list; TS then deletes the dropped player's session keys (C#: a later 3d item) and leaves the leader's game searching, ticked every second, for the ticket it removed; C# cancels it for the leader (matchmaking-cancel with the request's id, set idle) and stops its tick; the dropped player is set idle (TS: in_match, then deleted)",
+    holds: (ts, cs) => {
+      const mine = (w) => new RegExp(`^del (connections|player):${P2}`).test(w) || w === `hset player:${P2} status in_match`
+        || w === `hset player:${P2} status idle` || w === `hset player:${P1} status idle`;
+      const cancels = (f) => f?.cmd === "matchmaking-cancel";
+      const keep = (state) => Object.fromEntries(Object.entries(state).filter(([k]) => !k.startsWith(`connections:${P2}`) && !k.startsWith(`player:${P2}`) && k !== `player:${P1}`));
+      const p1 = (state) => { const { status, ...rest } = state[`player:${P1}`]?.value ?? {}; return [status, JSON.stringify(rest)]; };
+      return JSON.stringify(ts.writes.filter((w) => !mine(w))) === JSON.stringify(cs.writes.filter((w) => !mine(w)))
+        && ts.writes.includes(`hset player:${P2} status in_match`) && ts.writes.some((w) => w.startsWith(`del connections:${P2}`))
+        && cs.writes.includes(`hset player:${P2} status idle`) && cs.writes.includes(`hset player:${P1} status idle`)
+        && ts.queues["2v2"].length === 0 && cs.queues["2v2"].length === 0
+        && ts.ticked[P1].length === 1 && cs.ticked[P1].length === 0
+        && JSON.stringify(ts.frames[P1]) === JSON.stringify(cs.frames[P1].filter((f) => !cancels(f)))
+        && cs.frames[P1].filter(cancels).length === 1 && JSON.stringify(cs.frames[P1].find(cancels).payload) === JSON.stringify({ id: ts.ticked[P1][0] && JSON.parse(ts.ticked[P1][0]).id, state: 3 })
+        && p1(ts.state)[0] === "queued" && p1(cs.state)[0] === "idle" && p1(ts.state)[1] === p1(cs.state)[1]
+        && JSON.stringify(keep(ts.state)) === JSON.stringify(keep(cs.state))
+        && JSON.stringify({ ...ts.frames, [P1]: null }) === JSON.stringify({ ...cs.frames, [P1]: null })
+        && ["status", "ticked", "eloratings"].every((p) => p === "ticked" ? JSON.stringify({ ...ts.ticked, [P1]: null }) === JSON.stringify({ ...cs.ticked, [P1]: null }) : JSON.stringify(ts[p]) === JSON.stringify(cs[p]));
+    },
   },
   "no-icon": {
     why: "a loadout with no profileIcon: the TS server writes undefined into the session, throws and never answers; the port queues the player",

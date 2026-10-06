@@ -46,7 +46,7 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   `OnPlayerLoadoutLocked`) are built in C# and go through `ws:send` (4), as the TS websocket would have built them; so
   are the custom lobby's (`CustomLobbyService`), which the TS server published on `custom_lobby:notification` for its
   websocket to relay. That channel is now published only by the TS websocket itself (a player who disconnects leaves
-  their lobby) and goes with it. The same since slice 3b for the channels whose TS handler only built a message: a
+  their lobby; behind the realtime gateway that is `LobbyDisconnects`', through `ws:send`) and goes with it. The same since slice 3b for the channels whose TS handler only built a message: a
   lobby join's three messages (`PartyLobbyService`, was `lobby:player_joined`), `matchmaking-complete` (`MatchLauncher`,
   `MatchmakingWorker`, was `matchmaking:complete`), a toast (`MatchToasts` grants the toastee their 2 and shows it, was
   `toast:received`), a ranked set's check-in, leaver and ranks (`RankedSets`, and the ranks after a pre-game dodge,
@@ -75,7 +75,7 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   `player:{player}` `character`/`skin` as the TS `lock_lobby_loadout` does.
 - **Custom lobby keys** (`CustomLobbyService`): `custom_lobby_ssc:{lobby}` (the lobby's JSON, changed only by Lua
   scripts that started as the TS server's; the TS match end, rematch vote and websocket disconnect still read and write
-  it), `ssc_custom_lobby_player:{player}`, `lobby_code:{code}`, `ssc_custom_lobby_match:{match}` (the TS match end and
+  it; behind the realtime gateway a disconnect is C#'s, `LobbyDisconnects`), `ssc_custom_lobby_player:{player}`, `lobby_code:{code}`, `ssc_custom_lobby_match:{match}` (the TS match end and
   rematch read it) and `bot_config:{bot}` (the TS websocket builds a bot's match config from it), TTLs as the TS
   server's. The match end and the rematch are ported (`MatchEnd` in the match flow opens the vote; `Rematches` in
   lobbies answers `rematch_accept`/`rematch_decline` and runs its timer, with the TS keys

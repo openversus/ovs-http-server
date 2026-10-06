@@ -31,8 +31,8 @@ namespace OpenVersus.Server.Core.Matches;
 //      before).
 //   4. Unless a player is still in a set: party preservation. A player whose party lobby has others in it keeps it (lobby
 //      and player_lobby saved again, 8 h; its ready set cleared) and is marked rejoin_pending:{player} (45 s), the window
-//      in which their reconnecting must not cost them the party. What happens when the window closes (cleanup of a
-//      player who did not come back) is the realtime gateway's: it knows who is connected.
+//      in which their reconnecting must not cost them the party. A player whose game closes in the window is taken out
+//      of their lobbies when it closes, unless they came back (Realtime/LobbyDisconnects.cs).
 // A crash, an orphan or a resolved set ends there (no party preservation), as there.
 // Delayed messages go through DelayedMessages (Redis, swept every 100 ms), never an in-process timer.
 //

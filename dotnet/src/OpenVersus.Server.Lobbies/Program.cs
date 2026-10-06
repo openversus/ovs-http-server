@@ -2,6 +2,7 @@ using OpenVersus.Server.Core.Cosmetics;
 using OpenVersus.Server.Core.CustomLobbies;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Matches;
+using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.Rifts;
 using OpenVersus.Server.Http.Shared;
 
@@ -19,6 +20,8 @@ builder.AddCosmetics();
 // Custom matches start here, and the rematches of custom and Casual matches (their votes and timers).
 builder.AddMatchLauncher();
 builder.AddRematches();
+// A player whose game is gone leaves their party and custom lobby (the realtime gateway's disconnects).
+builder.AddLobbyDisconnects();
 
 var app = builder.Build();
 app.UseGameHttp();

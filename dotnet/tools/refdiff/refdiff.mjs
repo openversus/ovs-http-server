@@ -242,20 +242,22 @@ export function writes(lines, self) {
     .filter((line) => line.match(/\[\d+ ([^\]]+)\]/)?.[1] !== self)
     .map((line) => [...line.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]))
     .filter((parts) => parts.length && WRITES.has(parts[0].toLowerCase()) && parts[1] !== "refdiff:scratch")
-    // The C# Redis client spells some writes differently: SETEX k s v and PSETEX k ms v are SET k v EX s, SET k v PX ms
-    // is SET k v EX s, PEXPIRE k ms is EXPIRE k s, HMSET is HSET, UNLINK is DEL. GETDEL is left out with the reads:
-    // whether it deleted anything shows in the state after.
-    .map((parts) => {
-      const [cmd, ...args] = [parts[0].toLowerCase(), ...parts.slice(1)];
-      const seconds = (ms) => String(Math.round(Number(ms) / 1000));
-      if (cmd === "setex") return ["set", args[0], args[2], "EX", args[1]];
-      if (cmd === "psetex") return ["set", args[0], args[2], "EX", seconds(args[1])];
-      if (cmd === "set" && args[2]?.toUpperCase() === "PX") return ["set", args[0], args[1], "EX", seconds(args[3]), ...args.slice(4)];
-      if (cmd === "pexpire") return ["expire", args[0], seconds(args[1])];
-      if (cmd === "hmset") return ["hset", ...args];
-      if (cmd === "unlink") return ["del", ...args];
-      return [cmd, ...args];
-    }).map((parts) => parts.join(" "));
+    .map(canonicalWrite).map((parts) => parts.join(" "));
+}
+
+// The C# Redis client spells some writes differently: SETEX k s v and PSETEX k ms v are SET k v EX s, SET k v PX ms is
+// SET k v EX s, PEXPIRE k ms is EXPIRE k s, HMSET is HSET, UNLINK is DEL. GETDEL is left out with the reads: whether it
+// deleted anything shows in the state after. One MONITOR command's parts in, the TS client's spelling out (lower case).
+export function canonicalWrite(parts) {
+  const [cmd, ...args] = [parts[0].toLowerCase(), ...parts.slice(1)];
+  const seconds = (ms) => String(Math.round(Number(ms) / 1000));
+  if (cmd === "setex") return ["set", args[0], args[2], "EX", args[1]];
+  if (cmd === "psetex") return ["set", args[0], args[2], "EX", seconds(args[1])];
+  if (cmd === "set" && args[2]?.toUpperCase() === "PX") return ["set", args[0], args[1], "EX", seconds(args[3]), ...args.slice(4)];
+  if (cmd === "pexpire") return ["expire", args[0], seconds(args[1])];
+  if (cmd === "hmset") return ["hset", ...args];
+  if (cmd === "unlink") return ["del", ...args];
+  return [cmd, ...args];
 }
 
 export async function state(redis) {

@@ -30,13 +30,14 @@ public sealed class LobbiesServiceTests : IClassFixture<ServiceFactory<Program>>
     }
 
     [Fact]
-    public void RunsTheRematchTimerAndNoOtherBackgroundServiceOfItsOwn()
+    public void RunsTheRematchTimerAndTheDisconnectReaderAndNoOtherBackgroundServiceOfItsOwn()
     {
         var hosted = _factory.Services.GetServices<IHostedService>().Select(s => s.GetType())
             .Where(t => t.Namespace?.StartsWith("OpenVersus.", StringComparison.Ordinal) == true).Select(t => t.Name).Order().ToList();
 
-        // RematchSweep starts a rematch whose vote is still open when its timer runs out (rematch:due).
-        Assert.Equal(["ClusterSettingsSync", "InstanceHeartbeat", "RematchSweep"], hosted);
+        // RematchSweep starts a rematch whose vote is still open when its timer runs out (rematch:due); LobbyDisconnects
+        // takes a player whose game is gone out of their lobbies (realtime:connections).
+        Assert.Equal(["ClusterSettingsSync", "InstanceHeartbeat", "LobbyDisconnects", "RematchSweep"], hosted);
     }
 
     [Fact]

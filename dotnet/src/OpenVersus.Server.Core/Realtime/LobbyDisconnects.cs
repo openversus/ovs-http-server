@@ -88,18 +88,16 @@ internal sealed record Disconnect(string PlayerId, string ConnectionId, string T
 
 /// <summary>The lobbies' reader of the realtime gateway's disconnects (see the header of LobbyDisconnects.cs).</summary>
 internal sealed class LobbyDisconnects(IServiceProvider services, IPartyService party, ICustomLobbyService customLobbies, TimeProvider time,
-    ILogger<LobbyDisconnects> log) : BackgroundService
+    ILogger<LobbyDisconnects> logger) : ConnectionEventsReader(services, time, logger)
 {
-    public const string Group = "lobbies";
+    public const string GroupName = "lobbies";
     public const string DueSet = "realtime:disconnects:due";
-    private const int MaxDeliveries = 5;
-    private static readonly TimeSpan s_idle = TimeSpan.FromMilliseconds(50);
+    private const int MaxFailures = 5;
     private static readonly TimeSpan s_retry = TimeSpan.FromSeconds(5);
-    internal static TimeSpan ClaimAfter { get; set; } = TimeSpan.FromSeconds(10);
-    private readonly string _consumer = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
 
-    // The keys, a test's own in tests (the gateway's tests append to the stream in the same database).
-    internal string StreamKey { get; init; } = GatewayPresence.ConnectionsStream;
+    protected override string Group => GroupName;
+
+    // The deferred disconnects, a test's own in tests.
     internal string DueKey { get; init; } = DueSet;
 
     // Up to 20 deferred disconnects whose time has come, each taken by one replica.
@@ -143,151 +141,32 @@ internal sealed class LobbyDisconnects(IServiceProvider services, IPartyService 
 
     internal enum Outcome { Done, Deferred, Back }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task OnEventAsync(IDatabase redis, ConnectionEvent connectionEvent)
     {
-        if (services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis)
+        switch (connectionEvent.Type)
         {
-            log.LogWarning("Disconnects are not cleaned up from here: this service has no Redis (REDIS)");
-            return;
-        }
-
-        DateTimeOffset lastClaim = DateTimeOffset.MinValue, lastSweep = DateTimeOffset.MinValue;
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await EnsureGroupAsync(redis);
-                int handled = await ReadAsync(redis);
-                if (time.GetUtcNow() - lastClaim > TimeSpan.FromSeconds(2))
-                {
-                    lastClaim = time.GetUtcNow();
-                    handled += await ClaimAsync(redis);
-                }
-
-                if (time.GetUtcNow() - lastSweep > TimeSpan.FromSeconds(1))
-                {
-                    lastSweep = time.GetUtcNow();
-                    handled += await SweepAsync(redis);
-                }
-
-                if (handled == 0)
-                {
-                    await Task.Delay(s_idle, time, stoppingToken);
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception e)
-            {
-                log.LogError(e, "Disconnects: {Error}", e.Message);
-                await Task.Delay(TimeSpan.FromSeconds(1), time, stoppingToken);
-            }
+            // No time (never written so): no ticket is older than it, so none is dropped.
+            case "disconnected":
+                await DisconnectedAsync(redis, new Disconnect(connectionEvent.PlayerId, connectionEvent.ConnectionId, connectionEvent.TokenHash,
+                    connectionEvent.At, Ip: connectionEvent.Ip));
+                break;
+            case "replaced" when await MatchmakingQueue.DropAsync(redis, connectionEvent.PlayerId, connectionEvent.At):
+                Log.LogInformation("Dropped the ticket of {Player}'s replaced connection {Connection}", connectionEvent.PlayerId, connectionEvent.ConnectionId);
+                break;
         }
     }
 
-    private bool _grouped;
-
-    internal async Task EnsureGroupAsync(IDatabase redis)
-    {
-        if (_grouped)
-        {
-            return;
-        }
-
-        try
-        {
-            await redis.StreamCreateConsumerGroupAsync(StreamKey, Group, StreamPosition.NewMessages, createStream: true);
-        }
-        catch (RedisServerException e) when (e.Message.Contains("BUSYGROUP", StringComparison.Ordinal))
-        {
-        }
-
-        _grouped = true;
-    }
-
-    internal async Task<int> ReadAsync(IDatabase redis)
-    {
-        StreamEntry[] entries;
-        try
-        {
-            entries = await redis.StreamReadGroupAsync(StreamKey, Group, _consumer, StreamPosition.NewMessages, count: 50);
-        }
-        catch (RedisServerException e) when (e.Message.StartsWith("NOGROUP", StringComparison.Ordinal))
-        {
-            // The stream (and its group) went away (a flush, a failover with no persistence): made again, at its end.
-            log.LogWarning("Disconnects: the stream's consumer group is gone; made again");
-            _grouped = false;
-            await EnsureGroupAsync(redis);
-            entries = await redis.StreamReadGroupAsync(StreamKey, Group, _consumer, StreamPosition.NewMessages, count: 50);
-        }
-
-        foreach (var entry in entries)
-        {
-            await HandleAsync(redis, entry);
-        }
-
-        return entries.Length;
-    }
-
-    // Events another consumer left pending: handled here, or dropped after too many deliveries.
-    internal async Task<int> ClaimAsync(IDatabase redis)
-    {
-        var claimed = await redis.StreamAutoClaimAsync(StreamKey, Group, _consumer, (long)ClaimAfter.TotalMilliseconds, "0-0", 50);
-        foreach (var entry in claimed.ClaimedEntries)
-        {
-            var pending = await redis.StreamPendingMessagesAsync(StreamKey, Group, 1, _consumer, entry.Id, entry.Id);
-            if (pending.Length > 0 && pending[0].DeliveryCount > MaxDeliveries)
-            {
-                log.LogError("Disconnect of {Player} failed {Count} times; dropped, their lobbies were not cleaned up", (string?)entry["player"], pending[0].DeliveryCount);
-                await redis.StreamAcknowledgeAsync(StreamKey, Group, entry.Id);
-                continue;
-            }
-
-            await HandleAsync(redis, entry);
-        }
-
-        return claimed.ClaimedEntries.Length;
-    }
-
-    private async Task HandleAsync(IDatabase redis, StreamEntry entry)
-    {
-        try
-        {
-            if ((string?)entry["player"] is { Length: > 0 } player)
-            {
-                // No time (never written so): no ticket is older than it, so none is dropped.
-                long at = (long?)entry["at"] ?? 0;
-                switch ((string?)entry["type"])
-                {
-                    case "disconnected":
-                        await DisconnectedAsync(redis, new Disconnect(player, (string?)entry["connection"] ?? "", (string?)entry["token"] ?? "", at,
-                            Ip: (string?)entry["ip"] ?? ""));
-                        break;
-                    case "replaced" when await MatchmakingQueue.DropAsync(redis, player, at):
-                        log.LogInformation("Dropped the ticket of {Player}'s replaced connection {Connection}", player, (string?)entry["connection"]);
-                        break;
-                }
-            }
-
-            await redis.StreamAcknowledgeAsync(StreamKey, Group, entry.Id);
-        }
-        catch (Exception e) when (e is RedisException or TimeoutException)
-        {
-            log.LogError("Disconnect of {Player} not cleaned up yet (it stays pending): {Error}", (string?)entry["player"], e.Message);
-        }
-    }
+    protected override Task<int> EverySecondAsync(IDatabase redis) => SweepAsync(redis);
 
     // The deferred disconnects that are due: handled, or put back for later when handling fails.
     internal async Task<int> SweepAsync(IDatabase redis)
     {
-        var taken = (RedisResult[]?)await redis.ScriptEvaluateAsync(TakeDueScript, [DueKey], [time.GetUtcNow().ToUnixTimeMilliseconds()]) ?? [];
+        var taken = (RedisResult[]?)await redis.ScriptEvaluateAsync(TakeDueScript, [DueKey], [Time.GetUtcNow().ToUnixTimeMilliseconds()]) ?? [];
         foreach (var member in taken)
         {
             if (Disconnect.FromJson((string)member!) is not { } disconnect)
             {
-                log.LogError("Disconnects: a deferred entry that is not one was dropped: {Entry}", (string?)member);
+                Log.LogError("Disconnects: a deferred entry that is not one was dropped: {Entry}", (string?)member);
                 continue;
             }
 
@@ -297,15 +176,15 @@ internal sealed class LobbyDisconnects(IServiceProvider services, IPartyService 
             }
             catch (Exception e)
             {
-                if (disconnect.Failures + 1 >= MaxDeliveries)
+                if (disconnect.Failures + 1 >= MaxFailures)
                 {
-                    log.LogError(e, "Disconnect of {Player} failed {Count} times; dropped, their lobbies were not cleaned up", disconnect.PlayerId, disconnect.Failures + 1);
+                    Log.LogError(e, "Disconnect of {Player} failed {Count} times; dropped, their lobbies were not cleaned up", disconnect.PlayerId, disconnect.Failures + 1);
                     continue;
                 }
 
-                log.LogError("Disconnect of {Player} not cleaned up yet (tried again in {Seconds} s): {Error}", disconnect.PlayerId, s_retry.TotalSeconds, e.Message);
+                Log.LogError("Disconnect of {Player} not cleaned up yet (tried again in {Seconds} s): {Error}", disconnect.PlayerId, s_retry.TotalSeconds, e.Message);
                 await redis.SortedSetAddAsync(DueKey, (disconnect with { Failures = disconnect.Failures + 1 }).ToJson(),
-                    (time.GetUtcNow() + s_retry).ToUnixTimeMilliseconds());
+                    (Time.GetUtcNow() + s_retry).ToUnixTimeMilliseconds());
             }
         }
 
@@ -316,19 +195,19 @@ internal sealed class LobbyDisconnects(IServiceProvider services, IPartyService 
     internal async Task<Outcome> DisconnectedAsync(IDatabase redis, Disconnect disconnect)
     {
         string player = disconnect.PlayerId;
-        var (back, token) = await BackAsync(redis, disconnect);
+        var (back, token) = await ConnectionEvents.BackAsync(redis, player, disconnect.ConnectionId, disconnect.TokenHash);
         if (back is not null)
         {
             await MatchmakingQueue.DropAsync(redis, player, disconnect.At);
-            log.LogInformation("Disconnect of {Player} ({Connection}) not cleaned up but for the ticket: {Why}", player, disconnect.ConnectionId, back);
+            Log.LogInformation("Disconnect of {Player} ({Connection}) not cleaned up but for the ticket: {Why}", player, disconnect.ConnectionId, back);
             return Outcome.Back;
         }
 
         if (await redis.KeyTimeToLiveAsync($"rejoin_pending:{player}") is { } window && window > TimeSpan.Zero)
         {
             await MatchmakingQueue.DropAsync(redis, player, disconnect.At);
-            await redis.SortedSetAddAsync(DueKey, disconnect.ToJson(), (time.GetUtcNow() + window).ToUnixTimeMilliseconds());
-            log.LogInformation("Disconnect of {Player}: their lobbies wait for the end of their post-match window ({Seconds:0.#} s)", player, window.TotalSeconds);
+            await redis.SortedSetAddAsync(DueKey, disconnect.ToJson(), (Time.GetUtcNow() + window).ToUnixTimeMilliseconds());
+            Log.LogInformation("Disconnect of {Player}: their lobbies wait for the end of their post-match window ({Seconds:0.#} s)", player, window.TotalSeconds);
             return Outcome.Deferred;
         }
 
@@ -338,7 +217,7 @@ internal sealed class LobbyDisconnects(IServiceProvider services, IPartyService 
         await redis.ScriptEvaluateAsync(OfflineScript, [GatewayPresence.ConnectionKey(player), GatewayPresence.OnlinePlayers], [player]);
         await party.ForgetLobbyAsync(player);
         bool session = await ForgetSessionAsync(redis, disconnect, token);
-        log.LogInformation("Player {Player} disconnected ({Connection}): lobbies cleaned up{Session}", player, disconnect.ConnectionId,
+        Log.LogInformation("Player {Player} disconnected ({Connection}): lobbies cleaned up{Session}", player, disconnect.ConnectionId,
             session ? ", session deleted" : "; the session is a newer login's, kept");
         return Outcome.Done;
     }
@@ -353,7 +232,7 @@ internal sealed class LobbyDisconnects(IServiceProvider services, IPartyService 
             return false;
         }
 
-        if (services.GetService<IConnectionMultiplexer>() is { } multiplexer)
+        if (Services.GetService<IConnectionMultiplexer>() is { } multiplexer)
         {
             var keys = new List<RedisKey>();
             await foreach (var key in RedisScan.KeysAsync(multiplexer, redis.Database, $"player:{player}*"))
@@ -373,25 +252,6 @@ internal sealed class LobbyDisconnects(IServiceProvider services, IPartyService 
         }
 
         return true;
-    }
-
-    // Why the event no longer speaks for the player (or null), and the session's token as read (null: none), which the
-    // session's delete compares.
-    private static async Task<(string? Back, string? Token)> BackAsync(IDatabase redis, Disconnect disconnect)
-    {
-        if ((string?)await redis.HashGetAsync(GatewayPresence.ConnectionKey(disconnect.PlayerId), "id") is { Length: > 0 } current
-            && current != disconnect.ConnectionId)
-        {
-            return ($"connected again ({current})", null);
-        }
-
-        string? token = await redis.HashGetAsync($"connections:{disconnect.PlayerId}", "jwt");
-        if (disconnect.TokenHash.Length > 0 && token is { Length: > 0 } && GatewayPresence.TokenHash(token) != disconnect.TokenHash)
-        {
-            return ("logged in again", token);
-        }
-
-        return (null, token);
     }
 }
 

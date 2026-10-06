@@ -131,6 +131,8 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
         foreach (string id in new[] { P1, P2 })
         {
             await Db.HashSetAsync($"connections:{id}", [new HashEntry("username", $"name {id[^1]}"), new HashEntry("character", id == P1 ? "character_jake" : "character_finn")]);
+            // The player's record, as their lobby left it (create_party_lobby, the loadout lock).
+            await Db.HashSetAsync($"player:{id}", [new HashEntry("character", id == P1 ? "character_jake" : "character_finn"), new HashEntry("skin", "skin_default")]);
         }
     }
 
@@ -211,6 +213,108 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
         await SendAsync(Event("MatchEnded"));
         Assert.True(await Db.KeyExistsAsync($"match_ended:{Match}"));
         Assert.False(await Db.KeyExistsAsync($"match_started:{Match}"));
+    }
+
+    // The config a player's game was sent last, as the match flow keeps it (GameplayConfigs), until the match's end.
+    private Task SentConfigAsync(string player) => Db.StringSetAsync($"match_config:{player}", Js.Stringify(new JsonObject
+    {
+        ["data"] = new JsonObject { ["MatchId"] = Match, ["GameplayConfig"] = new JsonObject { ["MatchId"] = Match }, ["template_id"] = "OnGameplayConfigNotified" },
+        ["payload"] = new JsonObject(),
+        ["header"] = "",
+        ["cmd"] = "update",
+    }));
+
+    [SkippableFact]
+    // A game that closed its websocket before the start dodged (the TS websocket's close): never a rollback crash, even
+    // while the player is still listed online (the gateway keeps them through a post-match window).
+    public async Task AGameClosedBeforeTheStartIsADodge()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        await SeedSetAsync();
+        await SentConfigAsync(P2);
+        await Db.SetAddAsync("online_players", [P1, P2]);
+
+        await Events().GameClosedAsync(P2);
+
+        Assert.False(await Db.KeyExistsAsync($"match_server_crash:{Match}"));
+        Assert.Equal("pregame_dodge", (string?)await Db.StringGetAsync($"elo_processed_set:{Set}"));
+        var ratings = Mongo.GetCollection<BsonDocument>("eloratings");
+        Assert.Equal(1, (await ratings.Find(new BsonDocument("account_id", P1)).FirstAsync())["wins_1v1"].ToInt32());
+        await AssertSetDroppedAsync();
+        Assert.Equal(Set, (string?)await Db.StringGetAsync($"ranked_disconnect:{P2}"));
+        Assert.Equal("Opponent left the match", Assert.Single(await NotificationsAsync(P1))["message"]!.GetValue<string>());
+    }
+
+    [SkippableFact]
+    // The dodger's own disconnect cleans up their keys too, in another service, before or after the dodge: being set idle
+    // must not make them a record holding a status alone.
+    public async Task ADodgerWhoseKeysAreGoneIsNotGivenARecord()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        await SentConfigAsync(P2);
+        await Db.KeyDeleteAsync($"player:{P2}");
+
+        await Events().GameClosedAsync(P2);
+
+        Assert.Equal("pregame_dodge", (string?)await Db.StringGetAsync($"elo_processed_set:{Match}"));
+        Assert.False(await Db.KeyExistsAsync($"player:{P2}"));
+        Assert.Equal("idle", (string?)await Db.HashGetAsync($"player:{P1}", "status"));
+    }
+
+    [SkippableFact]
+    // Mid-game, the flag names the set for as long as the game can still run (TS's second write left it two minutes).
+    public async Task AGameClosedMidGameFlagsItsSetUntilTheGameCanHaveEnded()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        await SeedSetAsync();
+        await SentConfigAsync(P2);
+        await Db.StringSetAsync($"match_started:{Match}", "1");
+
+        await Events().GameClosedAsync(P2);
+
+        Assert.Equal(Set, (string?)await Db.StringGetAsync($"ranked_disconnect:{P2}"));
+        Assert.InRange((await Db.KeyTimeToLiveAsync($"ranked_disconnect:{P2}"))!.Value.TotalMinutes, 9, 10);
+        Assert.Equal(0, await RatingsAsync());
+        Assert.Empty(await NotificationsAsync(P1));
+    }
+
+    [SkippableFact]
+    // Between a set's games (no config kept: the game ended), or after a game's result: the set's next check-in
+    // concedes it for the player who left.
+    public async Task AGameClosedBetweenASetsGamesOrAfterAResultFlagsTheSet()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedSetAsync();
+        await Events().GameClosedAsync(P2);
+        Assert.Equal(Set, (string?)await Db.StringGetAsync($"ranked_disconnect:{P2}"));
+
+        await SeedAsync();
+        await SentConfigAsync(P1);
+        await Db.StringSetAsync($"game_result_received:{Match}", "1");
+        await Events().GameClosedAsync(P1);
+        Assert.Equal(Set, (string?)await Db.StringGetAsync($"ranked_disconnect:{P1}"));
+        Assert.False(await Db.KeyExistsAsync($"elo_processed_set:{Set}"));
+        Assert.Equal(0, await RatingsAsync());
+    }
+
+    [SkippableFact]
+    // TS took a spectator's team for the dodger's: a spectator closing their game before the start rated the set.
+    public async Task ASpectatorsGameClosingChangesNothing()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync(WithSpectator());
+        await SentConfigAsync(Spectator);
+
+        await Events().GameClosedAsync(Spectator);
+
+        Assert.False(await Db.KeyExistsAsync($"elo_processed:{Match}"));
+        Assert.False(await Db.KeyExistsAsync($"ranked_disconnect:{Spectator}"));
+        Assert.Equal(0, await RatingsAsync());
+        Assert.Empty(await NotificationsAsync(P1));
+        Assert.Empty(await NotificationsAsync(P2));
     }
 
     [SkippableFact]

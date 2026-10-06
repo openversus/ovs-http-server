@@ -92,6 +92,23 @@ public sealed class SetRatingsTests : IAsyncLifetime
     public void TheStreakBonusSteps(double streak, double bonus) => Assert.Equal(bonus, SetRatings.StreakBonus(streak));
 
     [SkippableFact]
+    // A player rated after their session went (no connections:{id}: this writer has no Redis at all) keeps the name of
+    // their player record, which is what their session held; a rating made nameless at a match's start gets it.
+    public async Task APlayerWithNoSessionIsRatedUnderTheirRecordsName()
+    {
+        Skip.If(_mongo is null, "set OVS_TEST_MONGO to run");
+        await RatingAsync(A, sets: 0);
+        await RatingAsync(B, sets: 0);
+        await _mongo!.GetDatabase(TestMongoDb).GetCollection<BsonDocument>("playertesters")
+            .InsertOneAsync(new BsonDocument { { "_id", ObjectId.Parse(A) }, { "name", "Player A" } });
+
+        await Writer().RateAsync(new SetOutcome([A], [B], "1v1", 2, 0, 0, false, Fighters(), "m"), default);
+
+        Assert.Equal("Player A", (await Of(Ratings, A))["username"].AsString);
+        Assert.Equal("", (await Of(Ratings, B))["username"].AsString);
+    }
+
+    [SkippableFact]
     public async Task A2To1SetCountsAt85PercentAndTheStreakBonusStartsAt3()
     {
         Skip.If(_mongo is null, "set OVS_TEST_MONGO to run");

@@ -198,9 +198,9 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
         await AppendAsync("disconnected");
         Assert.Equal(2, await reader.ReadAsync(Db));
         Assert.Equal(s_cleaned, _lobbies.Calls);
-        Assert.Equal(0, (await Db.StreamPendingAsync(Stream, LobbyDisconnects.Group)).PendingMessageCount);
+        Assert.Equal(0, (await Db.StreamPendingAsync(Stream, LobbyDisconnects.GroupName)).PendingMessageCount);
 
-        await Db.StreamDeleteConsumerGroupAsync(Stream, LobbyDisconnects.Group);
+        await Db.StreamDeleteConsumerGroupAsync(Stream, LobbyDisconnects.GroupName);
         await AppendAsync("disconnected");
         Assert.Equal(0, await reader.ReadAsync(Db));
         await AppendAsync("disconnected");

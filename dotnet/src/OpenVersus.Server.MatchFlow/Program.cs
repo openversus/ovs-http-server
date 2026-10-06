@@ -2,6 +2,7 @@ using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Missions;
 using OpenVersus.Server.Core.Perks;
+using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.RewardTracks;
 using OpenVersus.Server.Core.Rifts;
 using OpenVersus.Server.Http.Shared;
@@ -15,7 +16,8 @@ using OpenVersus.Server.Http.Shared;
 // it: docs/MIGRATION-BRIDGES.md 9). With Realtime:Gateway on, the launched matches (match:launched, MatchLaunchStream):
 // each one's config built and sent with GameServerReadyNotification to its players.
 // And a match's end (MatchEnd, when MatchEnd:Enabled or Realtime:Gateway; until the realtime gateway, the TS websocket ends
-// them from match:end), with its delayed websocket messages (DelayedMessages).
+// them from match:end), with its delayed websocket messages (DelayedMessages). And what a player's game closing its
+// websocket does to their match (MatchDisconnects, the realtime gateway's disconnects: a dodge, a set's leaver).
 // And End Game's ranked-set XP (reward_tracks:ranked_set, from the TS server and from C#'s set ratings).
 var builder = OpenVersusHost.CreateBuilder(KnownServices.MatchFlow, args);
 builder.AddGameHttp(typeof(Program).Assembly);
@@ -34,6 +36,7 @@ builder.AddMatchResultStream();
 builder.AddGameplayConfigs();
 builder.AddMatchLaunches();
 builder.AddMatchEnd();
+builder.AddMatchDisconnects();
 
 var app = builder.Build();
 app.UseGameHttp();

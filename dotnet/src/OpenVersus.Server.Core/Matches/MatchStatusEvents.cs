@@ -42,9 +42,16 @@ namespace OpenVersus.Server.Core.Matches;
 // Answered {status: "ok"}; 403 {error: "Invalid signature"} without the key; 500 {error: "Failed to process match status
 // update"} when handling failed (a PlayerDisconnect's failure is logged, not answered).
 //
+// A player's game closing its websocket (GameClosedAsync, from the realtime gateway's disconnects: MatchDisconnects) is
+// the TS websocket's close for the match (websocket.ts 511-616), and the only such signal for a P2P match: the match is the
+// one the game was sent last (match_config:{player}, GameplayConfigs), handled as a PlayerDisconnect but for the online
+// check (the dodge's once-per-set key says "pregame_dodge", as there); then, while the player is still in a ranked set
+// (between its games, after a game's result), ranked_disconnect:{player} names it, so its next check-in concedes it.
+//
 // Redis, read     match_started:{match}, match_ended:{match}, game_result_received:{match}, match_server_crash:{match},
 //                 {match} (players, mode, isCustomGame), match:{match} (RatedMatches), online_players,
-//                 player_ranked_set:{player}, elo_processed:{match}, match_characters:{set}, connections:{player} character
+//                 player_ranked_set:{player}, elo_processed:{match}, match_characters:{set}, connections:{player} character;
+//                 match_config:{player} (a websocket close)
 // Redis, written  match_started:{match}, match_ended:{match}, match_server_crash:{match} "1" EX 10 min;
 //                 rollback_crash_cleanup:{match} NX EX 5 min; ranked_disconnect:{player} (the set's id) EX 10 min; the dedup keys
 //                 above; player:{player} status "idle"; dll_notifications:{player} (match_cancel, PlayerMessages);
@@ -65,12 +72,24 @@ namespace OpenVersus.Server.Core.Matches;
 //     any started match, custom and Casual ones included, and its readers took any flag: a stale one conceded the
 //     player's next set).
 //   - an unset key, or the TS placeholder, never matches (MatchUpdateKeys).
+//   - a player is set idle only while their record (player:{player}) is there: TS wrote one holding the status alone
+//     for a player whose keys its own close had deleted.
+//   - a websocket close: a spectator's changes nothing (TS took the spectator's team for the dodger's, and rated a set
+//     against a team when its spectator closed the game before the start); a match that crashed is left to the crash's
+//     cleanup (TS dropped the set and told the others again); the flag names the set for 10 minutes (TS wrote "1" for 10
+//     minutes, then the set's id for 2: a mid-game leaver's flag ran out before the game's end, when it is read).
 
 public interface IMatchStatusEvents
 {
     /// <summary>One status event (<paramref name="body"/>) with its MatchUpdateKey header; the status and answer.
     /// <paramref name="from"/> is the caller's address, for the log.</summary>
     Task<(int Status, JsonObject Answer)> HandleAsync(string? matchUpdateKey, JsonNode? body, string? from);
+
+    /// <summary>
+    /// <paramref name="playerId"/>'s game closed its websocket (MatchDisconnects, the realtime gateway's disconnects):
+    /// what the TS websocket's close did for the match (websocket.ts 511-616; see the header).
+    /// </summary>
+    Task GameClosedAsync(string playerId);
 }
 
 internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings ratings, EloRatings eloRatings, IOptionsMonitor<RollbackSettings> settings,
@@ -174,13 +193,39 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
                 break;
 
             case "PlayerDisconnect" when playerId.Length > 0 && playerId != "Unknown":
-                await PlayerDisconnectAsync(redis, matchId, playerId, playerIds);
+                await LeftAsync(redis, matchId, playerId, playerIds, fromRollback: true);
                 break;
         }
     }
 
-    private async Task PlayerDisconnectAsync(IDatabase redis, string matchId, string playerId, List<string> eventPlayerIds)
+    public async Task GameClosedAsync(string playerId)
     {
+        if (services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis)
+        {
+            log.LogError("Websocket close of {Player} not handled: this service has no Redis (REDIS)", playerId);
+            return;
+        }
+
+        // The match the game was in: the config it was sent last (GameplayConfigs), kept until the match's end.
+        if (await RollbackCallbacks.JsonAsync(redis, $"{GameplayConfigs.KeyPrefix}{playerId}") is { } sent
+            && Str(sent["data"]?["GameplayConfig"]?["MatchId"]) is { Length: > 0 } matchId)
+        {
+            await LeftAsync(redis, matchId, playerId, [], fromRollback: false);
+        }
+
+        // A set the player is still in (between its games, or after a game's result): its next check-in concedes it for
+        // them. Gone after a dodge or a crash, which dropped the set.
+        if ((string?)await redis.StringGetAsync($"player_ranked_set:{playerId}") is { Length: > 0 } setId)
+        {
+            await redis.StringSetAsync($"ranked_disconnect:{playerId}", setId, s_flagTtl);
+            log.LogInformation("Websocket close of {Player} during ranked set {Set}: flagged for auto-concede", playerId, setId);
+        }
+    }
+
+    // A player left a match: a PlayerDisconnect from its rollback server, or their game closed its websocket.
+    private async Task LeftAsync(IDatabase redis, string matchId, string playerId, List<string> eventPlayerIds, bool fromRollback)
+    {
+        string what = fromRollback ? "PlayerDisconnect" : "Websocket close";
         try
         {
             if (await redis.KeyExistsAsync($"match_ended:{matchId}"))
@@ -191,7 +236,7 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
             // A result came (submit_end_of_match_stats): the game is over and everyone leaves, which is not a dodge.
             if (await redis.KeyExistsAsync($"game_result_received:{matchId}"))
             {
-                log.LogInformation("PlayerDisconnect of {Player} in {Match} after its result: a normal leave, nothing to do", playerId, matchId);
+                log.LogInformation("{What} of {Player} in {Match} after its result: a normal leave, nothing to do", what, playerId, matchId);
                 return;
             }
 
@@ -204,11 +249,13 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
             var configPlayers = (config?["players"] as JsonArray)?.OfType<JsonObject>().ToList();
             if (configPlayers?.FirstOrDefault(p => Str(p["playerId"]) == playerId) is { } entry && RollbackCallbacks.Truthy(entry["isSpectator"]))
             {
-                log.LogInformation("PlayerDisconnect of spectator {Player} in {Match}: a spectator leaving changes nothing for the match", playerId, matchId);
+                log.LogInformation("{What} of spectator {Player} in {Match}: a spectator leaving changes nothing for the match", what, playerId, matchId);
                 return;
             }
 
-            if (await redis.SetContainsAsync("online_players", playerId))
+            // The rollback server lost a player whose game is still connected: its failure, not theirs. (A websocket close
+            // is the game going; one that came back since is not handled at all: MatchDisconnects.)
+            if (fromRollback && await redis.SetContainsAsync("online_players", playerId))
             {
                 await RollbackCrashAsync(redis, matchId, playerId, configPlayers, eventPlayerIds);
                 return;
@@ -222,21 +269,21 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
                     : RatedMatches.WhyNotRated(Str(config["mode"]), config["players"] as JsonArray, await RollbackCallbacks.JsonAsync(redis, $"match:{matchId}"), config);
                 if (why is not null)
                 {
-                    log.LogInformation("Mid-match PlayerDisconnect of {Player} in {Match}: not a set game ({Why}), nothing to concede", playerId, matchId, why);
+                    log.LogInformation("Mid-match {What} of {Player} in {Match}: not a set game ({Why}), nothing to concede", what, playerId, matchId, why);
                     return;
                 }
 
                 string set = (string?)await redis.StringGetAsync($"player_ranked_set:{playerId}") is { Length: > 0 } pointer ? pointer : matchId;
                 await redis.StringSetAsync($"ranked_disconnect:{playerId}", set, s_flagTtl);
-                log.LogInformation("Mid-match PlayerDisconnect of {Player} in {Match}: flagged for auto-concede of set {Set}", playerId, matchId, set);
+                log.LogInformation("Mid-match {What} of {Player} in {Match}: flagged for auto-concede of set {Set}", what, playerId, matchId, set);
                 return;
             }
 
-            await PregameDodgeAsync(redis, matchId, playerId, config, configPlayers);
+            await PregameDodgeAsync(redis, matchId, playerId, config, configPlayers, fromRollback ? "rollback_pregame_dodge" : "pregame_dodge");
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
-            log.LogError("Error processing PlayerDisconnect of {Player} in {Match}: {Error}", playerId, matchId, e.Message);
+            log.LogError("Error processing {What} of {Player} in {Match}: {Error}", what, playerId, matchId, e.Message);
         }
     }
 
@@ -288,7 +335,7 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
     }
 
     // Before the start: the leaver dodged; the other team wins the set.
-    private async Task PregameDodgeAsync(IDatabase redis, string matchId, string playerId, JsonObject? config, List<JsonObject>? configPlayers)
+    private async Task PregameDodgeAsync(IDatabase redis, string matchId, string playerId, JsonObject? config, List<JsonObject>? configPlayers, string reason)
     {
         if (config is null || configPlayers is null || RollbackCallbacks.Truthy(config["isCustomGame"]))
         {
@@ -312,7 +359,7 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
             return;
         }
 
-        if (!await redis.StringSetAsync($"elo_processed_set:{setId}", "rollback_pregame_dodge", s_dedupTtl, When.NotExists))
+        if (!await redis.StringSetAsync($"elo_processed_set:{setId}", reason, s_dedupTtl, When.NotExists))
         {
             return;
         }
@@ -331,7 +378,7 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
             int gamesBefore = setId == matchId ? 0 : GamesFinished(await RollbackCallbacks.JsonAsync(redis, $"ranked_set:{setId}"));
             await ratings.RateAsync(new SetOutcome(winners, losers, mode!, 0, 0, winnerTeam, IsConcede: true, characters, matchId, IsPregameDodge: true,
                 QuitterIds: [playerId], GamesBeforeDodge: gamesBefore), CancellationToken.None);
-            log.LogInformation("Pregame dodge rated (rollback PlayerDisconnect): {Player} left match {Match}", playerId, matchId);
+            log.LogInformation("Pregame dodge rated ({Reason}): {Player} left match {Match}", reason, playerId, matchId);
             if (services.GetService<IMongoDatabase>() is { } mongo)
             {
                 await FullRankUpdate.SendAsync(redis, mongo, eloRatings, configPlayers.Where(p => !RollbackCallbacks.Truthy(p["isBot"])).Select(p => Str(p["playerId"])),
@@ -386,13 +433,18 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
     }
 
     // Every player idle, so a stale "in_match" does not block their next invite; a failure is logged per player.
+    // Only while the player's record is there: a player whose session is gone (their disconnect's cleanup, which may run
+    // before or after this) gets no record holding a status alone.
     private async Task IdleAsync(IDatabase redis, IEnumerable<string> playerIds)
     {
         foreach (string id in playerIds)
         {
             try
             {
-                await redis.HashSetAsync($"player:{id}", "status", "idle");
+                var idle = redis.CreateTransaction();
+                idle.AddCondition(Condition.KeyExists($"player:{id}"));
+                _ = idle.HashSetAsync($"player:{id}", "status", "idle");
+                await idle.ExecuteAsync();
             }
             catch (RedisException e)
             {

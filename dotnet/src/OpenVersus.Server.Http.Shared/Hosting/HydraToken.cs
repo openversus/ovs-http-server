@@ -27,6 +27,15 @@ public sealed class NoHydraTokenAttribute : Attribute
     public string? Value { get; init; }
 }
 
+/// <summary>
+/// A route that is not the game's but sits behind the TS server's hydraTokenMiddleware all the same (mounted after it in
+/// server.ts): it requires the session token as a game endpoint does.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class)]
+public sealed class HydraTokenRequiredAttribute : Attribute
+{
+}
+
 /// <summary>Who the request is from: the verified game session token.</summary>
 public sealed record HydraSession(string RawToken, JsonObject Claims)
 {

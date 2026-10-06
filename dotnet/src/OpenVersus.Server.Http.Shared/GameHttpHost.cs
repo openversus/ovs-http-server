@@ -72,13 +72,15 @@ public static class GameHttpHost
         {
             // ASP.NET's authorization is not used: game endpoints (a namespace with .Endpoints.Game) require the session
             // token through RequiresHydraToken (see HydraToken), unless they carry NoHydraToken; the other kinds
-            // (OpenVersus client, website, rollback server) do their own checks, as in the TS server.
+            // (OpenVersus client, website, rollback server) do their own checks, as in the TS server, except those
+            // marked HydraTokenRequired (behind the TS token middleware too).
             c.Endpoints.Configurator = ep =>
             {
                 ep.AllowAnonymous();
                 // FastEndpoints does not carry class attributes into the endpoint's metadata, so the exemption is read here.
                 var exemption = ep.EndpointType.GetCustomAttributes(typeof(NoHydraTokenAttribute), false).OfType<NoHydraTokenAttribute>().SingleOrDefault();
-                if (IsGameEndpoint(ep.EndpointType) && (exemption is null || exemption.RouteValue is not null))
+                bool required = ep.EndpointType.IsDefined(typeof(HydraTokenRequiredAttribute), false);
+                if ((IsGameEndpoint(ep.EndpointType) || required) && (exemption is null || exemption.RouteValue is not null))
                 {
                     ep.Options(b => b.WithMetadata(exemption is null ? [RequiresHydraToken.Instance] : [RequiresHydraToken.Instance, exemption]));
                 }

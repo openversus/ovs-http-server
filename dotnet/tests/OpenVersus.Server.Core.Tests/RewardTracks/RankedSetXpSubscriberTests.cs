@@ -83,6 +83,21 @@ public sealed class RankedSetXpSubscriberTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    public async Task PaymentsArrivingTogetherAllLand()
+    {
+        Skip.If(_mongo is null, "set OVS_TEST_MONGO and OVS_TEST_REDIS to run");
+        using var services = Services();
+        var subscriber = Subscriber(services);
+        string player = ObjectId.GenerateNewId().ToString();
+        // Eight wins at once for one player (2026-10-05: four of eight were lost to the tracks' version guard).
+        await Task.WhenAll(Enumerable.Range(1, 8).Select(i => subscriber.OneAtATimeAsync(Set(player, true, "character_shaggy", $"ranked:{Guid.NewGuid()}"))));
+
+        // Shaggy's level passes his Fighter Pass tier 5 (3,000) on the way: 600 more battle pass XP.
+        Assert.Equal(8 * 450 + 600, await Score(services, player, "mrt_battlepass_season_five"));
+        Assert.Equal(8 * 600, await Score(services, player, "mrt_mastery_account"));
+    }
+
+    [SkippableFact]
     public async Task AFighterPassTierIsPaidAtOnceAndItsBattlePassXpLands()
     {
         Skip.If(_mongo is null, "set OVS_TEST_MONGO and OVS_TEST_REDIS to run");

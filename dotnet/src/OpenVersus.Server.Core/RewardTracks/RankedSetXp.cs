@@ -43,6 +43,10 @@ internal sealed class RankedSetXpSubscriber(IServiceProvider services, IOptionsM
     internal const string BattlePass = "mrt_battlepass_season_five";
     internal const string Account = "mrt_mastery_account";
 
+    // One payment at a time: a player's tracks are written read-modify-write (version-guarded, three tries), so two of
+    // their payments at once could lose one (eight at once lost four, 2026-10-05).
+    private readonly SemaphoreSlim _one = new(1, 1);
+
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         if (services.GetService<IConnectionMultiplexer>() is not { } redis)
@@ -51,10 +55,39 @@ internal sealed class RankedSetXpSubscriber(IServiceProvider services, IOptionsM
         }
 
         log.LogWarning("MIGRATION BRIDGE: ranked-set XP is paid from the TS server's {Channel} and sent through its websocket (ws:send); see dotnet/docs/MIGRATION-BRIDGES.md (10)", Channel);
-        await redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(Channel), (channel, message) => _ = HandleAsync(message.ToString()));
+        await redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(Channel), (channel, message) => _ = OneAtATimeAsync(message.ToString()));
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    // AddScoreAsync answers no tracks when its write kept losing to other writes (another request for the player): tried
+    // again a few times, a little later each time.
+    private async Task<IReadOnlyList<JsonObject>> AddScoreAsync(string playerId, IReadOnlyDictionary<string, int> points)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            var changed = await tracks.AddScoreAsync(playerId, points, CancellationToken.None);
+            if (changed.Count > 0 || points.Count == 0 || attempt == 4)
+            {
+                return changed;
+            }
+
+            await Task.Delay(50 * (attempt + 1));
+        }
+    }
+
+    internal async Task OneAtATimeAsync(string message)
+    {
+        await _one.WaitAsync();
+        try
+        {
+            await HandleAsync(message);
+        }
+        finally
+        {
+            _one.Release();
+        }
+    }
 
     internal async Task HandleAsync(string message)
     {
@@ -74,8 +107,14 @@ internal sealed class RankedSetXpSubscriber(IServiceProvider services, IOptionsM
             bool won = set["won"] is JsonValue w && w.TryGetValue(out bool b) && b;
             string character = Text(set["character"]) ?? "";
             var points = Points(settings.CurrentValue, won, character);
-            var changed = (await tracks.AddScoreAsync(playerId, points, CancellationToken.None))
-                .ToDictionary(t => t["TrackSlug"]!.GetValue<string>());
+            var changed = (await AddScoreAsync(playerId, points)).ToDictionary(t => t["TrackSlug"]!.GetValue<string>());
+            if (changed.Count == 0 && points.Count > 0)
+            {
+                log.LogError("Ranked-set XP for {Player} from {Source} was not written (the player's tracks kept changing): not paid",
+                    playerId, Text(set["source"]) ?? setKey);
+                await redis.KeyDeleteAsync($"ranked_set_xp:{setKey}:{playerId}");
+                return;
+            }
 
             // The levels' tiers are paid as they complete (their battle pass XP may move the battle pass again).
             var live = MissionContainers.Live(missions.CurrentValue.Containers);

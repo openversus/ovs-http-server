@@ -816,6 +816,12 @@ app.post("/party/join", async (req, res) => {
       return;
     }
 
+    // Twosday: no party lobbies; everyone solo queues 2v2.
+    if (await isTwosdayActive()) {
+      res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: "Parties are off for Twosday: queue solo and you'll get a random partner.", success: null }));
+      return;
+    }
+
     // Block if target player is already in a party (lobby has 2+ players)
     if (lobby.playerIds.length >= 2) {
       res.send(partyTemplate({ username: player.name, currentKey: player.party_key || "", error: `${keyData.username} is already in a party with someone else.`, success: null }));
@@ -899,6 +905,12 @@ app.put("/ovs/accept-invite/:lobbyId", async (req, res) => {
 
     if (lobby.playerIds.includes(player.id)) {
       res.json({ success: true, lobbyId }); // idempotent
+      return;
+    }
+
+    // Twosday: no party lobbies (an invite sent before the window and accepted in it).
+    if (await isTwosdayActive()) {
+      res.status(409).json({ error: "parties_disabled" });
       return;
     }
 
@@ -2083,6 +2095,7 @@ app.use([
 // New friends/search/accounts routes — BEFORE old router for priority
 import { friendsRouter } from "./modules/friends/friends.routes";
 import { fromBase64 } from "bytebuffer";
+import { isTwosdayActive } from "./services/twosdayService";
 app.use(friendsRouter);
 
 app.use(router);

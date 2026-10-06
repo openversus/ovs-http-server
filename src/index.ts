@@ -8,6 +8,7 @@
 
 import { startRedis } from "./config/redis";
 import { start } from "./server";
+import { ensureTwosdaySwitch } from "./services/twosdayService";
 
 const serviceName: string = "Index";
 const logPrefix: string = `[${serviceName}]:`;
@@ -31,7 +32,8 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 
 startRedis()
-  .then(() => {
+  .then(async () => {
+    await ensureTwosdaySwitch();
     start();
   })
   .catch((err) => {

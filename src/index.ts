@@ -9,6 +9,7 @@
 import { startRedis } from "./config/redis";
 import { start } from "./server";
 import { ensureTwosdaySwitch } from "./services/twosdayService";
+import { startTwosdayPartyBreakup } from "./services/twosdayPartyBreakup";
 
 const serviceName: string = "Index";
 const logPrefix: string = `[${serviceName}]:`;
@@ -35,6 +36,7 @@ startRedis()
   .then(async () => {
     await ensureTwosdaySwitch();
     start();
+    startTwosdayPartyBreakup();
   })
   .catch((err) => {
     console.error(`[${logPrefix}] Startup error:`, err);

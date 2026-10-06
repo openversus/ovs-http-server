@@ -1293,7 +1293,8 @@ export interface IUpdatePlayerPrefs {
 // - Both get party_left DLL notifications with their lobby IDs
 // - DLL does SafeNullLobbyPointer + TriggerJoinLobby(lobbyId)
 // ============================================================================
-export async function performGenuineLeave(leavingPlayerId: string, lobbyId: string, lobbyState: RedisLobbyState) {
+// `message`, when given, is what both players' notifications say instead (a party the server broke up: Twosday).
+export async function performGenuineLeave(leavingPlayerId: string, lobbyId: string, lobbyState: RedisLobbyState, message?: string) {
   logger.info(`${logPrefix} genuineLeave: Player ${leavingPlayerId} leaving lobby ${lobbyId} (players: [${lobbyState.playerIds.join(", ")}])`);
 
   // Solo lobby — just clean up
@@ -1320,7 +1321,7 @@ export async function performGenuineLeave(leavingPlayerId: string, lobbyId: stri
   const ownerNotif: DLLNotification = {
     type: "party_left",
     title: "Party Update",
-    message: ownerId === leavingPlayerId ? "Returning to solo lobby" : "Your party member left",
+    message: message ?? (ownerId === leavingPlayerId ? "Returning to solo lobby" : "Your party member left"),
     data: { newLobbyId: lobbyId },
     timestamp: Date.now(),
   };
@@ -1354,7 +1355,7 @@ export async function performGenuineLeave(leavingPlayerId: string, lobbyId: stri
       const notif: DLLNotification = {
         type: "party_left",
         title: "Party Update",
-        message: pid === leavingPlayerId ? "Returning to solo lobby" : "Your party member left",
+        message: message ?? (pid === leavingPlayerId ? "Returning to solo lobby" : "Your party member left"),
         data: { newLobbyId: newLobby.id },
         timestamp: Date.now(),
       };

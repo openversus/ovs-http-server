@@ -33,6 +33,11 @@ export function secondsOfDay(text: string): number | null {
  * caller decides what a broken setting means.
  */
 export function isInTwosdayWindow(now: Date, window: TwosdayWindow): boolean {
+  return secondsIntoTwosdayWindow(now, window) !== null;
+}
+
+/** How long the window has been open at `now`, in seconds; null outside it. Throws as isInTwosdayWindow. */
+export function secondsIntoTwosdayWindow(now: Date, window: TwosdayWindow): number | null {
   const start = secondsOfDay(window.start);
   const end = secondsOfDay(window.end);
   if (start === null || end === null || start >= end) throw new Error(`bad Twosday hours: ${window.start} to ${window.end}`);
@@ -48,7 +53,7 @@ export function isInTwosdayWindow(now: Date, window: TwosdayWindow): boolean {
     hourCycle: "h23",
   }).formatToParts(now);
   const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  if (WEEKDAYS.indexOf(part("weekday")) !== window.day) return false;
+  if (WEEKDAYS.indexOf(part("weekday")) !== window.day) return null;
   const seconds = Number(part("hour")) * 3600 + Number(part("minute")) * 60 + Number(part("second"));
-  return seconds >= start && seconds < end;
+  return seconds >= start && seconds < end ? seconds - start : null;
 }

@@ -1,6 +1,6 @@
 import { logger } from "../config/logger";
 import { redisClient } from "../config/redis";
-import { DEFAULT_TWOSDAY_WINDOW, isInTwosdayWindow } from "../utils/twosdayWindow";
+import { DEFAULT_TWOSDAY_WINDOW, isInTwosdayWindow, TwosdayWindow } from "../utils/twosdayWindow";
 
 const logPrefix = "[Twosday]:";
 
@@ -18,18 +18,37 @@ const logPrefix = "[Twosday]:";
  *   HSET twosday start 15:00      HH:MM or HH:MM:SS, inclusive (default 15:00)
  *   HSET twosday end 24:00        HH:MM or HH:MM:SS, exclusive, 24:00 = midnight (default 24:00)
  *   HSET twosday tz America/New_York   the clock the hours are on (default America/New_York, daylight saving included)
+ *   HSET twosday breakup_minutes 30    for how long after the window opens the party lobbies formed before it are broken
+ *                                      up (twosdayPartyBreakup; default 30; 0: never)
  * A setting that cannot be read (a bad time, day or zone) or Redis failing counts as off, with an error logged.
  */
-export async function isTwosdayActive(now: Date = new Date()): Promise<boolean> {
-  try {
-    const config = (await redisClient.hGetAll("twosday")) ?? {};
-    if (["0", "false", "off"].includes((config.enabled ?? "").trim().toLowerCase())) return false;
-    return isInTwosdayWindow(now, {
+export interface TwosdaySettings {
+  enabled: boolean;
+  window: TwosdayWindow;
+  breakupMinutes: number;
+}
+
+/** The switch as stored in Redis, defaults filled in. Throws when Redis fails or a value cannot be read. */
+export async function readTwosdaySettings(): Promise<TwosdaySettings> {
+  const config = (await redisClient.hGetAll("twosday")) ?? {};
+  const breakupMinutes = config.breakup_minutes !== undefined && config.breakup_minutes !== "" ? Number(config.breakup_minutes) : 30;
+  if (!Number.isFinite(breakupMinutes) || breakupMinutes < 0) throw new Error(`bad Twosday breakup_minutes: ${config.breakup_minutes}`);
+  return {
+    enabled: !["0", "false", "off"].includes((config.enabled ?? "").trim().toLowerCase()),
+    window: {
       day: config.day !== undefined && config.day !== "" ? Number(config.day) : DEFAULT_TWOSDAY_WINDOW.day,
       start: config.start || DEFAULT_TWOSDAY_WINDOW.start,
       end: config.end || DEFAULT_TWOSDAY_WINDOW.end,
       timeZone: config.tz || DEFAULT_TWOSDAY_WINDOW.timeZone,
-    });
+    },
+    breakupMinutes,
+  };
+}
+
+export async function isTwosdayActive(now: Date = new Date()): Promise<boolean> {
+  try {
+    const settings = await readTwosdaySettings();
+    return settings.enabled && isInTwosdayWindow(now, settings.window);
   } catch (e) {
     logger.error(`${logPrefix} Could not read the twosday setting, treating it as off: ${e}`);
     return false;

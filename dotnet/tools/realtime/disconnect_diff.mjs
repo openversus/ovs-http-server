@@ -27,7 +27,8 @@ const jwt = require(process.cwd() + "/node_modules/jsonwebtoken");
 const oid = (n) => "00000000000000000028" + String(n).padStart(4, "0");
 const [P1, P2] = [1, 2].map(oid);
 const LOBBY = oid(101), CUSTOM = oid(201);
-const IP = "198.51.100.28";
+// The players' address, and a neighbour's whose key starts with it (another household's copy of a session).
+const IP = "198.51.100.2", NEIGHBOUR_IP = "198.51.100.25";
 const claims = (pid, n) => ({ id: pid, profile_id: oid(900 + n), wb_network_id: pid, hydraUsername: `OpenVersus_${n}`, username: `Player${n}`, current_ip: IP });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const SETTLE = 400;
@@ -35,11 +36,24 @@ const SETTLE = 400;
 const AFTER_DROP = 1000;
 
 // A session as /access leaves it; its jwt is the token the game sends (the C# reader compares the two).
+// With what a login and a lobby leave of the player's: the session's cosmetics copy, the player's records (a lobby record
+// among them).
 async function seedSession(redis, pid, n) {
   const token = jwt.sign(claims(pid, n), need("REF_JWT_SECRET"));
   await redis.hSet(`connections:${pid}`, { ...claims(pid, n), jwt: token, GameplayPreferences: "448", character: "character_shaggy", skin: "skin_shaggy_default" });
+  await redis.hSet(`connections:${pid}:cosmetics`, { Banner: '"banner_default"' });
+  await redis.hSet(`player:${pid}`, { character: "character_shaggy", skin: "skin_shaggy_default", ip: IP });
+  await redis.set(`player:${pid}:cosmetics`, JSON.stringify({ Banner: "banner_default" }));
+  await redis.set(`player:${pid}:blocked`, "[]");
+  await redis.hSet(`player:${pid}:lobby:${oid(150 + n)}`, { id: oid(150 + n), created_at: "2026-10-01T10:00:00.000Z", mode: "1v1", owner: pid });
   await redis.sAdd("online_players", pid);
   return token;
+}
+
+// The IP's copy of a session (/access, for old clients) as the last login at that address left it, and a neighbour's.
+async function seedIpCopies(redis, owner) {
+  await redis.hSet(`connections:${IP}`, { id: owner, username: "copy" });
+  await redis.hSet(`connections:${NEIGHBOUR_IP}`, { id: oid(99), username: "neighbour" });
 }
 
 const partyLobby = (owner, players) => JSON.stringify({ lobbyId: LOBBY, ownerId: owner, ownerUsername: "Player1", mode: players.length > 1 ? "2v2" : "1v1", playerIds: players, createdAt: 1790000000123 });
@@ -70,6 +84,7 @@ const STEPS = {
   // A player alone in their party lobby: the lobby goes (redisCleanupPlayerLobby).
   async "solo-party"(c) {
     const t1 = await seedSession(c.redis, P1, 1);
+    await seedIpCopies(c.redis, P1);
     await seedParty(c.redis, P1, [P1]);
     await c.connect({ P1: t1 });
     await c.drop("P1");
@@ -77,6 +92,7 @@ const STEPS = {
   // The owner of a party of two: the lobby goes; the other is told and gets a solo lobby to join.
   async "party-owner-drops"(c) {
     const t1 = await seedSession(c.redis, P1, 1), t2 = await seedSession(c.redis, P2, 2);
+    await seedIpCopies(c.redis, P1);
     await seedParty(c.redis, P1, [P1, P2]);
     await c.redis.sAdd(`party_ready:${LOBBY}`, P2);
     await c.connect({ P1: t1, P2: t2 });
@@ -85,6 +101,8 @@ const STEPS = {
   // The other one: the owner keeps the lobby, alone.
   async "party-member-drops"(c) {
     const t1 = await seedSession(c.redis, P1, 1), t2 = await seedSession(c.redis, P2, 2);
+    // The other player logged in at the same address after the one who drops: the IP's copy is theirs.
+    await seedIpCopies(c.redis, P1);
     await seedParty(c.redis, P1, [P1, P2]);
     await c.redis.sAdd(`party_ready:${LOBBY}`, P1);
     await c.connect({ P1: t1, P2: t2 });
@@ -93,6 +111,7 @@ const STEPS = {
   // A custom lobby's guest (with a solo party lobby too): out of the custom lobby, the leader told; then the party lobby.
   async "custom-guest-drops"(c) {
     const t1 = await seedSession(c.redis, P1, 1), t2 = await seedSession(c.redis, P2, 2);
+    await seedIpCopies(c.redis, P2);
     await seedCustom(c.redis, true);
     await c.redis.set(`lobby:${LOBBY}`, partyLobby(P2, [P2]), { EX: 3600 });
     await c.redis.set(`player_lobby:${P2}`, LOBBY, { EX: 28800 });
@@ -102,6 +121,7 @@ const STEPS = {
   // The same with the pointers gone (they live 20 minutes from a match's start): the lobby is found all the same.
   async "custom-guest-drops-no-pointer"(c) {
     const t1 = await seedSession(c.redis, P1, 1), t2 = await seedSession(c.redis, P2, 2);
+    await seedIpCopies(c.redis, P2);
     await seedCustom(c.redis, false);
     await c.connect({ P1: t1, P2: t2 });
     await c.drop("P2");
@@ -131,12 +151,15 @@ function writesOf(lines, self) {
     .filter((line) => line.match(/\[\d+ ([^\]]+)\]/)?.[1] !== self)
     .map((line) => [...line.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]))
     .filter((parts) => parts.length && WRITES.has(parts[0].toLowerCase()) && !/^(refdiff:scratch|ovs:instance(s$|:)|realtime:)/.test(parts[1] ?? ""))
-    .map((parts) => canonicalWrite(parts).join(" "));
+    .map(canonicalWrite)
+    // One DEL of several keys (TS deletes each SCAN page at once) as one DEL per key, in key order.
+    .flatMap((parts) => (parts[0] === "del" && parts.length > 2 ? parts.slice(1).sort().map((k) => ["del", k]) : [parts]))
+    .map((parts) => parts.join(" "));
 }
 
 async function state(redis) {
   const out = {};
-  for (const pattern of ["lobby:*", "player_lobby:*", "pending_join_lobby:*", "party_ready:*", "custom_lobby_ssc:*", "ssc_custom_lobby_player:*", "player:*:lobby:*", "connections:*"]) {
+  for (const pattern of ["lobby:*", "player_lobby:*", "pending_join_lobby:*", "party_ready:*", "custom_lobby_ssc:*", "ssc_custom_lobby_player:*", "player:*", "connections:*"]) {
     for (const key of (await redis.keys(pattern)).sort()) {
       const type = await redis.type(key);
       out[key] = type === "string" ? await redis.get(key) : type === "set" ? (await redis.sMembers(key)).sort() : type === "hash" ? Object.keys(await redis.hGetAll(key)).sort() : type;
@@ -211,16 +234,14 @@ const has = (list, re) => list.some((w) => re.test(w));
 const take = (list, re) => { const i = list.findIndex((w) => re.test(w)); if (i >= 0) list.splice(i, 1); return i >= 0; };
 const takeAll = (list, re) => { let n = 0; while (take(list, re)) n++; return n; };
 
-// What the TS close does after the lobbies, and the C# reader does not do yet (slice 3d: session keys, the IP's copy).
-const NOT_YET = {
-  what: "TS then deletes the player's session keys (connections:{player}*, player:{player}*) and their IP's copy; in C# that is a later 3d item",
-  check: (ts, cs, dropped) => has(ts.writes, new RegExp(`^del connections:${dropped}`)) && !has(cs.writes, new RegExp(`^del connections:${dropped}`)),
-  adjust: (a, b, dropped) => {
-    takeAll(a.writes, new RegExp(`^del (connections|player):${dropped}`));
-    takeAll(a.writes, new RegExp(`^del connections:${IP.replaceAll(".", "\\.")}`));
-    for (const r of [a, b]) for (const key of Object.keys(r.state)) if (key.startsWith(`connections:${dropped}`) || key.startsWith(`player:${dropped}:lobby:`)) delete r.state[key];
-  },
+// The session keys, compared; the IP's copy goes by its exact key in C# (TS: connections:{ip}*, a neighbour's too).
+const NEIGHBOUR = {
+  what: "TS deletes the IP's copy by pattern (connections:{ip}*), which took the neighbouring address's copy too (198.51.100.25 for 198.51.100.2); C# deletes the one key",
+  check: (ts, cs) => has(ts.writes, new RegExp(`^del connections:${NEIGHBOUR_IP}$`)) && !has(cs.writes, new RegExp(`^del connections:${NEIGHBOUR_IP}$`))
+    && !(`connections:${NEIGHBOUR_IP}` in ts.state) && `connections:${NEIGHBOUR_IP}` in cs.state,
+  adjust: (a, b) => { take(a.writes, new RegExp(`^del connections:${NEIGHBOUR_IP}$`)); for (const r of [a, b]) delete r.state[`connections:${NEIGHBOUR_IP}`]; },
 };
+// Where the IP's copy is another player's, TS's household check skips the pattern delete: the neighbour's copy stays.
 // The others are told PlayerLeftLobby: TS publishes it for its websocket's own relay, C# sends it through ws:send. The
 // frames each game was sent are compared, not the publishes.
 const TOLD = {
@@ -238,11 +259,11 @@ const LOBBY_ID = {
 };
 // TS looks for the custom lobby with KEYS on every disconnect and its web custom lobby with a GET: reads, not recorded.
 const EXPECTED = {
-  "solo-party": [NOT_YET],
-  "party-owner-drops": [NOT_YET, TOLD, LOBBY_ID],
-  "party-member-drops": [NOT_YET, TOLD],
-  "custom-guest-drops": [NOT_YET, TOLD],
-  "custom-guest-drops-no-pointer": [NOT_YET, TOLD],
+  "solo-party": [NEIGHBOUR],
+  "party-owner-drops": [NEIGHBOUR, TOLD, LOBBY_ID],
+  "party-member-drops": [TOLD],
+  "custom-guest-drops": [NEIGHBOUR, TOLD],
+  "custom-guest-drops-no-pointer": [NEIGHBOUR, TOLD],
 };
 const DROPPED = { "solo-party": P1, "party-owner-drops": P1, "party-member-drops": P2, "custom-guest-drops": P2, "custom-guest-drops-no-pointer": P2 };
 

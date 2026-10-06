@@ -920,14 +920,11 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
     {
         var multiplexer = services.GetRequiredService<IConnectionMultiplexer>();
         var redis = multiplexer.GetDatabase();
-        foreach (var server in multiplexer.GetServers().Where(s => s.IsConnected && !s.IsReplica))
+        await foreach (var key in RedisScan.KeysAsync(multiplexer, redis.Database, LobbyKey("*")))
         {
-            await foreach (var key in server.KeysAsync(redis.Database, LobbyKey("*"), pageSize: 1000))
+            if ((string?)await redis.StringGetAsync(key) is { } raw && raw.Contains(playerId, StringComparison.Ordinal))
             {
-                if ((string?)await redis.StringGetAsync(key) is { } raw && raw.Contains(playerId, StringComparison.Ordinal))
-                {
-                    return key.ToString()["custom_lobby_ssc:".Length..];
-                }
+                return key.ToString()["custom_lobby_ssc:".Length..];
             }
         }
 

@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Control;
 using StackExchange.Redis;
 
@@ -450,14 +451,10 @@ internal sealed class OpsService : IOpsService
     private async Task<List<string>> KeysAsync(string pattern)
     {
         var multiplexer = _services.GetRequiredService<IConnectionMultiplexer>();
-        int db = multiplexer.GetDatabase().Database;
         var keys = new List<string>();
-        foreach (var server in multiplexer.GetServers().Where(s => s.IsConnected && !s.IsReplica))
+        await foreach (var key in RedisScan.KeysAsync(multiplexer, multiplexer.GetDatabase().Database, pattern, pageSize: 100))
         {
-            await foreach (var key in server.KeysAsync(db, pattern, pageSize: 100))
-            {
-                keys.Add(key.ToString());
-            }
+            keys.Add(key.ToString());
         }
 
         return keys;

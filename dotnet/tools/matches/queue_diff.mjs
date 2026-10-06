@@ -15,6 +15,12 @@
 //   REF_WS_URL   the TS websocket on the same scratch stores: it turns party:queued into the game's OnMatchmakerStarted
 //                and the queue push, and matchmaking:cancel into the cancel, for both servers
 // No matchmaker may run against these stores (it would match the tickets).
+//
+// Gateway mode (REF_GAMES_URL: the TS websocket for the TS run, the C# gateway for the C# run, whose lobbies run with
+// Realtime:Gateway on, as the C# match flow does not need to): the games connect there, after each step's setup (the
+// gateway keeps presence in Redis), and the queue's writes are compared wherever they are made (the TS websocket's
+// included) instead of the party:queued and matchmaking:cancel publishes; the 1 s tick is compared as which request
+// each game was ticked for (>= 1 tick in about 2 s), never by count. C#'s own realtime:queued is left out.
 import fs from "node:fs";
 import { require, need, openScratch, openMonitor, writes, state } from "../refdiff/refdiff.mjs";
 import { connectPlayers } from "../refdiff/gateway.mjs";
@@ -34,7 +40,8 @@ const LOBBY = oid(100);
 const MATCH = oid(700);
 const IP = "198.51.100.8";
 // Channels whose TS websocket handlers keep state (docs/REALTIME.md): compared as writes, payload included.
-const STATEFUL = new Set(["matchmaking:cancel", "party:queued", "match:notifications"]);
+const GAMES = process.env.REF_GAMES_URL;
+const STATEFUL = new Set(GAMES ? ["match:notifications"] : ["matchmaking:cancel", "party:queued", "match:notifications"]);
 
 // A matchmaking request as the game sends it (MATCH_MAKING_REQUEST).
 const REQUEST = {
@@ -86,13 +93,13 @@ async function run(baseUrl, outFile) {
 
   // The websocket keeps each connection's queued requests (and ticks them every second): every step starts with fresh
   // games, connected before the stores are wiped, the previous ones gone long enough for their disconnect to settle.
-  const connect = () => connectPlayers(need("REF_WS_URL"), PLAYERS.map((id, i) => ({ id, token: token(id, i + 1) })));
+  const connect = () => connectPlayers(GAMES ?? need("REF_WS_URL"), PLAYERS.map((id, i) => ({ id, token: token(id, i + 1) })));
   recording = [];
   let games = await connect();
   await sleep(200);
   const wsAddr = recording.find((l) => /"sadd" "online_players"/i.test(l))?.match(/\[\d+ ([^\]]+)\]/)?.[1];
   recording = null;
-  if (!wsAddr) throw new Error("could not tell the websocket's Redis connection apart");
+  if (!wsAddr && !GAMES) throw new Error("could not tell the websocket's Redis connection apart");
 
   // Every player: a current registered client, a session, a locked loadout with an address and an icon, cosmetics equipped
   // once (player:{id}:cosmetics), a player record; online.
@@ -117,13 +124,20 @@ async function run(baseUrl, outFile) {
 
   const steps = [];
   async function step(name, path, pid, body, setup) {
+    if (!GAMES && name === "queued-then-cancelled") return;
     games.close();
     await sleep(500);
-    games = await connect();
-    await sleep(300);
+    if (!GAMES) {
+      games = await connect();
+      await sleep(300);
+    }
     await redis.flushDb();
     await redis.set("refdiff:scratch", "1");
     await db.dropDatabase();
+    if (GAMES) {
+      games = await connect();
+      await sleep(300);
+    }
     await setup?.();
     games.clear();
     recording = [];
@@ -131,18 +145,33 @@ async function run(baseUrl, outFile) {
     const answer = await call(baseUrl, path, pid, body);
     // The ticket is published after the answer; the websocket then sends and pushes.
     await sleep(900);
-    const lines = recording.filter((l) => l.match(/\[\d+ ([^\]]+)\]/)?.[1] !== wsAddr);
+    const lines = GAMES ? recording : recording.filter((l) => l.match(/\[\d+ ([^\]]+)\]/)?.[1] !== wsAddr);
     recording = null;
     // A C# service's heartbeat into the instance registry lands in any run while one runs on these stores: not the step's.
-    const registry = (w) => /^(set|zadd|zrem|del) ovs:instance/.test(w);
-    const all = writes(lines, self).filter((w) => !registry(w));
+    // In gateway mode, the websockets' presence for the fake games (a pong can land) and C#'s own realtime:queued too.
+    const registry = (w) => /^(set|zadd|zrem|del) ovs:instance/.test(w)
+      || (GAMES && /^zadd player_heartbeats|^(sadd|srem) online_players|^(zadd|expire|zremrangebyscore) active_ip_accounts:|^(hset|expire|del) realtime:conn:|^(hset|hdel) realtime:queued /.test(w));
+    // A close the C# side schedules (realtime:due) is kept apart: TS closes a toasted game after 10 s (an in-memory timer),
+    // the port never does, so in gateway mode none may be scheduled for the update toast.
+    const due = (w) => GAMES && w.startsWith("zadd realtime:due ");
+    const closes = writes(lines, self).filter(due).map((w) => ({ player: w.match(/playerId\\*":\\*"([0-9a-f]{24})/)?.[1], reason: w.match(/reason\\*":\\*"([a-z-]+)/)?.[1] }));
+    const all = writes(lines, self).filter((w) => !registry(w) && !due(w));
+    const isTick = (f) => f?.cmd === "matchmaking-tick";
+    const frames = Object.fromEntries(Object.entries(games.all()).map(([id, list]) => [id, list.filter((f) => !isTick(f))]));
+    let ticked = null;
+    if (GAMES) {
+      await sleep(1200);
+      ticked = Object.fromEntries(Object.entries(games.all()).map(([id, list]) => [id, [...new Set(list.filter(isTick).map((f) => JSON.stringify(f.payload)))].sort()]));
+    }
     const ids = new Map();
     steps.push(normalize({
       name, path, status: answer.status, type: answer.type, bytes: answer.bytes, answer: answer.body,
       writes: all.filter((w) => !w.startsWith("publish ") || STATEFUL.has(w.split(" ")[1])),
       published: all.filter((w) => w.startsWith("publish ")).map((w) => w.split(" ")[1]),
-      frames: games.all(),
-      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^active_ip_accounts:|^player_heartbeats$|^ovs:instance/.test(k))),
+      frames,
+      ticked,
+      closes,
+      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^active_ip_accounts:|^player_heartbeats$|^ovs:instance|^realtime:conn:|^realtime:connections$|^realtime:queued$|^realtime:due$/.test(k))),
       // The queues byte for byte (state shows a list's type only): the matchmaker removes a ticket by its bytes.
       queues: { "1v1": await redis.lRange("1v1", 0, -1), "2v2": await redis.lRange("2v2", 0, -1) },
       eloratings: await db.collection("eloratings").find({}, { sort: { account_id: 1 } }).toArray().then((d) => JSON.parse(JSON.stringify(d))),
@@ -188,6 +217,13 @@ async function run(baseUrl, outFile) {
   await step("cancel-solo", cancel, P1, undefined, everyone);
   await step("cancel-party", cancel, P1, undefined, async () => { await everyone(); await lobby([P1, P2]); await redis.sAdd(`party_ready:${LOBBY}`, [P1, P2]); });
   await step("cancel-no-session", cancel, P1, undefined, async () => { await everyone(); await redis.del(`connections:${P1}`); });
+  // Gateway mode only: a queued party cancelled (the other cancel steps hold no ticket, which the cancel ignores).
+  await step("queued-then-cancelled", cancel, P1, undefined, async () => {
+    await everyone();
+    await lobby([P1, P2]);
+    await call(baseUrl, request("2v2-retail"), P1, REQUEST);
+    await sleep(900);
+  });
 
   games.close();
   monitor.destroy();
@@ -226,7 +262,14 @@ function normalize(step, started, ids) {
 }
 
 // The deliberate differences (see MatchmakingRequestService): for each step, what the difference must be.
+const sorted = (run) => [...(run?.writes ?? [])].sort();
 const EXPECTED = {
+  "queued-then-cancelled": {
+    why: "gateway mode: the same writes; TS's websocket set the players idle after the route had deleted party_ready (a process hop later), C# before",
+    holds: (ts, cs) => JSON.stringify(sorted(ts)) === JSON.stringify(sorted(cs))
+      && ["status", "type", "bytes", "answer", "frames", "ticked", "state", "queues", "eloratings"].every((p) => JSON.stringify(ts[p]) === JSON.stringify(cs[p]))
+      && Object.values(cs.frames).flat().filter((f) => f?.cmd === "matchmaking-cancel").length === 2,
+  },
   "no-icon": {
     why: "a loadout with no profileIcon: the TS server writes undefined into the session, throws and never answers; the port queues the player",
     holds: (ts, cs) => String(ts.status).startsWith("<no answer") && cs.status === 200 && cs.queues["1v1"].length === 1,
@@ -243,7 +286,13 @@ function diffRuns(fileA, fileB) {
   let differing = 0;
   for (let i = 0; i < Math.max(a.steps.length, b.steps.length); i++) {
     const x = a.steps[i], y = b.steps[i];
-    const parts = ["status", "type", "bytes", "answer", "writes", "frames", "state", "queues", "eloratings"].filter((p) => JSON.stringify(x?.[p]) !== JSON.stringify(y?.[p]));
+    // Gateway mode: the C# side (B) schedules no close (TS closed each game it sent the update toast 10 s later; the port
+    // keeps an outdated player connected).
+    if (x?.ticked && y?.closes?.length) {
+      differing++;
+      console.log(`${x.name}: closes scheduled (B) ${JSON.stringify(y.closes)}; the port closes no connection here`);
+    }
+    const parts = ["status", "type", "bytes", "answer", "writes", "frames", "ticked", "state", "queues", "eloratings"].filter((p) => JSON.stringify(x?.[p]) !== JSON.stringify(y?.[p]));
     if (!parts.length) continue;
     const name = x?.name ?? y?.name;
     if (EXPECTED[name]?.holds(x, y)) {

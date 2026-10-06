@@ -16,29 +16,33 @@ public sealed class ClientGameplayGateTests(ServiceFactory<Program> factory) : I
 {
     private static StringContent Empty() => new("{}", System.Text.Encoding.UTF8, "application/json");
 
+    // Each in a service that runs the gate: this one, or (the rift nodes) the HTTP service.
     [Fact]
-    public void EveryPathItGuardsIsThisServicesRoute()
+    public void EveryPathItGuardsIsAPortedServicesRoute()
     {
-        Assert.All(ClientGameplayGate.Paths, p => Assert.Equal(KnownServices.Lobbies.Name, RouteTable.OwnerOfPath(p)));
+        Assert.All(ClientGameplayGate.Paths, p => Assert.Contains(RouteTable.OwnerOfPath(p), new[] { KnownServices.Lobbies.Name, KnownServices.Http.Name }));
     }
 
     // The test token has no registered identity, so the gate must ask for the toast, and without Redis it cannot.
     [Fact]
     public async Task WhenTheGateCannotBeEvaluatedItAnswers503WithItsAnswer()
     {
-        using var response = await factory.CreateGameClient().PutAsync("/ssc/invoke/join_party_lobby", Empty());
+        using var response = await factory.CreateGameClient().PutAsync("/ssc/invoke/start_custom_match", Empty());
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
         Assert.Equal(1, (int)body["return_code"]!);
         Assert.Equal("client_update_required", (string)body["body"]!["error"]!);
     }
 
-    [Fact]
-    public async Task APathItDoesNotCoverIsNotAsked()
+    // A lobby join included: lobbies stay open to a player who must update.
+    [Theory]
+    [InlineData("/ssc/invoke/leave_player_lobby", "PutLeavePlayerLobby")]
+    [InlineData("/ssc/invoke/join_party_lobby", "PutJoinPartyLobby")]
+    public async Task APathItDoesNotCoverIsNotAsked(string path, string endpoint)
     {
-        using var response = await factory.CreateGameClient().PutAsync("/ssc/invoke/leave_player_lobby", Empty());
+        using var response = await factory.CreateGameClient().PutAsync(path, Empty());
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("PutLeavePlayerLobby", response.Headers.GetValues(Stub.EndpointHeader).Single());
+        Assert.Equal(endpoint, response.Headers.GetValues(Stub.EndpointHeader).Single());
     }
 
     [Fact]
@@ -47,9 +51,10 @@ public sealed class ClientGameplayGateTests(ServiceFactory<Program> factory) : I
         using var app = factory.WithWebHostBuilder(b => b.UseSetting("Clients:VersionCheck", "false"));
         var client = app.CreateClient();
         client.DefaultRequestHeaders.Add(HydraToken.Header, ServiceFactory<Program>.Token());
-        using var response = await client.PutAsync("/ssc/invoke/join_party_lobby", Empty());
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("PutJoinPartyLobby", response.Headers.GetValues(Stub.EndpointHeader).Single());
+        // The route itself answers (it has no Redis here either: whatever it answers, not the gate's 503).
+        using var response = await client.PutAsync("/ssc/invoke/start_custom_match", Empty());
+        Assert.NotEqual(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("PutStartCustomMatch", response.Headers.GetValues(Stub.EndpointHeader).Single());
     }
 
     [Fact]

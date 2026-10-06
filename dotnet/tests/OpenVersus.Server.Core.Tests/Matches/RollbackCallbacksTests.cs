@@ -78,11 +78,13 @@ public sealed class RollbackCallbacksTests : IAsyncLifetime
             });
         }
 
-        await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(ProfileNotifications.WsSendChannel), (_, m) =>
+        // The queue form keeps the order of publication (a handler subscription may run its callbacks concurrently), which
+        // the tests read the sends in.
+        (await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(ProfileNotifications.WsSendChannel))).OnMessage(m =>
         {
-            if (m.ToString().Contains("00000000000000000016", StringComparison.Ordinal))
+            if (m.Message.ToString().Contains("00000000000000000016", StringComparison.Ordinal))
             {
-                _sent.Enqueue((JsonObject)JsonNode.Parse(m.ToString())!);
+                _sent.Enqueue((JsonObject)JsonNode.Parse(m.Message.ToString())!);
             }
         });
     }

@@ -43,7 +43,8 @@ namespace OpenVersus.Server.Core.Matches;
 //        session's when the session has an address
 //   both: the answer (the Hydra matchmaking request), THEN the ticket is published on party:queued, which the TS
 //         websocket turns into OnMatchmakerStarted for each player and pushes onto the 1v1 or 2v2 list for the
-//         matchmaker. The answer goes first, as there: the game learns the request id from it.
+//         matchmaker (with Realtime:Gateway on, done here: MatchmakingQueue). The answer goes first, as there: the game
+//         learns the request id from it.
 // The ticket's bytes matter: the matchmaker removes a matched ticket with LREM of JSON.stringify(JSON.parse(ticket)), so
 // its keys are the TS queueMatch's, in its order, and a player's ip is left out (not null) when player:{id} has none.
 // Each player's skill is their rating for the character in player:{id} (eloratings characters_1v1/characters_2v2, made
@@ -51,7 +52,8 @@ namespace OpenVersus.Server.Core.Matches;
 // request's match (the game's lobby match), not the lobby id.
 //
 // Cancel: matchmaking:cancel {playersIds: everyone in the requester's lobby (or the requester), matchmakingId}, which the
-// TS websocket acts on; each of those players' party_ready:{lobby} is deleted. Answer {body: {}, metadata: null,
+// TS websocket acts on (with Realtime:Gateway on, the cancel itself: MatchmakingQueue); each of those players'
+// party_ready:{lobby} is deleted. Answer {body: {}, metadata: null,
 // return_code: 0}.
 //
 // Not ported: queueMatch's leaveLobby from services/customLobbyService.ts (the custom lobbies of the web UI, retired
@@ -121,11 +123,8 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         string me = request.AccountId;
         log.LogInformation("Received 1v1 {Criteria} matchmaking request", queue.Criteria1v1);
 
-        var outdated = await gate.RequiringUpdateAsync([me]);
-        if (outdated.Count > 0)
+        if (await gate.BlockOutdatedAsync([me], log, "1v1 matchmaking"))
         {
-            await gate.RequestModalsAsync(outdated.Select(o => o.AccountId));
-            log.LogWarning("Blocked 1v1 matchmaking for outdated client {Player}", me);
             return new MatchmakingAnswer(200, gate.FailureBody());
         }
 
@@ -172,12 +171,8 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         var lobbyPlayers = lobbyId is null ? null : await PlayersOfAsync(redis, lobbyId);
         var all = lobbyPlayers ?? [id];
 
-        var outdated = await gate.RequiringUpdateAsync(all);
-        if (outdated.Count > 0)
+        if (await gate.BlockOutdatedAsync(all, log, "2v2 matchmaking"))
         {
-            await gate.RequestModalsAsync(outdated.Select(o => o.AccountId));
-            log.LogWarning("Blocked 2v2 matchmaking because update is required for: {Players}",
-                string.Join(", ", outdated.Select(o => $"{o.AccountId}:{(o.ClientVersion.Length > 0 ? o.ClientVersion : "legacy")}")));
             return new MatchmakingAnswer(200, gate.FailureBody());
         }
 
@@ -388,7 +383,15 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         try
         {
             string ticket = await TicketAsync(redis, leader, players, fromMatch, requestId, matchType, time.GetUtcNow(), CancellationToken.None);
-            await redis.PublishAsync(RedisChannel.Literal(QueuedChannel), ticket);
+            if (MatchLaunches.Gateway(services))
+            {
+                await MatchmakingQueue.QueueAsync(redis, ticket);
+            }
+            else
+            {
+                await redis.PublishAsync(RedisChannel.Literal(QueuedChannel), ticket);
+            }
+
             log.LogInformation("Party ({Party}) matchmakingRequestId({Request}) has been added to {Mode} matchmaking queue. Players ({Players})",
                 fromMatch is null ? "undefined" : Js.Stringify(fromMatch).Trim('"'), requestId, matchType, string.Join(",", players));
         }
@@ -515,11 +518,8 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             await RemoveTicketsAsync(redis, pid, [Casual.List1v1, Casual.List2v2]);
         }
 
-        var outdated = await gate.RequiringUpdateAsync(humans);
-        if (outdated.Count > 0)
+        if (await gate.BlockOutdatedAsync(humans, log, "a Casual bot match"))
         {
-            await gate.RequestModalsAsync(outdated.Select(o => o.AccountId));
-            log.LogWarning("Blocked a Casual bot match: update required for {Players}", string.Join(", ", outdated.Select(o => o.AccountId)));
             return gate.FailureBody();
         }
 
@@ -563,9 +563,12 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         return await TsCatchAll.AnswerAsync(services.GetService<MongoDB.Driver.IMongoDatabase>(), ct);
     }
 
-    private static Task PublishCancelAsync(IDatabase redis, IReadOnlyList<string> players, string requestId) =>
-        redis.PublishAsync(RedisChannel.Literal(PartyService.CancelMatchmakingChannel),
-            Js.Stringify(new JsonObject { ["playersIds"] = new JsonArray([.. players.Select(p => (JsonNode?)p)]), ["matchmakingId"] = requestId }));
+    // matchmaking:cancel for the TS websocket, or with Realtime:Gateway on, the cancel itself (MatchmakingQueue).
+    private Task PublishCancelAsync(IDatabase redis, IReadOnlyList<string> players, string requestId) =>
+        MatchLaunches.Gateway(services)
+            ? MatchmakingQueue.CancelAsync(redis, players, requestId)
+            : redis.PublishAsync(RedisChannel.Literal(PartyService.CancelMatchmakingChannel),
+                Js.Stringify(new JsonObject { ["playersIds"] = new JsonArray([.. players.Select(p => (JsonNode?)p)]), ["matchmakingId"] = requestId }));
 
     // Every queue's list: a player queueing anywhere leaves all of them.
     private static readonly string[] s_allLists = [Regular.List1v1, Regular.List2v2, Casual.List1v1, Casual.List2v2];

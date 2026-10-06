@@ -23,7 +23,9 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   do (the "migration contract" comments at the top of `AccessService`, `FriendsService`, `OpsService`, ...). The C# side copies TS and
   mongoose quirks on purpose (field order, `__v`, timestamps, defaults written into old documents).
 - **Why:** TS services (websocket, matchmaking, the website) still read what C# writes, and the other way round.
-- **Pub/sub channels too:** a message C# publishes is read by the TS websocket, which then tells the game. So far:
+- **Pub/sub channels too:** a message C# publishes is read by the TS websocket, which then tells the game (with
+  `Realtime:Gateway` on, slice 3c, none of the channels below is published: what the TS websocket did is done where the
+  message is caused, `MatchmakingQueue`, `MatchLaunches`, `RollbackCallbacks`, `ClientUpdateGate`). So far:
   `client_update:modal` (`ClientUpdateGate`, show a player the update
   toast: `{playerId, nonce}`), `matchmaking:cancel` (`PartyService`, someone joined a party: `{playersIds,
   matchmakingId: "party-changed"}`; `MatchmakingRequestService`, the game's cancel: `{playersIds, matchmakingId}`; the TS

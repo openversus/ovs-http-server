@@ -89,7 +89,10 @@ handler only built a message (a lobby join, matchmaking-complete, a toast, a ran
 are built by their C# publishers and sent through `ws:send` since slice 3b. Slice 3c moves the rest behind one cluster
 switch, `Realtime:Gateway` (off: the TS websocket, as before): a launched match is appended to the stream `match:launched`,
 and the match flow tells its players (`GameServerReadyNotification`, then the config: `MatchLaunches`) and ends it
-(MatchEnd, whatever `MatchEnd:Enabled` says).
+(MatchEnd, whatever `MatchEnd:Enabled` says); the rollback callbacks send `game-server-instance-ready`; a queued party's
+ticket, its OnMatchmakerStarted and cancel are `MatchmakingQueue`'s, its 1 s tick the gateway's (`realtime:queued`,
+`GatewayTicks`); the update toast is `ClientUpdateGate`'s, and the connection stays open (the TS websocket closed it
+10 s later; an outdated player is turned away at each gameplay transition instead).
 
 Done so far: rift progress, missions and reward tracks (MIGRATION-BRIDGES.md 4), the party lobby routes (invite,
 join, leave, mode, ready, loadout lock) and the custom lobby (its routes, its messages, the match start; its match end

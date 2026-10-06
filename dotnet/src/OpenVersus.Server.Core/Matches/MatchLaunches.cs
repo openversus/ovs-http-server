@@ -354,6 +354,8 @@ internal sealed class MatchLaunchStream(IServiceProvider services, IGameplayConf
             return;
         }
 
+        // The players' searches are over (their ticks stop; those who held a ticket are in_match), then each is told.
+        await MatchmakingQueue.FoundAsync(redis, players);
         bool p2p = RollbackCallbacks.Truthy(notification["p2p"]);
         var settings = rollback.CurrentValue;
         foreach (string playerId in players)
@@ -402,6 +404,9 @@ internal sealed class MatchLaunchStream(IServiceProvider services, IGameplayConf
         {
             if (parties.FirstOrDefault(p => p.Searching && p.PlayerIds.Contains(playerId)) is { RequestId: { } requestId })
             {
+                // Its search is over too: the tick stops, the player is idle (the matchmaker took the ticket already).
+                await redis.HashDeleteAsync(MatchmakingQueue.QueuedKey, playerId);
+                await redis.HashSetAsync($"player:{playerId}", "status", "idle");
                 await PlayerMessages.SendAsync(redis, [playerId], MatchLauncher.MatchmakingCancelled(requestId.DeepClone()));
                 await PlayerMessages.NotifyClientAsync(redis, playerId, "admin_banner", MatchLaunches.CancelledTitle, MatchLaunches.CancelledMessage,
                     new JsonObject { ["timeout"] = 10 }, now);

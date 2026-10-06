@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Identity;
@@ -11,15 +12,18 @@ using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Clients;
 
-// Which players must update their OpenVersus client before a gameplay transition (joining a lobby, queueing, starting a
-// custom match), ported from the TS server's services/clientUpdateGate.ts and services/clientVersion.ts (branch
+// Which players must update their OpenVersus client before anything that leads into a match (queueing, starting a custom
+// match or a rift node, accepting a rematch), ported from the TS server's services/clientUpdateGate.ts and services/clientVersion.ts (branch
 // infinity-war). A player is let through when the check is off, or when their session was registered through
 // /api/identify and their client is at least the minimum version (no minimum: any version).
 //
 // Redis, read     connections:{id} clientVersion, identityRegistered ("1"); client_update_modal_nonce:{id} (the calendar)
 // Redis, written  client_update_modal_cooldown:{id} "1" (SET NX EX 15: one request per player per 15 s)
 //                 client_update_modal_nonce:{id} (INCR, then EXPIRE 86400)
-// Published       client_update:modal {"playerId", "nonce"} (the TS websocket shows the player the update toast)
+// Published       client_update:modal {"playerId", "nonce"} (the TS websocket shows the player the update toast, and closes
+//                 their connection 10 s later); with Realtime:Gateway on, the toast is sent from here through ws:send and
+//                 the connection stays open: the player is turned away at every gameplay transition instead, each time
+//                 with the toast (at most one per 15 s)
 
 /// <summary>The client gate's settings (MIN_CLIENT_VERSION, CLIENT_VERSION_CHECK).</summary>
 public sealed class ClientSettings
@@ -134,6 +138,9 @@ internal sealed class ClientUpdateGate(IServiceProvider services, IAccountResolv
     private static readonly TimeSpan s_nonceLifetime = TimeSpan.FromDays(1);
     public const string ModalChannel = "client_update:modal";
 
+    /// <summary>The profile the update toast is from (the TS UPDATE_NOTIFICATION_PROFILES[0]; ProfilesService names it).</summary>
+    public const string UpdateNotifierId = "00000000000000000000a003";
+
     private IDatabase Redis => services.GetService<IConnectionMultiplexer>()?.GetDatabase()
         ?? throw new InvalidOperationException("this service has no Redis (REDIS)");
 
@@ -193,10 +200,29 @@ internal sealed class ClientUpdateGate(IServiceProvider services, IAccountResolv
             string nonceKey = $"client_update_modal_nonce:{id}";
             long nonce = await redis.StringIncrementAsync(nonceKey);
             await redis.KeyExpireAsync(nonceKey, s_nonceLifetime);
-            await redis.PublishAsync(RedisChannel.Literal(ModalChannel), Js.Stringify(new JsonObject { ["playerId"] = id, ["nonce"] = nonce }));
+            if (Matches.MatchLaunches.Gateway(services))
+            {
+                await UpdateToastAsync(redis, id);
+            }
+            else
+            {
+                await redis.PublishAsync(RedisChannel.Literal(ModalChannel), Js.Stringify(new JsonObject { ["playerId"] = id, ["nonce"] = nonce }));
+            }
+
             return true;
         }));
     }
+
+    // With Realtime:Gateway on, the update toast the TS websocket sent for client_update:modal, to the player's game (a
+    // player not connected gets nothing: no gateway holds them). Unlike the TS websocket, the connection is not closed
+    // afterwards: an outdated player stays online and is turned away at each gameplay transition.
+    private static Task UpdateToastAsync(IDatabase redis, string playerId) =>
+        Realtime.PlayerMessages.SendAsync(redis, [playerId], Realtime.ProfileNotifications.Message(new JsonObject
+        {
+            ["template_id"] = "ToastReceivedNotification",
+            ["ToasterAccountID"] = UpdateNotifierId,
+            ["RewardsGranted"] = new JsonArray(),
+        }, playerId));
 
     public JsonObject FailureBody()
     {
@@ -214,6 +240,30 @@ internal sealed class ClientUpdateGate(IServiceProvider services, IAccountResolv
             ["metadata"] = null,
             ["return_code"] = 1,
         };
+    }
+}
+
+public static class ClientUpdateGates
+{
+    /// <summary>
+    /// The gate where a match is about to be made: when any of <paramref name="playerIds"/> must update, each of them is
+    /// sent the update toast (at most one per 15 s) and the refusal is logged as "Blocked <paramref name="what"/>"; true
+    /// when the match must not be made (the caller answers with <see cref="IClientUpdateGate.FailureBody"/> or its own
+    /// refusal). The request routes are gated by path as well (ClientGameplayGate); this covers everyone the match would
+    /// include, which the requester alone does not.
+    /// </summary>
+    public static async Task<bool> BlockOutdatedAsync(this IClientUpdateGate gate, IEnumerable<string> playerIds, ILogger log, string what)
+    {
+        var outdated = await gate.RequiringUpdateAsync(playerIds);
+        if (outdated.Count == 0)
+        {
+            return false;
+        }
+
+        await gate.RequestModalsAsync(outdated.Select(o => o.AccountId));
+        log.LogWarning("Blocked {What}: update required for {Players}", what,
+            string.Join(", ", outdated.Select(o => $"{o.AccountId}:{(o.ClientVersion.Length > 0 ? o.ClientVersion : "legacy")}")));
+        return true;
     }
 }
 

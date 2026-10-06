@@ -724,12 +724,8 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
         // Every player (not a bot) must be on a current client, spectators included.
         var teams = Teams(lobby).ToList();
         var humans = teams.SelectMany(t => Players(t).Where(p => IsHuman(p.Value)).Select(p => p.Key)).ToList();
-        var outdated = await gate.RequiringUpdateAsync(humans);
-        if (outdated.Count > 0)
+        if (await gate.BlockOutdatedAsync(humans, log, $"custom match start in {lobbyId}"))
         {
-            await gate.RequestModalsAsync(outdated.Select(o => o.AccountId));
-            log.LogWarning("Blocked custom match start in {Lobby}: update required for {Players}", lobbyId,
-                string.Join(", ", outdated.Select(o => $"{o.AccountId}:{(o.ClientVersion.Length > 0 ? o.ClientVersion : "legacy")}")));
             return false;
         }
 

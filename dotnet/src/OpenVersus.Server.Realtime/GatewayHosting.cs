@@ -22,6 +22,7 @@ public static class GatewayHosting
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<GatewayNode>();
         builder.Services.AddHostedService<GatewayPings>();
+        builder.Services.AddHostedService<GatewayTicks>();
         builder.Services.AddHostedService<GatewaySubscriber>();
         return builder;
     }
@@ -94,6 +95,85 @@ internal sealed class GatewayPings(GatewayNode node, IOptionsMonitor<GatewaySett
                 {
                     log.LogWarning("Player {Player} with IP {Ip} stopped reading its messages; connection dropped", connection.Info.PlayerId, connection.Info.Ip);
                 }
+            }
+        }
+    }
+}
+
+/// <summary>
+/// The "still searching" tick (the TS websocket's handleMatchTick): every second, each player held here who has a ticket in
+/// a matchmaking queue (realtime:queued, MatchmakingQueue) is sent matchmaking-tick with its request id: one HMGET per
+/// second for the node's players, whoever queued them.
+/// </summary>
+internal sealed class GatewayTicks(IServiceProvider services, GatewayNode node, TimeProvider time, ILogger<GatewayTicks> log) : BackgroundService
+{
+    internal static TimeSpan Interval { get; set; } = TimeSpan.FromSeconds(1);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis)
+        {
+            return;
+        }
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(Interval, time, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            try
+            {
+                await TickAsync(redis);
+            }
+            catch (Exception e) when (e is RedisException or TimeoutException)
+            {
+                log.LogError("Matchmaking ticks: {Error}", e.Message);
+            }
+        }
+    }
+
+    internal async Task TickAsync(IDatabase redis)
+    {
+        var held = node.Connections.ToList();
+        if (held.Count == 0)
+        {
+            return;
+        }
+
+        var tickets = await redis.HashGetAsync(Core.Matches.MatchmakingQueue.QueuedKey, [.. held.Select(c => (RedisValue)c.Info.PlayerId)]);
+        var encoded = new Dictionary<string, byte[]>();
+        for (int i = 0; i < held.Count; i++)
+        {
+            if (tickets[i].IsNullOrEmpty)
+            {
+                continue;
+            }
+
+            string ticket = tickets[i].ToString();
+            if (!encoded.TryGetValue(ticket, out var bytes))
+            {
+                try
+                {
+                    bytes = HydraEncoder.Encode(Core.Matches.MatchmakingQueue.Tick(Core.Matches.MatchmakingQueue.RequestIdOf(ticket)), webSocket: true);
+                }
+                catch (Exception e) when (e is System.Text.Json.JsonException or HydraFormatException or InvalidOperationException)
+                {
+                    log.LogError("Player {Player}'s queue ticket is not one: {Error}", held[i].Info.PlayerId, e.Message);
+                    continue;
+                }
+
+                encoded[ticket] = bytes;
+            }
+
+            if (!held[i].Send(bytes))
+            {
+                log.LogWarning("Player {Player} with IP {Ip} stopped reading its messages; connection dropped", held[i].Info.PlayerId, held[i].Info.Ip);
             }
         }
     }

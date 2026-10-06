@@ -4,14 +4,17 @@ namespace OpenVersus.Server.Http.Shared.Hosting;
 
 /// <summary>
 /// The TS server's requireCurrentClientForGameplay (services/clientUpdateGate.ts, mounted in server.ts after the token
-/// check): a gameplay transition (queueing, joining or starting a lobby or custom match, readying up, a rematch) from a
-/// player whose client must update (<see cref="IClientUpdateGate"/>) is turned away with the gate's answer, HTTP 200 and
-/// return_code 1, and the websocket is asked to show the player the update toast. Login and the menus stay open.
+/// check), on what leads into a match (queueing, starting a custom match, entering Rifts or starting a node, accepting a
+/// rematch): from a player whose client must update (<see cref="IClientUpdateGate"/>) it is turned away with the gate's
+/// answer, HTTP 200 and return_code 1, and the player is sent the update toast. Login, the menus and lobbies stay open: creating and
+/// joining a party or custom lobby are not gated (the TS server gated them too; the game has no failure path for creating
+/// a custom lobby, and waits for it forever). Readying in a party lobby, the game's step before its matchmaking request
+/// and the refusal it backs out of, is gated by the party service (PartyService.SetReadyAsync), the whole party at once.
 /// <para>
-/// The paths are the TS server's, matched as Express's app.use matches them: any method, any letter case, the path
-/// itself or anything below it (/ssc/invoke/join_party_lobby and /ssc/invoke/join_party_lobby/x, not
-/// /ssc/invoke/join_party_lobby_x). A batch's sub-requests go through it too, as there. When the gate cannot be
-/// evaluated (no Redis), 503 with the same answer, as there.
+/// The paths are matched as Express's app.use matches them: any method, any letter case, the path itself or anything
+/// below it (/ssc/invoke/start_custom_match and /ssc/invoke/start_custom_match/x, not /ssc/invoke/start_custom_match_x).
+/// A batch's sub-requests go through it too, as there. When the gate cannot be evaluated (no Redis), 503 with the same
+/// answer, as there.
 /// </para>
 /// </summary>
 public static class ClientGameplayGate
@@ -24,13 +27,15 @@ public static class ClientGameplayGate
         // The Casual queue, which the TS server never answered (its gate list had no entry for it).
         "/matches/matchmaking/casual-retail/request",
         "/ssc/invoke/casual_queue",
-        "/ssc/invoke/create_custom_game_lobby",
-        "/ssc/invoke/join_custom_game_lobby",
         "/ssc/invoke/start_custom_match",
-        "/ssc/invoke/join_party_lobby",
-        "/ssc/invoke/autoparty_join",
-        "/ssc/invoke/set_ready_for_lobby",
         "/ssc/invoke/rematch_accept",
+        // Rifts (not in the TS server's gate list): entering them, the game's first rift request and the refusal on that path
+        // it backs out of (refused later, in the rift lobby or at the node, it waits on its loading screen); a node's match
+        // behind it.
+        "/ssc/invoke/get_or_create_rift_state",
+        "/ssc/invoke/create_rift_lobby",
+        "/ssc/invoke/start_rift_node",
+        "/ssc/invoke/retry_current_rift_node",
     ];
 
     public static bool Covers(PathString path) => Paths.Any(p => path.StartsWithSegments(p, StringComparison.OrdinalIgnoreCase));

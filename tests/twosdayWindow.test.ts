@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_TWOSDAY_WINDOW, isInTwosdayWindow, secondsOfDay } from "../src/utils/twosdayWindow";
+import { DEFAULT_TWOSDAY_WINDOW, isInTwosdayWindow, secondsIntoTwosdayWindow, secondsOfDay } from "../src/utils/twosdayWindow";
 
 const at = (iso: string) => isInTwosdayWindow(new Date(iso), DEFAULT_TWOSDAY_WINDOW);
 
@@ -48,4 +48,12 @@ test("times of day", () => {
   assert.equal(secondsOfDay("23:59:59"), 86399);
   assert.equal(secondsOfDay("24:01"), null);
   assert.equal(secondsOfDay("12:60"), null);
+});
+
+test("how long the window has been open", () => {
+  const into = (iso: string) => secondsIntoTwosdayWindow(new Date(iso), DEFAULT_TWOSDAY_WINDOW);
+  assert.equal(into("2026-10-06T19:00:00Z"), 0); // 3:00 PM EDT
+  assert.equal(into("2026-10-06T19:29:59Z"), 29 * 60 + 59);
+  assert.equal(into("2026-10-06T18:59:59Z"), null);
+  assert.equal(into("2026-10-07T04:00:00Z"), null);
 });

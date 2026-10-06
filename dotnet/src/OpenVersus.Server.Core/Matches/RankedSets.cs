@@ -56,7 +56,7 @@ namespace OpenVersus.Server.Core.Matches;
 //                 ms later the empty config that sends the game back to its menus (a set over at check-in: both 500 ms
 //                 after the answer, as there); FullRankUpdate (FullRankUpdateVariant.SetResult) after a rating, to every
 //                 player of the set but bots, connected or not (FullRankUpdate.SendAsync)
-// Published       match:notifications (the next game)
+// Announced       the next game (MatchLaunches: match:notifications, or match:launched with Realtime:Gateway on)
 // Mongo, written  eloratings, playerstats (SetRatings); eloratings for a player with none (FullRankUpdate)
 //
 // The next game's rollback port is IMatchLauncher's (fixed servers: a random one of theirs; on demand: the next port,
@@ -731,10 +731,6 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
             launcher.DeployIfOnDemand(port, matchId);
         }
 
-        string json = Js.Stringify(notification);
-        await redis.StringSetAsync(matchId, json, s_matchTtl);
-        await redis.PublishAsync(RedisChannel.Literal(MatchLauncher.NotificationChannel), json);
-
         set["checkins"] = new JsonArray();
         await redis.KeyDeleteAsync($"ranked_set_checkins:{setId}");
         // The set's keys must last until the game's end, when the TS websocket writes them again: as long as the match's.
@@ -749,6 +745,9 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
         // Written again for each game, and kept longer than a whole set: the TS websocket refreshes the set's keys at a
         // game's end and knows nothing of this one.
         await redis.StringSetAsync($"ranked_set_match:{setId}", matchId, s_currentGameTtl);
+        // Announced once the set's keys name this game (a game that cannot be told ends its set: MatchLaunches). A set's
+        // next game sends no matchmaking-complete (the TS server sent none).
+        await MatchLaunches.AnnounceAsync(services, redis, matchId, Js.Stringify(notification), []);
         log.LogInformation("Created set match {Match} (game {Game}/3) on map {Map}, rollback port {Port}{P2P}", matchId, Number(set["gamesPlayed"]) + 1, map, port,
             p2p ? " (P2P: the players connect to their own nodes; a relay only if no direct path opens)" : "");
     }

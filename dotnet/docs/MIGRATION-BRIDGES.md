@@ -51,7 +51,8 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 - **Starting a match:** `IMatchLauncher` (`Core/Matches/`, for rifts and custom lobbies) writes what the TS custom lobby
   writes when a match starts (`match:{id}`, `match:{id}:perks:{bot}`, the notification at `{id}`, `rollback:current_port`
   on demand), publishes `match:notifications` (the TS `MATCH_FOUND_NOTIFICATION`, with a custom game's settings and
-  its spectators) and sends its players `matchmaking-complete` (ws:send). The TS
+  its spectators; with `Realtime:Gateway` on, appends it to `match:launched` instead: bridge 9) and sends its players
+  `matchmaking-complete` (ws:send; with the switch on, the match flow sends it once the config is built). The TS
   websocket sends the match to the game, and the match flow's rollback routes (`RollbackCallbacks`) serve it. For modes the websocket does not know,
   the notification carries two fields added to the TS type for this (`src/config/redis.ts`): `gameplayConfigOverride`
   and `playerConfigOverrides`, merged over the websocket's PvP gameplay config in `handleSendGamePlayConfig`, and
@@ -228,13 +229,14 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   the nodes (`RollbackCallbacks`: `/ovs_register` signed and holding game-server-instance-ready, `/ovs_p2p_ready`,
   `/ovs_p2p_failed`, `/ovs_match_started`; `NodeConfig`: `/ovs_node_config`); the rest of a P2P match is TS:
   `/api/identify` (the node's port) and the websocket (sends the game to `127.0.0.1` and that port, P2P_NODE_PORT when
-  the client reported none). `Rollback:P2P` takes `P2P_ROLLBACK` when it is not set itself, but a cluster setting changed
+  the client reported none; with `Realtime:Gateway` on, the match flow sends it, `MatchLaunches`, Rollback:P2PNodePort). `Rollback:P2P` takes `P2P_ROLLBACK` when it is not set itself, but a cluster setting changed
   through the control API is not seen by TS: with the two different, a custom lobby's game and its rematch can disagree,
   and so can a set's game 1 when the TS matchmaker made it.
 - **Until then:** change both together; each executable that starts matches logs the C# value once it has started (the
   cluster settings are loaded by then).
 - **Delete when:** custom lobby rematches start in C# (`Rematches`, with `MatchEnd:Enabled`), `/api/identify` is ported,
-  the TS matchmaker is retired, and the websocket reads `p2p` and the node port from C#'s config (the realtime gateway).
+  the TS matchmaker is retired, and the websocket reads `p2p` and the node port from C#'s config (the realtime gateway:
+  `Realtime:Gateway`, slice 3c).
 
 ### 9. The match flow builds match configs from the TS websocket's channels, and the TS websocket still sends them
 
@@ -248,9 +250,15 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   server still starts (a custom lobby's rematch) included; with more than one match flow replica, each builds the same
   config.
 - **Until then:** `Off` by default; the bench runs `Shadow` while the C# config is compared with what TS sends.
-- **Delete when:** the realtime gateway replaces the TS websocket: then whatever starts a match (`MatchLauncher`) and the
-  perks lock (`PerksLock`) call `IGameplayConfigs` directly, as everything else that causes a message does, and the
-  gateway sends what they keep. The setting goes with it.
+  With `Realtime:Gateway` on (slice 3c), the launchers no longer publish `match:notifications`: they append each match to
+  the stream `match:launched` (`MatchLaunches`), and the match flow (`MatchLaunchStream`) builds the config (`On`, whatever
+  the setting says) and sends it, after each player's `GameServerReadyNotification` and each party's
+  `matchmaking-complete`, through the gateway; a match whose config cannot be built is called off instead (nobody is told
+  of it; a searching game is cancelled, any other closed after a banner). The bridge then
+  hears no C# match; a match the TS server still starts (its custom lobby rematch timer, only reached with match end off,
+  which the switch turns on) would get no C# config.
+- **Delete when:** the realtime gateway replaces the TS websocket (slice 3e): the perks lock (`PerksLock`) calls
+  `IGameplayConfigs` directly too (slice 3c), and the bridge and the setting go.
 
 ## Not bridges (kept after the migration)
 

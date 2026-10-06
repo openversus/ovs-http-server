@@ -26,8 +26,10 @@ namespace OpenVersus.Server.Core.Matches;
 //                 so no ELO) EX 20 min; match:{match}:perks:{bot} (the launch's bot perks, "[]" when none) EX 20 min for
 //                 each bot (bots never send perks_lock, and the TS all-perks-locked check waits for every ticket
 //                 player); {match} (the notification, which /ovs_register reads) EX 20 min
-// Published       match:notifications (the notification: the websocket sends the match to its players)
-// Sent (ws:send)  then matchmaking-complete (MatchmakingComplete: a new request id, a new result id) to the players but
+// Announced       the notification (MatchLaunches: published on match:notifications for the TS websocket, or with
+//                 Realtime:Gateway on appended to match:launched, from which the match flow tells the players)
+// Sent (ws:send)  then matchmaking-complete (MatchmakingComplete: a new request id, a new result id; MatchLaunches sends it,
+//                 at once, or with Realtime:Gateway on once the match's config is built) to the players but
 //                 the bots, as the TS websocket built it from matchmaking:complete
 //
 // The notification may carry gameplayConfigOverride (merged over the websocket's GameplayConfig) and
@@ -74,6 +76,10 @@ public sealed class RollbackSettings
     [Description("The rollback port game-server-instance-ready carries for a match whose match:{id} names none (UDP_PORT; the TS GAME_SERVER_PORT). 0: none, and the TS websocket uses its own UDP_PORT.")]
     [Range(0, 65535)]
     public int UdpPort { get; set; }
+
+    [Description("The port a player's game is sent to for a P2P match when their client reported none for its node (connections:{id} nodePort): the fixed port a node takes when it can (P2P_NODE_PORT).")]
+    [Range(1, 65535)]
+    public int P2PNodePort { get; set; } = 41234;
 
     [Description("Lowest port an on-demand rollback server is given (ON_DEMAND_ROLLBACK_PORT_LOW).")]
     [Range(1, 65535)]
@@ -278,11 +284,8 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
             DeployIfOnDemand(rollbackPort, matchId);
         }
 
-        string json = Js.Stringify(notification);
-        await redis.StringSetAsync(matchId, json, s_ttl);
-        await redis.PublishAsync(RedisChannel.Literal(NotificationChannel), json);
-        await PlayerMessages.SendAsync(redis, launch.Players.Where(p => !p.IsBot).Select(p => p.PlayerId),
-            MatchmakingComplete(matchId, matchmakingRequestId, ObjectId.GenerateNewId().ToString()));
+        await MatchLaunches.AnnounceAsync(services, redis, matchId, Js.Stringify(notification),
+            [new MatchComplete([.. launch.Players.Where(p => !p.IsBot).Select(p => p.PlayerId)], matchmakingRequestId)]);
 
         log.LogInformation("Started {Mode} match {Match} on rollback port {Port}{P2P}: {Players}", launch.Mode, matchId, rollbackPort,
             p2p ? " (P2P: the players connect to their own nodes; a relay only if no direct path opens)" : "",
@@ -305,6 +308,18 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
         payload["state"] = 2;
         return new JsonObject { ["data"] = new JsonObject(), ["payload"] = payload, ["header"] = "Matchmaking request completed!", ["cmd"] = "matchmaking-complete" };
     }
+
+    /// <summary>
+    /// matchmaking-cancel, as the TS websocket's cancelMatchMaking sent it: the request it ends (<paramref name="requestId"/>),
+    /// state 3. A game searching for that request goes back to the lobby.
+    /// </summary>
+    internal static JsonObject MatchmakingCancelled(JsonNode requestId) => new()
+    {
+        ["data"] = new JsonObject(),
+        ["payload"] = new JsonObject { ["id"] = requestId, ["state"] = 3 },
+        ["header"] = "Matchmaking request cancelled.",
+        ["cmd"] = "matchmaking-cancel",
+    };
 
     public Task<int?> RollbackPortAsync(IDatabase redis)
     {
@@ -388,6 +403,8 @@ public static class MatchLauncherHosting
     public static WebApplicationBuilder AddMatchLauncher(this WebApplicationBuilder builder)
     {
         builder.AddSetting<RollbackSettings>("Rollback");
+        // Realtime:Gateway decides how a match is announced (MatchLaunches), here and in the matchmaker.
+        builder.AddSetting<Access.RealtimeSettings>("Realtime");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IMatchLauncher, MatchLauncher>();
         builder.Services.AddHttpClient(MatchLauncher.DeployClient, c => c.Timeout = TimeSpan.FromSeconds(30));

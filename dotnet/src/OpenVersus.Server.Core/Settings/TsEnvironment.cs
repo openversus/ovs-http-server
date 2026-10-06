@@ -40,6 +40,7 @@ public static class TsEnvironment
         ("OVS_SERVER", "Rollback:OvsServer"),
         ("UDP_SERVER_IP", "Rollback:UdpServerIp"),
         ("UDP_PORT", "Rollback:UdpPort"),
+        ("P2P_NODE_PORT", "Rollback:P2PNodePort"),
         ("MATCHUPDATEKEY", "Rollback:MatchUpdateKey"),
         ("P2P_NODE_SIGNING_KEY", "Rollback:NodeSigningKey"),
         ("P2P_NODE_SIGNING_KEY_FILE", "Rollback:NodeSigningKeyFile"),

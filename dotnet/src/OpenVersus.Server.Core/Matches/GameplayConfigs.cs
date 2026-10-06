@@ -66,7 +66,8 @@ namespace OpenVersus.Server.Core.Matches;
 // Who builds it (GameplayConfigs:Mode, cluster setting): Off, the TS websocket alone. Shadow: the match flow builds and
 // keeps each config too, writing nothing else the TS server reads, while the TS websocket still sends its own; the two
 // are compared (tools/matches/config_diff.mjs on scratch stores; the live bench). On: also the writes the TS websocket
-// makes beside it. Nothing here sends: until the gateway (docs/REALTIME.md), the TS websocket sends the config. The
+// makes beside it. Nothing here sends: the TS websocket sends the config, or with Realtime:Gateway on, MatchLaunchStream
+// (MatchLaunches.cs) builds it with On from the launch and sends it. The
 // subscriber below is a bridge (docs/MIGRATION-BRIDGES.md, 9): once the TS websocket is gone, MatchLauncher and the perks
 // lock call this directly, as everything else that causes a message does. With more than one match flow replica, each
 // builds the same config (the same keys, the same values).
@@ -97,7 +98,7 @@ public enum GameplayConfigMode
 
 public sealed class GameplayConfigSettings
 {
-    [Description("Who builds the match configs (OnGameplayConfigNotified): Off, the TS websocket alone; Shadow, the match flow also builds and keeps each one per player (match_config:{player}), writing nothing else the TS server reads; On, also what the TS websocket writes beside it (match_characters, the cosmetics match copy, a missing rating). The TS websocket sends the config in every mode until the gateway replaces it.")]
+    [Description("Who builds the match configs (OnGameplayConfigNotified): Off, the TS websocket alone; Shadow, the match flow also builds and keeps each one per player (match_config:{player}), writing nothing else the TS server reads; On, also what the TS websocket writes beside it (match_characters, the cosmetics match copy, a missing rating). The TS websocket sends the config in every mode; with Realtime:Gateway on, the match flow builds every config with On and sends it itself (MatchLaunches), whatever this says.")]
     public GameplayConfigMode Mode { get; set; } = GameplayConfigMode.Off;
 }
 

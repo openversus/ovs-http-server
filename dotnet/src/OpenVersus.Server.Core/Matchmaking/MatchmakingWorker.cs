@@ -37,11 +37,11 @@ namespace OpenVersus.Server.Core.Matchmaking;
 //        (anyone not blocked); a player who waits too long gets bots from the game's casual_queue instead.
 // A match (createMatch): match:{id} (the tickets as queued) EX 20 min; teams (parties shuffled, team 0 filled first,
 // player index = place * 2 + team, a random index hosts, each player's ip from player:{id}); a map (Matchmaking/maps.json:
-// an enabled one for the mode; 1v1: 1 in 999 PVE_03); the notification at {id} EX 20 min and on match:notifications;
-// p2p in the notification (Rollback:P2P and P2P.IsEligible; a P2P match is deployed no rollback server);
-// ranked_set:{id} and player_ranked_set:{player} EX 20 min (every regular match: game 1 of a set); matchmaking-complete
-// to each ticket's players (ws:send, MatchLauncher.MatchmakingComplete: its own request id), as the TS websocket built it
-// from matchmaking:complete. A Casual match is never rated: match:{id} has isPasswordMatch (the
+// an enabled one for the mode; 1v1: 1 in 999 PVE_03); p2p in the notification (Rollback:P2P and P2P.IsEligible; a P2P
+// match is deployed no rollback server); ranked_set:{id} and player_ranked_set:{player} EX 20 min (every regular match:
+// game 1 of a set); then the notification at {id} EX 20 min, announced (MatchLaunches: match:notifications, or
+// match:launched) with matchmaking-complete for each ticket's players (MatchLauncher.MatchmakingComplete: its own
+// request id), as the TS websocket built it from matchmaking:complete. A Casual match is never rated: match:{id} has isPasswordMatch (the
 // TS match result skips those) and queue "casual" (for a Casual rating of its own, later), it starts no ranked set, and
 // its notification is unranked (BotDefaults.UnrankedNotificationFields: isCustomGame, with bIsCustomGame set back to false
 // in the game's config), so the TS websocket opens no set at its end either and no TS rating path rates it. The TS websocket does the rest (it tells the game, MIGRATION-BRIDGES.md 2).
@@ -465,10 +465,6 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
             launcher.DeployIfOnDemand(port, matchId);
         }
 
-        string json = Js.Stringify(notification);
-        await redis.StringSetAsync(matchId, json, s_matchTtl);
-        await redis.PublishAsync(RedisChannel.Literal(MatchLauncher.NotificationChannel), json);
-
         // Every regular match is game 1 of a set: its state from the start, so a disconnect in game 1 is already a ranked
         // one. A Casual match has no set: sets are what the TS server rates.
         var ids = tickets.SelectMany(t => t.Players.Select(p => p.Id)).ToList();
@@ -488,12 +484,10 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
             }
         }
 
-        // One per ticket: each party's own request.
-        foreach (var ticket in tickets)
-        {
-            await PlayerMessages.SendAsync(redis, ticket.Players.Select(p => p.Id),
-                MatchLauncher.MatchmakingComplete(matchId, ticket.Json["matchmakingRequestId"], ObjectId.GenerateNewId().ToString()));
-        }
+        // Announced once its set is written (a match that cannot be told ends its set: MatchLaunches), with one
+        // matchmaking-complete per ticket: each party's own request.
+        await MatchLaunches.AnnounceAsync(services, redis, matchId, Js.Stringify(notification),
+            [.. tickets.Select(t => new MatchComplete([.. t.Players.Select(p => p.Id)], t.Json["matchmakingRequestId"], Searching: true))]);
 
         log.LogInformation("Created {Mode} match {Match} from {Queue} with {Players} players across {Tickets} tickets on rollback port {Port}{P2P}", mode, matchId, queue, total, tickets.Count, port,
             p2p ? " (P2P: the players connect to their own nodes; a relay only if no direct path opens)" : "");

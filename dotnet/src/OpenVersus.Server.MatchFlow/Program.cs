@@ -12,9 +12,10 @@ using OpenVersus.Server.Http.Shared;
 // the stream match:results (MatchResultStream): missions, match XP, rift progress and each match's stats. Any number of
 // replicas: they read the stream as one consumer group, and each result is recorded once per match and player (SET NX keys).
 // And each match's gameplay config, kept per player (GameplayConfigs:Mode; built beside the TS websocket, which still sends
-// it: docs/MIGRATION-BRIDGES.md 9).
-// And a match's end (MatchEnd, when MatchEnd:Enabled; until the realtime gateway, the TS websocket ends them from match:end),
-// with its delayed websocket messages (DelayedMessages).
+// it: docs/MIGRATION-BRIDGES.md 9). With Realtime:Gateway on, the launched matches (match:launched, MatchLaunchStream):
+// each one's config built and sent with GameServerReadyNotification to its players.
+// And a match's end (MatchEnd, when MatchEnd:Enabled or Realtime:Gateway; until the realtime gateway, the TS websocket ends
+// them from match:end), with its delayed websocket messages (DelayedMessages).
 var builder = OpenVersusHost.CreateBuilder(KnownServices.MatchFlow, args);
 builder.AddGameHttp(typeof(Program).Assembly);
 builder.AddRewardTracks();
@@ -29,6 +30,7 @@ builder.AddRollbackCallbacks();
 builder.AddMatchStatusEvents();
 builder.AddMatchResultStream();
 builder.AddGameplayConfigs();
+builder.AddMatchLaunches();
 builder.AddMatchEnd();
 
 var app = builder.Build();

@@ -39,14 +39,15 @@ export function decodeFrame(bytes) {
 }
 
 /**
- * Connects one fake game per player ({id, token}) to `url`; resolves when every one has had the server's id frame.
+ * Connects one fake game per player ({id, token, headers?}) to `url`; resolves when every one has had the server's id
+ * frame. `headers` are sent with the upgrade (x-real-ip: the address a reverse proxy reports; without it, the socket's).
  * `frames(id)` is what that player has been sent since the last `clear()`, pings left out.
  */
 export async function connectPlayers(url, players) {
   const received = new Map(players.map((p) => [p.id, []]));
   const sockets = new Map();
   const open = (player, i) => new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, { headers: player.headers ?? {} });
     sockets.set(player.id, ws);
     let greeted = false;
     const timer = setTimeout(() => reject(new Error(`no id frame for ${player.id}`)), 5000);

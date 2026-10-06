@@ -86,14 +86,17 @@ and rejoin. Those handlers move together with the gateway and the matchmaker. Un
 they listen to as the TS server does (`matchmaking:cancel` from a party join and the game's cancel, `party:queued` from
 the matchmaking request, `match:notifications` from a match's start; MIGRATION-BRIDGES.md 2). The channels whose TS
 handler only built a message (a lobby join, matchmaking-complete, a toast, a ranked set's check-in, leaver and ranks)
-are built by their C# publishers and sent through `ws:send` since slice 3b.
+are built by their C# publishers and sent through `ws:send` since slice 3b. Slice 3c moves the rest behind one cluster
+switch, `Realtime:Gateway` (off: the TS websocket, as before): a launched match is appended to the stream `match:launched`,
+and the match flow tells its players (`GameServerReadyNotification`, then the config: `MatchLaunches`) and ends it
+(MatchEnd, whatever `MatchEnd:Enabled` says).
 
 Done so far: rift progress, missions and reward tracks (MIGRATION-BRIDGES.md 4), the party lobby routes (invite,
 join, leave, mode, ready, loadout lock) and the custom lobby (its routes, its messages, the match start; its match end
 and rematch vote are ported too, `MatchEnd` and `Rematches`: the rematch routes answer from C#, the match end with
 `MatchEnd:Enabled`), and the matchmaking worker (its own executable, `OpenVersus.Server.Matchmaking`; on by default, `Matchmaking:Enabled`; the queue side, the
 tickets and their tick, stays with the websocket). The match config is built by the match flow (`GameplayConfigs`, kept per player; MIGRATION-BRIDGES.md 9), and still
-sent by the TS websocket.
+sent by the TS websocket unless `Realtime:Gateway` is on.
 
 ## A node restart without disconnecting anyone
 

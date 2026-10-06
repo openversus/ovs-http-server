@@ -31,12 +31,14 @@ namespace OpenVersus.Server.Core.Matches;
 //     made with the same teams.
 //   concede: the conceder's team loses the set; rated, then everyone back to the menus.
 //   faceoff timeout (an opponent never loaded into the match): the set is dropped, no rating.
-// A match the rollback server reported as crashed (match_server_crash) is never rated: the set is dropped at check-in.
+// A match the rollback server reported as crashed (match_server_crash) is never rated: the set is dropped at check-in. So
+// is a set whose player's gateway node died between its games (ranked_set_crashed:{set}, MatchStatusEvents), but for its
+// rating: it is read at check-in only, so a set that ends on its results is rated.
 // Ratings: SetRatings, when RatedMatches says the set counts. Every request is answered {body: {}} (the endpoints).
 //
 // Redis, read     player_ranked_set:{player}; ranked_set:{set} {players, mode, gamesPlayed, scores, checkins, conceded,
 //                 concedingPlayer}; ranked_set_match:{set}, match_to_set:{game}; match_server_crash:{set},
-//                 match_server_crash:{its game};
+//                 match_server_crash:{its game}; ranked_set_crashed:{set} (at check-in);
 //                 ranked_disconnect:{player}; online_players; match:{game}, {game} (RatedMatches);
 //                 match_characters:{game}, match_characters:{set}, connections:{player} character, username
 // Redis, written  ranked_set_lock:{set} (EX 10 s, around everything a set request does); ranked_set_checkins:{set} (SADD,
@@ -44,6 +46,7 @@ namespace OpenVersus.Server.Core.Matches;
 //                 EX 30 s; elo_processed_set:{set} NX EX 5 min ("set_over", "concede", "disconnect_concede": the TS
 //                 websocket skips a set it finds there); a dropped set: player_ranked_set:{each player} (and
 //                 ranked_disconnect:{each player} at a faceoff or crash), ranked_set:{set}, ranked_set_checkins:{set},
+//                 ranked_set_crashed:{set},
 //                 ranked_set_match:{set} deleted; a stale ranked_disconnect:{player} (online again) deleted
 //   next game     match:{game} (one ticket of every player: skill 0, region local, partyId the game; no isPasswordMatch,
 //                 so it is rated) EX 20 min; {game} (the notification: the set's players as they were, a map, p2p) EX 20
@@ -209,8 +212,9 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
             log.LogInformation("Set {Set} check-in: {Count}/{Total}", setId, checkinCount, all.Count);
         }
 
-        // A crash (everyone left with no result, or the rollback server failed): not fair to rate anyone.
-        if (await CrashedAsync(redis, setId, current) is { } crash)
+        // A crash (everyone left with no result, the rollback server failed, or a player's gateway node died between the
+        // games): not fair to rate anyone.
+        if ((await CrashedAsync(redis, setId, current) ?? (string?)await redis.StringGetAsync($"ranked_set_crashed:{setId}")) is { } crash)
         {
             log.LogInformation("Set {Set} flagged as crash ({Flag}) — skipping auto-concede, cleaning up", setId, crash);
             await DropAsync(redis, setId, all, disconnectFlags: true);
@@ -824,6 +828,7 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
         await redis.KeyDeleteAsync($"ranked_set:{setId}");
         await redis.KeyDeleteAsync($"ranked_set_checkins:{setId}");
         await redis.KeyDeleteAsync($"ranked_set_match:{setId}");
+        await redis.KeyDeleteAsync($"ranked_set_crashed:{setId}");
     }
 
     // MatchSetLeaverNotification to every player (AccountId: the leaver) after `after`, then the empty config 500 ms later,

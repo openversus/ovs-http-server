@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using OpenVersus.Server.Core.CustomLobbies;
 using OpenVersus.Server.Core.Matches;
 
 namespace OpenVersus.Server.Lobbies.Endpoints.Game.Ssc;
@@ -11,6 +12,9 @@ public sealed class PutCreatePartyLobby : PartyEndpoint
     protected override string Route => "create_party_lobby";
 
     protected override bool Shared => true;
+
+    // The first one after a login: out of a custom lobby left over from an earlier session, rather than into it.
+    protected override Task BeforeAsync(PartyRequest request) => Resolve<ICustomLobbyService>().LeaveLobbyFromBeforeLoginAsync(request.AccountId);
 
     protected override Task<JsonObject> AnswerAsync(IPartyService party, PartyRequest request, CancellationToken ct) => party.CreatePartyLobbyAsync(request, ct);
 }

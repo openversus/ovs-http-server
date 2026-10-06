@@ -11,7 +11,8 @@ namespace OpenVersus.Server.Core.Realtime;
 // (realtime:connections, consumer group "matchflow"; ConnectionEvents.cs). Each disconnected event is the TS websocket's
 // close for the match (websocket.ts 511-616): a pregame dodge, a mid-game leave of a set game, a leave between a set's
 // games (IMatchStatusEvents.GameClosedAsync). For a P2P match it is the only such signal: its node sends no
-// PlayerDisconnect. The lobbies, the queue and the session are the lobbies service's (LobbyDisconnects).
+// PlayerDisconnect. A close made for a gateway node that died (reaped, GatewayReaper) is the server's failure, a crash
+// for the match. The lobbies, the queue and the session are the lobbies service's (LobbyDisconnects).
 //
 // Nothing is done for a player who has connected or logged in again since (ConnectionEvents.BackAsync): the game they
 // left is a rollback server's to call a crash or a dodge, where there is one; TS ignored the close of a connection a newer
@@ -41,7 +42,7 @@ internal sealed class MatchDisconnects(IServiceProvider services, IMatchStatusEv
             return;
         }
 
-        await events.GameClosedAsync(connectionEvent.PlayerId);
+        await events.GameClosedAsync(connectionEvent.PlayerId, nodeGone: connectionEvent.Reaped);
     }
 }
 

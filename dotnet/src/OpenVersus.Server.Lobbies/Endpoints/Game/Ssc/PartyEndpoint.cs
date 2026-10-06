@@ -23,6 +23,9 @@ public abstract class PartyEndpoint : JsonBodyEndpoint
 
     protected abstract Task<JsonObject> AnswerAsync(IPartyService party, PartyRequest request, CancellationToken ct);
 
+    /// <summary>Anything the route does before it is answered, a custom lobby's answer included.</summary>
+    protected virtual Task BeforeAsync(PartyRequest request) => Task.CompletedTask;
+
     public override void Configure()
     {
         Verbs(FastEndpoints.Http.PUT);
@@ -40,6 +43,7 @@ public abstract class PartyEndpoint : JsonBodyEndpoint
 
         var body = (await ReadBodyAsync(ct)) as JsonObject;
         var request = new PartyRequest(session.AccountId, session.Claims, ClientAddress.Of(HttpContext, stripMapped: true), body);
+        await BeforeAsync(request);
         var party = Resolve<IPartyService>();
         if (Shared && await party.CustomLobbyAsync(Route, request) is { } custom
             && await Resolve<ICustomLobbyService>().SharedAsync(Route, request, custom, ct) is { } answer)

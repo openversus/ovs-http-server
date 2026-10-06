@@ -9,6 +9,12 @@
 //   node dotnet/tools/realtime/disconnect_diff.mjs run cs <out.json> [step]   the C# gateway (REF_CS_WS), with the C#
 //                                                                             lobbies service on the same stores
 //   node dotnet/tools/realtime/disconnect_diff.mjs diff <ts.json> <cs.json>
+//   node dotnet/tools/realtime/disconnect_diff.mjs run reap <out.json> [step] the C# gateway again, but the game that
+//                                                                             drops is held by a second node (REF_GW_B_WS,
+//                                                                             started for each step by REF_GW_B_CMD), which
+//                                                                             is killed (SIGKILL) instead: the first node
+//                                                                             reaps it (GatewayReaper)
+//   node dotnet/tools/realtime/disconnect_diff.mjs diff-reap <cs.json> <reap.json>
 //
 // Scratch Redis and Mongo, wiped before every step (REF_REDIS_URL, REF_MONGO_URI), and the servers' token secret
 // (REF_JWT_SECRET). The TS websocket must be PR #49's code as committed, run from its build as prod runs it. Lobby ids
@@ -25,7 +31,14 @@
 // The lobbies' writes are compared in order (the C# reader keeps the TS order); the rest as multisets (the gateway takes
 // the player offline at the close, TS at the end of its cleanup). Every other difference is in EXPECTED, which asserts
 // it, or a failure.
+//
+// A reaped game (no reference: TS ran no close at all for a websocket that crashed) is compared with the same game
+// closing its socket on the C# gateway: the same writes and state for its lobbies, its queue and its session, and for
+// its match the server's failure instead of a leave (REAP_EXPECTED). The nodes need short timings for it (Gateway:
+// PingIntervalMs 1000, ReapAfterMs 3000, ReapIntervalMs 1000); the dead node's registry entry is left to run out (20 s).
 import fs from "node:fs";
+import net from "node:net";
+import { spawn } from "node:child_process";
 import { require, need, openScratch, openMonitor, canonicalWrite } from "../refdiff/refdiff.mjs";
 import { initFrame, decodeFrame } from "../refdiff/gateway.mjs";
 
@@ -221,21 +234,42 @@ async function state(redis) {
   return out;
 }
 
+// The second gateway node, for a reap step: started, and up once its port answers.
+async function startNodeB() {
+  const child = spawn("bash", ["-c", need("REF_GW_B_CMD")], { detached: true, stdio: "ignore" });
+  const { hostname, port } = new URL(need("REF_GW_B_WS"));
+  for (let i = 0; i < 240; i++) {
+    const up = await new Promise((resolve) => {
+      const socket = net.connect(Number(port), hostname, () => { socket.destroy(); resolve(true); });
+      socket.on("error", () => resolve(false));
+    });
+    if (up) return child;
+    await sleep(250);
+  }
+  throw new Error(`the second gateway node did not come up on ${port}`);
+}
+
+const killNode = (child) => { try { process.kill(-child.pid, "SIGKILL"); } catch { /* gone already */ } };
+
 async function run(side, outFile, only) {
   const url = need(side === "ts" ? "REF_TS_WS" : "REF_CS_WS");
+  const reap = side === "reap";
   const steps = {};
   for (const [name, step] of Object.entries(STEPS)) {
     if (only && name !== only) continue;
+    const nodeB = reap ? await startNodeB() : null;
     const { redis, db, close } = await openScratch("disconnect_diff");
     const lines = [];
     const monitor = await openMonitor(need("REF_REDIS_URL"), (line) => lines.push(line));
     const self = (await redis.sendCommand(["CLIENT", "INFO"])).match(/\baddr=(\S+)/)[1];
     const games = {};
-    let mark = null, from = 0, to = 0, delivered = null;
+    let mark = null, from = 0, to = 0, delivered = null, reapedAfterMs;
+    // In a reap step the game that drops is the second node's.
+    const urlOf = (k) => (reap && oid(Number(k.slice(1))) === DROPPED[name] ? need("REF_GW_B_WS") : url);
     const c = {
       redis,
       async connect(tokens) {
-        for (const [k, token] of Object.entries(tokens)) games[k] = await game(url, initFrame(token, Number(k.slice(1))));
+        for (const [k, token] of Object.entries(tokens)) games[k] = await game(urlOf(k), initFrame(token, Number(k.slice(1))));
         await sleep(SETTLE);
         for (const g of Object.values(games)) g.frames.length = 0;
       },
@@ -255,7 +289,15 @@ async function run(side, outFile, only) {
       async drop(k, wait = AFTER_DROP) {
         mark = lines.length;
         from = Math.floor(Date.now() / 1000);
-        games[k].ws.terminate();
+        if (reap) {
+          // The node dies with the game's socket; the step goes on once the other node has reaped the player.
+          const started = Date.now(), entry = `realtime:conn:${oid(Number(k.slice(1)))}`;
+          killNode(nodeB);
+          while (await redis.exists(entry) && Date.now() - started < 90_000) await sleep(250);
+          reapedAfterMs = (await redis.exists(entry)) ? null : Date.now() - started;
+        } else {
+          games[k].ws.terminate();
+        }
         await sleep(wait);
         to = Math.ceil(Date.now() / 1000);
         games[k].dropped = true;
@@ -271,6 +313,7 @@ async function run(side, outFile, only) {
       after = await state(redis);
       ratings = matchStep ? (await db.collection("eloratings").find({}, { sort: { account_id: 1 } }).toArray()).map(({ _id, ...rest }) => rest) : undefined;
       for (const g of Object.values(games)) g.ws.terminate();
+      if (nodeB) killNode(nodeB);
       // Their closes are handled too (a dodge of this step's match, in C# a stream read later): before the next step's
       // stores are wiped, not after.
       await sleep(AFTER_MATCH_DROP);
@@ -285,10 +328,12 @@ async function run(side, outFile, only) {
       state: after,
       ...(delivered ? { delivered } : {}),
       ...(matchStep ? { eloratings: ratings } : {}),
+      ...(reap ? { reapedAfterMs } : {}),
     };
     monitor.destroy();
     await close();
-    console.log(`${side} ${name}: ${steps[name].writes.length} writes; ${Object.entries(steps[name].frames).map(([k, f]) => `${k} ${f.length} frames`).join(", ")}`);
+    console.log(`${side} ${name}: ${steps[name].writes.length} writes; ${Object.entries(steps[name].frames).map(([k, f]) => `${k} ${f.length} frames`).join(", ")}`
+      + (reap ? `; reaped after ${reapedAfterMs ?? "NEVER (90 s)"} ms` : ""));
   }
   fs.writeFileSync(outFile, JSON.stringify({ side, ranAt: new Date().toISOString(), steps }, null, 1));
 }
@@ -451,15 +496,76 @@ function diff(tsFile, csFile) {
   process.exit(failed ? 1 : 0);
 }
 
-function compare(a, b, path) {
+// A reaped game in a match: the server failed the player (MatchStatusEvents), where the same game closing its socket
+// left. Each also asserts what the close did, so a step that never reached its condition fails.
+const notified = (run, pid, reason) => (run.state[`dll_notifications:${pid}`] ?? []).some((n) => n.includes(`"reason":"${reason}"`));
+const noFlag = (run) => !Object.keys(run.state).some((k) => k.startsWith("ranked_disconnect:"));
+// A win or a loss recorded (the match's config build writes every player's missing rating document at 1000, so their
+// presence says nothing).
+const rated = (run) => (run.eloratings ?? []).some((r) => r.wins_1v1 || r.losses_1v1 || r.wins_2v2 || r.losses_2v2);
+const CRASH = {
+  what: "a reaped game in a match before its result is a crash (match_server_crash, the set dropped, both players told rollback_crash, no rating, no flag) where its close was a leave",
+  check: (closed, reaped) => reaped.writes.includes(`set match_server_crash:${MATCH} 1 EX 600`) && noFlag(reaped) && !rated(reaped)
+    && notified(reaped, P1, "rollback_crash") && notified(reaped, P2, "rollback_crash")
+    && !Object.keys(reaped.state).some((k) => k.startsWith("player_ranked_set:") || /^ranked_set(:|_checkins:|_match:)/.test(k)),
+};
+const PREGAME_CLOSE = { what: "(the close it is compared with dodged: rated, P1 told opponent_dodge)", check: (closed) => rated(closed) && notified(closed, P1, "opponent_dodge") };
+const MIDGAME_CLOSE = { what: "(the close it is compared with flagged the set for P2)", check: (closed) => `ranked_disconnect:${P2}` in closed.state };
+const SET_CRASHED = {
+  what: "a reaped game between a set's games (or after a game's result) marks the set for its next check-in to drop it unrated (ranked_set_crashed), no flag",
+  check: (closed, reaped) => reaped.writes.includes(`set ranked_set_crashed:${SET} gateway_node_gone EX 600`) && reaped.state[`ranked_set_crashed:${SET}`] === "gateway_node_gone"
+    && noFlag(reaped) && `ranked_disconnect:${P2}` in closed.state,
+};
+const REAP_EXPECTED = {
+  "match-pregame-dodge": [CRASH, PREGAME_CLOSE],
+  "match-mid-game": [CRASH, MIDGAME_CLOSE],
+  "match-after-result": [SET_CRASHED],
+  "set-between-games": [SET_CRASHED],
+};
+
+function diffReap(csFile, reapFile) {
+  const cs = JSON.parse(fs.readFileSync(csFile, "utf8")).steps;
+  const reaped = JSON.parse(fs.readFileSync(reapFile, "utf8")).steps;
+  let failed = 0;
+  for (const name of Object.keys(STEPS)) {
+    if (!cs[name] || !reaped[name]) continue;
+    if (reaped[name].reapedAfterMs == null) {
+      console.log(`ASSERTION FAILED ${name}: the player was never reaped`);
+      failed++;
+      continue;
+    }
+    // The drop's time inside a published message (a PlayerLeftLobby's JoinedAt, Hydra seconds) is when each run dropped.
+    const at = (run) => ({ ...run, writes: run.writes.map((w) => w.replace(/(_hydra_unix_date\\":)\d{10}/g, "$1<s>")) });
+    const a = at(normalize(cs[name])), b = at(normalize(reaped[name]));
+    seasonless(a, () => true);
+    seasonless(b, () => true);
+    const expected = REAP_EXPECTED[name];
+    for (const e of expected ?? []) {
+      let ok;
+      try { ok = e.check(a, b); } catch (err) { ok = false; console.log(`  (${err.message})`); }
+      console.log(`${ok ? "asserted" : "ASSERTION FAILED"} ${name}: ${e.what}`);
+      if (!ok) failed++;
+    }
+    // A match step's own writes differ by design (asserted above); its lobbies' never do.
+    const [x, y] = [split(a, DROPPED[name]), split(b, DROPPED[name])];
+    const differences = expected ? compare(x.lobbyWrites, y.lobbyWrites, `${name}.lobbyWrites`, ["close", "reap"]) : compare(x, y, name, ["close", "reap"]);
+    for (const d of differences) console.log(`DIFF ${d}`);
+    if (differences.length === 0) console.log(`same ${name} (reaped after ${reaped[name].reapedAfterMs} ms)`);
+    failed += differences.length;
+  }
+  process.exit(failed ? 1 : 0);
+}
+
+function compare(a, b, path, labels = ["ts", "cs"]) {
   if (JSON.stringify(a) === JSON.stringify(b)) return [];
   if (a && b && typeof a === "object" && typeof b === "object" && !Array.isArray(a) && !Array.isArray(b)) {
-    return [...new Set([...Object.keys(a), ...Object.keys(b)])].flatMap((k) => compare(a[k], b[k], `${path}.${k}`));
+    return [...new Set([...Object.keys(a), ...Object.keys(b)])].flatMap((k) => compare(a[k], b[k], `${path}.${k}`, labels));
   }
-  return [`${path}:\n   ts ${JSON.stringify(a)}\n   cs ${JSON.stringify(b)}`];
+  return [`${path}:\n   ${labels[0]} ${JSON.stringify(a)}\n   ${labels[1]} ${JSON.stringify(b)}`];
 }
 
 const [mode, ...rest] = process.argv.slice(2);
 if (mode === "run") await run(rest[0], rest[1], rest[2]);
 else if (mode === "diff") diff(rest[0], rest[1]);
-else console.log("run ts|cs <out.json> [step] | diff <ts.json> <cs.json>");
+else if (mode === "diff-reap") diffReap(rest[0], rest[1]);
+else console.log("run ts|cs|reap <out.json> [step] | diff <ts.json> <cs.json> | diff-reap <cs.json> <reap.json>");

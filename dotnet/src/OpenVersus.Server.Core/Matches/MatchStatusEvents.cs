@@ -47,13 +47,18 @@ namespace OpenVersus.Server.Core.Matches;
 // one the game was sent last (match_config:{player}, GameplayConfigs), handled as a PlayerDisconnect but for the online
 // check (the dodge's once-per-set key says "pregame_dodge", as there); then, while the player is still in a ranked set
 // (between its games, after a game's result), ranked_disconnect:{player} names it, so its next check-in concedes it.
+// A close the gateway made for a node that is gone (GatewayReaper: the node died with the game's socket) is the server's
+// failure, not the player's: a match before its result is a crash (as a rollback server losing a player whose websocket
+// is up: canceled for everyone, no rating), and a set between its games is marked (ranked_set_crashed:{set}) so its next
+// check-in drops it unrated (RankedSets); a set that ends on its results is rated all the same.
 //
 // Redis, read     match_started:{match}, match_ended:{match}, game_result_received:{match}, match_server_crash:{match},
 //                 {match} (players, mode, isCustomGame), match:{match} (RatedMatches), online_players,
 //                 player_ranked_set:{player}, elo_processed:{match}, match_characters:{set}, connections:{player} character;
 //                 match_config:{player} (a websocket close)
 // Redis, written  match_started:{match}, match_ended:{match}, match_server_crash:{match} "1" EX 10 min;
-//                 rollback_crash_cleanup:{match} NX EX 5 min; ranked_disconnect:{player} (the set's id) EX 10 min; the dedup keys
+//                 rollback_crash_cleanup:{match} NX EX 5 min; ranked_disconnect:{player} (the set's id) EX 10 min;
+//                 ranked_set_crashed:{set} "gateway_node_gone" EX 10 min (a reaped close between a set's games); the dedup keys
 //                 above; player:{player} status "idle"; dll_notifications:{player} (match_cancel, PlayerMessages);
 //                 deleted: player_ranked_set:{each player}, ranked_set:{set}, ranked_set_checkins:{set},
 //                 ranked_set_match:{set}, and at a crash match_to_set:{match}, match_started:{match}
@@ -78,6 +83,8 @@ namespace OpenVersus.Server.Core.Matches;
 //     against a team when its spectator closed the game before the start); a match that crashed is left to the crash's
 //     cleanup (TS dropped the set and told the others again); the flag names the set for 10 minutes (TS wrote "1" for 10
 //     minutes, then the set's id for 2: a mid-game leaver's flag ran out before the game's end, when it is read).
+//   - a close the gateway made for a node that died (GatewayReaper) is a crash, never a dodge or a leave: TS had one
+//     websocket process, whose crash ran no close at all.
 
 public interface IMatchStatusEvents
 {
@@ -87,9 +94,10 @@ public interface IMatchStatusEvents
 
     /// <summary>
     /// <paramref name="playerId"/>'s game closed its websocket (MatchDisconnects, the realtime gateway's disconnects):
-    /// what the TS websocket's close did for the match (websocket.ts 511-616; see the header).
+    /// what the TS websocket's close did for the match (websocket.ts 511-616; see the header). <paramref name="nodeGone"/>:
+    /// the gateway node holding it died and another closed it (GatewayReaper), the server's failure.
     /// </summary>
-    Task GameClosedAsync(string playerId);
+    Task GameClosedAsync(string playerId, bool nodeGone = false);
 }
 
 internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings ratings, EloRatings eloRatings, IOptionsMonitor<RollbackSettings> settings,
@@ -198,7 +206,7 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
         }
     }
 
-    public async Task GameClosedAsync(string playerId)
+    public async Task GameClosedAsync(string playerId, bool nodeGone = false)
     {
         if (services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis)
         {
@@ -210,22 +218,31 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
         if (await RollbackCallbacks.JsonAsync(redis, $"{GameplayConfigs.KeyPrefix}{playerId}") is { } sent
             && Str(sent["data"]?["GameplayConfig"]?["MatchId"]) is { Length: > 0 } matchId)
         {
-            await LeftAsync(redis, matchId, playerId, [], fromRollback: false);
+            await LeftAsync(redis, matchId, playerId, [], fromRollback: false, nodeGone);
         }
 
         // A set the player is still in (between its games, or after a game's result): its next check-in concedes it for
-        // them. Gone after a dodge or a crash, which dropped the set.
+        // them, or, when their node died, drops it unrated. Gone after a dodge or a crash, which dropped the set.
         if ((string?)await redis.StringGetAsync($"player_ranked_set:{playerId}") is { Length: > 0 } setId)
         {
+            if (nodeGone)
+            {
+                await redis.StringSetAsync($"ranked_set_crashed:{setId}", "gateway_node_gone", s_flagTtl);
+                log.LogWarning("Websocket of {Player} lost with its gateway node during ranked set {Set}: the set is dropped at its next check-in, no rating",
+                    playerId, setId);
+                return;
+            }
+
             await redis.StringSetAsync($"ranked_disconnect:{playerId}", setId, s_flagTtl);
             log.LogInformation("Websocket close of {Player} during ranked set {Set}: flagged for auto-concede", playerId, setId);
         }
     }
 
-    // A player left a match: a PlayerDisconnect from its rollback server, or their game closed its websocket.
-    private async Task LeftAsync(IDatabase redis, string matchId, string playerId, List<string> eventPlayerIds, bool fromRollback)
+    // A player left a match: a PlayerDisconnect from its rollback server, or their game closed its websocket (or the gateway
+    // node holding it died: nodeGone).
+    private async Task LeftAsync(IDatabase redis, string matchId, string playerId, List<string> eventPlayerIds, bool fromRollback, bool nodeGone = false)
     {
-        string what = fromRollback ? "PlayerDisconnect" : "Websocket close";
+        string what = fromRollback ? "PlayerDisconnect" : nodeGone ? "Websocket loss (gateway node gone)" : "Websocket close";
         try
         {
             if (await redis.KeyExistsAsync($"match_ended:{matchId}"))
@@ -257,7 +274,14 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
             // is the game going; one that came back since is not handled at all: MatchDisconnects.)
             if (fromRollback && await redis.SetContainsAsync("online_players", playerId))
             {
-                await RollbackCrashAsync(redis, matchId, playerId, configPlayers, eventPlayerIds);
+                await RollbackCrashAsync(redis, matchId, playerId, configPlayers, eventPlayerIds, "PlayerDisconnect with the websocket still up: a rollback server issue");
+                return;
+            }
+
+            // The gateway node holding the game's websocket died: the server failed the player, whatever stage the match is at.
+            if (nodeGone)
+            {
+                await RollbackCrashAsync(redis, matchId, playerId, configPlayers, eventPlayerIds, "Websocket lost with its gateway node: a server issue");
                 return;
             }
 
@@ -287,18 +311,18 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
         }
     }
 
-    // The player's websocket is still up: the rollback server lost them (a crash, a level that did not load, a UDP
-    // timeout). Real dodges close the websocket.
-    private async Task RollbackCrashAsync(IDatabase redis, string matchId, string playerId, List<JsonObject>? configPlayers, List<string> eventPlayerIds)
+    // The server failed the player: the rollback server lost them while their websocket is still up (a crash, a level that
+    // did not load, a UDP timeout; real dodges close the websocket), or the gateway node holding their websocket died.
+    private async Task RollbackCrashAsync(IDatabase redis, string matchId, string playerId, List<JsonObject>? configPlayers, List<string> eventPlayerIds, string cause)
     {
         if (!await redis.StringSetAsync($"rollback_crash_cleanup:{matchId}", "1", s_dedupTtl, When.NotExists))
         {
-            log.LogInformation("PlayerDisconnect of {Player} in {Match} with the websocket still up (rollback issue): cleanup already running", playerId, matchId);
+            log.LogInformation("{Cause} ({Player} in {Match}): cleanup already running", cause, playerId, matchId);
             return;
         }
 
         await redis.StringSetAsync($"match_server_crash:{matchId}", "1", s_flagTtl);
-        log.LogWarning("PlayerDisconnect of {Player} in {Match} with the websocket still up: a rollback server issue. Dropping the set, no rating", playerId, matchId);
+        log.LogWarning("{Cause} ({Player} in {Match}). Dropping the set, no rating", cause, playerId, matchId);
 
         string setId = (string?)await redis.StringGetAsync($"player_ranked_set:{playerId}") is { Length: > 0 } set ? set : matchId;
         var all = configPlayers is not null

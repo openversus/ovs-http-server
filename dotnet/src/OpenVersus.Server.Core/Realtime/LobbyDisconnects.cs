@@ -47,8 +47,9 @@ namespace OpenVersus.Server.Core.Realtime;
 //                 the party's, the custom lobby's and the queue's writes (PartyService, CustomLobbyService,
 //                 MatchmakingQueue)
 //
-// Not yet (slice 3d): the match (a dodge, the ranked set's flag: the match flow's reader), connected (the daily toast),
-// and the players of a gateway node that died without closing its connections.
+// A disconnect the gateway made for a node that died (reaped, GatewayReaper) is handled as any other. One that names no
+// session token (the player had no connection entry left to read it from) keeps the session: nothing tells the closed
+// connection's session from a login since. The match is the match flow's reader's (MatchDisconnects).
 //
 // Unlike the TS websocket:
 //   - a close in the post-match window is handled when the window closes, as any other (the other party member is
@@ -225,6 +226,11 @@ internal sealed class LobbyDisconnects(IServiceProvider services, IPartyService 
     // The TS close's redisDeletePlayerKeys and IP record (websocket.ts 691-704), the session first (see the header).
     private async Task<bool> ForgetSessionAsync(IDatabase redis, Disconnect disconnect, string? token)
     {
+        if (disconnect.TokenHash.Length == 0)
+        {
+            return false;
+        }
+
         string player = disconnect.PlayerId;
         string ip = (string?)await redis.HashGetAsync($"connections:{player}", "current_ip") is { Length: > 0 } current ? current : disconnect.Ip;
         if ((long)await redis.ScriptEvaluateAsync(SessionScript, [$"connections:{player}", $"connections:{player}:cosmetics"], [token ?? ""]) != 1)

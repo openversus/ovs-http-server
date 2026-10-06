@@ -7,6 +7,8 @@ using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Matches;
+using OpenVersus.Server.Core.Realtime;
+using OpenVersus.Server.Core.Seasons;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Tests.Matches;
@@ -23,7 +25,8 @@ public sealed class RankedSetsTests : IAsyncLifetime
     private static readonly string? s_redis = Environment.GetEnvironmentVariable("OVS_TEST_REDIS");
     private static readonly string? s_mongo = Environment.GetEnvironmentVariable("OVS_TEST_MONGO");
     private const string TestMongoDb = "ovs_ranked_set_tests";
-    private static string Id(int n) => $"00000000000000000010{n:D4}";
+    private const string Prefix = "00000000000000000010";
+    private static string Id(int n) => $"{Prefix}{n:D4}";
     private static readonly string Set = Id(100), Game2 = Id(200), P1 = Id(1), P2 = Id(2);
 
     private ConnectionMultiplexer? _redis;
@@ -57,12 +60,12 @@ public sealed class RankedSetsTests : IAsyncLifetime
         _mongo = new MongoClient(s_mongo);
         await _mongo.DropDatabaseAsync(TestMongoDb);
         await CleanAsync();
-        // Channels ignore the database: only this class's set counts.
-        foreach (string channel in new[] { RankedSets.CheckinChannel, RankedSets.LeaverChannel, RankedSets.FullRankUpdateChannel, MatchLauncher.NotificationChannel })
+        // Channels ignore the database: only this class's set and players count.
+        foreach (string channel in new[] { ProfileNotifications.WsSendChannel, MatchLauncher.NotificationChannel })
         {
             await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(channel), (_, m) =>
             {
-                if (m.ToString().Contains(P1, StringComparison.Ordinal))
+                if (m.ToString().Contains(Prefix, StringComparison.Ordinal))
                 {
                     _published.Enqueue((channel, (JsonObject)JsonNode.Parse(m.ToString())!));
                 }
@@ -92,9 +95,17 @@ public sealed class RankedSetsTests : IAsyncLifetime
             _games.Add(game);
         }
 
-        foreach (var key in server.Keys(15, "*00000000000000000010*"))
+        foreach (var key in server.Keys(15, $"*{Prefix}*"))
         {
             await Db.KeyDeleteAsync(key);
+        }
+
+        foreach (var member in await Db.SortedSetRangeByRankAsync(DelayedMessages.Key))
+        {
+            if (member.ToString().Contains(Prefix, StringComparison.Ordinal))
+            {
+                await Db.SortedSetRemoveAsync(DelayedMessages.Key, member);
+            }
         }
 
         foreach (string game2 in _games)
@@ -112,10 +123,10 @@ public sealed class RankedSetsTests : IAsyncLifetime
     {
         var services = new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).AddSingleton(Mongo).BuildServiceProvider();
         var ranked = new TestOptions<RankedSettings>(new RankedSettings());
-        var ratings = new SetRatings(services, new EloRatings(services, ranked, TimeProvider.System, NullLogger<EloRatings>.Instance), ranked,
-            TimeProvider.System, NullLogger<SetRatings>.Instance);
-        return new RankedSets(services, launcher ?? new Launcher(), ratings, new TestOptions<RollbackSettings>(new RollbackSettings { P2P = p2p }),
-            TimeProvider.System, NullLogger<RankedSets>.Instance);
+        var elo = new EloRatings(services, ranked, TimeProvider.System, NullLogger<EloRatings>.Instance);
+        var ratings = new SetRatings(services, elo, ranked, TimeProvider.System, NullLogger<SetRatings>.Instance);
+        return new RankedSets(services, launcher ?? new Launcher(), ratings, elo, new TestOptions<RollbackSettings>(new RollbackSettings { P2P = p2p }),
+            new TestOptions<SeasonSettings>(new SeasonSettings { Current = "Season:SeasonSix" }), TimeProvider.System, NullLogger<RankedSets>.Instance);
     }
 
     private static JsonArray Players(bool bot = false) =>
@@ -158,6 +169,41 @@ public sealed class RankedSetsTests : IAsyncLifetime
         return [.. _published];
     }
 
+    // What ws:send carried, in order: who to, and the message's data.
+    private async Task<List<(string[] To, JsonObject Data)>> SentAsync(int waitMs = 200) =>
+        [.. (await PublishedAsync(waitMs)).Where(p => p.Channel == ProfileNotifications.WsSendChannel)
+            .Select(p => (Ids(p.Message["playerIds"]), p.Message["message"]!["data"]!.AsObject()))];
+
+    // The delayed sends of this class's set (realtime:due), in due order: in how many ms from now, who to, the data.
+    private async Task<List<(double InMs, string[] To, JsonObject Data)>> DueAsync()
+    {
+        long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        return [.. (await Db.SortedSetRangeByScoreWithScoresAsync(DelayedMessages.Key))
+            .Where(e => e.Element.ToString().Contains(Prefix, StringComparison.Ordinal))
+            .Select(e => (e.Score - now, JsonNode.Parse(e.Element.ToString())!.AsObject()))
+            .Select(e => (e.Item1, Ids(e.Item2["playerIds"]), e.Item2["message"]!["data"]!.AsObject()))];
+    }
+
+    private static string[] Ids(JsonNode? ids) => [.. ids!.AsArray().Select(n => n!.GetValue<string>())];
+
+    private static string Template(JsonObject data) => data["template_id"]!.GetValue<string>();
+
+    // MatchSetLeaverNotification to each of the set's players, naming the leaver and the set. In any order between players:
+    // delayed ones due in the same millisecond leave realtime:due in member order.
+    private static void AssertLeavers(IEnumerable<(string[] To, JsonObject Data)> sent, string leaver)
+    {
+        var leavers = sent.Where(m => Template(m.Data) == "MatchSetLeaverNotification").ToList();
+        Assert.Equal([P1, P2], leavers.SelectMany(m => m.To).Order());
+        Assert.All(leavers, m => Assert.Equal($$"""{"AccountId":"{{leaver}}","MatchId":"{{Set}}","template_id":"MatchSetLeaverNotification"}""", m.Data.ToJsonString()));
+    }
+
+    private static void AssertEmptyConfig((double InMs, string[] To, JsonObject Data) due, double inMs)
+    {
+        Assert.Equal([P1, P2], due.To);
+        Assert.Equal("""{"MatchId":"","GameplayConfig":null,"template_id":"OnGameplayConfigNotified"}""", due.Data.ToJsonString());
+        Assert.InRange(due.InMs, inMs - 300, inMs + 10);
+    }
+
     private async Task<BsonDocument?> RatingAsync(string id) =>
         await Mongo.GetCollection<BsonDocument>("eloratings").Find(new BsonDocument("account_id", id)).FirstOrDefaultAsync();
 
@@ -180,10 +226,10 @@ public sealed class RankedSetsTests : IAsyncLifetime
         var sets = Sets(launcher);
 
         await sets.CheckinAsync(P1, Set);
-        var first = await PublishedAsync();
-        var checkin = Assert.Single(first).Message;
-        Assert.Single(checkin["checkins"]!.AsArray());
-        Assert.Equal(2, checkin["totalPlayers"]!.GetValue<int>());
+        // MatchSetCheckinNotification to both, each addressed to its player.
+        var first = await SentAsync();
+        Assert.Equal([[P1], [P2]], first.Select(m => m.To));
+        Assert.All(first, m => Assert.Equal($$"""{"CheckedInAccountId":"{{P1}}","CheckedInCount":1,"TotalPlayers":2,"template_id":"MatchSetCheckinNotification"}""", m.Data.ToJsonString()));
         Assert.False(await Db.KeyExistsAsync($"ranked_set_match:{Set}"));
 
         await sets.CheckinAsync(P2, Set);
@@ -320,8 +366,11 @@ public sealed class RankedSetsTests : IAsyncLifetime
 
         await AssertDroppedAsync();
         Assert.False(await Db.KeyExistsAsync($"ranked_disconnect:{P2}"));
-        var leaver = Assert.Single(await PublishedAsync(), p => p.Channel == RankedSets.LeaverChannel).Message;
-        Assert.Equal($$"""{"playerIds":["{{P1}}","{{P2}}"],"leaverPlayerId":"{{P1}}","matchId":"{{Set}}"}""", leaver.ToJsonString());
+        // Everyone back to the menus: the leaver now, the empty config 500 ms later.
+        var sent = await SentAsync();
+        AssertLeavers(sent, P1);
+        Assert.Equal(2, sent.Count);
+        AssertEmptyConfig(Assert.Single(await DueAsync()), 500);
         Assert.Null(await RatingAsync(P1));
     }
 
@@ -330,6 +379,7 @@ public sealed class RankedSetsTests : IAsyncLifetime
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         await SeedAsync(gamesPlayed: 2, 0, 2);
+        await Db.SetAddAsync("online_players", [P1, P2]);
         var sets = Sets();
         await sets.CheckinAsync(P1, Set);
         await sets.CheckinAsync(P2, Set);
@@ -344,11 +394,16 @@ public sealed class RankedSetsTests : IAsyncLifetime
         Assert.Equal(new BsonInt32(0), loser["elo_1v1"]);
         Assert.Equal(1, loser["losses_1v1"].AsInt32);
 
-        var now = await PublishedAsync(150);
-        Assert.Contains(now, p => p.Channel == RankedSets.FullRankUpdateChannel);
-        Assert.DoesNotContain(now, p => p.Channel == RankedSets.LeaverChannel);
-        var later = await PublishedAsync(700);
-        Assert.Equal(P1, Assert.Single(later, p => p.Channel == RankedSets.LeaverChannel).Message["leaverPlayerId"]!.GetValue<string>());
+        // Now: each player's ranks (after the two check-in notifications). The leaver 500 ms after the answer and the empty
+        // config 500 ms after that, from realtime:due (a restart still sends them).
+        var ranks = (await SentAsync()).Where(m => Template(m.Data) == "FullRankUpdate").ToList();
+        Assert.Equal([[P1], [P2]], ranks.Select(m => m.To));
+        Assert.DoesNotContain(await SentAsync(0), m => Template(m.Data) == "MatchSetLeaverNotification");
+        var due = await DueAsync();
+        Assert.Equal(3, due.Count);
+        AssertLeavers(due.Take(2).Select(d => (d.To, d.Data)), P1);
+        Assert.All(due.Take(2), d => Assert.InRange(d.InMs, 0, 510));
+        AssertEmptyConfig(due[2], 1000);
     }
 
     [SkippableFact]
@@ -379,9 +434,8 @@ public sealed class RankedSetsTests : IAsyncLifetime
         Assert.Equal("concede", (string?)await Db.StringGetAsync($"elo_processed_set:{Set}"));
         // A concede counts as a 2-0 (modifier 1.0) whatever the score.
         Assert.Equal(32, (await RatingAsync(P1))!["elo_1v1"].AsInt32);
-        var published = await PublishedAsync();
-        Assert.Contains(published, p => p.Channel == RankedSets.FullRankUpdateChannel);
-        Assert.Equal(P2, Assert.Single(published, p => p.Channel == RankedSets.LeaverChannel).Message["leaverPlayerId"]!.GetValue<string>());
+        AssertLeavers(await SentAsync(), P2);
+        AssertEmptyConfig(Assert.Single(await DueAsync()), 500);
     }
 
     [SkippableFact]
@@ -390,12 +444,16 @@ public sealed class RankedSetsTests : IAsyncLifetime
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         await SeedAsync(gamesPlayed: 1, 1, 0);
         await Db.StringSetAsync($"ranked_disconnect:{P2}", Set);
+        await Db.SetAddAsync("online_players", P1);
         await Sets().CheckinAsync(P1, Set);
 
         await AssertDroppedAsync();
         Assert.Equal("disconnect_concede", (string?)await Db.StringGetAsync($"elo_processed_set:{Set}"));
         Assert.Equal(32, (await RatingAsync(P1))!["elo_1v1"].AsInt32);
-        Assert.Equal(P2, Assert.Single(await PublishedAsync(), p => p.Channel == RankedSets.LeaverChannel).Message["leaverPlayerId"]!.GetValue<string>());
+        // Ranks to the player online only (the TS websocket built them for the sockets it held), then the leaver.
+        var sent = await SentAsync();
+        Assert.Equal([P1], Assert.Single(sent, m => Template(m.Data) == "FullRankUpdate").To);
+        AssertLeavers(sent, P2);
     }
 
     [SkippableFact]
@@ -409,7 +467,7 @@ public sealed class RankedSetsTests : IAsyncLifetime
 
         Assert.False(await Db.KeyExistsAsync($"ranked_disconnect:{P2}"));
         Assert.True(await Db.KeyExistsAsync($"ranked_set:{Set}"));
-        Assert.Equal(RankedSets.CheckinChannel, Assert.Single(await PublishedAsync()).Channel);
+        Assert.All(await SentAsync(), m => Assert.Equal("MatchSetCheckinNotification", Template(m.Data)));
     }
 
     [SkippableFact]
@@ -424,7 +482,7 @@ public sealed class RankedSetsTests : IAsyncLifetime
         Assert.False(await Db.KeyExistsAsync($"ranked_disconnect:{P2}"));
         Assert.True(await Db.KeyExistsAsync($"ranked_set:{Set}"));
         Assert.False(await Db.KeyExistsAsync($"elo_processed_set:{Set}"));
-        Assert.Equal(RankedSets.CheckinChannel, Assert.Single(await PublishedAsync()).Channel);
+        Assert.Equal(["MatchSetCheckinNotification", "MatchSetCheckinNotification"], (await SentAsync()).Select(m => Template(m.Data)));
     }
 
     [SkippableFact]
@@ -438,7 +496,7 @@ public sealed class RankedSetsTests : IAsyncLifetime
         await AssertDroppedAsync();
         Assert.Null(await RatingAsync(P1));
         Assert.Null(await RatingAsync(P2));
-        Assert.Contains(await PublishedAsync(), p => p.Channel == RankedSets.LeaverChannel);
+        AssertLeavers(await SentAsync(), P2);
     }
 
     [SkippableFact]
@@ -452,7 +510,9 @@ public sealed class RankedSetsTests : IAsyncLifetime
 
         await AssertDroppedAsync();
         Assert.Equal(32, (await RatingAsync(P1))!["elo_1v1"].AsInt32);
-        Assert.Equal(P2, Assert.Single(await PublishedAsync(800), p => p.Channel == RankedSets.LeaverChannel).Message["leaverPlayerId"]!.GetValue<string>());
+        var due = await DueAsync();
+        AssertLeavers(due.Take(2).Select(d => (d.To, d.Data)), P2);
+        AssertEmptyConfig(due[2], 1000);
     }
 
     [SkippableFact]
@@ -466,6 +526,7 @@ public sealed class RankedSetsTests : IAsyncLifetime
         await AssertDroppedAsync();
         Assert.False(await Db.KeyExistsAsync($"ranked_disconnect:{P2}"));
         Assert.Empty(await PublishedAsync());
+        Assert.Empty(await DueAsync());
         Assert.Null(await RatingAsync(P1));
     }
 
@@ -477,5 +538,66 @@ public sealed class RankedSetsTests : IAsyncLifetime
         await Sets().CheckinAsync(P1, Set);
         Assert.False(await Db.KeyExistsAsync($"ranked_set_checkins:{Set}"));
         Assert.Empty(await PublishedAsync());
+    }
+    [SkippableFact]
+    // The count is the set's checkins list as the TS websocket read it from the published set, not the check-in key: a
+    // repeat check-in announces the list as stored.
+    public async Task TheCheckInCountIsTheSetsList()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync(gamesPlayed: 1, 1, 0);
+        await Db.SetAddAsync($"ranked_set_checkins:{Set}", P1);
+        await Sets().CheckinAsync(P1, Set);
+
+        var sent = await SentAsync();
+        Assert.Equal(2, sent.Count);
+        Assert.All(sent, m => Assert.Equal(0, m.Data["CheckedInCount"]!.GetValue<int>()));
+    }
+
+    [SkippableFact]
+    // TS read checkins.length off the set and threw without the list: nothing announced.
+    public async Task ASetWithNoCheckinsListAnnouncesNothing()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync(gamesPlayed: 1, 1, 0, extra: new JsonObject { ["checkins"] = "none" });
+        await Db.SetAddAsync($"ranked_set_checkins:{Set}", P1);
+        await Sets().CheckinAsync(P1, Set);
+
+        Assert.Empty(await SentAsync());
+    }
+
+    [SkippableFact]
+    // A set's ranks are the TS rank handler's (FullRankUpdateVariant.SetResult): with games but no fighter rated,
+    // BestCharacter carries the mode's rating (the match-end one: -1).
+    public async Task ASetsRanksGiveTheModesRatingWhenNoFighterIsRated()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync(gamesPlayed: 1, 0, 1, bot: true);
+        await Mongo.GetCollection<BsonDocument>("eloratings").InsertOneAsync(new BsonDocument
+        {
+            { "account_id", P1 }, { "elo_1v1", 1234 }, { "wins_1v1", 3 }, { "losses_1v1", 2 }, { "elo_2v2", 0 }, { "wins_2v2", 0 }, { "losses_2v2", 0 },
+        });
+        await Db.SetAddAsync("online_players", P1);
+        // A set with a bot is not rated, and its ranks still go out (as TS: after deciding not to rate); a bot is never online.
+        await Sets().ConcedeAsync(P1);
+
+        var ranks = Assert.Single(await SentAsync(), m => Template(m.Data) == "FullRankUpdate");
+        Assert.Equal([P1], ranks.To);
+        var best = ranks.Data["SeasonalData"]!["Season:SeasonSix"]!["Ranked"]!["DataByMode"]!["1v1"]!["BestCharacter"]!;
+        Assert.Equal(1234, best["CurrentPoints"]!.GetValue<int>());
+        Assert.Equal(1234, best["MaxPoints"]!.GetValue<int>());
+    }
+
+    [SkippableFact]
+    // Built only for players online: an offline player gets neither the message nor a rating document.
+    public async Task NoRanksAndNoRatingForAPlayerOffline()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync(gamesPlayed: 1, 0, 1, bot: true);
+        await Sets().ConcedeAsync(P1);
+
+        Assert.DoesNotContain(await SentAsync(), m => Template(m.Data) == "FullRankUpdate");
+        Assert.Null(await RatingAsync(P1));
+        Assert.Null(await RatingAsync(P2));
     }
 }

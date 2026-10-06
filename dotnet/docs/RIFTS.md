@@ -80,7 +80,7 @@ Played on the bench (2026-09-30): the Joker node, a full match against the bot, 
 does what the TS custom lobby does when its host presses start: a rollback port (the fixed range, or on demand: a
 port from `rollback:current_port` and a signed POST to the deploy webhook, as `rollbackService.ts`), `match:{id}`,
 the bots' perks locked, the notification stored at `{id}` and published on `match:notifications`, then
-`matchmaking:complete`. The TS websocket then sends `GameServerReadyNotification`, `matchmaking-complete` and
+`matchmaking-complete` sent to the players (ws:send). The TS websocket then sends `GameServerReadyNotification` and
 `OnGameplayConfigNotified`; the rollback server, registering, triggers `game-server-instance-ready`. The rollback
 server sees only the human (bots run inside the client).
 

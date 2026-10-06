@@ -36,7 +36,7 @@ const IP = "198.51.100.7";
 const CODE = /^[A-HJ-NP-Z2-9]{5}$/;
 // Channels whose TS websocket handlers keep per-connection state (docs/REALTIME.md): compared as writes. The rest
 // (custom_lobby:notification) are compared by the frames they turn into.
-const STATEFUL = new Set(["matchmaking:cancel", "party:queued", "match:notifications", "matchmaking:complete", "perks:notifications", "match:end", "lobby:rejoin"]);
+const STATEFUL = new Set(["matchmaking:cancel", "party:queued", "match:notifications", "perks:notifications", "match:end", "lobby:rejoin"]);
 
 // The fields the game sends with lobby requests (custom-bots-0930 capture).
 const COMMON = { AutoPartyPreference: false, CrossplayPreference: 1, GameplayPreferences: 448, HissCrc: 12, LobbyTemplate: "custom_game_lobby", Platform: "PC", Version: "CLIENT:2FAE7-Retail DATA:1 PERKS:1" };

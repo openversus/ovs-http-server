@@ -34,7 +34,7 @@ const LOBBY = oid(100);
 const MATCH = oid(700);
 const IP = "198.51.100.8";
 // Channels whose TS websocket handlers keep state (docs/REALTIME.md): compared as writes, payload included.
-const STATEFUL = new Set(["matchmaking:cancel", "party:queued", "match:notifications", "matchmaking:complete"]);
+const STATEFUL = new Set(["matchmaking:cancel", "party:queued", "match:notifications"]);
 
 // A matchmaking request as the game sends it (MATCH_MAKING_REQUEST).
 const REQUEST = {

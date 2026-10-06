@@ -12,6 +12,7 @@ using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Matches;
+using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.Settings;
 using StackExchange.Redis;
 
@@ -38,8 +39,9 @@ namespace OpenVersus.Server.Core.Matchmaking;
 // player index = place * 2 + team, a random index hosts, each player's ip from player:{id}); a map (Matchmaking/maps.json:
 // an enabled one for the mode; 1v1: 1 in 999 PVE_03); the notification at {id} EX 20 min and on match:notifications;
 // p2p in the notification (Rollback:P2P and P2P.IsEligible; a P2P match is deployed no rollback server);
-// ranked_set:{id} and player_ranked_set:{player} EX 20 min (every regular match: game 1 of a set); matchmaking:complete
-// once per ticket (its own request id and players). A Casual match is never rated: match:{id} has isPasswordMatch (the
+// ranked_set:{id} and player_ranked_set:{player} EX 20 min (every regular match: game 1 of a set); matchmaking-complete
+// to each ticket's players (ws:send, MatchLauncher.MatchmakingComplete: its own request id), as the TS websocket built it
+// from matchmaking:complete. A Casual match is never rated: match:{id} has isPasswordMatch (the
 // TS match result skips those) and queue "casual" (for a Casual rating of its own, later), it starts no ranked set, and
 // its notification is unranked (BotDefaults.UnrankedNotificationFields: isCustomGame, with bIsCustomGame set back to false
 // in the game's config), so the TS websocket opens no set at its end either and no TS rating path rates it. The TS websocket does the rest (it tells the game, MIGRATION-BRIDGES.md 2).
@@ -489,14 +491,8 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
         // One per ticket: each party's own request.
         foreach (var ticket in tickets)
         {
-            var complete = new JsonObject { ["containerMatchId"] = matchId, ["playerIds"] = new JsonArray([.. ticket.Players.Select(p => (JsonNode)p.Id)]) };
-            if (ticket.Json["matchmakingRequestId"] is { } request)
-            {
-                complete["matchmakingRequestId"] = request.DeepClone();
-            }
-
-            complete["resultId"] = ObjectId.GenerateNewId().ToString();
-            await redis.PublishAsync(RedisChannel.Literal(MatchLauncher.MatchmakingCompleteChannel), Js.Stringify(complete));
+            await PlayerMessages.SendAsync(redis, ticket.Players.Select(p => p.Id),
+                MatchLauncher.MatchmakingComplete(matchId, ticket.Json["matchmakingRequestId"], ObjectId.GenerateNewId().ToString()));
         }
 
         log.LogInformation("Created {Mode} match {Match} from {Queue} with {Players} players across {Tickets} tickets on rollback port {Port}{P2P}", mode, matchId, queue, total, tickets.Count, port,

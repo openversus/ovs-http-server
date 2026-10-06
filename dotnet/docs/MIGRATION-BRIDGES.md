@@ -24,22 +24,14 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   mongoose quirks on purpose (field order, `__v`, timestamps, defaults written into old documents).
 - **Why:** TS services (websocket, matchmaking, the website) still read what C# writes, and the other way round.
 - **Pub/sub channels too:** a message C# publishes is read by the TS websocket, which then tells the game. So far:
-  `lobby:player_joined` (`PartyLobbyService`, a player joined someone's lobby: `{lobbyId, ownerId, joinedPlayerId,
-  joinedPlayerUsername, allPlayerIds, mode}`), `client_update:modal` (`ClientUpdateGate`, show a player the update
+  `client_update:modal` (`ClientUpdateGate`, show a player the update
   toast: `{playerId, nonce}`), `matchmaking:cancel` (`PartyService`, someone joined a party: `{playersIds,
   matchmakingId: "party-changed"}`; `MatchmakingRequestService`, the game's cancel: `{playersIds, matchmakingId}`; the TS
   websocket keeps the queue ticket and its tick in memory, so it cancels them) and `party:queued`
   (`MatchmakingRequestService`, the matchmaking request's ticket, as queueMatch builds it; the TS websocket sends the game
   OnMatchmakerStarted and pushes the ticket onto the `1v1` or `2v2` list, which the matchmaker reads),
   `perks:notifications` (`PerksLock`, every player of a match has locked their perks: `{containerMatchId, playerIds}`;
-  the TS websocket puts the perks into each player's match config, which it holds in memory, and sends it again) and
-  `toast:received` (`MatchToasts`, a toast after a match: `{toasterAccountId, toasterUsername, toasteeAccountId,
-  containerMatchId}`; the TS websocket grants the toastee 2 match_toasts and shows them the toast), and the ranked set's
-  three (`RankedSets`): `ranked_set:checkin` (`{playerIds, checkedInPlayer, checkins, totalPlayers, setId}`: the TS
-  websocket sends every player `MatchSetCheckinNotification`), `ranked_set:leaver` (`{playerIds, leaverPlayerId, matchId}`:
-  `MatchSetLeaverNotification`, then the empty config that sends the game back to its menus) and
-  `ranked_set:fullrankupdate` (`{playerIds}`: the TS websocket reads each player's ratings and sends `FullRankUpdate`;
-  also after a pre-game dodge, `MatchStatusEvents`), and the rollback callbacks' two (`RollbackCallbacks`):
+  the TS websocket puts the perks into each player's match config, which it holds in memory, and sends it again), and the rollback callbacks' two (`RollbackCallbacks`):
   `game_server_ready:notifications` (`{containerMatchId, playerIds, resultId, rollbackPort}`: the TS websocket sends each
   player `game-server-instance-ready`, with 127.0.0.1 and their node's port in a P2P match) and `match:end`
   (`{playersIds, matchId}`: the TS websocket's `handleOnMatchEnd`, the match's end on its side; the C# match end,
@@ -49,11 +41,17 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   `OnPlayerLoadoutLocked`) are built in C# and go through `ws:send` (4), as the TS websocket would have built them; so
   are the custom lobby's (`CustomLobbyService`), which the TS server published on `custom_lobby:notification` for its
   websocket to relay. That channel is now published only by the TS websocket itself (a player who disconnects leaves
-  their lobby) and goes with it.
+  their lobby) and goes with it. The same since slice 3b for the channels whose TS handler only built a message: a
+  lobby join's three messages (`PartyLobbyService`, was `lobby:player_joined`), `matchmaking-complete` (`MatchLauncher`,
+  `MatchmakingWorker`, was `matchmaking:complete`), a toast (`MatchToasts` grants the toastee their 2 and shows it, was
+  `toast:received`), a ranked set's check-in, leaver and ranks (`RankedSets`, and the ranks after a pre-game dodge,
+  `MatchStatusEvents`: was `ranked_set:checkin`, `ranked_set:leaver`, `ranked_set:fullrankupdate`). The TS server's
+  own routes that still publish those channels (a TS-run custom lobby's rematch start, the TS websocket's own pregame
+  dodge) are answered by its websocket as before.
 - **Starting a match:** `IMatchLauncher` (`Core/Matches/`, for rifts and custom lobbies) writes what the TS custom lobby
   writes when a match starts (`match:{id}`, `match:{id}:perks:{bot}`, the notification at `{id}`, `rollback:current_port`
-  on demand) and publishes `match:notifications` (the TS `MATCH_FOUND_NOTIFICATION`, with a custom game's settings and
-  its spectators) and `matchmaking:complete`. The TS
+  on demand), publishes `match:notifications` (the TS `MATCH_FOUND_NOTIFICATION`, with a custom game's settings and
+  its spectators) and sends its players `matchmaking-complete` (ws:send). The TS
   websocket sends the match to the game, and the match flow's rollback routes (`RollbackCallbacks`) serve it. For modes the websocket does not know,
   the notification carries two fields added to the TS type for this (`src/config/redis.ts`): `gameplayConfigOverride`
   and `playerConfigOverrides`, merged over the websocket's PvP gameplay config in `handleSendGamePlayConfig`, and
@@ -84,7 +82,8 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   `player:{id}:blocked` and `player:{id}` `ip` are read as the TS worker reads them; a match writes what the TS worker
   writes (`match:{id}` with the tickets as queued, the notification at `{id}`, `ranked_set:{id}`,
   `player_ranked_set:{player}`; the set's two for 20 min where TS gave 10, which a game could outlast before the
-  websocket wrote them again) and publishes `match:notifications` and one `matchmaking:complete` per ticket. Each
+  websocket wrote them again), publishes `match:notifications` and sends each ticket's players their `matchmaking-complete`
+  (ws:send). Each
   queue is worked under the TS lock (`matchmaking:lock:{queue}`), so the C# and TS workers can run side by side. The
   maps it picks from are a copy of the TS `src/data/maps1v1.json` / `maps2v2.json` (`Matchmaking/maps.json`,
   `tools/matchmaking/gen_maps.mjs`): a map change goes to the TS files and is generated again (`--check` tells) until

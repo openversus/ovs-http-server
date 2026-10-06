@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Matches;
+using OpenVersus.Server.Core.Realtime;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Tests.Matches;
@@ -43,10 +44,10 @@ public sealed class MatchToastsTests : IAsyncLifetime
         _redis = await ConnectionMultiplexer.ConnectAsync(options);
         _mongo = new MongoClient(s_mongo);
         await _mongo.DropDatabaseAsync(TestMongoDb);
-        // Channels ignore the database: only this class's match counts.
-        await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(MatchToasts.Channel), (_, m) =>
+        // Channels ignore the database: only this class's toastee counts.
+        await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(ProfileNotifications.WsSendChannel), (_, m) =>
         {
-            if (m.ToString().Contains(Match, StringComparison.Ordinal))
+            if (m.ToString().Contains(Toastee, StringComparison.Ordinal))
             {
                 _published.Enqueue(m.ToString());
             }
@@ -83,7 +84,7 @@ public sealed class MatchToastsTests : IAsyncLifetime
     private async Task<BsonDocument?> CountersOfAsync(string id) => await Counters.Find(new BsonDocument("accountId", id)).FirstOrDefaultAsync();
 
     [SkippableFact]
-    public async Task TheToasterPaysOneAndTheToastIsPublished()
+    public async Task TheToasterPaysOneTheToasteeGetsTwoAndIsShownTheToast()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         await Toasts().ToastAsync(Toaster, "toaster name", Body(), default);
@@ -94,9 +95,11 @@ public sealed class MatchToastsTests : IAsyncLifetime
         Assert.Equal(0, doc["lastToastBonusUnix"].ToInt64());
         Assert.Equal(0, doc["__v"].AsInt32);
         Assert.True(doc.Contains("createdAt") && doc.Contains("updatedAt"));
-        // The toastee's +2 is the websocket's, from the message.
-        Assert.Null(await CountersOfAsync(Toastee));
-        Assert.Equal([$$"""{"toasterAccountId":"{{Toaster}}","toasterUsername":"toaster name","toasteeAccountId":"{{Toastee}}","containerMatchId":"{{Match}}"}"""],
+        // The toastee's document made the same way, then +2 on its default 100.
+        var toastee = await CountersOfAsync(Toastee);
+        Assert.Equal(102, toastee!["match_toasts"].ToInt64());
+        Assert.True(toastee.Contains("updatedAt"));
+        Assert.Equal([$$$"""{"playerIds":["{{{Toastee}}}"],"message":{"data":{"template_id":"ToastReceivedNotification","ToasterAccountID":"{{{Toaster}}}","RewardsGranted":[{"RewardGuid":"OVS-TOAST-TOAST-0001","Constraints":[],"RewardGrantMethod":"DirectInventoryItem","InventoryHsda":"match_toasts","DirectInventoryItemCount":2}]},"payload":{"frm":{"id":"internal-server","type":"server-api-key"},"template":"realtime","account_id":"{{{Toastee}}}","profile_id":"{{{Toastee}}}"},"header":"","cmd":"profile-notification"}}"""],
             await PublishedAsync());
     }
 
@@ -111,14 +114,15 @@ public sealed class MatchToastsTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    // The spend failing (here: no Mongo at all) does not stop the toast, as there (its error is caught and logged).
-    public async Task TheToastIsSentWhenTheSpendFails()
+    // A grant that failed (here: no Mongo at all) shows no toast: its popup would not match the toastee's inventory. The
+    // spend failing alone does not stop it (its error is caught and logged), as there.
+    public async Task NoToastIsShownWhenTheGrantFails()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         var noMongo = new MatchToasts(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
             TimeProvider.System, NullLogger<MatchToasts>.Instance);
         await noMongo.ToastAsync(Toaster, "toaster name", Body(), default);
-        Assert.Single(await PublishedAsync());
+        Assert.Empty(await PublishedAsync());
     }
 
     [SkippableTheory]
@@ -131,6 +135,7 @@ public sealed class MatchToastsTests : IAsyncLifetime
         body.Remove(missing);
         await Toasts().ToastAsync(Toaster, "toaster name", body, default);
         Assert.Null(await CountersOfAsync(Toaster));
+        Assert.Null(await CountersOfAsync(Toastee));
         Assert.Empty(await PublishedAsync());
     }
 }

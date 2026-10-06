@@ -1,7 +1,9 @@
 using System.Text.Json.Nodes;
 using MongoDB.Bson;
+using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Realtime;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Leaderboards;
@@ -17,15 +19,59 @@ namespace OpenVersus.Server.Core.Leaderboards;
 //     rating, and BestCharacter's points -1 (as there: the highest of no fighters). FinalLeaderboardRank: the place in
 //     the mode (RankService), 0 without games.
 //
-// Redis, read     connections:{player} character
+// The TS websocket built it in two places, which differ in one value: at a match's end BestCharacter's points are the
+// best fighter's rating (-1 when no fighter is rated); for a set's result (ranked_set:fullrankupdate: a concede, a set
+// over at check-in, a pregame dodge) they are that rating when above 0, else the mode's (FullRankUpdateVariant). Kept as
+// there (decided 2026-10-05, slice 3: unified only if asked). For a set's result it went only to the players whose socket
+// it held, and the rating it made when missing only for them: SendToOnlineAsync builds it for the players in
+// online_players (the websocket's presence), so an offline player or a bot gets no message and no rating document.
+//
+// Redis, read     connections:{player} character; online_players (SendToOnlineAsync)
 // Mongo, read     eloratings (made when missing, as getOrCreateRating), playerstats, playertesters
+// Published       ws:send (SendToOnlineAsync)
 //
 // Unlike there: the season is Season:Current (TS: always Season:SeasonFive), as ranked_data and the login.
 
+/// <summary>Which of the TS websocket's two FullRankUpdates (see FullRankUpdate's header).</summary>
+public enum FullRankUpdateVariant
+{
+    /// <summary>A match's end: BestCharacter's points are the best fighter's rating, -1 when none is rated.</summary>
+    MatchEnd,
+
+    /// <summary>A set's result (ranked_set:fullrankupdate): the best fighter's rating when above 0, else the mode's.</summary>
+    SetResult,
+}
+
 public static class FullRankUpdate
 {
+    /// <summary>
+    /// Sends each of <paramref name="playerIds"/> that is online its FullRankUpdate (<paramref name="variant"/>, in
+    /// <paramref name="season"/>) through ws:send; one player's failure is logged and the others still get theirs.
+    /// </summary>
+    public static async Task SendToOnlineAsync(IDatabase redis, IMongoDatabase mongo, EloRatings ratings, IEnumerable<string> playerIds, string season,
+        FullRankUpdateVariant variant, TimeProvider time, ILogger log, CancellationToken ct)
+    {
+        foreach (string id in playerIds)
+        {
+            try
+            {
+                if (!await redis.SetContainsAsync("online_players", id))
+                {
+                    continue;
+                }
+
+                await PlayerMessages.SendAsync(redis, [id], await BuildAsync(redis, mongo, ratings, id, season, time, ct, variant));
+            }
+            catch (Exception e) when (e is MongoException or RedisException or TimeoutException)
+            {
+                log.LogError("Error sending FullRankUpdate to {Player}: {Error}", id, e.Message);
+            }
+        }
+    }
+
     /// <summary>The message for <paramref name="playerId"/> (a profile-notification), in <paramref name="season"/>.</summary>
-    public static async Task<JsonObject> BuildAsync(IDatabase redis, IMongoDatabase mongo, EloRatings ratings, string playerId, string season, TimeProvider time, CancellationToken ct)
+    public static async Task<JsonObject> BuildAsync(IDatabase redis, IMongoDatabase mongo, EloRatings ratings, string playerId, string season, TimeProvider time, CancellationToken ct,
+        FullRankUpdateVariant variant = FullRankUpdateVariant.MatchEnd)
     {
         var rating = await ratings.GetOrCreateAsync(mongo.GetCollection<BsonDocument>("eloratings"), playerId, "", ct);
         var eloratings = mongo.GetCollection<BsonDocument>("eloratings");
@@ -37,7 +83,7 @@ public static class FullRankUpdate
 
         JsonObject Mode(string mode, (BsonValue Rating, long Rank)? place) => BuildMode(
             Or(rating, $"elo_{mode}"), Or(rating, $"wins_{mode}"), Or(rating, $"losses_{mode}"), place?.Rank ?? 0,
-            Map(rating, $"characters_{mode}"), Map(stats, $"characters_{mode}"), character, now);
+            Map(rating, $"characters_{mode}"), Map(stats, $"characters_{mode}"), character, now, variant);
 
         return new JsonObject
         {
@@ -70,7 +116,7 @@ public static class FullRankUpdate
     }
 
     private static JsonObject BuildMode(double elo, double wins, double losses, long rank, BsonDocument characters, BsonDocument statsByCharacter,
-        string character, long now)
+        string character, long now, FullRankUpdateVariant variant)
     {
         JsonObject Stamp() => new() { ["_hydra_unix_date"] = now };
         if (wins + losses == 0 && characters.ElementCount == 0)
@@ -111,11 +157,12 @@ public static class FullRankUpdate
             byCharacter[character] = Character(elo, wins, losses, Or(played, "totalDamageDealt"), Or(played, "ringouts"), Stamp());
         }
 
+        double bestPoints = variant == FullRankUpdateVariant.SetResult && bestElo <= 0 ? elo : bestElo;
         return new JsonObject
         {
             ["BestCharacter"] = new JsonObject
             {
-                ["CurrentPoints"] = Number(bestElo), ["MaxPoints"] = Number(bestElo), ["GamesPlayed"] = Number(wins + losses), ["SetsPlayed"] = Number(wins + losses),
+                ["CurrentPoints"] = Number(bestPoints), ["MaxPoints"] = Number(bestPoints), ["GamesPlayed"] = Number(wins + losses), ["SetsPlayed"] = Number(wins + losses),
                 ["CharacterSlug"] = best, ["LastUpdateTimestamp"] = Stamp(),
             },
             ["DataByCharacter"] = byCharacter,

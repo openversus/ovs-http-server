@@ -15,19 +15,26 @@
 // (as the other harnesses). Both servers need the same MatchUpdateKey (REF_MATCH_UPDATE_KEY, their MATCHUPDATEKEY),
 // the same node signing key (P2P_NODE_SIGNING_KEY_FILE; REF_NODE_PUBLIC_KEY is its public half, a
 // node-config-public-key.txt), UDP_SERVER_IP and UDP_PORT, and fixed rollback servers (ON_DEMAND_ROLLBACK=0: a relay
-// request deploys nothing). ECDSA signatures differ on every signing, so a signature is compared by whether it verifies.
+// request deploys nothing), and the C# match flow MatchEnd:Enabled off (the TS websocket ends the match in both runs: the
+// match:end publish is compared). ECDSA signatures differ on every signing, so a signature is compared by whether it verifies.
+// The dodge steps also need REF_WS_URL and REF_JWT_SECRET: the TS websocket (PR #49's code as committed) turns the TS
+// server's ranked_set:fullrankupdate into each connected player's FullRankUpdate and delivers what C# sends through
+// ws:send. In those steps the players online get a fake game for the step (connected after the setup, closed after), and
+// what their games were sent is compared; each run is checked to use only its own channel.
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { require, need, openScratch, openMonitor, writes, state } from "../refdiff/refdiff.mjs";
+import { connectPlayers } from "../refdiff/gateway.mjs";
 
 const { EJSON } = require(process.cwd() + "/node_modules/bson");
+const jwt = require(process.cwd() + "/node_modules/jsonwebtoken");
 
 const oid = (n) => "00000000000000000015" + String(n).padStart(4, "0");
 const [P1, P2, BOT, SPEC] = [1, 2, 3, 4].map(oid);
 const MATCH = oid(100), SET = oid(101), OTHER = oid(102);
 const KEY = "matchkey-from-the-game";
 const IP = "198.51.100.8";
-const CHANNELS = new Set(["game_server_ready:notifications", "match:end", "ranked_set:fullrankupdate"]);
+const CHANNELS = new Set(["game_server_ready:notifications", "match:end"]);
 let publicKey;
 const verifies = (bytes, signature) => {
   publicKey ??= crypto.createPublicKey({ key: Buffer.from(fs.readFileSync(need("REF_NODE_PUBLIC_KEY"), "utf8").trim(), "base64"), format: "der", type: "spki" });
@@ -95,11 +102,16 @@ async function run(baseUrl, outFile) {
   const disconnect = (pid) => status("PlayerDisconnect", { PlayerId: pid, PlayerIds: [pid] });
 
   const steps = [];
-  async function step(name, setup, calls, { waitMs = 700 } = {}) {
+  async function step(name, setup, calls, { waitMs = 700, games: withGames = false } = {}) {
     await redis.flushDb();
     await redis.set("refdiff:scratch", "1");
     await db.dropDatabase();
     await setup?.();
+    // A fake game for each player online, so that the TS websocket holds a socket exactly for them.
+    const games = withGames
+      ? await connectPlayers(need("REF_WS_URL"), (await redis.sMembers("online_players")).sort().map((id) => ({ id, token: jwt.sign({ id, profile_id: id, wb_network_id: id }, need("REF_JWT_SECRET")) })))
+      : null;
+    if (games) await sleep(200);
     recording = [];
     const started = Date.now();
     const answers = [];
@@ -111,10 +123,15 @@ async function run(baseUrl, outFile) {
     await sleep(waitMs);
     const lines = recording;
     recording = null;
-    const all = writes(lines, self).filter((w) => !/^(set|zadd|zrem|del) ovs:instance/.test(w)).map((w) => w.replace(/\\(["\\])/g, "$1"));
+    const frames = games && Object.fromEntries((await redis.sMembers("online_players")).sort().map((id) => [id, games.frames(id).filter((f) => !f?.raw)]));
+    // The TS websocket's presence for the fake games (a pong can land in a step) is left out.
+    const all = writes(lines, self).filter((w) => !/^(set|zadd|zrem|del) ovs:instance|^zadd player_heartbeats|^(sadd|srem) online_players|^(zadd|expire) active_ip_accounts:/.test(w))
+      .map((w) => w.replace(/\\(["\\])/g, "$1"));
     const raw = {
       name,
       answers,
+      frames,
+      channels: [...new Set(all.filter((w) => w.startsWith("publish ")).map((w) => w.split(" ")[1]))],
       writes: all.filter((w) => !w.startsWith("publish ")).sort(),
       published: all.filter((w) => w.startsWith("publish ")).map((w) => {
         const [, channel, ...rest] = w.split(" ");
@@ -123,11 +140,16 @@ async function run(baseUrl, outFile) {
         try { message = JSON.parse(text); } catch { message = text; }
         return { channel, message };
       }).filter((p) => CHANNELS.has(p.channel)),
-      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^ovs:instance/.test(k))),
+      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^ovs:instance|^player_heartbeats$|^active_ip_accounts:/.test(k))),
       lists: Object.fromEntries(await Promise.all([P1, P2, BOT, SPEC].map(async (p) => [p, await redis.lRange(`dll_notifications:${p}`, 0, -1)]))),
       mongo: Object.fromEntries(await Promise.all(["eloratings", "playerstats"].map(async (c) => [c,
         JSON.parse(EJSON.stringify(await db.collection(c).find({}, { promoteValues: false, sort: { account_id: 1 } }).toArray(), { relaxed: false }))]))),
     };
+    if (games) {
+      // Closed after the step's record; the TS websocket's disconnect handling runs before the next step wipes the stores.
+      games.close();
+      await sleep(600);
+    }
     steps.push(normalize(raw, started));
     process.stdout.write(`${name}: ${answers.map((a) => a.status).join(" ")}\n`);
   }
@@ -206,15 +228,15 @@ async function run(baseUrl, outFile) {
   await step("disconnect-spectator-mid-game", async () => { await seed(); await online(P1, P2); await redis.set(`match_started:${MATCH}`, "1"); },
     [call("/api/ovs_match_status", disconnect(SPEC))]);
   await step("disconnect-mid-game", async () => { await seed(); await online(P1); await redis.set(`match_started:${MATCH}`, "1"); }, [call("/api/ovs_match_status", disconnect(P2))]);
-  await step("dodge-rated", async () => { await seed({ players: ONE_V_ONE() }); await online(P1); }, [call("/api/ovs_match_status", disconnect(P2))]);
-  await step("dodge-rated-team-0-leaves", async () => { await seed({ players: ONE_V_ONE() }); await online(P2); }, [call("/api/ovs_match_status", disconnect(P1))]);
-  await step("dodge-rated-in-set", async () => { await seed({ players: ONE_V_ONE() }); await seedSet(); await online(P1); }, [call("/api/ovs_match_status", disconnect(P2))]);
-  await step("dodge-twice", async () => { await seed({ players: ONE_V_ONE() }); await online(P1); }, [call("/api/ovs_match_status", disconnect(P2)), call("/api/ovs_match_status", disconnect(P2))]);
-  await step("dodge-already-processed", async () => { await seed({ players: ONE_V_ONE() }); await online(P1); await redis.set(`elo_processed:${MATCH}`, "1"); }, [call("/api/ovs_match_status", disconnect(P2))]);
-  await step("dodge-custom-game", async () => { await seed({ players: ONE_V_ONE(), config: { isCustomGame: true } }); await online(P1); }, [call("/api/ovs_match_status", disconnect(P2))]);
-  await step("dodge-with-a-bot", async () => { await seed({ players: ROSTER().slice(0, 3), config: { mode: "2v2" } }); await online(P1); }, [call("/api/ovs_match_status", disconnect(P2))]);
-  await step("dodge-rift", async () => { await seed({ players: ONE_V_ONE(), match: { isPasswordMatch: true } }); await online(P1); }, [call("/api/ovs_match_status", disconnect(P2))]);
-  await step("dodge-spectator", async () => { await seed(); await online(P1, P2); }, [call("/api/ovs_match_status", disconnect(SPEC))]);
+  await step("dodge-rated", async () => { await seed({ players: ONE_V_ONE() }); await online(P1); }, [call("/api/ovs_match_status", disconnect(P2))], { games: true });
+  await step("dodge-rated-team-0-leaves", async () => { await seed({ players: ONE_V_ONE() }); await online(P2); }, [call("/api/ovs_match_status", disconnect(P1))], { games: true });
+  await step("dodge-rated-in-set", async () => { await seed({ players: ONE_V_ONE() }); await seedSet(); await online(P1); }, [call("/api/ovs_match_status", disconnect(P2))], { games: true });
+  await step("dodge-twice", async () => { await seed({ players: ONE_V_ONE() }); await online(P1); }, [call("/api/ovs_match_status", disconnect(P2)), call("/api/ovs_match_status", disconnect(P2))], { games: true });
+  await step("dodge-already-processed", async () => { await seed({ players: ONE_V_ONE() }); await online(P1); await redis.set(`elo_processed:${MATCH}`, "1"); }, [call("/api/ovs_match_status", disconnect(P2))], { games: true });
+  await step("dodge-custom-game", async () => { await seed({ players: ONE_V_ONE(), config: { isCustomGame: true } }); await online(P1); }, [call("/api/ovs_match_status", disconnect(P2))], { games: true });
+  await step("dodge-with-a-bot", async () => { await seed({ players: ROSTER().slice(0, 3), config: { mode: "2v2" } }); await online(P1); }, [call("/api/ovs_match_status", disconnect(P2))], { games: true });
+  await step("dodge-rift", async () => { await seed({ players: ONE_V_ONE(), match: { isPasswordMatch: true } }); await online(P1); }, [call("/api/ovs_match_status", disconnect(P2))], { games: true });
+  await step("dodge-spectator", async () => { await seed(); await online(P1, P2); }, [call("/api/ovs_match_status", disconnect(SPEC))], { games: true });
 
   monitor.destroy();
   await close();
@@ -239,6 +261,7 @@ function normalize(step, started) {
     if (Array.isArray(v)) return v.map(walk);
     if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [rename(k), walk(x)]));
     if (typeof v === "number" && nearMs(v)) return "<now ms>";
+    if (typeof v === "number" && nearSeconds(v)) return "<now s>";
     if (typeof v === "string") return rename(v);
     return v;
   };
@@ -263,12 +286,17 @@ function pointer(ts, cs) {
   return { ok, ts: strip(ts), cs: strip(cs) };
 }
 
-// A dodge TS rated and C# does not (RatedMatches): TS wrote ratings and set stats and published fullrankupdate; C# wrote
-// neither. Everything else must be the same.
+// A dodge TS rated and C# does not (RatedMatches): TS wrote ratings and set stats and sent the player online their ranks;
+// C# did none of it. Everything else must be the same.
 function unrated(ts, cs) {
-  const full = (run) => run.published.filter((p) => p.channel === "ranked_set:fullrankupdate").length;
-  const ok = ts.mongo.eloratings.length > 0 && cs.mongo.eloratings.length === 0 && cs.mongo.playerstats.length === 0 && full(ts) === 1 && full(cs) === 0;
-  const strip = (run) => { const o = clone(run); o.mongo = null; o.published = o.published.filter((p) => p.channel !== "ranked_set:fullrankupdate"); return o; };
+  const ranks = (run) => Object.values(run.frames).flat().filter((f) => f?.data?.template_id === "FullRankUpdate").length;
+  const ok = ts.mongo.eloratings.length > 0 && cs.mongo.eloratings.length === 0 && cs.mongo.playerstats.length === 0 && ranks(ts) === 1 && ranks(cs) === 0;
+  const strip = (run) => {
+    const o = clone(run);
+    o.mongo = null;
+    for (const id of Object.keys(o.frames)) o.frames[id] = o.frames[id].filter((f) => f?.data?.template_id !== "FullRankUpdate");
+    return o;
+  };
   return { ok, ts: strip(ts), cs: strip(cs) };
 }
 
@@ -304,18 +332,69 @@ const EXPECTED = {
   },
 };
 
+// The dodge flag (decided 2026-10-05: written only in a rated set's game, naming the set): TS wrote ranked_disconnect "1"
+// after any started match; C# writes the set's id (the match's when it has no set pointer: game 1) in a rated game, and
+// nothing in one RatedMatches does not count (a bot, a rift). Asserted on these steps, then C#'s form taken as TS's.
+const FLAG_NAMED = new Set(["dodge-rated", "dodge-rated-team-0-leaves", "dodge-rated-in-set", "dodge-twice"]);
+const FLAG_NONE = new Set(["dodge-with-a-bot", "dodge-rift", "disconnect-mid-game"]);
+function dodgeFlag(name, ts, cs) {
+  if (!FLAG_NAMED.has(name) && !FLAG_NONE.has(name)) return true;
+  const flagOf = (run) => run.writes.filter((w) => w.startsWith("set ranked_disconnect:"));
+  const [tsFlag, ...more] = flagOf(ts);
+  const m = /^set (ranked_disconnect:\S+) 1 EX 600$/.exec(tsFlag ?? "");
+  if (!m || more.length) return false;
+  const csFlags = flagOf(cs);
+  if (FLAG_NAMED.has(name)) {
+    const named = new RegExp(`^set ${m[1]} (${MATCH}|${SET}) EX 600$`).exec(csFlags[0] ?? "");
+    if (csFlags.length !== 1 || !named || cs.state[m[1]]?.value !== named[1]) return false;
+    cs.writes[cs.writes.indexOf(csFlags[0])] = tsFlag;
+    cs.state[m[1]] = { ...cs.state[m[1]], value: "1" };
+    cs.writes.sort();
+    return true;
+  }
+  if (csFlags.length || m[1] in cs.state) return false;
+  ts.writes.splice(ts.writes.indexOf(tsFlag), 1);
+  delete ts.state[m[1]];
+  return true;
+}
+
+// FullRankUpdate's season: TS's is always Season:SeasonFive, C#'s Season:Current (decided: as ranked_data and the login).
+function season(run, wanted) {
+  let ok = true;
+  for (const f of Object.values(run?.frames ?? {}).flat()) {
+    if (f?.data?.template_id !== "FullRankUpdate") continue;
+    const keys = Object.keys(f.data.SeasonalData ?? {});
+    if (keys.length !== 1 || !wanted(keys[0])) ok = false;
+    f.data.SeasonalData = { "<season>": f.data.SeasonalData[keys[0]] };
+  }
+  return ok;
+}
+
 function diffRuns(fileA, fileB) {
   const a = JSON.parse(fs.readFileSync(fileA, "utf8")), b = JSON.parse(fs.readFileSync(fileB, "utf8"));
   let differing = 0;
-  const parts = (x, y) => ["answers", "writes", "published", "state", "lists", "mongo"].filter((p) => JSON.stringify(x?.[p]) !== JSON.stringify(y?.[p]));
+  const parts = (x, y) => ["answers", "frames", "writes", "published", "state", "lists", "mongo"].filter((p) => JSON.stringify(x?.[p]) !== JSON.stringify(y?.[p]));
   for (let i = 0; i < Math.max(a.steps.length, b.steps.length); i++) {
     const name = a.steps[i]?.name ?? b.steps[i]?.name;
+    // Each run sends the ranks on its own channel: TS ranked_set:fullrankupdate, C# ws:send.
+    if (a.steps[i]?.channels.includes("ws:send") || b.steps[i]?.channels.includes("ranked_set:fullrankupdate")) {
+      differing++;
+      console.log(`${name}: a message on the other server's channel (A: ${a.steps[i]?.channels}; B: ${b.steps[i]?.channels})`);
+    }
     if (a.steps[i]?.writes.some((w) => w.includes("ranked_set_match:"))) {
       differing++;
       console.log(`${name}: A (TS) wrote ranked_set_match`);
     }
     const unpoint = (run) => run && { ...run, writes: run.writes.filter((w) => !w.startsWith("del ranked_set_match:")) };
     const x = a.steps[i], y = unpoint(b.steps[i]);
+    if (x && y && !dodgeFlag(name, x, y)) {
+      differing++;
+      console.log(`${name}: NOT the decided dodge flag (TS "1"; C# the set's id in a rated game, none otherwise): A ${JSON.stringify(x.writes.filter((w) => w.includes("ranked_disconnect")))} B ${JSON.stringify(y.writes.filter((w) => w.includes("ranked_disconnect")))}`);
+    }
+    if (!season(x, (k) => k === "Season:SeasonFive") || !season(y, (k) => /^Season:\w+$/.test(k))) {
+      differing++;
+      console.log(`${name}: a FullRankUpdate season is not TS's Season:SeasonFive / C#'s current one`);
+    }
     // Every signed answer must verify, on both sides.
     for (const [side, run] of [["A", x], ["B", y]]) {
       if (run?.answers.some((ans) => ans.signature === "<DOES NOT VERIFY>")) {

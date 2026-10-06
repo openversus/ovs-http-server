@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.Settings;
 using StackExchange.Redis;
 
@@ -17,16 +18,17 @@ namespace OpenVersus.Server.Core.Matches;
 
 // Starting a match: what the TS server's custom lobby does when its host presses start (start_custom_match,
 // modules/customLobby/lobby.service.ts), step for step, so the TS websocket and rollback code that read it cannot tell
-// the difference. The websocket then tells the game (GameServerReadyNotification, matchmaking-complete,
-// OnGameplayConfigNotified, and PerksLockedNotification once every player's perks are locked), and the rollback server,
+// the difference. The websocket then tells the game (GameServerReadyNotification, OnGameplayConfigNotified, and
+// PerksLockedNotification once every player's perks are locked), and the rollback server,
 // asking /ovs_register (RollbackCallbacks), gets the humans and triggers game-server-instance-ready.
 //
 // Redis, written  match:{match} (the TS RedisMatch: one ticket holding every player but the spectators, isPasswordMatch,
 //                 so no ELO) EX 20 min; match:{match}:perks:{bot} (the launch's bot perks, "[]" when none) EX 20 min for
 //                 each bot (bots never send perks_lock, and the TS all-perks-locked check waits for every ticket
 //                 player); {match} (the notification, which /ovs_register reads) EX 20 min
-// Published       match:notifications (the notification: the websocket sends the match to its players), then
-//                 matchmaking:complete ({containerMatchId, playerIds, matchmakingRequestId, resultId})
+// Published       match:notifications (the notification: the websocket sends the match to its players)
+// Sent (ws:send)  then matchmaking-complete (MatchmakingComplete: a new request id, a new result id) to the players but
+//                 the bots, as the TS websocket built it from matchmaking:complete
 //
 // The notification may carry gameplayConfigOverride (merged over the websocket's GameplayConfig) and
 // playerConfigOverrides ({player: fields merged over that player's config}): the websocket builds a PvP config, and a
@@ -167,7 +169,6 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
     TimeProvider time, ILogger<MatchLauncher> log) : IMatchLauncher
 {
     public const string NotificationChannel = "match:notifications";
-    public const string MatchmakingCompleteChannel = "matchmaking:complete";
     public const string CurrentPortKey = "rollback:current_port";
     public const string DeployClient = "rollback-deploy";
     private static readonly TimeSpan s_ttl = TimeSpan.FromMinutes(20);
@@ -280,18 +281,29 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
         string json = Js.Stringify(notification);
         await redis.StringSetAsync(matchId, json, s_ttl);
         await redis.PublishAsync(RedisChannel.Literal(NotificationChannel), json);
-        await redis.PublishAsync(RedisChannel.Literal(MatchmakingCompleteChannel), Js.Stringify(new JsonObject
-        {
-            ["containerMatchId"] = matchId,
-            ["playerIds"] = new JsonArray([.. launch.Players.Select(p => (JsonNode)p.PlayerId)]),
-            ["matchmakingRequestId"] = matchmakingRequestId,
-            ["resultId"] = ObjectId.GenerateNewId().ToString(),
-        }));
+        await PlayerMessages.SendAsync(redis, launch.Players.Where(p => !p.IsBot).Select(p => p.PlayerId),
+            MatchmakingComplete(matchId, matchmakingRequestId, ObjectId.GenerateNewId().ToString()));
 
         log.LogInformation("Started {Mode} match {Match} on rollback port {Port}{P2P}: {Players}", launch.Mode, matchId, rollbackPort,
             p2p ? " (P2P: the players connect to their own nodes; a relay only if no direct path opens)" : "",
             string.Join(", ", launch.Players.Select(p => $"{p.PlayerId} (team {p.TeamIndex}, index {p.PlayerIndex}{(p.IsBot ? ", bot" : "")})")));
         return new LaunchedMatch(matchId, rollbackPort);
+    }
+
+    /// <summary>
+    /// matchmaking-complete, as the TS websocket's handleMatchMakingComplete sent it: the match, the request it answers
+    /// (<paramref name="requestId"/>; left out when there is none, where TS sent undefined) and a result id.
+    /// </summary>
+    internal static JsonObject MatchmakingComplete(string matchId, JsonNode? requestId, string resultId)
+    {
+        var payload = new JsonObject { ["result"] = new JsonObject { ["id"] = resultId }, ["match"] = new JsonObject { ["id"] = matchId } };
+        if (requestId is not null)
+        {
+            payload["id"] = requestId.DeepClone();
+        }
+
+        payload["state"] = 2;
+        return new JsonObject { ["data"] = new JsonObject(), ["payload"] = payload, ["header"] = "Matchmaking request completed!", ["cmd"] = "matchmaking-complete" };
     }
 
     public Task<int?> RollbackPortAsync(IDatabase redis)

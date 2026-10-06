@@ -13,6 +13,9 @@
 // may run at once on the same stores: each step connects to one of them only. The games connect as the reverse proxy
 // passes them on (X-Forwarded-For), so the IP-keyed writes name the same address on both.
 //
+// The daily-toast-bonus step's popup comes, in C#, from the access service (DailyToastPopups, a reader of the gateway's
+// connected events): run it on the same stores for the C# run.
+//
 // What the C# gateway writes that TS does not (realtime:conn:{player}, the realtime:connections stream, the ws:disconnect
 // it publishes when a connection replaces another) is checked to be there, then left out of the comparison; every other
 // difference is either in EXPECTED, which asserts it, or a failure.
@@ -151,6 +154,11 @@ const STEPS = {
     await sleep(SETTLE);
   },
   async "daily-toast-bonus"(c) {
+    // The step's wipe took the stream and its groups: the access service's reader makes its group again at the stream's
+    // end on its next read, and a connection made before that is not its to see. In C#'s run, wait for it.
+    if (c.url === process.env.REF_CS_WS) {
+      for (let i = 0; i < 40 && !(await c.redis.exists("realtime:connections")); i++) await sleep(50);
+    }
     await c.redis.set(`daily_toast_bonus_pending:${P1}`, "2", { EX: 300 });
     c.games.P1 = await game(c.url, initFrame(token(P1, 1), 1));
     await sleep(SETTLE);
@@ -173,7 +181,8 @@ function byMessage(frames) {
   let at = frames.indexOf("0c") + 1;
   for (const name of Object.keys(MESSAGES)) {
     const end = frames.indexOf(marker(name), at);
-    out[name] = end < 0 ? "marker missing" : frames.slice(at, end);
+    // A ping (the server's 20 s tick) can fall between any two messages: never one of them.
+    out[name] = end < 0 ? "marker missing" : frames.slice(at, end).filter((f) => f !== "0c");
     at = end + 1;
   }
   return out;
@@ -249,7 +258,7 @@ const REJECTED = {
   adjust: (a, b) => { delete a.games.P1.close; delete b.games.P1.close; },
 };
 const SESSION_DELETE = {
-  what: "the close: TS deletes the session (connections:{player}); in C# that is the disconnect consumer's (slice 3d), the gateway takes the player offline only",
+  what: "the close: TS deletes the session (connections:{player}); in C# the lobbies service's reader of the disconnect does (LobbyDisconnects, not run here: disconnect_diff.mjs), the gateway takes the player offline only",
   check: (ts, cs) => has(ts.writesAfterMark, `del connections:${P1}`) && !has(cs.writesAfterMark, `del connections:${P1}`)
     && ts.presence.sessions.length === 0 && cs.presence.sessions.includes(`connections:${P1}`),
   adjust: (a, b) => { without(a.writesAfterMark, `del connections:${P1}`); a.presence.sessions = b.presence.sessions = []; },
@@ -298,9 +307,10 @@ const EXPECTED = {
     },
   ],
   "daily-toast-bonus": [{
-    what: "TS sends the daily toast bonus popup at the handshake (OnRewardsGranted) and deletes the flag; in C# that is the connected event's consumer's (slice 3d)",
-    check: (ts, cs) => ts.games.P1.frames.length === 3 && cs.games.P1.frames.length === 2 && has(ts.writes, `del daily_toast_bonus_pending:${P1}`),
-    adjust: (a, b) => { a.games.P1.frames.pop(); without(a.writes, `del daily_toast_bonus_pending:${P1}`); },
+    what: "the daily toast bonus popup (OnRewardsGranted, the bytes compared): TS sends it at the handshake, then deletes the flag; in C# the access service's reader of the connected event takes the flag first (GETDEL, a read in this record) and sends it",
+    check: (ts, cs) => ts.games.P1.frames.length === 3 && cs.games.P1.frames.length === 3 && has(ts.writes, `del daily_toast_bonus_pending:${P1}`)
+      && !has(cs.writes, `del daily_toast_bonus_pending:${P1}`) && cs.writes.filter((w) => w.startsWith("publish ws:send ") && w.includes("OnRewardsGranted")).length === 1,
+    adjust: (a, b) => { without(a.writes, `del daily_toast_bonus_pending:${P1}`); b.writes = b.writes.filter((w) => !(w.startsWith("publish ws:send ") && w.includes("OnRewardsGranted"))); },
   }],
 };
 

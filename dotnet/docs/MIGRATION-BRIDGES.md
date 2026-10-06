@@ -261,8 +261,9 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   of it; a searching game is cancelled, any other closed after a banner). The bridge then
   hears no C# match; a match the TS server still starts (its custom lobby rematch timer, only reached with match end off,
   which the switch turns on) would get no C# config.
-- **Delete when:** the realtime gateway replaces the TS websocket (slice 3e): the perks lock (`PerksLock`) calls
-  `IGameplayConfigs` directly too (slice 3c), and the bridge and the setting go.
+  With the switch on, the perks lock (`PerksLock`) publishes nothing either: it merges the perks into the kept configs
+  (`IGameplayConfigs`) and sends each game its copy.
+- **Delete when:** the realtime gateway replaces the TS websocket (slice 3e): the bridge and the setting go.
 
 ## Not bridges (kept after the migration)
 

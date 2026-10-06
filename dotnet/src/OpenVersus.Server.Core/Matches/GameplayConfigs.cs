@@ -67,9 +67,9 @@ namespace OpenVersus.Server.Core.Matches;
 // keeps each config too, writing nothing else the TS server reads, while the TS websocket still sends its own; the two
 // are compared (tools/matches/config_diff.mjs on scratch stores; the live bench). On: also the writes the TS websocket
 // makes beside it. Nothing here sends: the TS websocket sends the config, or with Realtime:Gateway on, MatchLaunchStream
-// (MatchLaunches.cs) builds it with On from the launch and sends it. The
-// subscriber below is a bridge (docs/MIGRATION-BRIDGES.md, 9): once the TS websocket is gone, MatchLauncher and the perks
-// lock call this directly, as everything else that causes a message does. With more than one match flow replica, each
+// (MatchLaunches.cs) builds it with On from the launch and sends it, and the perks lock (PerksLock) merges the perks here
+// and sends the copies this gives back. The subscriber below is a bridge (docs/MIGRATION-BRIDGES.md, 9), for the matches
+// the TS websocket still sends. With more than one match flow replica, each
 // builds the same config (the same keys, the same values).
 //
 // Unlike there:
@@ -110,8 +110,12 @@ public interface IGameplayConfigs
     /// </summary>
     Task<JsonObject?> BuildAsync(JsonObject notification, GameplayConfigMode mode, CancellationToken ct);
 
-    /// <summary>Merges the locked perks of perks:notifications' <paramref name="notification"/> into the kept configs.</summary>
-    Task PerksLockedAsync(JsonObject notification, CancellationToken ct);
+    /// <summary>
+    /// Merges the locked perks of perks:notifications' <paramref name="notification"/> into the kept configs; the copies it
+    /// rewrote, in the order the TS websocket sent them: the locked players' (in the notification's order), then the
+    /// spectators'.
+    /// </summary>
+    Task<IReadOnlyList<(string PlayerId, JsonObject Message)>> PerksLockedAsync(JsonObject notification, CancellationToken ct);
 }
 
 internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsService cosmetics, EloRatings ratings,
@@ -289,7 +293,7 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
         return message;
     }
 
-    public async Task PerksLockedAsync(JsonObject notification, CancellationToken ct)
+    public async Task<IReadOnlyList<(string PlayerId, JsonObject Message)>> PerksLockedAsync(JsonObject notification, CancellationToken ct)
     {
         var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase() ?? throw new InvalidOperationException("this service has no Redis (REDIS)");
         string matchId = Str(notification["containerMatchId"]) ?? "";
@@ -313,7 +317,7 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
         if (held.Count == 0)
         {
             log.LogWarning("Match {Match}: perks locked, but no player holds its gameplay config", matchId);
-            return;
+            return [];
         }
 
         bool merged = false;
@@ -353,23 +357,23 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
 
         // What each game is sent: a locked player their config, a PerksLockedNotification once any perks merged; a
         // spectator a PerksLockedNotification in any case (TS sends the players theirs before it marks the spectators').
-        foreach (var (id, copy) in held)
+        var order = locked.Where(held.ContainsKey).Distinct().ToList();
+        order.AddRange(matchPlayers.Select(p => Str(p["playerId"])).OfType<string>().Where(id => spectators.Contains(id) && held.ContainsKey(id) && !order.Contains(id)).Distinct());
+        var rewritten = new List<(string PlayerId, JsonObject Message)>();
+        foreach (string id in order)
         {
-            bool spectator = spectators.Contains(id);
-            if (!spectator && !locked.Contains(id))
-            {
-                continue;
-            }
-
-            if ((merged || spectator) && copy["data"] is JsonObject data)
+            var copy = held[id];
+            if ((merged || spectators.Contains(id)) && copy["data"] is JsonObject data)
             {
                 data["template_id"] = PerksLockedTemplate;
             }
 
             await redis.StringSetAsync(Key(id), Js.Stringify(copy), expiry: null, keepTtl: true);
+            rewritten.Add((id, copy));
         }
 
         log.LogInformation("Match {Match}: perks merged into the gameplay config of {Players}", matchId, string.Join(", ", held.Keys));
+        return rewritten;
     }
 
     // The match copy of a human's cosmetics, each field parsed (kept as text when it is not JSON); their equipped ones

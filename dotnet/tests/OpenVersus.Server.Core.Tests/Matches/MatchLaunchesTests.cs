@@ -106,7 +106,8 @@ public sealed class MatchLaunchesTests : IAsyncLifetime
             _ => Task.FromResult<JsonObject?>(new JsonObject { ["data"] = new JsonObject { ["MatchId"] = notification["matchId"]?.DeepClone(), ["template_id"] = "OnGameplayConfigNotified", ["mode"] = mode.ToString() } }),
         };
 
-        public Task PerksLockedAsync(JsonObject notification, CancellationToken ct) => Task.CompletedTask;
+        public Task<IReadOnlyList<(string PlayerId, JsonObject Message)>> PerksLockedAsync(JsonObject notification, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<(string PlayerId, JsonObject Message)>>([]);
     }
 
     private MatchLaunchStream Stream(Build build = Build.Config) => new(Services(true), new Configs(build),

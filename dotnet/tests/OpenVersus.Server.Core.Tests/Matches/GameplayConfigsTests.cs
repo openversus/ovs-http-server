@@ -168,6 +168,33 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
         }
     }
 
+    // The copies come back to be sent in the TS websocket's order: the locked players' in the lock's order, then the
+    // spectators'; what comes back is what is kept.
+    [SkippableFact]
+    public async Task TheLockGivesBackThePlayersCopiesInTheLocksOrderThenTheSpectators()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        string spectator = Id(5);
+        var notification = Notification(Match);
+        ((JsonArray)notification["players"]!).Add(new JsonObject { ["playerId"] = spectator, ["partyId"] = Match, ["playerIndex"] = 8888, ["teamIndex"] = -1, ["isHost"] = false, ["ip"] = "198.51.100.3", ["isBot"] = false, ["isSpectator"] = true });
+        await Db.HashSetAsync($"connections:{spectator}", [new("character", "character_jake")]);
+        await Db.StringSetAsync(Match, Js.Stringify(notification), TimeSpan.FromMinutes(20));
+        var configs = Configs();
+        await configs.BuildAsync(notification, GameplayConfigMode.Shadow, default);
+        await Db.StringSetAsync($"match:{Match}:perks:{P1}", "[\"perk_a\"]");
+        await Db.StringSetAsync($"match:{Match}:perks:{P2}", "[]");
+
+        var sent = await configs.PerksLockedAsync(new JsonObject { ["containerMatchId"] = Match, ["playerIds"] = new JsonArray(P2, P1) }, default);
+
+        Assert.Equal([P2, P1, spectator], sent.Select(s => s.PlayerId));
+        Assert.All(sent, s => Assert.Equal(GameplayConfigs.PerksLockedTemplate, s.Message["data"]!["template_id"]!.GetValue<string>()));
+        foreach (var (id, message) in sent)
+        {
+            Assert.Equal(Js.Stringify(message), (string?)await Db.StringGetAsync(GameplayConfigs.Key(id)));
+        }
+    }
+
     [SkippableFact]
     public async Task ALockLeavesAPlayersNewerMatchConfigAlone()
     {

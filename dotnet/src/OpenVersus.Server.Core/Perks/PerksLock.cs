@@ -11,12 +11,16 @@ namespace OpenVersus.Server.Core.Perks;
 // (handlers/ssc.ts): the player's perks for the match are stored; once every player of the match (match:{match}, its
 // tickets' players: the bots are locked at launch by MatchLauncher, spectators are in no ticket) has locked,
 // perks:notifications {containerMatchId, playerIds (every ticket player, in ticket order)} is published. The TS websocket
-// then puts each player's perks into the match config it sent them and sends it again (PerksLockedNotification).
+// then puts each player's perks into the match config it sent them and sends it again (PerksLockedNotification). With
+// Realtime:Gateway on, nothing is published and that is done here: the perks merged into each kept copy of the match's
+// config (GameplayConfigs.PerksLockedAsync) and each game sent its copy, the players' then the spectators'. Here, in the
+// request that completed the lock and once (perks_locked), not by every replica a publish would reach.
 // Answers {body: {}, metadata: null, return_code: 0}, whatever happened.
 //
 // Redis, written  match:{match}:perks:{player} (the Perks as sent) EX 20 min; match:{match}:perks_locked EX 20 min
 // Redis, read     match:{match}; match:{match}:perks:{every other ticket player}
-// Published       perks:notifications
+// Published       perks:notifications (Realtime:Gateway off)
+// Sent (ws:send)  each kept copy of the match's config, once merged (Realtime:Gateway on)
 //
 // Unlike there:
 //   no ContainerMatchId (or not text): nothing is stored (TS stores match:undefined:perks:{player}).
@@ -82,12 +86,35 @@ internal sealed class PerksLock(IServiceProvider services, ILogger<PerksLock> lo
             return;
         }
 
-        await db.PublishAsync(RedisChannel.Literal(Channel), Js.Stringify(new JsonObject
+        var notification = new JsonObject
         {
             ["containerMatchId"] = matchId,
             ["playerIds"] = new JsonArray([.. players.Select(p => (JsonNode)p)]),
-        }));
+        };
+        if (Matches.MatchLaunches.Gateway(services))
+        {
+            await ResendAsync(db, matchId, notification, ct);
+        }
+        else
+        {
+            await db.PublishAsync(RedisChannel.Literal(Channel), Js.Stringify(notification));
+        }
+
         log.LogInformation("All perks locked {Match}, players, ({Players})", matchId, string.Join(",", players));
+    }
+
+    private async Task ResendAsync(IDatabase db, string matchId, JsonObject notification, CancellationToken ct)
+    {
+        if (services.GetService<Matches.IGameplayConfigs>() is not { } configs)
+        {
+            log.LogError("Match {Match}: perks locked, but this service keeps no gameplay configs; nobody is sent the lock", matchId);
+            return;
+        }
+
+        foreach (var (playerId, message) in await configs.PerksLockedAsync(notification, ct))
+        {
+            await Realtime.PlayerMessages.SendAsync(db, [playerId], message);
+        }
     }
 
     private static JsonNode? Json(string text)

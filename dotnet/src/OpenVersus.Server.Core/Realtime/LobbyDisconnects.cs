@@ -21,6 +21,11 @@ namespace OpenVersus.Server.Core.Realtime;
 //      of their party is cancelled and told.
 //   4. online_players, unless they are connected again (the gateway keeps it through the post-match window, below).
 //   5. their own lobby's records (IPartyService.ForgetLobbyAsync: player_lobby, and a solo lobby).
+//   6. their session: connections:{player} and its match copy of the cosmetics, only while it is still the session the
+//      closed connection was opened with (a script compares the token); then player:{player}* (found by SCAN: the TS
+//      createLobby records player:{player}:lobby:{lobby} have no TTL), and the IP's copy of the session
+//      (connections:{ip}) while it is still this player's. The match flow reads the session too (a pregame dodge's
+//      fighter, after match_characters:{set}; GameplayConfigs at a match's start): TS deleted it at the close as well.
 // A replaced event (a newer login took the connection over) drops the ticket too, as the TS websocket's handshake did
 // (dropReplacedTicket), and nothing else.
 //
@@ -36,14 +41,14 @@ namespace OpenVersus.Server.Core.Realtime;
 //
 // Redis, read     realtime:connections (XREADGROUP, group "lobbies", made at the stream's end: events appended before
 //                 the group existed are not replayed against players who are back); realtime:conn:{player} (id);
-//                 connections:{player} (jwt); rejoin_pending:{player} (its TTL)
+//                 connections:{player} (jwt, current_ip); connections:{ip} (id); rejoin_pending:{player} (its TTL)
 // Redis, written  realtime:disconnects:due (ZSET: score the time it is due in ms, member the event as JSON); online_players
-//                 (SREM); the party's, the custom lobby's and the queue's writes (PartyService, CustomLobbyService,
+//                 (SREM); connections:{player}, connections:{player}:cosmetics, player:{player}*, connections:{ip} (DEL);
+//                 the party's, the custom lobby's and the queue's writes (PartyService, CustomLobbyService,
 //                 MatchmakingQueue)
 //
-// Not yet (slice 3d): the session keys (connections:{player}*, player:{player}*, the IP's copy), the match (a dodge, the
-// ranked set's flag: the match flow's reader), connected (the daily toast), and the players of a gateway node that died
-// without closing its connections.
+// Not yet (slice 3d): the match (a dodge, the ranked set's flag: the match flow's reader), connected (the daily toast),
+// and the players of a gateway node that died without closing its connections.
 //
 // Unlike the TS websocket:
 //   - a close in the post-match window is handled when the window closes, as any other (the other party member is
@@ -52,12 +57,17 @@ namespace OpenVersus.Server.Core.Realtime;
 //     stored custom lobby (KEYS) on every disconnect. The leave script is C#'s (CustomLobbyService's header).
 //   - the web custom lobby (custom_lobby_player:{player}) is not left: its pages were retired (docs/REALTIME.md).
 //   - the queue: see MatchmakingQueue's header (the rest of the party is cancelled and told; any list, Casual included).
+//   - the session goes first, and only while it is the closed connection's; player:{player}* and the IP's copy only
+//     after it (a login since writes player:{player}:blocked). TS deleted player:{player}* first, whatever happened.
+//   - the IP's copy is the one /access wrote (the session's current_ip; the websocket's own address when there is none),
+//     and that key alone; TS took the websocket's address, which need not be the one /access saw (the bench: ::1 against
+//     127.0.0.1), and deleted connections:{ip}* (so 1.2.3.4 took 1.2.3.40's copy too).
 
 /// <summary>
 /// A disconnected event: the player, the connection that closed, the hash of its session token, when it closed (ms), and
 /// how often handling it failed.
 /// </summary>
-internal sealed record Disconnect(string PlayerId, string ConnectionId, string TokenHash, long At, int Failures = 0)
+internal sealed record Disconnect(string PlayerId, string ConnectionId, string TokenHash, long At, int Failures = 0, string Ip = "")
 {
     public string ToJson() => Js.Stringify(new JsonObject
     {
@@ -65,13 +75,14 @@ internal sealed record Disconnect(string PlayerId, string ConnectionId, string T
         ["connection"] = ConnectionId,
         ["token"] = TokenHash,
         ["at"] = At,
+        ["ip"] = Ip,
         ["failures"] = Failures,
     });
 
     public static Disconnect? FromJson(string json) =>
         Js.Parse(json) is JsonObject o && o["player"]?.GetValue<string>() is { Length: > 0 } player
             ? new Disconnect(player, o["connection"]?.GetValue<string>() ?? "", o["token"]?.GetValue<string>() ?? "", o["at"]?.GetValue<long>() ?? 0,
-                o["failures"]?.GetValue<int>() ?? 0)
+                o["failures"]?.GetValue<int>() ?? 0, o["ip"]?.GetValue<string>() ?? "")
             : null;
 }
 
@@ -107,6 +118,27 @@ internal sealed class LobbyDisconnects(IServiceProvider services, IPartyService 
           return 0
         end
         return redis.call('SREM', KEYS[2], ARGV[1])
+        """;
+
+    // The session and its cosmetics copy, while its token is still ARGV[1] ('' for a session with none); 1 when it was.
+    private const string SessionScript = """
+        if (redis.call('HGET', KEYS[1], 'jwt') or '') ~= ARGV[1] then
+          return 0
+        end
+        for _, key in ipairs(KEYS) do
+          if redis.call('EXISTS', key) == 1 then
+            redis.call('DEL', key)
+          end
+        end
+        return 1
+        """;
+
+    // The IP's copy of a session, while it is still this player's.
+    private const string IpCopyScript = """
+        if redis.call('HGET', KEYS[1], 'id') == ARGV[1] then
+          return redis.call('DEL', KEYS[1])
+        end
+        return 0
         """;
 
     internal enum Outcome { Done, Deferred, Back }
@@ -230,7 +262,8 @@ internal sealed class LobbyDisconnects(IServiceProvider services, IPartyService 
                 switch ((string?)entry["type"])
                 {
                     case "disconnected":
-                        await DisconnectedAsync(redis, new Disconnect(player, (string?)entry["connection"] ?? "", (string?)entry["token"] ?? "", at));
+                        await DisconnectedAsync(redis, new Disconnect(player, (string?)entry["connection"] ?? "", (string?)entry["token"] ?? "", at,
+                            Ip: (string?)entry["ip"] ?? ""));
                         break;
                     case "replaced" when await MatchmakingQueue.DropAsync(redis, player, at):
                         log.LogInformation("Dropped the ticket of {Player}'s replaced connection {Connection}", player, (string?)entry["connection"]);
@@ -283,7 +316,8 @@ internal sealed class LobbyDisconnects(IServiceProvider services, IPartyService 
     internal async Task<Outcome> DisconnectedAsync(IDatabase redis, Disconnect disconnect)
     {
         string player = disconnect.PlayerId;
-        if (await BackAsync(redis, disconnect) is { } back)
+        var (back, token) = await BackAsync(redis, disconnect);
+        if (back is not null)
         {
             await MatchmakingQueue.DropAsync(redis, player, disconnect.At);
             log.LogInformation("Disconnect of {Player} ({Connection}) not cleaned up but for the ticket: {Why}", player, disconnect.ConnectionId, back);
@@ -303,27 +337,61 @@ internal sealed class LobbyDisconnects(IServiceProvider services, IPartyService 
         await MatchmakingQueue.DropAsync(redis, player, disconnect.At);
         await redis.ScriptEvaluateAsync(OfflineScript, [GatewayPresence.ConnectionKey(player), GatewayPresence.OnlinePlayers], [player]);
         await party.ForgetLobbyAsync(player);
-        log.LogInformation("Player {Player} disconnected ({Connection}): lobbies cleaned up", player, disconnect.ConnectionId);
+        bool session = await ForgetSessionAsync(redis, disconnect, token);
+        log.LogInformation("Player {Player} disconnected ({Connection}): lobbies cleaned up{Session}", player, disconnect.ConnectionId,
+            session ? ", session deleted" : "; the session is a newer login's, kept");
         return Outcome.Done;
     }
 
-    // Why the event no longer speaks for the player, or null.
-    private static async Task<string?> BackAsync(IDatabase redis, Disconnect disconnect)
+    // The TS close's redisDeletePlayerKeys and IP record (websocket.ts 691-704), the session first (see the header).
+    private async Task<bool> ForgetSessionAsync(IDatabase redis, Disconnect disconnect, string? token)
+    {
+        string player = disconnect.PlayerId;
+        string ip = (string?)await redis.HashGetAsync($"connections:{player}", "current_ip") is { Length: > 0 } current ? current : disconnect.Ip;
+        if ((long)await redis.ScriptEvaluateAsync(SessionScript, [$"connections:{player}", $"connections:{player}:cosmetics"], [token ?? ""]) != 1)
+        {
+            return false;
+        }
+
+        if (services.GetService<IConnectionMultiplexer>() is { } multiplexer)
+        {
+            var keys = new List<RedisKey>();
+            await foreach (var key in RedisScan.KeysAsync(multiplexer, redis.Database, $"player:{player}*"))
+            {
+                keys.Add(key);
+            }
+
+            if (keys.Count > 0)
+            {
+                await redis.KeyDeleteAsync([.. keys]);
+            }
+        }
+
+        if (ip.Length > 0)
+        {
+            await redis.ScriptEvaluateAsync(IpCopyScript, [$"connections:{ip}"], [player]);
+        }
+
+        return true;
+    }
+
+    // Why the event no longer speaks for the player (or null), and the session's token as read (null: none), which the
+    // session's delete compares.
+    private static async Task<(string? Back, string? Token)> BackAsync(IDatabase redis, Disconnect disconnect)
     {
         if ((string?)await redis.HashGetAsync(GatewayPresence.ConnectionKey(disconnect.PlayerId), "id") is { Length: > 0 } current
             && current != disconnect.ConnectionId)
         {
-            return $"connected again ({current})";
+            return ($"connected again ({current})", null);
         }
 
-        if (disconnect.TokenHash.Length > 0
-            && (string?)await redis.HashGetAsync($"connections:{disconnect.PlayerId}", "jwt") is { Length: > 0 } token
-            && GatewayPresence.TokenHash(token) != disconnect.TokenHash)
+        string? token = await redis.HashGetAsync($"connections:{disconnect.PlayerId}", "jwt");
+        if (disconnect.TokenHash.Length > 0 && token is { Length: > 0 } && GatewayPresence.TokenHash(token) != disconnect.TokenHash)
         {
-            return "logged in again";
+            return ("logged in again", token);
         }
 
-        return null;
+        return (null, token);
     }
 }
 

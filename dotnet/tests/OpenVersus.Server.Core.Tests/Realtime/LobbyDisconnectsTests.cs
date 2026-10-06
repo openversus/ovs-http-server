@@ -26,12 +26,16 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
     private const string Queue = "2v2";
     private const string Stream = "realtime:connections:0000000000000000000e", Due = "realtime:disconnects:due:0000000000000000000e";
     private const string Token = "the-session-token";
+    // The session's IP (as /access wrote it) and the websocket's (another, as on the bench: ::1 against 127.0.0.1).
+    private const string Ip = "198.51.100.41", SocketIp = "198.51.100.42";
 
     // What the reader asked of the lobbies, in order.
     private sealed class Lobbies : IPartyService, ICustomLobbyService
     {
         public List<string> Calls { get; } = [];
         public int FailuresLeft { get; set; }
+        // Runs while the party is being taken apart (a login landing in the middle of the cleanup, say).
+        public Func<Task>? DuringParty { get; set; }
 
         private Task Record(string call)
         {
@@ -45,7 +49,15 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
             return Task.CompletedTask;
         }
 
-        Task IPartyService.PlayerDisconnectedAsync(string playerId) => Record($"party {playerId}");
+        async Task IPartyService.PlayerDisconnectedAsync(string playerId)
+        {
+            await Record($"party {playerId}");
+            if (DuringParty is not null)
+            {
+                await DuringParty();
+            }
+        }
+
         public Task ForgetLobbyAsync(string playerId) => Record($"forget {playerId}");
         Task ICustomLobbyService.PlayerDisconnectedAsync(string playerId) => Record($"custom {playerId}");
 
@@ -102,6 +114,7 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
 
         await _redis.GetDatabase().SetRemoveAsync(GatewayPresence.OnlinePlayers, Player);
         await _redis.GetDatabase().HashDeleteAsync(MatchmakingQueue.QueuedKey, [Player, Partner]);
+        await _redis.GetDatabase().KeyDeleteAsync([$"connections:{Ip}", $"connections:{SocketIp}"]);
         foreach (var raw in await _redis.GetDatabase().ListRangeAsync(Queue))
         {
             if (raw.ToString().Contains("0000000000000000000e", StringComparison.Ordinal))
@@ -120,7 +133,7 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
     // A close now; a ticket queued a minute before it.
     private static readonly long s_closedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-    private static Disconnect Closed(string token = Token) => new(Player, Connection, GatewayPresence.TokenHash(token), s_closedAt);
+    private static Disconnect Closed(string token = Token) => new(Player, Connection, GatewayPresence.TokenHash(token), s_closedAt, Ip: SocketIp);
 
     // As the gateway appends it (GatewayPresence.ClosedAsync), for the session /access left.
     private Task AppendAsync(string type) => Db.StreamAddAsync(Stream,
@@ -146,7 +159,23 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
         !await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Player) && !await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Partner)
         && !(await Db.ListRangeAsync(Queue)).Any(t => t.ToString().Contains(Player, StringComparison.Ordinal));
 
-    private Task SessionAsync(string token = Token) => Db.HashSetAsync($"connections:{Player}", "jwt", token);
+    private Task SessionAsync(string token = Token) => Db.HashSetAsync($"connections:{Player}", [new("jwt", token), new("current_ip", Ip)]);
+
+    // What a login and a lobby leave of the player's: the session and its copies, the player's records.
+    private static readonly string[] s_playerKeys =
+        [$"connections:{Player}:cosmetics", $"player:{Player}", $"player:{Player}:blocked", $"player:{Player}:cosmetics", $"player:{Player}:lobby:0000000000000000000e0101"];
+
+    private async Task LoggedInAsync(string ipCopyOwner = Player)
+    {
+        await SessionAsync();
+        foreach (string key in s_playerKeys)
+        {
+            await Db.StringSetAsync(key, "x");
+        }
+
+        await Db.HashSetAsync($"connections:{Ip}", "id", ipCopyOwner);
+        await Db.HashSetAsync($"connections:{SocketIp}", "id", Player);
+    }
 
     [Fact]
     // The group starts at the stream's end: a disconnect appended before it existed (the gateway runs before the lobbies
@@ -356,5 +385,70 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
         Assert.Equal(LobbyDisconnects.Outcome.Deferred, await Reader().DisconnectedAsync(Db, Closed()));
         Assert.True(await TicketGoneAsync());
         Assert.Empty(_lobbies.Calls);
+    }
+
+    [Fact]
+    // Last, as the TS close: the session and its cosmetics copy, the player's records (player:{player}*, the lobby
+    // records among them), and the IP's copy /access wrote (the session's current_ip, not the websocket's address).
+    public async Task ADisconnectDeletesTheSessionThePlayersRecordsAndTheIpsCopy()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await LoggedInAsync();
+
+        Assert.Equal(LobbyDisconnects.Outcome.Done, await Reader().DisconnectedAsync(Db, Closed()));
+
+        Assert.False(await Db.KeyExistsAsync($"connections:{Player}"));
+        foreach (string key in s_playerKeys)
+        {
+            Assert.False(await Db.KeyExistsAsync(key), key);
+        }
+
+        Assert.False(await Db.KeyExistsAsync($"connections:{Ip}"));
+        Assert.True(await Db.KeyExistsAsync($"connections:{SocketIp}"));
+    }
+
+    [Fact]
+    // A household shares an IP: a copy another player's login made since is theirs.
+    public async Task TheIpsCopyOfAnotherPlayerIsKept()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await LoggedInAsync(ipCopyOwner: Partner);
+
+        Assert.Equal(LobbyDisconnects.Outcome.Done, await Reader().DisconnectedAsync(Db, Closed()));
+
+        Assert.False(await Db.KeyExistsAsync($"connections:{Player}"));
+        Assert.Equal(Partner, (string?)await Db.HashGetAsync($"connections:{Ip}", "id"));
+    }
+
+    [Fact]
+    // A login that lands while the lobbies are being cleaned up (after the check, before the session's delete) keeps
+    // its session and everything it wrote: the delete compares the token it checked.
+    public async Task ALoginDuringTheCleanupKeepsItsSession()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await LoggedInAsync();
+        _lobbies.DuringParty = () => Db.HashSetAsync($"connections:{Player}", "jwt", "a-newer-session-token");
+
+        Assert.Equal(LobbyDisconnects.Outcome.Done, await Reader().DisconnectedAsync(Db, Closed()));
+
+        Assert.Equal("a-newer-session-token", (string?)await Db.HashGetAsync($"connections:{Player}", "jwt"));
+        foreach (string key in s_playerKeys)
+        {
+            Assert.True(await Db.KeyExistsAsync(key), key);
+        }
+
+        Assert.True(await Db.KeyExistsAsync($"connections:{Ip}"));
     }
 }

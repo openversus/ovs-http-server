@@ -73,8 +73,9 @@ below has moved). Each node:
   (`LobbyDisconnects`, group `lobbies`) takes a disconnected player out of their party and custom lobby as the TS
   websocket's close did, unless they have connected or logged in again since; a close in a post-match window
   (`rejoin_pending:{player}`) is handled when the window ends. A disconnected or replaced connection's queue ticket goes
-  at once (`MatchmakingQueue.DropAsync`), and the rest of its party is cancelled and told. Not yet consumed: the session
-  keys, a pre-game dodge, the daily toast bonus popup.
+  at once (`MatchmakingQueue.DropAsync`), and the rest of its party is cancelled and told. The session (`connections:{player}`,
+  its cosmetics copy, `player:{player}*` and the IP's copy) goes last, only while it is still the closed connection's.
+  Not yet consumed: a pre-game dodge, the daily toast bonus popup.
 
 Parity with the TS websocket: `tools/realtime/gateway_diff.mjs` (raw frames, closes, Redis writes) and
 `tools/realtime/disconnect_diff.mjs` (what a dropped game's close does to the lobbies).

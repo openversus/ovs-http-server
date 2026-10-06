@@ -54,10 +54,10 @@ namespace OpenVersus.Server.Core.Matches;
 //                 MatchSetCheckinNotification {CheckedInAccountId, CheckedInCount (the set's checkins), TotalPlayers} at
 //                 each counted check-in; MatchSetLeaverNotification {AccountId: the leaver, MatchId: the set}, then 500
 //                 ms later the empty config that sends the game back to its menus (a set over at check-in: both 500 ms
-//                 after the answer, as there); FullRankUpdate (FullRankUpdateVariant.SetResult) after a rating, to the
-//                 players online (FullRankUpdate.SendToOnlineAsync)
+//                 after the answer, as there); FullRankUpdate (FullRankUpdateVariant.SetResult) after a rating, to every
+//                 player of the set but bots, connected or not (FullRankUpdate.SendAsync)
 // Published       match:notifications (the next game)
-// Mongo, written  eloratings, playerstats (SetRatings); eloratings for an online player with none (FullRankUpdate)
+// Mongo, written  eloratings, playerstats (SetRatings); eloratings for a player with none (FullRankUpdate)
 //
 // The next game's rollback port is IMatchLauncher's (fixed servers: a random one of theirs; on demand: the next port,
 // deployed unless the game runs P2P), as the matchmaker's; its p2p is P2P.Mark (Rollback:P2P). The teams and player
@@ -606,8 +606,9 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
         await RateAndAnnounceAsync(redis, set, setId, current, Number(team) == 0 ? 1 : 0, isConcede: true, reason);
     }
 
-    // Rates the set for winnerTeam, then sends each player online their ranks (FullRankUpdate, as the TS websocket did for
-    // ranked_set:fullrankupdate). A failure is logged and announces nothing, as there.
+    // Rates the set for winnerTeam, then sends each player their ranks (FullRankUpdate, as the TS websocket did for
+    // ranked_set:fullrankupdate; to every player but bots, connected or not: a result is a result). A failure is logged
+    // and announces nothing, as there.
     private async Task RateAndAnnounceAsync(IDatabase redis, JsonObject set, string setId, string current, int winnerTeam, bool isConcede, string reason)
     {
         try
@@ -636,7 +637,8 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
 
             if (services.GetService<IMongoDatabase>() is { } mongo)
             {
-                await FullRankUpdate.SendToOnlineAsync(redis, mongo, eloRatings, PlayerIds(set), season.CurrentValue.Current, FullRankUpdateVariant.SetResult,
+                var humans = (set["players"] as JsonArray ?? []).Where(p => !Truthy(p?["isBot"])).Select(p => Text(p?["playerId"])).OfType<string>().Distinct();
+                await FullRankUpdate.SendAsync(redis, mongo, eloRatings, humans, season.CurrentValue.Current, FullRankUpdateVariant.SetResult,
                     time, log, CancellationToken.None);
             }
             else

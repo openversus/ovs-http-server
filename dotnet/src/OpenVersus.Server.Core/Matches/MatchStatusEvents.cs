@@ -50,9 +50,9 @@ namespace OpenVersus.Server.Core.Matches;
 //                 above; player:{player} status "idle"; dll_notifications:{player} (match_cancel, PlayerMessages);
 //                 deleted: player_ranked_set:{each player}, ranked_set:{set}, ranked_set_checkins:{set},
 //                 ranked_set_match:{set}, and at a crash match_to_set:{match}, match_started:{match}
-// Sent (ws:send)  FullRankUpdate (FullRankUpdateVariant.SetResult) after a rating, to the match's players online, as the
-//                 TS websocket built it from ranked_set:fullrankupdate (FullRankUpdate.SendToOnlineAsync)
-// Mongo, written  eloratings, playerstats (SetRatings); eloratings for an online player with none (FullRankUpdate)
+// Sent (ws:send)  FullRankUpdate (FullRankUpdateVariant.SetResult) after a rating, to the match's players but bots,
+//                 connected or not, as the TS websocket built it from ranked_set:fullrankupdate (FullRankUpdate.SendAsync)
+// Mongo, written  eloratings, playerstats (SetRatings); eloratings for a player with none (FullRankUpdate)
 //
 // Unlike there:
 //   - a spectator's disconnect changes nothing (decided 2026-10-05). TS asked "still online?" before "spectator?", so a
@@ -318,7 +318,8 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
             log.LogInformation("Pregame dodge rated (rollback PlayerDisconnect): {Player} left match {Match}", playerId, matchId);
             if (services.GetService<IMongoDatabase>() is { } mongo)
             {
-                await FullRankUpdate.SendToOnlineAsync(redis, mongo, eloRatings, configPlayers.Select(p => Str(p["playerId"])), season.CurrentValue.Current,
+                await FullRankUpdate.SendAsync(redis, mongo, eloRatings, configPlayers.Where(p => !RollbackCallbacks.Truthy(p["isBot"])).Select(p => Str(p["playerId"])),
+                    season.CurrentValue.Current,
                     FullRankUpdateVariant.SetResult, time, log, CancellationToken.None);
             }
             else

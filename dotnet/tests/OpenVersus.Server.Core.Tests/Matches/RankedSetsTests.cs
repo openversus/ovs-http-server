@@ -450,9 +450,9 @@ public sealed class RankedSetsTests : IAsyncLifetime
         await AssertDroppedAsync();
         Assert.Equal("disconnect_concede", (string?)await Db.StringGetAsync($"elo_processed_set:{Set}"));
         Assert.Equal(32, (await RatingAsync(P1))!["elo_1v1"].AsInt32);
-        // Ranks to the player online only (the TS websocket built them for the sockets it held), then the leaver.
+        // Ranks to both, the offline loser included (a result is a result: a closed game just never receives it), then the leaver.
         var sent = await SentAsync();
-        Assert.Equal([P1], Assert.Single(sent, m => Template(m.Data) == "FullRankUpdate").To);
+        Assert.Equal([[P1], [P2]], sent.Where(m => Template(m.Data) == "FullRankUpdate").Select(m => m.To));
         AssertLeavers(sent, P2);
     }
 
@@ -494,7 +494,10 @@ public sealed class RankedSetsTests : IAsyncLifetime
         await Sets().ConcedeAsync(P2);
 
         await AssertDroppedAsync();
-        Assert.Null(await RatingAsync(P1));
+        // P1's rating is the default one its rank update made (no games, no fighters); the bot has none.
+        var rating = (await RatingAsync(P1))!;
+        Assert.Equal(0, rating["wins_1v1"].ToInt32() + rating["losses_1v1"].ToInt32());
+        Assert.False(rating.Contains("characters_1v1"));
         Assert.Null(await RatingAsync(P2));
         AssertLeavers(await SentAsync(), P2);
     }
@@ -578,7 +581,7 @@ public sealed class RankedSetsTests : IAsyncLifetime
             { "account_id", P1 }, { "elo_1v1", 1234 }, { "wins_1v1", 3 }, { "losses_1v1", 2 }, { "elo_2v2", 0 }, { "wins_2v2", 0 }, { "losses_2v2", 0 },
         });
         await Db.SetAddAsync("online_players", P1);
-        // A set with a bot is not rated, and its ranks still go out (as TS: after deciding not to rate); a bot is never online.
+        // A set with a bot is not rated, and its ranks still go out (as TS: after deciding not to rate); never to the bot.
         await Sets().ConcedeAsync(P1);
 
         var ranks = Assert.Single(await SentAsync(), m => Template(m.Data) == "FullRankUpdate");
@@ -589,15 +592,14 @@ public sealed class RankedSetsTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    // Built only for players online: an offline player gets neither the message nor a rating document.
-    public async Task NoRanksAndNoRatingForAPlayerOffline()
+    // Sent whether or not the player is connected (decided 2026-10-05), never to a bot, which gets no rating document.
+    public async Task RanksGoToEveryPlayerOnlineOrNotButNeverToABot()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         await SeedAsync(gamesPlayed: 1, 0, 1, bot: true);
         await Sets().ConcedeAsync(P1);
 
-        Assert.DoesNotContain(await SentAsync(), m => Template(m.Data) == "FullRankUpdate");
-        Assert.Null(await RatingAsync(P1));
+        Assert.Equal([P1], Assert.Single(await SentAsync(), m => Template(m.Data) == "FullRankUpdate").To);
         Assert.Null(await RatingAsync(P2));
     }
 }

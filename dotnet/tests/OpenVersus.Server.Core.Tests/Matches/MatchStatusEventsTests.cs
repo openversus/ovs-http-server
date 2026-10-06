@@ -330,11 +330,10 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
         var ratings = Mongo.GetCollection<BsonDocument>("eloratings");
         Assert.Equal(1, (await ratings.Find(new BsonDocument("account_id", P1)).FirstAsync())["wins_1v1"].ToInt32());
         Assert.Equal(1, (await ratings.Find(new BsonDocument("account_id", P2)).FirstAsync())["losses_1v1"].ToInt32());
-        // Each player's ranks, to the ones online: P1, not the dodger.
-        var update = Assert.Single(_published).Message;
-        Assert.Equal($$"""["{{P1}}"]""", update["playerIds"]!.ToJsonString());
-        Assert.Equal(P1, update["message"]!["payload"]!["account_id"]!.GetValue<string>());
-        Assert.NotNull(update["message"]!["data"]!["SeasonalData"]!["Season:SeasonSix"]);
+        // Each player's ranks, the dodger's included (connected or not: a result is a result).
+        var updates = _published.Select(p => p.Message).ToList();
+        Assert.Equal([P1, P2], updates.Select(u => u["message"]!["payload"]!["account_id"]!.GetValue<string>()));
+        Assert.All(updates, u => Assert.NotNull(u["message"]!["data"]!["SeasonalData"]!["Season:SeasonSix"]));
         Assert.Equal("rollback_pregame_dodge", (string?)await Db.StringGetAsync($"elo_processed_set:{Set}"));
         Assert.Equal(Set, (string?)await Db.StringGetAsync($"ranked_disconnect:{P2}"));
         await AssertSetDroppedAsync();

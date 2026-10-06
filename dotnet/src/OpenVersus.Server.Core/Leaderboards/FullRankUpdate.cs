@@ -22,15 +22,16 @@ namespace OpenVersus.Server.Core.Leaderboards;
 // The TS websocket built it in two places, which differ in one value: at a match's end BestCharacter's points are the
 // best fighter's rating (-1 when no fighter is rated); for a set's result (ranked_set:fullrankupdate: a concede, a set
 // over at check-in, a pregame dodge) they are that rating when above 0, else the mode's (FullRankUpdateVariant). Kept as
-// there (decided 2026-10-05, slice 3: unified only if asked). For a set's result it went only to the players whose socket
-// it held, and the rating it made when missing only for them: SendToOnlineAsync builds it for the players in
-// online_players (the websocket's presence), so an offline player or a bot gets no message and no rating document.
+// there (decided 2026-10-05, slice 3: unified only if asked).
 //
-// Redis, read     connections:{player} character; online_players (SendToOnlineAsync)
+// Redis, read     connections:{player} character
 // Mongo, read     eloratings (made when missing, as getOrCreateRating), playerstats, playertesters
-// Published       ws:send (SendToOnlineAsync)
+// Published       ws:send (SendAsync)
 //
-// Unlike there: the season is Season:Current (TS: always Season:SeasonFive), as ranked_data and the login.
+// Unlike there: the season is Season:Current (TS: always Season:SeasonFive), as ranked_data and the login. A set's
+// result is sent to every player given, connected or not (decided 2026-10-05: a result is a result; the TS websocket
+// built it only for the sockets it held). The rating itself is recorded before this, whoever is online; a game that
+// was closed just never receives the message, and reads its ranks at the next login.
 
 /// <summary>Which of the TS websocket's two FullRankUpdates (see FullRankUpdate's header).</summary>
 public enum FullRankUpdateVariant
@@ -45,21 +46,16 @@ public enum FullRankUpdateVariant
 public static class FullRankUpdate
 {
     /// <summary>
-    /// Sends each of <paramref name="playerIds"/> that is online its FullRankUpdate (<paramref name="variant"/>, in
+    /// Sends each of <paramref name="playerIds"/> its FullRankUpdate (<paramref name="variant"/>, in
     /// <paramref name="season"/>) through ws:send; one player's failure is logged and the others still get theirs.
     /// </summary>
-    public static async Task SendToOnlineAsync(IDatabase redis, IMongoDatabase mongo, EloRatings ratings, IEnumerable<string> playerIds, string season,
+    public static async Task SendAsync(IDatabase redis, IMongoDatabase mongo, EloRatings ratings, IEnumerable<string> playerIds, string season,
         FullRankUpdateVariant variant, TimeProvider time, ILogger log, CancellationToken ct)
     {
         foreach (string id in playerIds)
         {
             try
             {
-                if (!await redis.SetContainsAsync("online_players", id))
-                {
-                    continue;
-                }
-
                 await PlayerMessages.SendAsync(redis, [id], await BuildAsync(redis, mongo, ratings, id, season, time, ct, variant));
             }
             catch (Exception e) when (e is MongoException or RedisException or TimeoutException)

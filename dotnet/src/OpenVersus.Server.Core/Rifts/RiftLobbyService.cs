@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Static;
@@ -154,14 +155,21 @@ internal sealed class RiftLobbyService(IServiceProvider services, IRiftStateServ
     // PUT /ssc/invoke/lock_rift_lobby_loadout ("Auto equip & fight!"): the request is lock_lobby_loadout's with LobbyTemplate
     // rift_lobby, and so is the answer (the TS server's set_lock_lobby_loadout, ssc.ts): the loadout is recorded as there,
     // Redis player:{player} character, skin and Mongo playertesters {_id} $set character, variant. A character the TS
-    // server disables gets bAreAllLoadoutsLocked false (the game then refuses the lock), where the TS server never answers.
-    // Nothing is sent to other players yet: a rift lobby has one player until co-op is done.
+    // server disables gets bAreAllLoadoutsLocked false, where the TS server never answers (what the game does with that
+    // answer, seen once for a refused outdated client: it goes to its loading screen and sends nothing more).
+    // Nothing is sent to other players yet: a rift lobby has one player until co-op is done. A player whose client must
+    // update is refused the same way, and toasted (BlockOutdatedAsync), nothing recorded; ClientGameplayGate refuses them
+    // earlier, entering Rifts and creating the rift lobby.
     public async Task<JsonObject> LockLoadoutAsync(JsonObject? claims, JsonObject? request, CancellationToken ct)
     {
         string? playerId = claims?["id"] is JsonValue v && v.TryGetValue(out string? id) && id.Length > 0 ? id : null;
         string character = Str(request?["Loadout"] as JsonObject, "Character") ?? "";
         string skin = Str(request?["Loadout"] as JsonObject, "Skin") ?? "";
         bool allowed = playerId is not null && character.Length > 0 && !s_disabledCharacters.Contains(character);
+        if (allowed && services.GetService<IClientUpdateGate>() is { } gate && await gate.BlockOutdatedAsync([playerId!], log, "rift loadout lock"))
+        {
+            allowed = false;
+        }
 
         if (allowed)
         {

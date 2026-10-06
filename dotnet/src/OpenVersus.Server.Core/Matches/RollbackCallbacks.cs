@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Realtime;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Matches;
@@ -44,6 +45,18 @@ namespace OpenVersus.Server.Core.Matches;
 // Published       game_server_ready:notifications {containerMatchId, playerIds, resultId, rollbackPort (match:{match}'s, else
 //                 Rollback:UdpPort)}: the TS websocket sends each player game-server-instance-ready (127.0.0.1 and their
 //                 node's port in a P2P match); match:end {playersIds, matchId}
+// Sent (ws:send)  with Realtime:Gateway on, game-server-instance-ready from here instead, as the TS websocket built it, to
+//                 each player and spectator (not the bots: no game): host Rollback:UdpServerIp (every deployment sets
+//                 USE_INTERNAL_ROLLBACK, whose TS default sent 127.0.0.1; no player-on-this-machine branch here, unlike
+//                 GameServerReadyNotification, as TS), a P2P match 127.0.0.1 and the player's node port; port match:{match}'s,
+//                 else Rollback:UdpPort. Only once every player (not a spectator, not a bot) has a connection
+//                 (realtime:conn:{player}); with one gone, nobody is told, the others (spectators too) are shown why and
+//                 closed after it (MatchLaunches.CloseAfterBannerAsync: their loading screen has no way back), and each
+//                 lobby's party_ready is deleted (TS: cancelMatchmakingForAll, whose cancel did nothing by then). The gone
+//                 player's dodge is their disconnect's (the disconnect consumer). Each release does this, as each told
+//                 the players in TS: a relay that registers twice, or a node that says it serves twice, sends two
+//                 game-server-instance-ready, or with a player gone two banners (the second close names the same
+//                 connection, already closed). A match whose {match} is gone never gets here (the call is answered "").
 //
 // Unlike there: whatever goes wrong is answered "" at once. TS threw on a request without matchId (the mvsi routes), on a
 // stored config that is not JSON or has no players, and left the request unanswered until the caller gave up (a rollback
@@ -81,7 +94,7 @@ public interface IRollbackCallbacks
 }
 
 internal sealed class RollbackCallbacks(IServiceProvider services, IMatchLauncher launcher, INodeConfig nodeConfig,
-    IOptionsMonitor<RollbackSettings> settings, ILogger<RollbackCallbacks> log) : IRollbackCallbacks
+    IOptionsMonitor<RollbackSettings> settings, TimeProvider time, ILogger<RollbackCallbacks> log) : IRollbackCallbacks
 {
     public const string InstanceReadyChannel = "game_server_ready:notifications";
     public const string EndOfMatchChannel = "match:end";
@@ -177,6 +190,12 @@ internal sealed class RollbackCallbacks(IServiceProvider services, IMatchLaunche
                 ready.MatchId, ready.MatchId, settings.CurrentValue.UdpPort);
         }
 
+        if (MatchLaunches.Gateway(services))
+        {
+            await TellAsync(redis, ready, port);
+            return;
+        }
+
         await redis.PublishAsync(RedisChannel.Literal(InstanceReadyChannel), Js.Stringify(new JsonObject
         {
             ["containerMatchId"] = ready.MatchId,
@@ -187,6 +206,65 @@ internal sealed class RollbackCallbacks(IServiceProvider services, IMatchLaunche
         log.LogInformation("Sent game-server-instance-ready for match {Match}: {Reason}", ready.MatchId, ready.Reason);
     }
 
+    // Realtime:Gateway on: game-server-instance-ready sent from here (the TS websocket's handleGameServerInstanceReady),
+    // once every player is connected; a player gone releases the others.
+    private async Task TellAsync(IDatabase redis, InstanceReady ready, JsonNode port)
+    {
+        var config = await JsonAsync(redis, ready.MatchId);
+        var entries = (config?["players"] as JsonArray ?? []).OfType<JsonObject>().ToList();
+        JsonObject? Entry(string id) => entries.FirstOrDefault(e => Text(e["playerId"]) == id);
+        var ids = ready.PlayerIds.Select(Text).OfType<string>().Distinct().ToList();
+        // A bot has no game to tell (the legacy registry lists them); a spectator is told, but not waited for.
+        var told = ids.Where(id => !Truthy(Entry(id)?["isBot"])).ToList();
+        var missing = new List<string>();
+        foreach (string id in told.Where(id => !Truthy(Entry(id)?["isSpectator"])))
+        {
+            if (!await redis.KeyExistsAsync(GatewayPresence.ConnectionKey(id)))
+            {
+                missing.Add(id);
+            }
+        }
+
+        if (missing.Count > 0)
+        {
+            // Nobody is told to connect, as TS; the ones still waiting are on their loading screen, which only a close
+            // takes them out of. The missing player's dodge is their disconnect's to handle.
+            foreach (string id in told.Except(missing))
+            {
+                await MatchLaunches.CloseAfterBannerAsync(redis, time, id);
+            }
+
+            foreach (string id in told)
+            {
+                if ((string?)await redis.StringGetAsync($"player_lobby:{id}") is { Length: > 0 } lobby)
+                {
+                    await redis.KeyDeleteAsync($"party_ready:{lobby}");
+                }
+            }
+
+            log.LogError("Match {Match}: {Missing} not connected at game-server-instance-ready ({Reason}); nobody told, {Released} released",
+                ready.MatchId, string.Join(", ", missing), ready.Reason, string.Join(", ", told.Except(missing)));
+            return;
+        }
+
+        var rollback = settings.CurrentValue;
+        bool p2p = Truthy(config?["p2p"]);
+        if (!p2p && rollback.UdpServerIp.Length == 0)
+        {
+            log.LogError("No Rollback:UdpServerIp (UDP_SERVER_IP): the players of match {Match} are sent no rollback server address", ready.MatchId);
+        }
+
+        string resultId = ObjectId.GenerateNewId().ToString();
+        foreach (string id in told)
+        {
+            JsonNode playerPort = p2p ? await MatchLaunches.NodePortAsync(redis, id, rollback) : port.DeepClone();
+            await PlayerMessages.SendAsync(redis, [id], MatchLaunches.GameServerInstanceReady(ready.MatchId, resultId, playerPort, p2p ? "127.0.0.1" : rollback.UdpServerIp));
+        }
+
+        log.LogInformation("Sent game-server-instance-ready for match {Match} to {Players}{P2P}: {Reason}", ready.MatchId, string.Join(", ", told),
+            p2p ? " (P2P nodes)" : $" ({rollback.UdpServerIp}:{port.ToJsonString()})", ready.Reason);
+    }
+
     public async Task EndMatchAsync(JsonNode? body, string route)
     {
         if (Redis() is not { } redis || await KeyedAsync(redis, body, route) is not { } match || Players(match, route) is not { } all)
@@ -194,8 +272,10 @@ internal sealed class RollbackCallbacks(IServiceProvider services, IMatchLaunche
             return;
         }
 
-        // Ended here (MatchEnd:Enabled), else by the TS websocket, which hears match:end (docs/MIGRATION-BRIDGES.md 2).
-        if (services.GetService<IOptionsMonitor<MatchEndSettings>>()?.CurrentValue.Enabled == true && services.GetService<IMatchEnd>() is { } matchEnd)
+        // Ended here (MatchEnd:Enabled, or Realtime:Gateway: no TS websocket holds the players), else by the TS websocket,
+        // which hears match:end (docs/MIGRATION-BRIDGES.md 2).
+        if ((services.GetService<IOptionsMonitor<MatchEndSettings>>()?.CurrentValue.Enabled == true || MatchLaunches.Gateway(services))
+            && services.GetService<IMatchEnd>() is { } matchEnd)
         {
             log.LogInformation("Match {Match} ended on its rollback server ({Route}): ending it here", match.Id, route);
             await matchEnd.EndAsync(match.Id, [.. all.Select(p => Text(p["playerId"])).OfType<string>()]);
@@ -390,6 +470,7 @@ public static class RollbackCallbacksHosting
             builder.AddNodeConfig();
         }
 
+        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.TryAddSingleton<IRollbackCallbacks, RollbackCallbacks>();
         return builder;
     }

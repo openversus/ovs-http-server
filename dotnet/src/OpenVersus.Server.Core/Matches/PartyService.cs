@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Cosmetics;
 using OpenVersus.Server.Core.FunFacts;
@@ -34,7 +35,13 @@ namespace OpenVersus.Server.Core.Matches;
 //   online_players              read: a party is only rejoined when everyone in it is online
 //   dll_notifications:{player}  party_left notices for the OpenVersus client
 // Published: matchmaking:cancel {playersIds, matchmakingId: "party-changed"} when someone joins a party (the TS websocket
-// keeps the queue ticket and its tick: it cancels them).
+// keeps the queue ticket and its tick: it cancels them; with Realtime:Gateway on, cancelled here: MatchmakingQueue).
+//
+// Client gate: readying up in a party lobby is what the game does before it sends its matchmaking request, and the one
+// refusal on that path it backs out of (a refused matchmaking request leaves it waiting for its ticket, cancel disabled).
+// So a ready from a party with anyone who must update is refused (BlockOutdatedAsync), each of them toasted; un-readying
+// is never refused. A custom lobby's or a rift lobby's ready is not gated: starting its match is (in a rift lobby the game
+// does not back out of a refused ready; it waits on its loading screen).
 //
 // Differences from the TS server, none on the wire:
 //   - lobby_id is written to the session as one field; the TS server read the whole session and wrote it all back,
@@ -71,8 +78,8 @@ public interface IPartyService
     Task<JsonObject> LockLoadoutAsync(PartyRequest request, CancellationToken ct = default);
 }
 
-internal sealed class PartyService(IServiceProvider services, ICosmeticsService cosmetics, IFunFacts funFacts, IOptionsMonitor<LobbySettings> settings, TimeProvider time,
-    ILogger<PartyService> log) : IPartyService
+internal sealed class PartyService(IServiceProvider services, ICosmeticsService cosmetics, IFunFacts funFacts, IClientUpdateGate gate, IOptionsMonitor<LobbySettings> settings,
+    TimeProvider time, ILogger<PartyService> log) : IPartyService
 {
     public const string CancelMatchmakingChannel = "matchmaking:cancel";
 
@@ -370,11 +377,18 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         // Only a player joining someone else's party is announced (the owner's own join would loop).
         if (me != lobby.OwnerId)
         {
-            await redis.PublishAsync(RedisChannel.Literal(CancelMatchmakingChannel), Js.Stringify(new JsonObject
+            if (MatchLaunches.Gateway(services))
             {
-                ["playersIds"] = new JsonArray(lobby.PlayerIds.Select(p => (JsonNode?)p).ToArray()),
-                ["matchmakingId"] = "party-changed",
-            }));
+                await MatchmakingQueue.CancelAsync(redis, lobby.PlayerIds, "party-changed");
+            }
+            else
+            {
+                await redis.PublishAsync(RedisChannel.Literal(CancelMatchmakingChannel), Js.Stringify(new JsonObject
+                {
+                    ["playersIds"] = new JsonArray(lobby.PlayerIds.Select(p => (JsonNode?)p).ToArray()),
+                    ["matchmakingId"] = "party-changed",
+                }));
+            }
             var others = lobby.PlayerIds.Where(p => p != me).ToList();
             var notice = PlayerMessages.Update(new JsonObject
             {
@@ -563,16 +577,6 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         string matchId = matchIdNode is JsonValue mi && mi.TryGetValue(out string? text) ? text : Js.Stringify(matchIdNode);
         var ready = body?["Ready"];
         string readyKey = $"party_ready:{matchId}";
-        if (ready is JsonValue r && Truthy(r))
-        {
-            await redis.SetAddAsync(readyKey, me);
-        }
-        else
-        {
-            await redis.KeyDeleteAsync(readyKey);
-        }
-
-        await redis.KeyExpireAsync(readyKey, SoloTtl);
         var raw = await redis.StringGetAsync($"lobby:{matchId}");
         JsonObject? state = null;
         try
@@ -584,6 +588,23 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         }
 
         var playerIds = state?["playerIds"] is JsonArray ids ? ids.Select(n => n?.ToString() ?? "").ToList() : null;
+        bool readying = ready is JsonValue r && Truthy(r);
+        bool riftLobby = Str(state, "mode") == Rifts.RiftLobbyService.Mode;
+        if (readying && !riftLobby && await gate.BlockOutdatedAsync([me, .. playerIds ?? []], log, $"ready in party lobby {matchId}"))
+        {
+            return gate.FailureBody();
+        }
+
+        if (readying)
+        {
+            await redis.SetAddAsync(readyKey, me);
+        }
+        else
+        {
+            await redis.KeyDeleteAsync(readyKey);
+        }
+
+        await redis.KeyExpireAsync(readyKey, SoloTtl);
         int total = playerIds is { Count: > 0 } ? playerIds.Count : 1;
         long readyCount = await redis.SetLengthAsync(readyKey);
         bool allReady = readyCount >= total;

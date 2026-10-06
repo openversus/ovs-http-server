@@ -2,7 +2,10 @@ using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using OpenVersus.Server.Core.Access;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Perks;
 using StackExchange.Redis;
 
@@ -101,6 +104,52 @@ public sealed class PerksLockTests : IAsyncLifetime
         Assert.Equal("""["perk_a","perk_b"]""", (string?)await Db.StringGetAsync($"match:{Match}:perks:{Me}"));
         var ttl = await Db.KeyTimeToLiveAsync($"match:{Match}:perks:{Me}");
         Assert.InRange(ttl!.Value.TotalSeconds, 1190, 1200);
+    }
+
+    // With Realtime:Gateway on, nothing is published: the kept configs are merged and each game is sent its copy, in the
+    // order they come back (players, then spectators).
+    [SkippableFact]
+    public async Task WithTheGatewayTheLockSendsEachCopyAndPublishesNothing()
+    {
+        Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
+        var sent = new ConcurrentQueue<string>();
+        (await _redis!.GetSubscriber().SubscribeAsync(RedisChannel.Literal("ws:send"))).OnMessage(m =>
+        {
+            if (m.Message.ToString().Contains("0000000000000000000c", StringComparison.Ordinal))
+            {
+                sent.Enqueue(m.Message.ToString());
+            }
+        });
+        var configs = new Configs();
+        var services = new ServiceCollection()
+            .AddSingleton<IConnectionMultiplexer>(_redis!)
+            .AddSingleton<IGameplayConfigs>(configs)
+            .AddSingleton<IOptionsMonitor<RealtimeSettings>>(new TestOptions<RealtimeSettings>(new RealtimeSettings { Gateway = true }))
+            .BuildServiceProvider();
+        var perksLock = new PerksLock(services, NullLogger<PerksLock>.Instance);
+        await MatchAsync([Other], [Me]);
+
+        await perksLock.LockAsync(Me, Body(new JsonArray("perk_a")), default);
+        await perksLock.LockAsync(Other, Body(new JsonArray("perk_b")), default);
+        await Task.Delay(200);
+
+        Assert.Empty(await PublishedAsync());
+        Assert.Equal([$$"""{"containerMatchId":"{{Match}}","playerIds":["{{Other}}","{{Me}}"]}"""], configs.Locks);
+        Assert.Equal([$$$"""{"playerIds":["{{{Other}}}"],"message":{"cmd":"other"}}""", $$$"""{"playerIds":["{{{Me}}}"],"message":{"cmd":"me"}}"""], sent);
+    }
+
+    private sealed class Configs : IGameplayConfigs
+    {
+        public List<string> Locks { get; } = [];
+
+        public Task<JsonObject?> BuildAsync(JsonObject notification, GameplayConfigMode mode, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<(string PlayerId, JsonObject Message)>> PerksLockedAsync(JsonObject notification, CancellationToken ct)
+        {
+            Locks.Add(Js.Stringify(notification));
+            return Task.FromResult<IReadOnlyList<(string PlayerId, JsonObject Message)>>(
+                [(Other, new JsonObject { ["cmd"] = "other" }), (Me, new JsonObject { ["cmd"] = "me" })]);
+        }
     }
 
     [SkippableFact]

@@ -5,7 +5,9 @@
 // repository root (it uses the TS server's node_modules):
 //
 //   node dotnet/tools/matches/config_diff.mjs run ts <out.json>   what the TS websocket (REF_WS_URL) sends to fake games
-//   node dotnet/tools/matches/config_diff.mjs run cs <out.json>   what the C# match flow keeps (match_config:{player})
+//   node dotnet/tools/matches/config_diff.mjs run cs <out.json>   what the C# match flow keeps (match_config:{player}); with
+//        REF_GW_URL (the C# gateway on the same stores, the match flow with Realtime:Gateway on): what it sends there, the
+//        match appended to match:launched as the launchers do (the perks lock still read from the kept configs)
 //   node dotnet/tools/matches/config_diff.mjs diff <ts.json> <cs.json>
 //
 // The TS websocket must be PR #49's code as committed (websocketStart.ts), never a working tree with the bench patch. It
@@ -15,6 +17,8 @@
 //
 // Scratch stores, wiped before every step (never point these at data you want to keep): REF_REDIS_URL, REF_MONGO_URI,
 // REF_JWT_SECRET (the TS websocket's JWT_SECRET: the fake games' tokens), as the other harnesses.
+// Each game reports an address through x-real-ip (a public one, P4 none: the server's own machine), so both of
+// GameServerReadyNotification's addresses are compared; run both servers with the same UDP_SERVER_IP (and IP2 equal to it).
 import fs from "node:fs";
 import { require, need, openScratch, openMonitor, writes, state } from "../refdiff/refdiff.mjs";
 import { connectPlayers, decodeFrame } from "../refdiff/gateway.mjs";
@@ -48,7 +52,9 @@ async function run(side, outFile) {
   let recording = null;
   const monitor = await openMonitor(need("REF_REDIS_URL"), (line) => recording?.push(line));
   const self = (await redis.sendCommand(["CLIENT", "INFO"])).match(/\baddr=(\S+)/)[1];
-  const connect = () => connectPlayers(need("REF_WS_URL"), HOLDERS.map((id, i) => ({ id, token: token(id, i + 1) })));
+  const viaGateway = side === "cs" && !!process.env.REF_GW_URL;
+  const connect = () => connectPlayers(side === "ts" ? need("REF_WS_URL") : need("REF_GW_URL"),
+    HOLDERS.map((id, i) => ({ id, token: token(id, i + 1), headers: id === P4 ? {} : { "x-real-ip": IP } })));
   let games = side === "ts" ? await connect() : null;
 
   // A player's session (connections:{id}), as a login and a locked loadout leave it.
@@ -64,10 +70,10 @@ async function run(side, outFile) {
   };
 
   // What each player's game holds now: the last config it was sent (TS), or the one kept for it (C#), as a game decodes it.
-  const holds = async () => {
+  const holds = async (fromFrames = side === "ts" || viaGateway) => {
     const out = {};
     for (const id of HOLDERS) {
-      if (side === "ts") {
+      if (fromFrames) {
         const configs = games.frames(id).filter((f) => f?.data?.GameplayConfig !== undefined);
         out[id] = configs.length ? configs[configs.length - 1] : null;
       } else {
@@ -104,20 +110,31 @@ async function run(side, outFile) {
     await redis.set("refdiff:scratch", "1");
     await db.dropDatabase();
     await seed?.();
+    // The C# gateway keeps presence in Redis (the flush took it): the games connect after it.
+    if (viaGateway) {
+      games?.close();
+      await sleep(400);
+      games = await connect();
+      await sleep(300);
+    }
     games?.clear();
     recording = [];
     const started = Date.now();
-    // As MatchLauncher: the notification kept ({match}, read for the spectators at the lock), then published.
+    // As MatchLauncher: the notification kept ({match}, read for the spectators at the lock), then announced.
     await redis.set(MATCH, JSON.stringify(config), { EX: 1200 });
-    await redis.publish("match:notifications", JSON.stringify(config));
+    if (viaGateway) await redis.xAdd("match:launched", "*", { match: MATCH, notification: JSON.stringify(config) });
+    else await redis.publish("match:notifications", JSON.stringify(config));
     await sleep(1500);
     const built = created(await holds(), started);
+    // What each game was told about the match (GameServerReadyNotification), and the order of everything it was sent.
+    const ready = games ? Object.fromEntries(HOLDERS.map((id) => [id, games.frames(id).filter((f) => f?.data?.template_id === "GameServerReadyNotification")])) : null;
+    const sequence = games ? Object.fromEntries(HOLDERS.map((id) => [id, games.frames(id).map((f) => f?.data?.template_id ?? f?.cmd ?? "?")])) : null;
     for (const [pid, value] of Object.entries(perks)) {
       if (value !== undefined) await redis.set(`match:${MATCH}:perks:${pid}`, JSON.stringify(value), { EX: 1200 });
     }
     await redis.publish("perks:notifications", JSON.stringify({ containerMatchId: MATCH, playerIds: Object.keys(perks) }));
     await sleep(1200);
-    const locked = created(await holds(), started);
+    const locked = created(await holds(side === "ts"), started);
     const lines = recording;
     recording = null;
     // Each run checks that the other server is not on these stores: only the TS websocket reads player:{id} (its unused
@@ -125,7 +142,8 @@ async function run(side, outFile) {
     if (side === "cs" && lines.some((l) => /"hgetall" "player:/i.test(l))) throw new Error("the TS websocket is running on these stores");
     // Left out: each server's own bookkeeping, not the config's (the C# instance registry; the TS websocket's presence for
     // the fake games: heartbeats, online players, active_ip_accounts at each pong).
-    const all = writes(lines, self).filter((w) => !/^(set|zadd|zrem|del) ovs:instance|^zadd player_heartbeats|^(sadd|srem) online_players|^(zadd|expire|zremrangebyscore) active_ip_accounts:/.test(w)).map((w) => w.replace(/\\(["\\])/g, "$1"));
+    // The C# gateway's own (realtime:conn) and the match flow's once-only key (match_announced) likewise.
+    const all = writes(lines, self).filter((w) => !/^(set|zadd|zrem|del) ovs:instance|^zadd player_heartbeats|^(sadd|srem) online_players|^(zadd|expire|zremrangebyscore) active_ip_accounts:|^(hset|expire|del) realtime:conn:|^set match_announced:/.test(w)).map((w) => w.replace(/\\(["\\])/g, "$1"));
     const kept = all.filter((w) => w.startsWith("set match_config:"));
     if (side === "ts" && kept.length) throw new Error("the C# match flow is running on these stores");
     const mongo = {};
@@ -137,11 +155,13 @@ async function run(side, outFile) {
     steps.push({
       name,
       built,
+      ready,
+      sequence,
       locked,
       kept: [...new Set(kept.map((w) => w.split(" ")[1]))].sort(),
       writes: all.filter((w) => !w.startsWith("set match_config:") && !w.startsWith("publish ")).sort(),
       // ... and in the state, also the C# match flow's results stream (its consumer group is made again after a flush).
-      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^match_config:|^ovs:instance|^player_heartbeats$|^online_players$|^active_ip_accounts:|^match:results$/.test(k))),
+      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^match_config:|^ovs:instance|^player_heartbeats$|^online_players$|^active_ip_accounts:|^match:results$|^realtime:conn:|^realtime:connections$|^match:launched$|^match_announced:/.test(k))),
       mongo,
     });
     const got = Object.entries(locked).filter(([, f]) => f).map(([id]) => id.slice(-2));
@@ -249,6 +269,18 @@ async function run(side, outFile) {
     config: notification([human(P1, 0, 0), human(P2, 1, 1)], { map: "PVE_03" }),
     perks: { [P1]: ["x"], [P2]: ["y"] },
   });
+  // A P2P match: each game is sent to its own node, at the port its client reported (P1), else P2P_NODE_PORT (P4 on
+  // the server's machine, P2 with a port that does not parse).
+  await step("p2p-node-ports", {
+    seed: async () => {
+      await session(P1, { character: "character_jake", nodePort: "41000" });
+      await session(P2, { character: "character_jake", nodePort: "4x" });
+      await session(P4, { character: "character_jake" });
+      for (const pid of [P1, P2, P4]) await matchCosmetics(pid, { Banner: "b" });
+    },
+    config: notification([human(P1, 0, 0), human(P2, 1, 1), human(P4, 2, 0)], { mode: "2v2", p2p: true }),
+    perks: { [P1]: ["x"], [P2]: ["y"], [P4]: ["z"] },
+  });
   await step("no-players-after-override", {
     seed: async () => { for (const pid of [P1, P2]) { await session(pid, { character: "character_jake" }); await matchCosmetics(pid, { Banner: "b" }); } },
     config: notification([human(P1, 0, 0), human(P2, 1, 1)], { gameplayConfigOverride: { Players: {} } }),
@@ -338,14 +370,40 @@ function bothModes(ts, cs) {
   return { ok, ts: strip(ts), cs: strip(cs) };
 }
 
+// A match with no config is called off in C# (decided 2026-10-06): TS told each player to connect (GameServerReadyNotification)
+// and sent no config; C# tells nobody of it, deletes it ({match}, match:{match}), and, the harness's launch naming no
+// searching party, queues each player's "returned to the title screen" banner and the close of their connection (5 s).
+function calledOff(ts, cs) {
+  const humans = Object.entries(ts.sequence).filter(([, v]) => v.length).map(([id]) => id);
+  const told = humans.length > 0 && humans.every((id) => JSON.stringify(ts.sequence[id]) === '["GameServerReadyNotification"]');
+  const silent = Object.values(cs.sequence).every((v) => v.length === 0);
+  const own = (w) => w === `del ${MATCH} match:${MATCH}` || /^(rpush|expire) dll_notifications:/.test(w) || w.startsWith("zadd realtime:due ");
+  const banners = humans.every((id) => cs.writes.some((w) => w.startsWith(`rpush dll_notifications:${id} `) && w.includes("returned to the title screen")));
+  const closes = humans.every((id) => cs.writes.some((w) => w.startsWith("zadd realtime:due ") && w.includes('"channel":"ws:disconnect"') && w.includes(`"playerId":"${id}"`)));
+  const gone = MATCH in ts.state && !(MATCH in cs.state);
+  const strip = (run, side) => {
+    const o = clone(run);
+    delete o.ready;
+    delete o.sequence;
+    o.writes = o.writes.filter((w) => side === "ts" || !own(w));
+    o.state = Object.fromEntries(Object.entries(o.state).filter(([k]) => k !== MATCH && !k.startsWith("dll_notifications:") && k !== "realtime:due"));
+    return o;
+  };
+  return { ok: told && silent && banners && closes && gone, ts: strip(ts, "ts"), cs: strip(cs, "cs") };
+}
+
 const EXPECTED = {
   "both-modes": { why: "stat trackers count both modes' entries in C#; TS showed only the 2v2 ones", check: bothModes },
+  "no-players-after-override": { why: "a match with no config is called off in C#; TS told the players to connect", check: calledOff },
+  "no-map": { why: "a match with no config is called off in C#; TS told the players to connect", check: calledOff },
 };
 
 function diffRuns(fileA, fileB) {
   const a = JSON.parse(fs.readFileSync(fileA, "utf8")), b = JSON.parse(fs.readFileSync(fileB, "utf8"));
   let differing = 0;
-  const parts = (x, y) => ["built", "locked", "writes", "state", "mongo"].filter((p) => JSON.stringify(x?.[p]) !== JSON.stringify(y?.[p]));
+  // ready and sequence: only when both runs recorded what the games were sent (TS, and C# through its gateway).
+  const parts = (x, y) => ["built", "ready", "sequence", "locked", "writes", "state", "mongo"]
+    .filter((p) => !(["ready", "sequence"].includes(p) && (!x?.[p] || !y?.[p])) && JSON.stringify(x?.[p]) !== JSON.stringify(y?.[p]));
   for (let i = 0; i < Math.max(a.steps.length, b.steps.length); i++) {
     const name = a.steps[i]?.name ?? b.steps[i]?.name;
     const x = a.steps[i], y = b.steps[i];

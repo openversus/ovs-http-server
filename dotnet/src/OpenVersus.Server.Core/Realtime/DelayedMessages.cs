@@ -9,12 +9,13 @@ namespace OpenVersus.Server.Core.Realtime;
 
 // Websocket messages sent a moment later (the TS websocket's setTimeout sends: a match end's +500, +1000 and +1500 ms),
 // kept in Redis so that a restart or another replica still sends them: realtime:due, a sorted set scored by when each is
-// due (ms), each member {id, playerIds, message}. The sweep (DelayedMessageSweep, in the executables that schedule them)
+// due (ms), each member {id, playerIds, message}, or {id, channel: "ws:disconnect", message} for a connection to close
+// (ScheduleDisconnectAsync: the request is published as it is). The sweep (DelayedMessageSweep, in the executables that schedule them)
 // looks every 100 ms; an entry is sent by whichever replica removes it first (ZREM), so once. 100 ms keeps the order of
 // sends 500 ms apart; a restart delays what fell due meanwhile, and sends it.
 //
 // Redis, written  realtime:due (ZADD; ZREM when sent)
-// Published       ws:send (PlayerMessages.SendAsync)
+// Published       ws:send (PlayerMessages.SendAsync); ws:disconnect
 
 public static class DelayedMessages
 {
@@ -28,6 +29,18 @@ public static class DelayedMessages
             ["id"] = Guid.NewGuid().ToString("N"),
             ["playerIds"] = new JsonArray([.. playerIds.Select(id => (JsonNode)id)]),
             ["message"] = message,
+        };
+        return redis.SortedSetAddAsync(Key, Js.Stringify(entry), (time.GetUtcNow() + delay).ToUnixTimeMilliseconds());
+    }
+
+    /// <summary>Publishes <paramref name="request"/> on ws:disconnect ({playerId, connectionId?, code?, reason?}) once <paramref name="delay"/> has passed.</summary>
+    public static Task ScheduleDisconnectAsync(IDatabase redis, TimeProvider time, JsonObject request, TimeSpan delay)
+    {
+        var entry = new JsonObject
+        {
+            ["id"] = Guid.NewGuid().ToString("N"),
+            ["channel"] = GatewayChannels.Disconnect,
+            ["message"] = request,
         };
         return redis.SortedSetAddAsync(Key, Js.Stringify(entry), (time.GetUtcNow() + delay).ToUnixTimeMilliseconds());
     }
@@ -80,6 +93,12 @@ internal sealed class DelayedMessageSweep(IServiceProvider services, TimeProvide
 
             if (Js.Parse(member.ToString()) is JsonObject { } entry && entry["message"] is JsonObject message)
             {
+                if ((string?)entry["channel"] == GatewayChannels.Disconnect)
+                {
+                    await redis.PublishAsync(RedisChannel.Literal(GatewayChannels.Disconnect), Js.Stringify(message));
+                    continue;
+                }
+
                 await PlayerMessages.SendAsync(redis, (entry["playerIds"] as JsonArray ?? []).Select(id => id?.ToString() ?? ""), message.DeepClone().AsObject());
             }
         }

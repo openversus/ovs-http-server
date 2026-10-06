@@ -8,6 +8,8 @@
 //   node dotnet/tools/friends/friends_diff.mjs diff <ts.json> <cs.json>   # what differs, after normalizing
 //   node dotnet/tools/friends/friends_diff.mjs replay <baseUrl> <out.json>       # real data: see replay()
 //   node dotnet/tools/friends/friends_diff.mjs replay-diff <ts.json> <cs.json>
+//   node dotnet/tools/friends/friends_diff.mjs run-writes <baseUrl> <out.json>  # the friend requests: see runWrites()
+//   node dotnet/tools/friends/friends_diff.mjs diff <ts.json> <cs.json>          # (the same diff, writes included)
 //
 // Both servers must use the same scratch stores, which `run` wipes first:
 //   REF_REDIS_URL   e.g. redis://default:pw@127.0.0.1:16390 (a throwaway Redis: FLUSHDB; a non-empty unmarked one is refused)
@@ -33,6 +35,7 @@ const jwt = require(process.cwd() + "/node_modules/jsonwebtoken");
 
 const [, , command, ...args] = process.argv;
 if (command === "run") await run(args[0], args[1]);
+else if (command === "run-writes") await runWrites(args[0], args[1]);
 else if (command === "diff") diff(args[0], args[1], { writes: true });
 else if (command === "replay") await replay(args[0], args[1]);
 else if (command === "replay-diff") diff(args[0], args[1]);
@@ -165,6 +168,117 @@ async function run(baseUrl, outFile) {
   await bulk("profiles-bulk-ids-string", "/profiles/bulk", { ids: "abc" });
   await bulk("profiles-bulk-json", "/profiles/bulk", { ids: [oid(401), UPDATE] }, true);
 
+  writeRun(outFile, baseUrl, Date.now(), steps, await readProfile(db, "friends_diff"));
+  await close();
+}
+
+// The friend requests (the routes that published friend:request:ws): POST /ovs/friends/request, PUT
+// /ovs/friends/send-request/{id}, POST /friends/me/invitations and PUT /ssc/invoke/send_profile_notification, JSON bodies,
+// the player in the session token (and connections:{id}, which the OpenVersus client's routes resolve it through).
+// REF_SSC_URL: where send_profile_notification goes when not to <baseUrl> (the C# http service; the rest are social's).
+// Besides each answer and the stored state, what each receiver's game is sent: the TS websocket's message for each
+// friend:request:ws (built here as websocket.ts builds it), the C# ws:send messages, so both compare as what arrives.
+async function runWrites(baseUrl, outFile) {
+  const { redis, db, close } = await openScratch("friends_diff");
+  const secret = need("REF_JWT_SECRET");
+  const sscUrl = process.env.REF_SSC_URL || baseUrl;
+  const subscriber = redis.duplicate();
+  await subscriber.connect();
+  const sent = [];
+  const mine = (id) => typeof id === "string" && id.startsWith("0000000000000000000a05");
+  await subscriber.subscribe("friend:request:ws", (message) => {
+    const n = JSON.parse(message);
+    if (!mine(n.receiverAccountId)) return;
+    sent.push({ to: n.receiverAccountId, message: {
+      data: { template_id: "WBPNFriendRequestReceivedNotification", SenderWBPNAccountID: n.senderAccountId, WBPNInvitationID: n.invitationId },
+      payload: { match: { id: n.receiverAccountId }, custom_notification: "realtime" }, header: "", cmd: "profile-notification",
+    } });
+  });
+  await subscriber.subscribe("ws:send", (message) => {
+    const n = JSON.parse(message);
+    for (const to of n.playerIds ?? []) if (mine(to)) sent.push({ to, message: n.message });
+  });
+  // A client notification's timestamp is the time it was queued, inside its JSON text: set aside. The C# services' own
+  // instance registry (ovs:instance*) is not the routes' doing: left out.
+  const fixClientNotices = (state) => {
+    for (const key of Object.keys(state.redis)) if (key.startsWith("ovs:instance")) delete state.redis[key];
+    for (const [key, entry] of Object.entries(state.redis)) {
+      if (key.startsWith("dll_notifications:") && Array.isArray(entry.value)) {
+        entry.value = entry.value.map((text) => JSON.stringify({ ...JSON.parse(text), timestamp: "<queued>" }));
+      }
+    }
+    return state;
+  };
+  const steps = [];
+  const write = async (name, method, path, body, id, url = baseUrl) => {
+    sent.length = 0;
+    const token = id === undefined ? undefined : jwt.sign({ id, username: `Player ${id.slice(-3)}` }, secret);
+    const headers = { "content-type": "application/json", ...(token ? { "x-hydra-access-token": token } : {}) };
+    const response = await fetch(url + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    const text = await response.text();
+    let parsed;
+    try {
+      parsed = JSON.parse(text || "null");
+    } catch {
+      parsed = `<not JSON: ${text.slice(0, 80)}>`;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+    steps.push({ name, response: { status: response.status, body: parsed, sent: [...sent] }, state: fixClientNotices(await dump(redis, db)) });
+  };
+  const at = (iso) => new Date(iso);
+  const players = db.collection("playertesters"), lists = db.collection("friendlists");
+  const P = (n) => oid(500 + n);
+  for (let n = 1; n <= 9; n++) {
+    await players.insertOne(player(500 + n));
+    await redis.hSet(`connections:${P(n)}`, { id: P(n), username: `Player ${500 + n}`, hydraUsername: `player-${500 + n}` });
+  }
+  // P4 is blocked by P1; P5 has blocked P1; P1 has P8 in blockedPlayers (and as a friend), P9 as a friend.
+  await lists.insertOne({ _id: new ObjectId("0000000000000000000c0501"), accountId: P(1), __v: 2, friends: [
+    { friendAccountId: P(4), friendUsername: "Player 504", status: "blocked", addedAt: at("2026-08-01T00:00:00Z") },
+    { friendAccountId: P(8), friendUsername: "Player 508", status: "active", addedAt: at("2026-08-02T00:00:00Z") },
+  ] });
+  await lists.insertOne({ _id: new ObjectId("0000000000000000000c0505"), accountId: P(5), __v: 0, friends: [
+    { friendAccountId: P(1), friendUsername: "Player 501", status: "blocked", addedAt: at("2026-08-03T00:00:00Z") },
+  ] });
+  await players.updateOne({ _id: new ObjectId(P(1)) }, { $set: { blockedPlayers: [P(8)] } });
+
+  // The OpenVersus client's request: new, again (pending), the other way (accepted: both lists, no new request).
+  await write("ovs-request", "POST", "/ovs/friends/request", { targetId: P(2) }, P(1));
+  await write("ovs-request-pending", "POST", "/ovs/friends/request", { targetId: P(2) }, P(1));
+  await write("ovs-request-reverse-accepts", "POST", "/ovs/friends/request", { targetId: P(1) }, P(2));
+  await write("ovs-request-already-friends", "POST", "/ovs/friends/request", { targetId: P(2) }, P(1));
+  await write("ovs-request-self", "POST", "/ovs/friends/request", { targetId: P(1) }, P(1));
+  await write("ovs-request-blocked", "POST", "/ovs/friends/request", { targetId: P(4) }, P(1));
+  await write("ovs-request-blocked-by-target", "POST", "/ovs/friends/request", { targetId: P(5) }, P(1));
+  await write("ovs-request-no-target", "POST", "/ovs/friends/request", {}, P(1));
+  await write("ovs-request-no-session", "POST", "/ovs/friends/request", { targetId: P(2) }, undefined);
+  // A receiver with no session: "Unknown" as their name.
+  await write("ovs-request-offline-target", "POST", "/ovs/friends/request", { targetId: oid(599) }, P(3));
+
+  // The player search's request: the receiver's name from their player document.
+  await write("send-request", "PUT", `/ovs/friends/send-request/${P(6)}`, undefined, P(1));
+  await write("send-request-no-player", "PUT", `/ovs/friends/send-request/${oid(598)}`, undefined, P(1));
+  await write("send-request-bad-id", "PUT", "/ovs/friends/send-request/not-an-id", undefined, P(1));
+  await write("send-request-no-session", "PUT", `/ovs/friends/send-request/${P(6)}`, undefined, undefined);
+
+  // The game's own request: a new invitation, the same again (notified again), no such player, an id that is no ObjectId.
+  await write("invitation", "POST", "/friends/me/invitations", { account_id: P(7) }, P(3));
+  await write("invitation-again", "POST", "/friends/me/invitations", { account_id: P(7) }, P(3));
+  await write("invitation-no-player", "POST", "/friends/me/invitations", { account_id: oid(597) }, P(3));
+  await write("invitation-bad-id", "POST", "/friends/me/invitations", { account_id: "nope" }, P(3));
+
+  // send_profile_notification: a request, an unfriend of a plain friend, of one in blockedPlayers, other types, no target.
+  await write("profile-notification-request", "PUT", "/ssc/invoke/send_profile_notification", { TargetAccountId: P(9), Type: "FriendRequest" }, P(3), sscUrl);
+  await write("profile-notification-unfriend", "PUT", "/ssc/invoke/send_profile_notification", { TargetAccountId: P(2), Type: "Unfriend" }, P(1), sscUrl);
+  await write("profile-notification-remove-blocked", "PUT", "/ssc/invoke/send_profile_notification", { targetAccountId: P(8), type: "remove" }, P(1), sscUrl);
+  await write("profile-notification-unknown", "PUT", "/ssc/invoke/send_profile_notification", { TargetAccountId: P(2), Type: "Wave" }, P(1), sscUrl);
+  await write("profile-notification-no-target", "PUT", "/ssc/invoke/send_profile_notification", { Type: "FriendRequest" }, P(1), sscUrl);
+
+  // Last, as its effects (a request to an account named "5" in TS) would shift every later step: a target id that is a
+  // number. The TS server used it ("connections:5", a request and a friend list for "5"); the port refuses it (400).
+  await write("ovs-request-number-target", "POST", "/ovs/friends/request", { targetId: 5 }, P(1));
+
+  await subscriber.quit();
   writeRun(outFile, baseUrl, Date.now(), steps, await readProfile(db, "friends_diff"));
   await close();
 }

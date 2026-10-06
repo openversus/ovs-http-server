@@ -59,7 +59,7 @@ namespace OpenVersus.Server.Core.Matches;
 
 public sealed class MatchEndSettings
 {
-    [Description("The match flow ends matches itself (MatchEnd) instead of publishing match:end for the TS websocket. Off until the realtime gateway replaces the TS websocket, which keeps each player's match config in its own memory (docs/MIGRATION-BRIDGES.md 2); on only where no TS websocket holds the players (the parity harness).")]
+    [Description("The match flow ends matches itself (MatchEnd) instead of publishing match:end for the TS websocket. Off until the realtime gateway replaces the TS websocket, which keeps each player's match config in its own memory (docs/MIGRATION-BRIDGES.md 2); on only where no TS websocket holds the players (the parity harness). Realtime:Gateway on ends them here whatever this says.")]
     public bool Enabled { get; set; }
 }
 

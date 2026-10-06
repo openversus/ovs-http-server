@@ -22,6 +22,7 @@ internal sealed class PlayerRecord
     private readonly List<string> _defaulted = [];
     private readonly Dictionary<string, BsonArray> _pushed = [];
     private bool _isNew;
+    private bool _arrayAssigned;
 
     private PlayerRecord(BsonDocument doc)
     {
@@ -147,6 +148,22 @@ internal sealed class PlayerRecord
     }
 
     /// <summary>
+    /// Assigns a whole array field, as <c>doc.field = [...]</c> does in mongoose: saved as <c>$set</c> with
+    /// <c>$inc: {__v: 1}</c>, filtered on _id and the loaded __v (recorded 2026-10-06, friends_diff: removeFriend's
+    /// blockedPlayers). Saved only if the value changed.
+    /// </summary>
+    public void SetArray(string field, BsonArray value)
+    {
+        if (_doc.TryGetValue(field, out var current) && current.Equals(value))
+        {
+            return;
+        }
+
+        Set(field, value);
+        _arrayAssigned = true;
+    }
+
+    /// <summary>
     /// Appends to an array field as mongoose's push does: saved as <c>$push: {field: {$each: [...]}}</c> with
     /// <c>$inc: {__v: 1}</c>, filtered on _id alone. A field that was missing (defaulted to []) is pushed, not $set.
     /// </summary>
@@ -211,14 +228,22 @@ internal sealed class PlayerRecord
             update["$set"] = set;
         }
 
-        if (_pushed.Count > 0)
+        if (_pushed.Count > 0 || _arrayAssigned)
         {
             update["$inc"] = new BsonDocument("__v", 1);
+        }
+
+        // An assigned array: the version it was loaded with must still be the stored one.
+        var filter = new BsonDocument("_id", Id);
+        if (_arrayAssigned && _doc.TryGetValue("__v", out var version))
+        {
+            filter["__v"] = version;
         }
 
         _modified.Clear();
         _defaulted.Clear();
         _pushed.Clear();
-        await players.UpdateOneAsync(new BsonDocument("_id", Id), update, cancellationToken: ct);
+        _arrayAssigned = false;
+        await players.UpdateOneAsync(filter, update, cancellationToken: ct);
     }
 }

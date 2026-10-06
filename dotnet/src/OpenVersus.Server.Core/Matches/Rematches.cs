@@ -280,12 +280,8 @@ internal sealed class Rematches(IServiceProvider services, ICustomLobbyService l
     private async Task StartCasualAsync(IDatabase redis, string matchId, JsonObject config, CancellationToken ct)
     {
         var voters = RematchVotes.Voters(config);
-        var outdated = await gate.RequiringUpdateAsync(voters);
-        if (outdated.Count > 0)
+        if (await gate.BlockOutdatedAsync(voters, log, $"the rematch of Casual match {matchId} (declined for everyone)"))
         {
-            await gate.RequestModalsAsync(outdated.Select(o => o.AccountId));
-            log.LogWarning("The rematch of Casual match {Match} could not start: update required for {Players}; declined for everyone", matchId,
-                string.Join(", ", outdated.Select(o => o.AccountId)));
             await DeclinedAsync(redis, voters, matchId);
             return;
         }

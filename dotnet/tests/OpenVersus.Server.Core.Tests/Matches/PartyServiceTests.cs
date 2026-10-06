@@ -4,8 +4,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Cosmetics;
+using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Core.FunFacts;
 using OpenVersus.Server.Core.Matches;
 using StackExchange.Redis;
@@ -43,6 +45,27 @@ public sealed class PartyServiceTests : IAsyncLifetime
     {
         public Task<FunFact?> RandomAsync(string accountId, CancellationToken ct) => Task.FromResult<FunFact?>(null);
     }
+
+    private sealed class Gate : IClientUpdateGate
+    {
+        public HashSet<string> Outdated { get; } = [];
+        public List<string> Modals { get; } = [];
+
+        public Task<IReadOnlyList<ClientUpdateState>> RequiringUpdateAsync(IEnumerable<string> playerIds) =>
+            Task.FromResult<IReadOnlyList<ClientUpdateState>>(playerIds.Where(Outdated.Contains).Distinct().Select(p => new ClientUpdateState(p, "", false, true)).ToList());
+
+        public Task<IReadOnlyList<bool>> RequestModalsAsync(IEnumerable<string> playerIds)
+        {
+            Modals.AddRange(playerIds);
+            return Task.FromResult<IReadOnlyList<bool>>([]);
+        }
+
+        public Task<ClientUpdateState> ForRequestAsync(AccountLookup lookup, JsonObject? claims) => throw new NotSupportedException();
+        public Task<double> ModalNonceAsync(string playerId) => throw new NotSupportedException();
+        public JsonObject FailureBody() => new() { ["body"] = new JsonObject { ["error"] = "client_update_required" }, ["metadata"] = null, ["return_code"] = 1 };
+    }
+
+    private readonly Gate _gate = new();
 
     public async Task InitializeAsync()
     {
@@ -99,7 +122,7 @@ public sealed class PartyServiceTests : IAsyncLifetime
             .AddSingleton<IConnectionMultiplexer>(_redis!)
             .AddSingleton(_mongo!.GetDatabase(TestMongoDb))
             .BuildServiceProvider();
-        return new PartyService(services, new Cosmetics(), new NoFacts(), new TestOptions<LobbySettings>(new LobbySettings()), TimeProvider.System, NullLogger<PartyService>.Instance);
+        return new PartyService(services, new Cosmetics(), new NoFacts(), _gate, new TestOptions<LobbySettings>(new LobbySettings()), TimeProvider.System, NullLogger<PartyService>.Instance);
     }
 
     private static PartyRequest Asking(string player, string body) => new(player, null, "198.51.100.7", (JsonObject)JsonNode.Parse(body)!);
@@ -137,6 +160,49 @@ public sealed class PartyServiceTests : IAsyncLifetime
         }
 
         throw new TimeoutException("nothing arrived");
+    }
+
+    // The game readies its party lobby before its matchmaking request, and backs out of a refused ready (not of a refused
+    // request): a party with anyone who must update cannot ready, whoever presses it; un-readying always works.
+    [Fact]
+    public async Task AReadyFromAPartyWithAnOutdatedClientIsRefusedAndTheyAreToasted()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await SeedLobbyAsync(Owner, Guest);
+        var heard = await ListenAsync();
+        _gate.Outdated.Add(Guest);
+        var party = Service();
+
+        var refused = await party.SetReadyAsync(Asking(Owner, $$"""{"MatchID": "{{Lobby}}", "Ready": true}"""));
+        Assert.Equal(1, (int)refused["return_code"]!);
+        Assert.Equal("client_update_required", (string?)refused["body"]!["error"]);
+        Assert.Equal([Guest], _gate.Modals);
+        Assert.False(await Db.KeyExistsAsync($"party_ready:{Lobby}"));
+
+        var unready = await party.SetReadyAsync(Asking(Guest, $$"""{"MatchID": "{{Lobby}}", "Ready": false}"""));
+        Assert.Equal(0, (int)unready["return_code"]!);
+        Assert.Equal([Guest], _gate.Modals);
+
+        _gate.Outdated.Clear();
+        var ready = await party.SetReadyAsync(Asking(Owner, $$"""{"MatchID": "{{Lobby}}", "Ready": true}"""));
+        Assert.Equal(0, (int)ready["return_code"]!);
+        Assert.Equal([Owner], (await Db.SetMembersAsync($"party_ready:{Lobby}")).Select(v => v.ToString()));
+        // Only the ready that went through told the other member that someone readied.
+        await Eventually(() => heard.FirstOrDefault(h => (bool?)h["message"]!["data"]!["Ready"] == true));
+        await Task.Delay(200);
+        Assert.Equal(1, heard.Count(h => (bool?)h["message"]!["data"]!["Ready"] == true));
+
+        // A rift lobby's ready goes through: its start_rift_node is the gate.
+        await Db.KeyDeleteAsync($"party_ready:{Lobby}");
+        await Db.StringSetAsync($"lobby:{Lobby}", Js.Stringify(new JsonObject { ["lobbyId"] = Lobby, ["ownerId"] = Guest, ["mode"] = "rift_lobby", ["playerIds"] = new JsonArray(Guest) }));
+        _gate.Outdated.Add(Guest);
+        var rift = await party.SetReadyAsync(Asking(Guest, $$"""{"MatchID": "{{Lobby}}", "Ready": true}"""));
+        Assert.Equal(0, (int)rift["return_code"]!);
+        Assert.Equal([Guest], _gate.Modals);
     }
 
     [Fact]

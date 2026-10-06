@@ -30,7 +30,7 @@ public sealed class GatewayHostTests : IClassFixture<ServiceFactory<Program>>
     }
 
     [Fact]
-    public void Runs_the_pings_and_the_delivery_and_nothing_else_of_its_own()
+    public void Runs_the_pings_the_matchmaking_ticks_and_the_delivery_and_nothing_else_of_its_own()
     {
         var hosted = _factory.Services.GetServices<IHostedService>()
             .Select(s => s.GetType())
@@ -39,7 +39,7 @@ public sealed class GatewayHostTests : IClassFixture<ServiceFactory<Program>>
             .Order()
             .ToList();
 
-        Assert.Equal(["ClusterSettingsSync", "GatewayPings", "GatewaySubscriber", "InstanceHeartbeat"], hosted);
+        Assert.Equal(["ClusterSettingsSync", "GatewayPings", "GatewaySubscriber", "GatewayTicks", "InstanceHeartbeat"], hosted);
     }
 
     [Fact]

@@ -72,6 +72,9 @@ public sealed class RealtimeSettings
     [Description("The realtime server's UDP address in the login response (unused by OpenVersus).")]
     public string Udp { get; set; } = "0.0.0.0:0";
 
+    [Description("The realtime gateway (the ws service) holds the game's connections, and the services do what the TS websocket did on its channels: a launched match is announced on match:launched and the match flow tells its players (GameServerReadyNotification and the config) and ends it, whatever MatchEnd:Enabled and GameplayConfigs:Mode say. Off: the TS websocket, as before. Set it for the cluster: every service that starts matches and the match flow must agree.")]
+    public bool Gateway { get; set; }
+
     public string Url => Secure != 0 ? $"wss://{Domain}:{SecurePort}" : $"ws://{Domain}:{Port}";
 
     /// <summary>configuration.realtime as the login response carries it.</summary>

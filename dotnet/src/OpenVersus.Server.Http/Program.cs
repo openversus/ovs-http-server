@@ -28,6 +28,7 @@ using OpenVersus.Server.Http.Shared.Stubs;
 var builder = OpenVersusHost.CreateBuilder(KnownServices.Http, args);
 builder.AddGameHttp(typeof(Program).Assembly);
 builder.AddProfiles();
+builder.AddFriendRequests();
 builder.AddLayouts();
 builder.AddFileStorage();
 builder.AddRanks();

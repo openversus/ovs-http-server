@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
-using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.FunFacts;
 using OpenVersus.Server.Core.Preferences;
@@ -19,8 +18,8 @@ namespace OpenVersus.Server.Core.Matches;
 // The party lobby the game fetches after create_party_lobby, ported from the TS server's PUT /matches/:id
 // (handlers/matches.ts handleMatches_id, branch infinity-war). The game keeps its own lobby id (it sends it to
 // matchmaking later) and ignores the answer's id. Three answers:
-//   join           the lobby is someone else's: the player is added to it (the client gate first), and every member, the
-//                  joiner and the owner included, is sent the lobby (below)
+//   join           the lobby is someone else's: the player is added to it, and every member, the joiner and the owner
+//                  included, is sent the lobby (below)
 //   owner refresh  the player owns the lobby and it has 2+ players: everyone in it
 //   solo           anything else: the player alone (the TS server's fixed answer, a new random id each time)
 //
@@ -29,13 +28,13 @@ namespace OpenVersus.Server.Core.Matches;
 //                 player:{player} (character, skin: the owner's and the members' loadouts)
 // Redis, written  lobby:{id} on a join that adds the player: the JSON as read with the player pushed onto playerIds
 //                 (other fields kept as they were), EX 8 h when it then has 2+ players, else 1 h
-// Sent (ws:send)  on every join that gets past the gate, to every member, the three messages the TS websocket built from
+// Sent (ws:send)  on every join, to every member, the three messages the TS websocket built from
 //                 lobby:player_joined (handlePlayerJoinedLobby): lobby-join {lobby, match, party_id, players}, then the
 //                 updates OnLobbyRuntimeDataUpdated and PlayerJoinedLobby, each carrying the lobby and its players. Built
 //                 from each member's connections:{player} (preferences, character, skin, names, wb id), one rand and one
 //                 time for all three; the lobby's GameVersion is "local" and it names its MatchID, as there
-// Client gate     see ClientUpdateGate: a join where anyone in the lobby must update is refused with its failure body
-//                 and each of them is sent the update toast
+// Client gate     none: a player who must update may join and be joined (the TS server refused the join); what leads into
+//                 a match is gated (ClientGameplayGate, MatchmakingRequestService)
 //
 // lobby:{id} as the TS server writes it (ssc.ts, websocket.ts):
 //   {"lobbyId", "ownerId", "ownerUsername", "mode" ("1v1", "2v2", "FFA", "1v1_ranked", "2v2_ranked"), "playerIds": [...],
@@ -69,7 +68,7 @@ public interface IPartyLobbyService
     Task<JsonObject?> PutAsync(LobbyPlayer player, string matchId, CancellationToken ct = default);
 }
 
-internal sealed class PartyLobbyService(IServiceProvider services, IClientUpdateGate gate, IOptionsMonitor<LobbySettings> settings, TimeProvider time, ILogger<PartyLobbyService> log) : IPartyLobbyService
+internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonitor<LobbySettings> settings, TimeProvider time, ILogger<PartyLobbyService> log) : IPartyLobbyService
 {
     private const string Avatar = "https://s3.amazonaws.com/wb-agora-hydra-ugc-dokken/identicons/identicon.584.png";
     // The TS server sends this avatar for every player.
@@ -127,15 +126,6 @@ internal sealed class PartyLobbyService(IServiceProvider services, IClientUpdate
     {
         string me = player.Id;
         string ownerId = Str(lobby, "ownerId") ?? "";
-        var outdated = await gate.RequiringUpdateAsync([me, .. playerIds]);
-        if (outdated.Count > 0)
-        {
-            await gate.RequestModalsAsync(outdated.Select(p => p.AccountId));
-            log.LogWarning("Blocked lobby join because update is required for: {Players}",
-                string.Join(", ", outdated.Select(p => $"{p.AccountId}:{(p.ClientVersion.Length > 0 ? p.ClientVersion : "legacy")}")));
-            return gate.FailureBody();
-        }
-
         log.LogInformation("Player {Player} ({Name}) joining existing lobby {Lobby} owned by {Owner}", me, player.Username, matchId, ownerId);
         var ids = lobby["playerIds"]!.AsArray();
         if (!playerIds.Contains(me))

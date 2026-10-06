@@ -24,7 +24,8 @@ namespace OpenVersus.Server.Core.RewardTracks;
 //   - the account and character levels' newly completed tiers are paid at once, as the Fighter Passes are not claimed
 //     by the player (toasts; tiers 5, 10 and 15 pay battle pass XP, which goes to the battle pass by its tag; the last
 //     pays the character's Chromium skin);
-//   - the game is sent RewardTrackStatesUpdated (UpdateContext XpReward) with the tracks that moved.
+//   - the game is sent RewardTrackStatesUpdated (UpdateContext XpReward, a banner each) with the tracks that moved but
+//     the account level, which it is sent alone with UpdateContext Unknown (no banner; live showed only the battle pass).
 //
 // Only tracks that are the player's own move (RewardTracks:PerPlayer, CharacterMastery: AddScoreAsync). This is the
 // only source of level XP in End Game: RewardTracks:MatchXp and RiftMatchXp are off there, so custom games and rifts
@@ -42,6 +43,9 @@ internal sealed class RankedSetXpSubscriber(IServiceProvider services, IOptionsM
     internal const string Channel = "reward_tracks:ranked_set";
     internal const string BattlePass = "mrt_battlepass_season_five";
     internal const string Account = "mrt_mastery_account";
+    // EMvsRewardTrackUpdateContext: XpReward shows a banner per track; Unknown updates the state only.
+    private const int XpReward = 6;
+    private const int Quiet = 0;
 
     // One payment at a time: a player's tracks are written read-modify-write (version-guarded, three tries), so two of
     // their payments at once could lose one (eight at once lost four, 2026-10-05).
@@ -136,9 +140,18 @@ internal sealed class RankedSetXpSubscriber(IServiceProvider services, IOptionsM
 
             log.LogInformation("Ranked-set XP for {Player} from {Source} ({Character}, {Result}): {Points}", playerId, Text(set["source"]) ?? setKey,
                 character, won ? "win" : "loss", string.Join(", ", points.Select(p => $"{p.Key} +{p.Value}")));
-            if (changed.Count > 0)
+            // The game shows an XP banner for each track of an XpReward update. As live sent only the battle pass's, the
+            // banners are the fighter's level and the battle pass; the account level is still paid, and its state sent
+            // with UpdateContext Unknown (no banner).
+            var banners = changed.Where(c => c.Key != Account).Select(c => c.Value).ToList();
+            if (banners.Count > 0)
             {
-                await ProfileNotifications.SendAsync(redis, playerId, ProfileNotifications.RewardTrackStatesUpdated(changed.Values, 6));
+                await ProfileNotifications.SendAsync(redis, playerId, ProfileNotifications.RewardTrackStatesUpdated(banners, XpReward));
+            }
+
+            if (changed.TryGetValue(Account, out var account))
+            {
+                await ProfileNotifications.SendAsync(redis, playerId, ProfileNotifications.RewardTrackStatesUpdated([account], Quiet));
             }
         }
         catch (Exception e)

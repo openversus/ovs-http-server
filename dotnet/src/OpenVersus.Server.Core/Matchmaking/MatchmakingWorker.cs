@@ -38,7 +38,8 @@ namespace OpenVersus.Server.Core.Matchmaking;
 //   FFA  the public Free For All queue (processFfaQueue): the 4 oldest solo tickets of distinct players, no skill; a
 //        blocked group waits (no other four are tried). Outside its window (FfaSchedule, Ffa:WeekendOnly) nothing is
 //        matched: every ticket in it goes, and each is cancelled as the TS cancelMatchmakingForAll does
-//        (matchmaking:cancel {playersIds, matchmakingId}, which the TS websocket turns into the game's cancel; each
+//        (matchmaking:cancel {playersIds, matchmakingId}, which the TS websocket turns into the game's cancel; with
+//        Realtime:Gateway on, MatchmakingQueue's cancel, which sends it itself; each
 //        player's party_ready:{lobby} deleted). Each player is a team of their own (team and index 0..3, a random one
 //        hosts); the map is a 2v2 one; the match is unranked (no set; the TS websocket sends it as evtq_ffa, mode FFA,
 //        not ranked, from mode "FFA") but not a password match, as the TS worker writes it.
@@ -341,16 +342,24 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
         return true;
     }
 
-    // cancelMatchmakingForAll for one ticket: the TS websocket ends each of its players' search; their lobbies unready.
-    private static async Task CancelAsync(IDatabase redis, Ticket ticket)
+    // cancelMatchmakingForAll for one ticket: each of its players' search ends (matchmaking:cancel for the TS websocket,
+    // or with Realtime:Gateway on, the cancel itself: MatchmakingQueue); their lobbies unready.
+    private async Task CancelAsync(IDatabase redis, Ticket ticket)
     {
-        var cancel = new JsonObject { ["playersIds"] = new JsonArray([.. ticket.Players.Select(p => (JsonNode)p.Id)]) };
-        if (ticket.Json["matchmakingRequestId"] is { } request)
+        if (MatchLaunches.Gateway(services))
         {
-            cancel["matchmakingId"] = request.DeepClone();
+            await MatchmakingQueue.CancelAsync(redis, ticket.Players.Select(p => p.Id), ticket.Json["matchmakingRequestId"]?.DeepClone());
         }
+        else
+        {
+            var cancel = new JsonObject { ["playersIds"] = new JsonArray([.. ticket.Players.Select(p => (JsonNode)p.Id)]) };
+            if (ticket.Json["matchmakingRequestId"] is { } request)
+            {
+                cancel["matchmakingId"] = request.DeepClone();
+            }
 
-        await redis.PublishAsync(RedisChannel.Literal(PartyService.CancelMatchmakingChannel), Js.Stringify(cancel));
+            await redis.PublishAsync(RedisChannel.Literal(PartyService.CancelMatchmakingChannel), Js.Stringify(cancel));
+        }
         foreach (var (id, _) in ticket.Players)
         {
             if ((string?)await redis.StringGetAsync($"player_lobby:{id}") is { Length: > 0 } lobby)

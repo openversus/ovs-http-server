@@ -70,7 +70,8 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
     private IDatabase Db => _redis!.GetDatabase();
 
     // FFA always open unless a test says otherwise (the window has tests of its own: FfaScheduleTests).
-    private MatchmakingWorker Worker(Ports? ports = null, bool p2p = false, FfaSettings? ffa = null, TimeProvider? time = null) => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
+    private MatchmakingWorker Worker(Ports? ports = null, bool p2p = false, FfaSettings? ffa = null, TimeProvider? time = null, bool gateway = false) => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!)
+            .AddSingleton<Microsoft.Extensions.Options.IOptionsMonitor<OpenVersus.Server.Core.Access.RealtimeSettings>>(new TestOptions<OpenVersus.Server.Core.Access.RealtimeSettings>(new() { Gateway = gateway })).BuildServiceProvider(),
         ports ?? new Ports(), new TestOptions<MatchmakingSettings>(new MatchmakingSettings()), new TestOptions<RollbackSettings>(new RollbackSettings { P2P = p2p }),
         new TestOptions<FfaSettings>(ffa ?? new FfaSettings { WeekendOnly = false }), time ?? TimeProvider.System, NullLogger<MatchmakingWorker>.Instance);
 
@@ -472,5 +473,26 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
         {
             await _redis.GetSubscriber().UnsubscribeAsync(channel);
         }
+    }
+
+    [Fact]
+    // With Realtime:Gateway on, nothing hears matchmaking:cancel: the closed FFA queue cancels through MatchmakingQueue,
+    // so the player's tick (realtime:queued) stops instead of searching for a ticket that is gone.
+    public async Task AClosedFfaQueueBehindTheGatewayStopsTheSearch()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await Db.KeyDeleteAsync(MatchmakingQueue.QueuedKey);
+        string ticket = await QueueAsync(MatchmakingWorker.Ffa, [1], age: 1);
+        await Db.HashSetAsync(MatchmakingQueue.QueuedKey, Id(1), (string?)await Db.ListGetByIndexAsync(MatchmakingWorker.Ffa, 0) ?? ticket);
+        var tuesday = new Clock(DateTimeOffset.Parse("2026-10-06T18:00:00Z"));
+        await Worker(ffa: new FfaSettings(), time: tuesday, gateway: true).TickAsync(Db);
+
+        Assert.Empty(await QueuedAsync(MatchmakingWorker.Ffa));
+        Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Id(1)));
+        await Db.KeyDeleteAsync(MatchmakingQueue.QueuedKey);
     }
 }

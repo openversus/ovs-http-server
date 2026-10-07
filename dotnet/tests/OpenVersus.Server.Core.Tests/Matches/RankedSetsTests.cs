@@ -61,7 +61,7 @@ public sealed class RankedSetsTests : IAsyncLifetime
         await _mongo.DropDatabaseAsync(TestMongoDb);
         await CleanAsync();
         // Channels ignore the database: only this class's set and players count.
-        foreach (string channel in new[] { ProfileNotifications.WsSendChannel, MatchLauncher.NotificationChannel })
+        foreach (string channel in new[] { ProfileNotifications.WsSendChannel })
         {
             await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(channel), (_, m) =>
             {
@@ -264,7 +264,9 @@ public sealed class RankedSetsTests : IAsyncLifetime
             Assert.InRange((await Db.KeyTimeToLiveAsync(key))!.Value, TimeSpan.FromMinutes(19), TimeSpan.FromMinutes(20));
         }
 
-        Assert.Contains(await PublishedAsync(), p => p.Channel == MatchLauncher.NotificationChannel && p.Message["matchId"]!.GetValue<string>() == game);
+        // Announced for the match flow to tell the players (MatchLaunches), with no matchmaking-complete owed.
+        var launch = Assert.Single(await Db.StreamRangeAsync(MatchLaunches.Stream), e => (string?)e["match"] == game);
+        Assert.Equal("[]", (string?)launch["complete"]);
         Assert.Null(await RatingAsync(P1));
     }
 

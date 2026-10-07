@@ -12,11 +12,9 @@ using OpenVersus.Server.Http.Shared;
 // MATCHFLOW_PORT, where the router sends them; and the results the http service's submit_end_of_match_stats appends to
 // the stream match:results (MatchResultStream): missions, match XP, rift progress and each match's stats. Any number of
 // replicas: they read the stream as one consumer group, and each result is recorded once per match and player (SET NX keys).
-// And each match's gameplay config, kept per player (GameplayConfigs:Mode; built beside the TS websocket, which still sends
-// it: docs/MIGRATION-BRIDGES.md 9). With Realtime:Gateway on, the launched matches (match:launched, MatchLaunchStream):
-// each one's config built and sent with GameServerReadyNotification to its players.
-// And a match's end (MatchEnd, when MatchEnd:Enabled or Realtime:Gateway; until the realtime gateway, the TS websocket ends
-// them from match:end), with its delayed websocket messages (DelayedMessages). And what a player's game closing its
+// And the launched matches (match:launched, MatchLaunchStream): each one's config built, kept per player, and sent with
+// GameServerReadyNotification to its players.
+// And a match's end (MatchEnd), with its delayed websocket messages (DelayedMessages). And what a player's game closing its
 // websocket does to their match (MatchDisconnects, the realtime gateway's disconnects: a dodge, a set's leaver).
 var builder = OpenVersusHost.CreateBuilder(KnownServices.MatchFlow, args);
 builder.AddGameHttp(typeof(Program).Assembly);

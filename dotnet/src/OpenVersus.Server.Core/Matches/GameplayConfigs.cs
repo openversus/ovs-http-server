@@ -1,13 +1,9 @@
-using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Threading.Channels;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
@@ -34,7 +30,7 @@ namespace OpenVersus.Server.Core.Matches;
 //     a human: the fighter, skin and icon from connections:{player} (character_jason, skin_jason_000 and the gold icon
 //       without), GameplayPreferences from there (GameplayPreferences.Of); taunts for that fighter, stat trackers, banner
 //       and ring-out effect from the match copy of their cosmetics (connections:{player}:cosmetics, each field JSON; when
-//       it is missing, their equipped cosmetics, written back as the match copy with Mode On); each stat tracker's value
+//       it is missing, their equipped cosmetics, written back as the match copy); each stat tracker's value
 //       from playerstats (StatTrackerValues); outside custom games, RankedTier and RankedDivision from their rating for
 //       that fighter in the match's mode (else the mode's). Perks empty until the lock.
 //       Anything that fails while building a human's config (a stat tracker that is not text, a stored fighter's stats
@@ -45,7 +41,7 @@ namespace OpenVersus.Server.Core.Matches;
 //     ranked; then gameplayConfigOverride over the config, playerConfigOverrides over those players (not spectators),
 //     gameplayConfigTemplate as the template_id, gameplayConfigData over the message's data, in that order. A config with
 //     no players after all that is not kept (TS sends nothing).
-// The perks lock (perks:notifications {containerMatchId, playerIds}): each human of playerIds that holds this match's
+// The perks lock (PerksLock: {containerMatchId, playerIds}): each human of playerIds that holds this match's
 // config gets their locked perks (match:{match}:perks:{player}) into Players in every copy; the players' copies become
 // PerksLockedNotification when any perks merged, the spectators' always (TS sends the players theirs before it marks the
 // spectators'). Bots keep BotDefaults' perks: TS never merges theirs (a bot has no connection), whatever the launch locked
@@ -54,23 +50,15 @@ namespace OpenVersus.Server.Core.Matches;
 // Redis, read     connections:{player}; connections:{player}:cosmetics; bot_config:{bot}; match:{match}:perks:{player};
 //                 {match} (who else holds the config: spectators)
 // Redis, written  match_config:{player} (the OnGameplayConfigNotified message, for every player but the bots) EX 20 min,
-//                 the match's TTL; rewritten at the perks lock, keeping its TTL.
-//                 With Mode On, what the TS websocket writes beside it: match_characters:{match} ({player: fighter} for
-//                 the players with one in connections:{player}, bots and spectators left out) EX 20 min, and
-//                 connections:{player}:cosmetics for a player who had no match copy
-// Mongo, read     playerstats {account_id}; eloratings {account_id} (made when missing with Mode On, as getOrCreateRating;
-//                 read only in Shadow, a missing one counting as Ranked:DefaultElo, the rating it would be made with);
-//                 cosmetics (CosmeticsService.EquippedAsync, for a player with no match copy: that read keeps its own
-//                 cache, player:{player}:cosmetics, and makes a missing cosmetics document, as TS does, in either mode)
+//                 the match's TTL; rewritten at the perks lock, keeping its TTL. What the TS websocket wrote beside it:
+//                 match_characters:{match} ({player: fighter} for the players with one in connections:{player}, bots and
+//                 spectators left out) EX 20 min, and connections:{player}:cosmetics for a player who had no match copy
+// Mongo, read     playerstats {account_id}; eloratings {account_id} (made when missing, as getOrCreateRating); cosmetics
+//                 (CosmeticsService.EquippedAsync, for a player with no match copy: that read keeps its own cache,
+//                 player:{player}:cosmetics, and makes a missing cosmetics document, as TS does)
 //
-// Who builds it (GameplayConfigs:Mode, cluster setting): Off, the TS websocket alone. Shadow: the match flow builds and
-// keeps each config too, writing nothing else the TS server reads, while the TS websocket still sends its own; the two
-// are compared (tools/matches/config_diff.mjs on scratch stores; the live bench). On: also the writes the TS websocket
-// makes beside it. Nothing here sends: the TS websocket sends the config, or with Realtime:Gateway on, MatchLaunchStream
-// (MatchLaunches.cs) builds it with On from the launch and sends it, and the perks lock (PerksLock) merges the perks here
-// and sends the copies this gives back. The subscriber below is a bridge (docs/MIGRATION-BRIDGES.md, 9), for the matches
-// the TS websocket still sends. With more than one match flow replica, each
-// builds the same config (the same keys, the same values).
+// Nothing here sends: MatchLaunchStream (MatchLaunches.cs) builds the config from the launch and sends it, and the perks
+// lock (PerksLock) merges the perks here and sends the copies this gives back.
 //
 // Unlike there:
 //   the config is kept for every human and spectator of the match, connected or not (TS kept it on the connections it
@@ -83,35 +71,16 @@ namespace OpenVersus.Server.Core.Matches;
 //     logged and skipped (TS threw there, half merged, and sent nobody the lock).
 //   a bot's difficulty that is not a number is null (TS sent NaN).
 
-/// <summary>Who builds match configs (see the header of GameplayConfigs.cs).</summary>
-public enum GameplayConfigMode
-{
-    /// <summary>The TS websocket alone.</summary>
-    Off,
-
-    /// <summary>The match flow too, keeping each config per player (match_config:{player}) and writing nothing else.</summary>
-    Shadow,
-
-    /// <summary>As Shadow, and the writes the TS websocket makes beside it (match_characters, the cosmetics match copy, a missing rating).</summary>
-    On,
-}
-
-public sealed class GameplayConfigSettings
-{
-    [Description("Who builds the match configs (OnGameplayConfigNotified): Off, the TS websocket alone; Shadow, the match flow also builds and keeps each one per player (match_config:{player}), writing nothing else the TS server reads; On, also what the TS websocket writes beside it (match_characters, the cosmetics match copy, a missing rating). The TS websocket sends the config in every mode; with Realtime:Gateway on, the match flow builds every config with On and sends it itself (MatchLaunches), whatever this says.")]
-    public GameplayConfigMode Mode { get; set; } = GameplayConfigMode.Off;
-}
-
 public interface IGameplayConfigs
 {
     /// <summary>
-    /// Builds <paramref name="notification"/>'s config and keeps it per player; with <paramref name="mode"/> On, also the
-    /// TS websocket's writes beside it. Returns the message, or null when there is none to keep.
+    /// Builds <paramref name="notification"/>'s config and keeps it per player, with the TS websocket's writes beside it.
+    /// Returns the message, or null when there is none to keep.
     /// </summary>
-    Task<JsonObject?> BuildAsync(JsonObject notification, GameplayConfigMode mode, CancellationToken ct);
+    Task<JsonObject?> BuildAsync(JsonObject notification, CancellationToken ct);
 
     /// <summary>
-    /// Merges the locked perks of perks:notifications' <paramref name="notification"/> into the kept configs; the copies it
+    /// Merges the locked perks of <paramref name="notification"/> ({containerMatchId, playerIds}) into the kept configs; the copies it
     /// rewrote, in the order the TS websocket sent them: the locked players' (in the notification's order), then the
     /// spectators'.
     /// </summary>
@@ -119,7 +88,7 @@ public interface IGameplayConfigs
 }
 
 internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsService cosmetics, EloRatings ratings,
-    IOptionsMonitor<RankedSettings> ranked, TimeProvider time, ILogger<GameplayConfigs> log) : IGameplayConfigs
+    TimeProvider time, ILogger<GameplayConfigs> log) : IGameplayConfigs
 {
     public const string KeyPrefix = "match_config:";
     public const string PerksLockedTemplate = "PerksLockedNotification";
@@ -127,7 +96,7 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
 
     public static string Key(string playerId) => KeyPrefix + playerId;
 
-    public async Task<JsonObject?> BuildAsync(JsonObject n, GameplayConfigMode mode, CancellationToken ct)
+    public async Task<JsonObject?> BuildAsync(JsonObject n, CancellationToken ct)
     {
         var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase() ?? throw new InvalidOperationException("this service has no Redis (REDIS)");
         var mongo = services.GetService<IMongoDatabase>() ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)");
@@ -141,7 +110,7 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
         foreach (var player in players.Where(p => !RollbackCallbacks.Truthy(p["isBot"])))
         {
             string id = Str(player["playerId"]) ?? "";
-            cosmeticsOf[id] = await MatchCosmeticsAsync(redis, id, mode, ct);
+            cosmeticsOf[id] = await MatchCosmeticsAsync(redis, id, ct);
         }
 
         var playersOut = new JsonObject();
@@ -155,7 +124,7 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
             JsonNode buffs = n["playerBuffs"] is JsonObject allBuffs && allBuffs[id] is { } own ? own.DeepClone() : new JsonArray();
             target[id] = RollbackCallbacks.Truthy(player["isBot"])
                 ? await BotAsync(redis, id, player, teamIndex, buffs, matchId)
-                : await HumanAsync(redis, mongo, id, player, teamIndex, buffs, cosmeticsOf.GetValueOrDefault(id) ?? [], custom, gameMode, mode, matchId, ct);
+                : await HumanAsync(redis, mongo, id, player, teamIndex, buffs, cosmeticsOf.GetValueOrDefault(id) ?? [], custom, gameMode, matchId, ct);
         }
 
         // A map that is not text: TS threw looking up its hazards (after the players, their writes included), and sent nothing.
@@ -252,21 +221,18 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
             Assign(data, configData);
         }
 
-        if (mode == GameplayConfigMode.On)
+        // Each player's fighter (bots and spectators have none here), kept for the set: a fighter is locked for it.
+        var characters = new JsonObject();
+        foreach (var player in players.Where(p => !RollbackCallbacks.Truthy(p["isSpectator"])))
         {
-            // Each player's fighter (bots and spectators have none here), kept for the set: a fighter is locked for it.
-            var characters = new JsonObject();
-            foreach (var player in players.Where(p => !RollbackCallbacks.Truthy(p["isSpectator"])))
+            string id = Str(player["playerId"]) ?? "";
+            if ((string?)await redis.HashGetAsync($"connections:{id}", "character") is { Length: > 0 } character)
             {
-                string id = Str(player["playerId"]) ?? "";
-                if ((string?)await redis.HashGetAsync($"connections:{id}", "character") is { Length: > 0 } character)
-                {
-                    characters[id] = character;
-                }
+                characters[id] = character;
             }
-
-            await redis.StringSetAsync($"match_characters:{matchId}", Js.Stringify(characters), s_ttl);
         }
+
+        await redis.StringSetAsync($"match_characters:{matchId}", Js.Stringify(characters), s_ttl);
 
         // As TS counts them, after the overrides: none, and nothing is sent.
         int count = (data["GameplayConfig"] as JsonObject)?["Players"] switch
@@ -288,8 +254,8 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
             await redis.StringSetAsync(Key(Str(player["playerId"]) ?? ""), json, s_ttl);
         }
 
-        log.LogInformation("Match {Match}: gameplay config kept for {Players} ({Mode})", matchId,
-            string.Join(", ", players.Where(p => !RollbackCallbacks.Truthy(p["isBot"])).Select(p => Str(p["playerId"]))), mode);
+        log.LogInformation("Match {Match}: gameplay config kept for {Players}", matchId,
+            string.Join(", ", players.Where(p => !RollbackCallbacks.Truthy(p["isBot"])).Select(p => Str(p["playerId"]))));
         return message;
     }
 
@@ -377,19 +343,15 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
     }
 
     // The match copy of a human's cosmetics, each field parsed (kept as text when it is not JSON); their equipped ones
-    // when there is none, written back as the match copy with Mode On.
-    private async Task<JsonObject> MatchCosmeticsAsync(IDatabase redis, string id, GameplayConfigMode mode, CancellationToken ct)
+    // when there is none, written back as the match copy.
+    private async Task<JsonObject> MatchCosmeticsAsync(IDatabase redis, string id, CancellationToken ct)
     {
         var fields = await redis.HashGetAllAsync($"connections:{id}:cosmetics");
         if (fields.Length == 0)
         {
             log.LogWarning("No cosmetics for {Player} in Redis: their equipped ones", id);
             var equipped = await cosmetics.EquippedAsync(id, ct);
-            if (mode == GameplayConfigMode.On)
-            {
-                await cosmetics.WriteMatchCopyAsync(id, equipped);
-            }
-
+            await cosmetics.WriteMatchCopyAsync(id, equipped);
             return equipped;
         }
 
@@ -454,7 +416,7 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
     }
 
     private async Task<JsonObject> HumanAsync(IDatabase redis, IMongoDatabase mongo, string id, JsonObject player, JsonNode? teamIndex, JsonNode buffs,
-        JsonObject playerCosmetics, bool custom, string? gameMode, GameplayConfigMode mode, string matchId, CancellationToken ct)
+        JsonObject playerCosmetics, bool custom, string? gameMode, string matchId, CancellationToken ct)
     {
         var connection = (await redis.HashGetAllAsync($"connections:{id}")).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
         string profileIcon = connection.GetValueOrDefault("profileIcon") ?? "profile_icon_default_gold";
@@ -470,7 +432,7 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
                 ? trackers
                 : new JsonArray("stat_tracking_bundle_default", "stat_tracking_bundle_default", "stat_tracking_bundle_default");
             var stats = await mongo.GetCollection<BsonDocument>("playerstats").Find(new BsonDocument("account_id", id)).FirstOrDefaultAsync(ct);
-            var (tier, division) = custom ? (null, null) : await RankAsync(mongo, id, character, gameMode, mode, ct);
+            var (tier, division) = custom ? (null, null) : await RankAsync(mongo, id, character, gameMode, ct);
             var statTrackers = new JsonArray();
             for (int i = 0; i < 3; i++)
             {
@@ -549,14 +511,11 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
 
     // RankedTier and RankedDivision for the fighter's rating in the match's mode (2v2's for 2v2, 1v1's otherwise), or the
     // mode's rating when the fighter has none; no rank when the rating cannot be read.
-    private async Task<(JsonNode? Tier, JsonNode? Division)> RankAsync(IMongoDatabase mongo, string id, string character, string? gameMode, GameplayConfigMode mode, CancellationToken ct)
+    private async Task<(JsonNode? Tier, JsonNode? Division)> RankAsync(IMongoDatabase mongo, string id, string character, string? gameMode, CancellationToken ct)
     {
         try
         {
-            var rating = mode == GameplayConfigMode.On
-                ? await ratings.GetOrCreateAsync(mongo.GetCollection<BsonDocument>("eloratings"), id, "", ct)
-                : await mongo.GetCollection<BsonDocument>("eloratings").Find(new BsonDocument("account_id", id)).FirstOrDefaultAsync(ct)
-                    ?? new BsonDocument { { "elo_1v1", ranked.CurrentValue.DefaultElo }, { "elo_2v2", ranked.CurrentValue.DefaultElo } };
+            var rating = await ratings.GetOrCreateAsync(mongo.GetCollection<BsonDocument>("eloratings"), id, "", ct);
 
             bool is2v2 = gameMode == "2v2";
             var charData = rating.GetValue(is2v2 ? "characters_2v2" : "characters_1v1", BsonNull.Value) is BsonDocument chars
@@ -784,82 +743,11 @@ public static class RankedTiers
     }
 }
 
-/// <summary>
-/// The bridge (docs/MIGRATION-BRIDGES.md, 9): builds each match's config from the channels the TS websocket hears,
-/// match:notifications and perks:notifications, one message at a time (a lock never overtakes its own config), as
-/// GameplayConfigs:Mode says.
-/// </summary>
-internal sealed class GameplayConfigBridge(IServiceProvider services, IGameplayConfigs configs, IOptionsMonitor<GameplayConfigSettings> settings,
-    ILogger<GameplayConfigBridge> log) : BackgroundService
-{
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        // Once the app has started: the cluster settings are loaded by a hosted service, and before that the mode read
-        // would be the configuration's, not a cluster override's.
-        services.GetService<IHostApplicationLifetime>()?.ApplicationStarted.Register(() => log.LogWarning(
-            "MIGRATION BRIDGE: gameplay configs are built from match:notifications and perks:notifications (GameplayConfigs:Mode, now {Mode}) while the TS websocket still sends them; see dotnet/docs/MIGRATION-BRIDGES.md (9)",
-            settings.CurrentValue.Mode));
-        if (services.GetService<IConnectionMultiplexer>() is not { } mux)
-        {
-            log.LogWarning("Gameplay configs are not built here: this service has no Redis (REDIS)");
-            return;
-        }
-
-        var queue = Channel.CreateUnbounded<(string Channel, string Message)>(new UnboundedChannelOptions { SingleReader = true });
-        var subscriber = mux.GetSubscriber();
-        foreach (string channel in new[] { MatchLauncher.NotificationChannel, PerksLock.Channel })
-        {
-            await subscriber.SubscribeAsync(RedisChannel.Literal(channel), (_, message) => queue.Writer.TryWrite((channel, message.ToString())));
-        }
-
-        try
-        {
-            await foreach (var (channel, message) in queue.Reader.ReadAllAsync(stoppingToken))
-            {
-                var mode = settings.CurrentValue.Mode;
-                if (mode == GameplayConfigMode.Off)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    if (Js.Parse(message) is not JsonObject notification)
-                    {
-                        log.LogError("{Channel}: not a JSON object", channel);
-                    }
-                    else if (channel == MatchLauncher.NotificationChannel)
-                    {
-                        await configs.BuildAsync(notification, mode, stoppingToken);
-                    }
-                    else
-                    {
-                        await configs.PerksLockedAsync(notification, stoppingToken);
-                    }
-                }
-                catch (Exception e) when (e is not OperationCanceledException)
-                {
-                    log.LogError(e, "{Channel}: the gameplay config failed", channel);
-                }
-            }
-        }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-        {
-        }
-        finally
-        {
-            await subscriber.UnsubscribeAsync(RedisChannel.Literal(MatchLauncher.NotificationChannel));
-            await subscriber.UnsubscribeAsync(RedisChannel.Literal(PerksLock.Channel));
-        }
-    }
-}
-
 public static class GameplayConfigsHosting
 {
-    /// <summary>The match configs (GameplayConfigs:Mode), and the bridge that builds them from the TS channels.</summary>
+    /// <summary>The match configs (IGameplayConfigs).</summary>
     public static WebApplicationBuilder AddGameplayConfigs(this WebApplicationBuilder builder)
     {
-        builder.AddSetting<GameplayConfigSettings>("GameplayConfigs");
         builder.AddEloRatings();
         if (!builder.Services.Any(d => d.ServiceType == typeof(ICosmeticsService)))
         {
@@ -868,7 +756,6 @@ public static class GameplayConfigsHosting
 
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.TryAddSingleton<IGameplayConfigs, GameplayConfigs>();
-        builder.Services.AddHostedService<GameplayConfigBridge>();
         return builder;
     }
 }

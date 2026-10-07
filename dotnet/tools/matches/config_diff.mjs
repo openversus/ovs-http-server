@@ -5,9 +5,9 @@
 // repository root (it uses the TS server's node_modules):
 //
 //   node dotnet/tools/matches/config_diff.mjs run ts <out.json>   what the TS websocket (REF_WS_URL) sends to fake games
-//   node dotnet/tools/matches/config_diff.mjs run cs <out.json>   what the C# match flow keeps (match_config:{player}); with
-//        REF_GW_URL (the C# gateway on the same stores, the match flow with Realtime:Gateway on): what it sends there, the
-//        match appended to match:launched as the launchers do (the perks lock still read from the kept configs)
+//   node dotnet/tools/matches/config_diff.mjs run cs <out.json>   what the C# match flow sends through its gateway
+//        (REF_GW_URL, on the same stores): the match appended to match:launched as the launchers do, and the lock made by
+//        each player's perks_lock on the match flow (REF_CS_URL), where the TS run publishes perks:notifications
 //   node dotnet/tools/matches/config_diff.mjs diff <ts.json> <cs.json>
 //
 // The TS websocket must be PR #49's code as committed (websocketStart.ts), never a working tree with the bench patch. It
@@ -52,7 +52,8 @@ async function run(side, outFile) {
   let recording = null;
   const monitor = await openMonitor(need("REF_REDIS_URL"), (line) => recording?.push(line));
   const self = (await redis.sendCommand(["CLIENT", "INFO"])).match(/\baddr=(\S+)/)[1];
-  const viaGateway = side === "cs" && !!process.env.REF_GW_URL;
+  // The C# match flow tells the players itself, through the gateway (it keeps no config a TS websocket would send).
+  const viaGateway = side === "cs";
   const connect = () => connectPlayers(side === "ts" ? need("REF_WS_URL") : need("REF_GW_URL"),
     HOLDERS.map((id, i) => ({ id, token: token(id, i + 1), headers: id === P4 ? {} : { "x-real-ip": IP } })));
   let games = side === "ts" ? await connect() : null;
@@ -69,7 +70,19 @@ async function run(side, outFile) {
     Banner: "banner_one", RingoutVfx: "ring_out_vfx_two", AnnouncerPack: "announcer_x", ProfileIcon: "icon_unused",
   };
 
-  // What each player's game holds now: the last config it was sent (TS), or the one kept for it (C#), as a game decodes it.
+  // C#: a player's perks lock, as the game sends it to the match flow.
+  const lock = async (pid, perks) => {
+    const encoder = new HydraEncoder();
+    encoder.encodeValue({ ContainerMatchId: MATCH, Perks: perks });
+    const response = await fetch(`${need("REF_CS_URL")}/ssc/invoke/perks_lock`, {
+      method: "PUT",
+      headers: { "content-type": "application/x-ag-binary", "x-hydra-access-token": token(pid, HOLDERS.indexOf(pid) + 1), "x-real-ip": IP },
+      body: encoder.returnValue(),
+    });
+    if (response.status !== 200) throw new Error(`perks_lock for ${pid}: ${response.status}`);
+  };
+
+  // What each player's game holds now: the last config it was sent, or (fromFrames false) the one kept for it (C#), as a game decodes it.
   const holds = async (fromFrames = side === "ts" || viaGateway) => {
     const out = {};
     for (const id of HOLDERS) {
@@ -129,12 +142,27 @@ async function run(side, outFile) {
     // What each game was told about the match (GameServerReadyNotification), and the order of everything it was sent.
     const ready = games ? Object.fromEntries(HOLDERS.map((id) => [id, games.frames(id).filter((f) => f?.data?.template_id === "GameServerReadyNotification")])) : null;
     const sequence = games ? Object.fromEntries(HOLDERS.map((id) => [id, games.frames(id).map((f) => f?.data?.template_id ?? f?.cmd ?? "?")])) : null;
-    for (const [pid, value] of Object.entries(perks)) {
-      if (value !== undefined) await redis.set(`match:${MATCH}:perks:${pid}`, JSON.stringify(value), { EX: 1200 });
+    let lockUnreachable = false;
+    if (side === "ts") {
+      for (const [pid, value] of Object.entries(perks)) {
+        if (value !== undefined) await redis.set(`match:${MATCH}:perks:${pid}`, JSON.stringify(value), { EX: 1200 });
+      }
+      await redis.publish("perks:notifications", JSON.stringify({ containerMatchId: MATCH, playerIds: Object.keys(perks) }));
+    } else {
+      // The lock is complete at the last player's perks_lock (PerksLock: every ticket player of match:{match} locked, in
+      // ticket order, as the notification lists them); the bots' are seeded. A lock with a player who never locked (the
+      // TS run's notification is the harness's own) never completes in C#: not reached, and not compared.
+      const seeded = async (pid) => (await redis.exists(`match:${MATCH}:perks:${pid}`)) === 1;
+      for (const [pid, value] of Object.entries(perks)) {
+        if (value === undefined && !(await seeded(pid))) lockUnreachable = true;
+      }
+      await redis.set(`match:${MATCH}`, JSON.stringify({ matchId: MATCH, tickets: [{ players: Object.keys(perks).map((id) => ({ id })) }] }), { EX: 1200 });
+      for (const [pid, value] of Object.entries(perks)) {
+        if (value !== undefined) await lock(pid, value);
+      }
     }
-    await redis.publish("perks:notifications", JSON.stringify({ containerMatchId: MATCH, playerIds: Object.keys(perks) }));
     await sleep(1200);
-    const locked = created(await holds(side === "ts"), started);
+    const locked = created(await holds(), started);
     const lines = recording;
     recording = null;
     // Each run checks that the other server is not on these stores: only the TS websocket reads player:{id} (its unused
@@ -142,8 +170,9 @@ async function run(side, outFile) {
     if (side === "cs" && lines.some((l) => /"hgetall" "player:/i.test(l))) throw new Error("the TS websocket is running on these stores");
     // Left out: each server's own bookkeeping, not the config's (the C# instance registry; the TS websocket's presence for
     // the fake games: heartbeats, online players, active_ip_accounts at each pong).
-    // The C# gateway's own (realtime:conn) and the match flow's once-only key (match_announced) likewise.
-    const all = writes(lines, self).filter((w) => !/^(set|zadd|zrem|del) ovs:instance|^zadd player_heartbeats|^(sadd|srem) online_players|^(zadd|expire|zremrangebyscore) active_ip_accounts:|^(hset|expire|del) realtime:conn:|^set match_announced:/.test(w)).map((w) => w.replace(/\\(["\\])/g, "$1"));
+    // The C# gateway's own (realtime:conn), the match flow's once-only key (match_announced), and the perks_lock route's
+    // (the perks it stores, which the TS run's harness writes itself, and its once-only perks_locked) likewise.
+    const all = writes(lines, self).filter((w) => !/^(set|zadd|zrem|del) ovs:instance|^zadd player_heartbeats|^(sadd|srem) online_players|^(zadd|expire|zremrangebyscore) active_ip_accounts:|^(hset|expire|del) realtime:conn:|^set match_announced:|^set match:\S+:perks(_locked|:)|^hdel realtime:queued /.test(w)).map((w) => w.replace(/\\(["\\])/g, "$1"));
     const kept = all.filter((w) => w.startsWith("set match_config:"));
     if (side === "ts" && kept.length) throw new Error("the C# match flow is running on these stores");
     const mongo = {};
@@ -158,10 +187,11 @@ async function run(side, outFile) {
       ready,
       sequence,
       locked,
+      ...(lockUnreachable ? { lockUnreachable } : {}),
       kept: [...new Set(kept.map((w) => w.split(" ")[1]))].sort(),
       writes: all.filter((w) => !w.startsWith("set match_config:") && !w.startsWith("publish ")).sort(),
       // ... and in the state, also the C# match flow's results stream (its consumer group is made again after a flush).
-      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^match_config:|^ovs:instance|^player_heartbeats$|^online_players$|^active_ip_accounts:|^match:results$|^realtime:conn:|^realtime:connections$|^match:launched$|^match_announced:/.test(k))),
+      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^match_config:|^ovs:instance|^player_heartbeats$|^online_players$|^active_ip_accounts:|^match:results$|^realtime:conn:|^realtime:connections$|^match:launched$|^match_announced:|^match:\d+(:perks_locked)?$/.test(k))),
       mongo,
     });
     const got = Object.entries(locked).filter(([, f]) => f).map(([id]) => id.slice(-2));
@@ -417,6 +447,17 @@ function diffRuns(fileA, fileB) {
     if (!Object.values(x?.built ?? {}).some(Boolean) && !["no-players-after-override", "no-map"].includes(name)) {
       differing++;
       console.log(`${name}: TS sent nobody a config`);
+    }
+    // A lock C# never makes (a ticket player who never locked: PerksLock completes only when all have, as the TS lock route
+    // did; the harness forced TS's): not compared, once C# is seen to have merged nothing. GameplayConfigsTests merges such
+    // a notification.
+    if (y?.lockUnreachable) {
+      if (JSON.stringify(y.locked) !== JSON.stringify(y.built)) {
+        differing++;
+        console.log(`${name}: C# merged a lock it should never have completed`);
+      }
+      console.log(`${name}: the lock is not compared (a player in it never locked: C# never completes such a lock)`);
+      x.locked = y.locked = null;
     }
     const expected = EXPECTED[name];
     if (expected) {

@@ -5,7 +5,7 @@ using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Matches;
 
-// A party's place in a matchmaking queue, with Realtime:Gateway on: what the TS websocket's party:queued and
+// A party's place in a matchmaking queue: what the TS websocket's party:queued and
 // matchmaking:cancel handlers did (handlePartyQueued, cancelMatchMaking, stopMatchTick), done by whatever causes it, with
 // the per-connection ticket and 1 s tick kept in Redis (realtime:queued) instead of the websocket's memory.
 //

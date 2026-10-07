@@ -41,19 +41,17 @@ namespace OpenVersus.Server.Core.Matches;
 //   2v2: everyone in the requester's lobby: current clients (else modal + failure body), ranked sets ended, every
 //        teammate connected (else 200 {error: "Not all party members are connected"}), each teammate's loadout the
 //        session's when the session has an address
-//   both: the answer (the Hydra matchmaking request), THEN the ticket is published on party:queued, which the TS
-//         websocket turns into OnMatchmakerStarted for each player and pushes onto the 1v1 or 2v2 list for the
-//         matchmaker (with Realtime:Gateway on, done here: MatchmakingQueue). The answer goes first, as there: the game
-//         learns the request id from it.
+//   both: the answer (the Hydra matchmaking request), THEN the ticket is queued (MatchmakingQueue: OnMatchmakerStarted
+//         for each player, the ticket onto its list for the matchmaker), which the TS server left to its websocket
+//         (party:queued). The answer goes first, as there: the game learns the request id from it.
 // The ticket's bytes matter: the matchmaker removes a matched ticket with LREM of JSON.stringify(JSON.parse(ticket)), so
 // its keys are the TS queueMatch's, in its order, and a player's ip is left out (not null) when player:{id} has none.
 // Each player's skill is their rating for the character in player:{id} (eloratings characters_1v1/characters_2v2, made
 // with the default rating when missing, as getOrCreateRating), 0 when there is none or Mongo fails. partyId is the
 // request's match (the game's lobby match), not the lobby id.
 //
-// Cancel: matchmaking:cancel {playersIds: everyone in the requester's lobby (or the requester), matchmakingId}, which the
-// TS websocket acts on (with Realtime:Gateway on, the cancel itself: MatchmakingQueue); each of those players'
-// party_ready:{lobby} is deleted. Answer {body: {}, metadata: null,
+// Cancel: everyone in the requester's lobby (or the requester) is canceled (MatchmakingQueue; the TS server published
+// matchmaking:cancel for its websocket); each of those players' party_ready:{lobby} is deleted. Answer {body: {}, metadata: null,
 // return_code: 0}.
 //
 // Not ported: queueMatch's leaveLobby from services/customLobbyService.ts (the custom lobbies of the web UI, retired
@@ -81,7 +79,6 @@ public interface IMatchmakingRequestService
 internal sealed class MatchmakingRequestService(IServiceProvider services, IClientUpdateGate gate, ICosmeticsService cosmetics, EloRatings ratings, IMatchLauncher launcher,
     IOptionsMonitor<LobbySettings> settings, TimeProvider time, ILogger<MatchmakingRequestService> log) : IMatchmakingRequestService
 {
-    public const string QueuedChannel = "party:queued";
 
     private static readonly JsonObject s_founders = new()
     {
@@ -377,20 +374,13 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         return player;
     }
 
-    // queueMatch: the ticket on party:queued; anything failing cancels the request for the leader.
+    // queueMatch: the ticket queued; anything failing cancels the request for the leader.
     private async Task QueueAsync(IDatabase redis, string leader, IReadOnlyList<string> players, JsonNode? fromMatch, string requestId, string matchType)
     {
         try
         {
             string ticket = await TicketAsync(redis, leader, players, fromMatch, requestId, matchType, time.GetUtcNow(), CancellationToken.None);
-            if (MatchLaunches.Gateway(services))
-            {
-                await MatchmakingQueue.QueueAsync(redis, ticket);
-            }
-            else
-            {
-                await redis.PublishAsync(RedisChannel.Literal(QueuedChannel), ticket);
-            }
+            await MatchmakingQueue.QueueAsync(redis, ticket);
 
             log.LogInformation("Party ({Party}) matchmakingRequestId({Request}) has been added to {Mode} matchmaking queue. Players ({Players})",
                 fromMatch is null ? "undefined" : Js.Stringify(fromMatch).Trim('"'), requestId, matchType, string.Join(",", players));
@@ -563,12 +553,9 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         return await TsCatchAll.AnswerAsync(services.GetService<MongoDB.Driver.IMongoDatabase>(), ct);
     }
 
-    // matchmaking:cancel for the TS websocket, or with Realtime:Gateway on, the cancel itself (MatchmakingQueue).
+    // The cancel (MatchmakingQueue); the TS server published matchmaking:cancel for its websocket.
     private Task PublishCancelAsync(IDatabase redis, IReadOnlyList<string> players, string requestId) =>
-        MatchLaunches.Gateway(services)
-            ? MatchmakingQueue.CancelAsync(redis, players, requestId)
-            : redis.PublishAsync(RedisChannel.Literal(PartyService.CancelMatchmakingChannel),
-                Js.Stringify(new JsonObject { ["playersIds"] = new JsonArray([.. players.Select(p => (JsonNode?)p)]), ["matchmakingId"] = requestId }));
+        MatchmakingQueue.CancelAsync(redis, players, requestId);
 
     // Every queue's list: a player queueing anywhere leaves all of them.
     private static readonly string[] s_allLists = [Regular.List1v1, Regular.List2v2, Casual.List1v1, Casual.List2v2];

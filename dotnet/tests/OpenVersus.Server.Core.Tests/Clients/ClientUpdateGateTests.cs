@@ -11,8 +11,8 @@ using StackExchange.Redis;
 namespace OpenVersus.Server.Core.Tests.Clients;
 
 /// <summary>
-/// The update toast with Realtime:Gateway on (<see cref="ClientUpdateGate.RequestModalsAsync"/>): sent here instead of
-/// published, to a connected player only, and that connection closed 10 s later. Parity of the gate with the TS server is
+/// The update toast (<see cref="ClientUpdateGate.RequestModalsAsync"/>): sent to a connected player only, whose
+/// connection stays open. Parity of the gate with the TS server is
 /// tools/clients/gate_diff.mjs. Real Redis (database 15, OVS_TEST_REDIS).
 /// </summary>
 [Collection(RedisTestDatabase.Name)]
@@ -38,7 +38,7 @@ public sealed class ClientUpdateGateTests : IAsyncLifetime
         options.Password = Environment.GetEnvironmentVariable("OVS_TEST_REDIS_PW");
         _redis = await ConnectionMultiplexer.ConnectAsync(options);
         await CleanAsync();
-        foreach (string channel in new[] { ProfileNotifications.WsSendChannel, ClientUpdateGate.ModalChannel })
+        foreach (string channel in new[] { ProfileNotifications.WsSendChannel })
         {
             await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(channel), (_, m) =>
             {
@@ -79,22 +79,21 @@ public sealed class ClientUpdateGateTests : IAsyncLifetime
     private IDatabase Db => _redis!.GetDatabase();
 
     // The resolver serves ForRequestAsync only, which these tests do not call.
-    private ClientUpdateGate Gate(bool gateway) => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!)
-            .AddSingleton<IOptionsMonitor<RealtimeSettings>>(new TestOptions<RealtimeSettings>(new RealtimeSettings { Gateway = gateway })).BuildServiceProvider(),
+    private ClientUpdateGate Gate() => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
         null!, new TestOptions<ClientSettings>(new ClientSettings()));
 
     [SkippableFact]
-    public async Task WithTheGatewayEachGameIsToastedAndKeepsItsConnection()
+    public async Task EachGameIsToastedAndKeepsItsConnection()
     {
         Skip.If(_redis is null, "OVS_TEST_REDIS not set");
         await Db.HashSetAsync(GatewayPresence.ConnectionKey(P1), "id", "c1");
 
-        Assert.Equal([true, true], await Gate(gateway: true).RequestModalsAsync([P1, P2]));
+        Assert.Equal([true, true], await Gate().RequestModalsAsync([P1, P2]));
         // Within the cooldown, nothing more.
-        Assert.Equal([false, false], await Gate(gateway: true).RequestModalsAsync([P1, P2]));
+        Assert.Equal([false, false], await Gate().RequestModalsAsync([P1, P2]));
         await Task.Delay(200);
 
-        // One toast per player, through ws:send only (client_update:modal is the TS websocket's).
+        // One toast per player, through ws:send.
         Assert.All(_published, p => Assert.Equal(ProfileNotifications.WsSendChannel, p.Channel));
         var sends = _published.Select(p => (JsonObject)Js.Parse(p.Message)!).ToList();
         Assert.Equal([$"[\"{P1}\"]", $"[\"{P2}\"]"], sends.Select(s => s["playerIds"]!.ToJsonString()).Order());
@@ -106,18 +105,5 @@ public sealed class ClientUpdateGateTests : IAsyncLifetime
 
         // Nothing closes the connection later.
         Assert.DoesNotContain(await Db.SortedSetRangeByScoreAsync(DelayedMessages.Key), e => e.ToString().Contains("0000000000000000001b", StringComparison.Ordinal));
-    }
-
-    [SkippableFact]
-    public async Task WithoutTheGatewayTheModalIsPublishedForTheTsWebsocket()
-    {
-        Skip.If(_redis is null, "OVS_TEST_REDIS not set");
-        await Db.HashSetAsync(GatewayPresence.ConnectionKey(P1), "id", "c1");
-
-        Assert.Equal([true], await Gate(gateway: false).RequestModalsAsync([P1]));
-        await Task.Delay(200);
-
-        var (channel, message) = Assert.Single(_published);
-        Assert.Equal((ClientUpdateGate.ModalChannel, $$"""{"playerId":"{{P1}}","nonce":1}"""), (channel, message));
     }
 }

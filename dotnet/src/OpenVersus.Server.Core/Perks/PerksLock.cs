@@ -9,18 +9,16 @@ namespace OpenVersus.Server.Core.Perks;
 
 // PUT /ssc/invoke/perks_lock {ContainerMatchId, Perks}, ported from the TS server's handleSsc_invoke_perks_lock
 // (handlers/ssc.ts): the player's perks for the match are stored; once every player of the match (match:{match}, its
-// tickets' players: the bots are locked at launch by MatchLauncher, spectators are in no ticket) has locked,
-// perks:notifications {containerMatchId, playerIds (every ticket player, in ticket order)} is published. The TS websocket
-// then puts each player's perks into the match config it sent them and sends it again (PerksLockedNotification). With
-// Realtime:Gateway on, nothing is published and that is done here: the perks merged into each kept copy of the match's
-// config (GameplayConfigs.PerksLockedAsync) and each game sent its copy, the players' then the spectators'. Here, in the
-// request that completed the lock and once (perks_locked), not by every replica a publish would reach.
+// tickets' players: the bots are locked at launch by MatchLauncher, spectators are in no ticket) has locked, the perks
+// are merged into each kept copy of the match's config (GameplayConfigs.PerksLockedAsync, for {containerMatchId,
+// playerIds: every ticket player, in ticket order}) and each game is sent its copy, the players' then the spectators'.
+// Here, in the request that completed the lock and once (perks_locked). (The TS server published perks:notifications,
+// and its websocket put each player's perks into the config it had sent them and sent it again.)
 // Answers {body: {}, metadata: null, return_code: 0}, whatever happened.
 //
 // Redis, written  match:{match}:perks:{player} (the Perks as sent) EX 20 min; match:{match}:perks_locked EX 20 min
 // Redis, read     match:{match}; match:{match}:perks:{every other ticket player}
-// Published       perks:notifications (Realtime:Gateway off)
-// Sent (ws:send)  each kept copy of the match's config, once merged (Realtime:Gateway on)
+// Sent (ws:send)  each kept copy of the match's config, once merged
 //
 // Unlike there:
 //   no ContainerMatchId (or not text): nothing is stored (TS stores match:undefined:perks:{player}).
@@ -37,7 +35,6 @@ public interface IPerksLock
 
 internal sealed class PerksLock(IServiceProvider services, ILogger<PerksLock> log) : IPerksLock
 {
-    public const string Channel = "perks:notifications";
     private static readonly TimeSpan s_ttl = TimeSpan.FromMinutes(20);
 
     public async Task LockAsync(string accountId, JsonObject body, CancellationToken ct)
@@ -91,14 +88,7 @@ internal sealed class PerksLock(IServiceProvider services, ILogger<PerksLock> lo
             ["containerMatchId"] = matchId,
             ["playerIds"] = new JsonArray([.. players.Select(p => (JsonNode)p)]),
         };
-        if (Matches.MatchLaunches.Gateway(services))
-        {
-            await ResendAsync(db, matchId, notification, ct);
-        }
-        else
-        {
-            await db.PublishAsync(RedisChannel.Literal(Channel), Js.Stringify(notification));
-        }
+        await ResendAsync(db, matchId, notification, ct);
 
         log.LogInformation("All perks locked {Match}, players, ({Players})", matchId, string.Join(",", players));
     }

@@ -31,7 +31,7 @@ namespace OpenVersus.Server.Core.CustomLobbies;
 // any lobby read, goes through the TS server's repair (FixEmptyTables). cjson also writes keys in its own order: the
 // game reads the lobby by key, and has been taking that order all along.
 //
-// Redis, the TS server's keys (MIGRATION-BRIDGES.md 2; the TS match end and rematch read them while MatchEnd:Enabled is off):
+// Redis, the TS server's keys (MIGRATION-BRIDGES.md 2):
 //   custom_lobby_ssc:{lobby}            the lobby, JSON; EX 2 days (every change renews it)
 //   ssc_custom_lobby_player:{player}    the lobby a player is in; EX 2 days, 20 min once a match starts
 //   lobby_code:{code}                   the lobby a code names, SET NX; EX 2 days (the last player out deletes it)

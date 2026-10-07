@@ -13,7 +13,7 @@ namespace OpenVersus.Server.Core.Tests.Matches;
 
 /// <summary>
 /// How a match is announced (<see cref="MatchLaunches"/>) and what the match flow tells its players from match:launched
-/// (<see cref="MatchLaunchStream"/>, Realtime:Gateway on): where each game is sent to connect, in what order, once. The
+/// (<see cref="MatchLaunchStream"/>): where each game is sent to connect, in what order, once. The
 /// config itself is GameplayConfigs' (a stand-in here); parity with the TS websocket is tools/matches/config_diff.mjs.
 /// Real Redis (database 15, OVS_TEST_REDIS).
 /// </summary>
@@ -27,7 +27,6 @@ public sealed class MatchLaunchesTests : IAsyncLifetime
 
     private ConnectionMultiplexer? _redis;
     private readonly ConcurrentQueue<JsonObject> _sent = new();
-    private readonly ConcurrentQueue<string> _published = new();
 
     public async Task InitializeAsync()
     {
@@ -48,13 +47,6 @@ public sealed class MatchLaunchesTests : IAsyncLifetime
             if (m.ToString().Contains("00000000000000000019", StringComparison.Ordinal) && Js.Parse(m.ToString()) is JsonObject send)
             {
                 _sent.Enqueue(send);
-            }
-        });
-        await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(MatchLauncher.NotificationChannel), (_, m) =>
-        {
-            if (m.ToString().Contains(Match, StringComparison.Ordinal))
-            {
-                _published.Enqueue(m.ToString());
             }
         });
     }
@@ -89,9 +81,8 @@ public sealed class MatchLaunchesTests : IAsyncLifetime
 
     private IDatabase Db => _redis!.GetDatabase();
 
-    private IServiceProvider Services(bool gateway) => new ServiceCollection()
+    private IServiceProvider Services() => new ServiceCollection()
         .AddSingleton<IConnectionMultiplexer>(_redis!)
-        .AddSingleton<IOptionsMonitor<RealtimeSettings>>(new TestOptions<RealtimeSettings>(new RealtimeSettings { Gateway = gateway }))
         .BuildServiceProvider();
 
     public enum Build { Config, Fails, Nothing }
@@ -99,18 +90,18 @@ public sealed class MatchLaunchesTests : IAsyncLifetime
     // A stand-in for GameplayConfigs: a config naming the match, a failure (Mongo), or none (no map, no players).
     private sealed class Configs(Build build) : IGameplayConfigs
     {
-        public Task<JsonObject?> BuildAsync(JsonObject notification, GameplayConfigMode mode, CancellationToken ct) => build switch
+        public Task<JsonObject?> BuildAsync(JsonObject notification, CancellationToken ct) => build switch
         {
             Build.Fails => throw new InvalidOperationException("Mongo is down"),
             Build.Nothing => Task.FromResult<JsonObject?>(null),
-            _ => Task.FromResult<JsonObject?>(new JsonObject { ["data"] = new JsonObject { ["MatchId"] = notification["matchId"]?.DeepClone(), ["template_id"] = "OnGameplayConfigNotified", ["mode"] = mode.ToString() } }),
+            _ => Task.FromResult<JsonObject?>(new JsonObject { ["data"] = new JsonObject { ["MatchId"] = notification["matchId"]?.DeepClone(), ["template_id"] = "OnGameplayConfigNotified" } }),
         };
 
         public Task<IReadOnlyList<(string PlayerId, JsonObject Message)>> PerksLockedAsync(JsonObject notification, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<(string PlayerId, JsonObject Message)>>([]);
     }
 
-    private MatchLaunchStream Stream(Build build = Build.Config) => new(Services(true), new Configs(build),
+    private MatchLaunchStream Stream(Build build = Build.Config) => new(Services(), new Configs(build),
         new TestOptions<RollbackSettings>(new RollbackSettings { UdpServerIp = Relay, UdpPort = 7777 }), TimeProvider.System, NullLogger<MatchLaunchStream>.Instance);
 
     // The players' party searched with request req-1 (a matchmaker ticket); the spectator came with none.
@@ -156,20 +147,12 @@ public sealed class MatchLaunchesTests : IAsyncLifetime
         ((string)send["message"]!["data"]!["IPAddress"]!, (int)send["message"]!["data"]!["Port"]!);
 
     [SkippableFact]
-    public async Task TheGatewayTakesTheLaunchFromTheStreamInsteadOfTheChannel()
+    // A launch is appended to the stream, and nobody is told anything until the match flow reads it.
+    public async Task ALaunchGoesOnTheStreamAndTheMatchFlowTellsItsPlayersOnce()
     {
         Skip.If(_redis is null, "OVS_TEST_REDIS not set");
-        // Off: published, and matchmaking-complete sent at once (the TS websocket tells the players the rest).
-        await MatchLaunches.AnnounceAsync(Services(gateway: false), Db, Match, Notification(), s_parties);
-        var complete = Assert.Single(await SentAsync(1));
-        Assert.Equal(("matchmaking-complete", $"{P1},{P2}", "req-1"), (Template(complete), Ids(complete), (string?)complete["message"]!["payload"]!["id"]));
-        Assert.Single(_published);
-        Assert.Equal(0, await Db.StreamLengthAsync(MatchLaunches.Stream));
-        _sent.Clear();
-
-        await MatchLaunches.AnnounceAsync(Services(gateway: true), Db, Match, Notification(), s_parties);
+        await MatchLaunches.AnnounceAsync(Db, Match, Notification(), s_parties);
         await Task.Delay(200);
-        Assert.Single(_published);
         Assert.Empty(_sent);
         var entry = Assert.Single(await Db.StreamRangeAsync(MatchLaunches.Stream));
         Assert.Equal((Match, PartiesJson), ((string?)entry["match"], (string?)entry["complete"]));
@@ -204,8 +187,7 @@ public sealed class MatchLaunchesTests : IAsyncLifetime
         Assert.Equal((Relay, 57003), Server(sent[2]));
         Assert.Equal("""{"data":{"MatchKey":"the-key","MatchID":"000000000000000000190100","Port":57003,"template_id":"GameServerReadyNotification","IPAddress":"203.0.113.50"},"payload":{"match":{"id":"000000000000000000190100"},"custom_notification":"realtime"},"header":"","cmd":"update"}""",
             Js.Stringify(sent[0]["message"]));
-        // The config as built with Mode On (the TS websocket's writes beside it are the match flow's now).
-        Assert.Equal("On", (string?)sent[4]["message"]!["data"]!["mode"]);
+        Assert.Equal("OnGameplayConfigNotified", (string?)sent[4]["message"]!["data"]!["template_id"]);
     }
 
     [SkippableFact]
@@ -304,7 +286,7 @@ public sealed class MatchLaunchesTests : IAsyncLifetime
                 published.Enqueue(m.ToString());
             }
         });
-        var sweep = new DelayedMessageSweep(Services(true), new Later(TimeSpan.FromSeconds(6)), NullLogger<DelayedMessageSweep>.Instance);
+        var sweep = new DelayedMessageSweep(Services(), new Later(TimeSpan.FromSeconds(6)), NullLogger<DelayedMessageSweep>.Instance);
         await sweep.SweepAsync(Db);
         await Task.Delay(200);
         Assert.Equal(3, published.Count);

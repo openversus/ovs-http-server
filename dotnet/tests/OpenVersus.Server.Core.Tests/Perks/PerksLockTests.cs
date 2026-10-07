@@ -23,7 +23,7 @@ public sealed class PerksLockTests : IAsyncLifetime
     private const string Bot = "Bot0000000000000000000c0000000004";
 
     private ConnectionMultiplexer? _redis;
-    private readonly ConcurrentQueue<string> _published = new();
+    private readonly Configs _configs = new();
 
     public async Task InitializeAsync()
     {
@@ -38,14 +38,6 @@ public sealed class PerksLockTests : IAsyncLifetime
         options.Password = Environment.GetEnvironmentVariable("OVS_TEST_REDIS_PW");
         _redis = await ConnectionMultiplexer.ConnectAsync(options);
         await CleanAsync();
-        // Channels ignore the database: only this class's match counts.
-        await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(PerksLock.Channel), (_, m) =>
-        {
-            if (m.ToString().Contains(Match, StringComparison.Ordinal))
-            {
-                _published.Enqueue(m.ToString());
-            }
-        });
     }
 
     public async Task DisposeAsync()
@@ -68,7 +60,8 @@ public sealed class PerksLockTests : IAsyncLifetime
         }
     }
 
-    private IPerksLock Lock() => new PerksLock(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(), NullLogger<PerksLock>.Instance);
+    private IPerksLock Lock() => new PerksLock(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).AddSingleton<IGameplayConfigs>(_configs)
+        .BuildServiceProvider(), NullLogger<PerksLock>.Instance);
 
     // match:{match} as the TS matchmaker and MatchLauncher write it: tickets of players.
     private Task MatchAsync(params string[][] tickets) => Db.StringSetAsync($"match:{Match}", Js.Stringify(new JsonObject
@@ -83,33 +76,29 @@ public sealed class PerksLockTests : IAsyncLifetime
 
     private static JsonObject Body(JsonNode? perks) => new() { ["ContainerMatchId"] = Match, ["Perks"] = perks };
 
-    private async Task<List<string>> PublishedAsync()
-    {
-        await Task.Delay(200);
-        return [.. _published];
-    }
+    // The locks merged into the kept configs (the TS server published each on perks:notifications).
+    private List<string> Merged => _configs.Locks;
 
     [SkippableFact]
-    public async Task TheLastPlayerToLockPublishesEveryTicketPlayerInTicketOrder()
+    public async Task TheLastPlayerToLockMergesEveryTicketPlayerInTicketOrder()
     {
         Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
         await MatchAsync([Other], [Me, Third]);
         await Lock().LockAsync(Me, Body(new JsonArray("perk_a", "perk_b")), default);
         await Lock().LockAsync(Third, Body(new JsonArray()), default);
-        Assert.Empty(await PublishedAsync());
+        Assert.Empty(Merged);
 
         await Lock().LockAsync(Other, Body(new JsonArray("perk_c")), default);
-        Assert.Equal([$$"""{"containerMatchId":"{{Match}}","playerIds":["{{Other}}","{{Me}}","{{Third}}"]}"""], await PublishedAsync());
+        Assert.Equal([$$"""{"containerMatchId":"{{Match}}","playerIds":["{{Other}}","{{Me}}","{{Third}}"]}"""], Merged);
         // Stored as sent (JSON.stringify), for 20 minutes.
         Assert.Equal("""["perk_a","perk_b"]""", (string?)await Db.StringGetAsync($"match:{Match}:perks:{Me}"));
         var ttl = await Db.KeyTimeToLiveAsync($"match:{Match}:perks:{Me}");
         Assert.InRange(ttl!.Value.TotalSeconds, 1190, 1200);
     }
 
-    // With Realtime:Gateway on, nothing is published: the kept configs are merged and each game is sent its copy, in the
-    // order they come back (players, then spectators).
+    // The kept configs are merged and each game is sent its copy, in the order they come back (players, then spectators).
     [SkippableFact]
-    public async Task WithTheGatewayTheLockSendsEachCopyAndPublishesNothing()
+    public async Task TheLockSendsEachGameItsMergedCopy()
     {
         Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
         var sent = new ConcurrentQueue<string>();
@@ -120,21 +109,13 @@ public sealed class PerksLockTests : IAsyncLifetime
                 sent.Enqueue(m.Message.ToString());
             }
         });
-        var configs = new Configs();
-        var services = new ServiceCollection()
-            .AddSingleton<IConnectionMultiplexer>(_redis!)
-            .AddSingleton<IGameplayConfigs>(configs)
-            .AddSingleton<IOptionsMonitor<RealtimeSettings>>(new TestOptions<RealtimeSettings>(new RealtimeSettings { Gateway = true }))
-            .BuildServiceProvider();
-        var perksLock = new PerksLock(services, NullLogger<PerksLock>.Instance);
         await MatchAsync([Other], [Me]);
 
-        await perksLock.LockAsync(Me, Body(new JsonArray("perk_a")), default);
-        await perksLock.LockAsync(Other, Body(new JsonArray("perk_b")), default);
+        await Lock().LockAsync(Me, Body(new JsonArray("perk_a")), default);
+        await Lock().LockAsync(Other, Body(new JsonArray("perk_b")), default);
         await Task.Delay(200);
 
-        Assert.Empty(await PublishedAsync());
-        Assert.Equal([$$"""{"containerMatchId":"{{Match}}","playerIds":["{{Other}}","{{Me}}"]}"""], configs.Locks);
+        Assert.Equal([$$"""{"containerMatchId":"{{Match}}","playerIds":["{{Other}}","{{Me}}"]}"""], Merged);
         Assert.Equal([$$$"""{"playerIds":["{{{Other}}}"],"message":{"cmd":"other"}}""", $$$"""{"playerIds":["{{{Me}}}"],"message":{"cmd":"me"}}"""], sent);
     }
 
@@ -142,7 +123,7 @@ public sealed class PerksLockTests : IAsyncLifetime
     {
         public List<string> Locks { get; } = [];
 
-        public Task<JsonObject?> BuildAsync(JsonObject notification, GameplayConfigMode mode, CancellationToken ct) => throw new NotSupportedException();
+        public Task<JsonObject?> BuildAsync(JsonObject notification, CancellationToken ct) => throw new NotSupportedException();
 
         public Task<IReadOnlyList<(string PlayerId, JsonObject Message)>> PerksLockedAsync(JsonObject notification, CancellationToken ct)
         {
@@ -159,19 +140,19 @@ public sealed class PerksLockTests : IAsyncLifetime
         await MatchAsync([Me, Bot]);
         await Db.StringSetAsync($"match:{Match}:perks:{Bot}", "[]");
         await Lock().LockAsync(Me, Body(new JsonArray("perk_a")), default);
-        Assert.Single(await PublishedAsync());
+        Assert.Single(Merged);
     }
 
     [SkippableFact]
     // TS published again for a second lock that saw everyone locked (two players at the same moment); here once.
-    public async Task PublishedOncePerMatch()
+    public async Task MergedOncePerMatch()
     {
         Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
         await MatchAsync([Me], [Other]);
         await Lock().LockAsync(Me, Body(new JsonArray("perk_a")), default);
         await Lock().LockAsync(Other, Body(new JsonArray("perk_b")), default);
         await Lock().LockAsync(Me, Body(new JsonArray("perk_a")), default);
-        Assert.Single(await PublishedAsync());
+        Assert.Single(Merged);
     }
 
     [SkippableFact]
@@ -182,16 +163,16 @@ public sealed class PerksLockTests : IAsyncLifetime
         await MatchAsync([Me]);
         await Lock().LockAsync(Me, new JsonObject { ["ContainerMatchId"] = Match }, default);
         Assert.Equal("[]", (string?)await Db.StringGetAsync($"match:{Match}:perks:{Me}"));
-        Assert.Single(await PublishedAsync());
+        Assert.Single(Merged);
     }
 
     [SkippableFact]
-    public async Task AnUnknownMatchStoresThePerksAndPublishesNothing()
+    public async Task AnUnknownMatchStoresThePerksAndMergesNothing()
     {
         Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
         await Lock().LockAsync(Me, Body(new JsonArray("perk_a")), default);
         Assert.Equal("""["perk_a"]""", (string?)await Db.StringGetAsync($"match:{Match}:perks:{Me}"));
-        Assert.Empty(await PublishedAsync());
+        Assert.Empty(Merged);
     }
 
     [SkippableFact]

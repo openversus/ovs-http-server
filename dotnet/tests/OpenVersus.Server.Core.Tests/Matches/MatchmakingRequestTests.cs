@@ -28,7 +28,8 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
 
     private ConnectionMultiplexer? _redis;
     private readonly Gate _gate = new();
-    private readonly ConcurrentQueue<(string Channel, string Message)> _published = new();
+    // The tickets QueuedAsync has handed out already.
+    private readonly HashSet<string> _taken = [];
 
     private sealed class Gate : IClientUpdateGate
     {
@@ -99,10 +100,6 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         options.Password = Environment.GetEnvironmentVariable("OVS_TEST_REDIS_PW");
         _redis = await ConnectionMultiplexer.ConnectAsync(options);
         await CleanAsync();
-        foreach (string channel in new[] { MatchmakingRequestService.QueuedChannel, PartyService.CancelMatchmakingChannel })
-        {
-            await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(channel), (c, m) => _published.Enqueue((c.ToString(), m.ToString())));
-        }
     }
 
     public async Task DisposeAsync()
@@ -123,6 +120,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         }
 
         await Db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, $"connections:{Ip}"]);
+        await Db.HashDeleteAsync(MatchmakingQueue.QueuedKey, [Me, Mate]);
     }
 
     private IDatabase Db => _redis!.GetDatabase();
@@ -161,19 +159,35 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         }
     }
 
-    private async Task<string> PublishedAsync(string channel)
+    private static readonly string[] s_lists = ["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2];
+
+    // This class's tickets in the queues' lists.
+    private async Task<List<string>> TicketsAsync()
+    {
+        var tickets = new List<string>();
+        foreach (string list in s_lists)
+        {
+            tickets.AddRange((await Db.ListRangeAsync(list)).Select(v => v.ToString()).Where(t => t.Contains("0000000000000000000b", StringComparison.Ordinal)));
+        }
+
+        return tickets;
+    }
+
+    // The next ticket queued (MatchmakingQueue), not handed out before.
+    private async Task<string> QueuedAsync()
     {
         for (int i = 0; i < 50; i++)
         {
-            if (_published.FirstOrDefault(p => p.Channel == channel) is { Message: { } message })
+            if ((await TicketsAsync()).FirstOrDefault(t => !_taken.Contains(t)) is { } ticket)
             {
-                return message;
+                _taken.Add(ticket);
+                return ticket;
             }
 
             await Task.Delay(20);
         }
 
-        throw new TimeoutException($"nothing on {channel}");
+        throw new TimeoutException("nothing queued");
     }
 
     [SkippableFact]
@@ -212,7 +226,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         Assert.Equal("0000000000000000000b0900", (string?)body["players"]![Me]!["id"]);
         Assert.Null(body["party_id"]);
         // Nothing queued until the answer has been sent.
-        Assert.Empty(_published);
+        Assert.Empty(await TicketsAsync());
         Assert.Equal(["""{"players":[{"id":"someone_else"}]}"""], (await Db.ListRangeAsync("1v1")).Select(v => v.ToString()));
         Assert.False(await Db.KeyExistsAsync("ranked_set:0000000000000000000b0200"));
         Assert.False(await Db.KeyExistsAsync("player_ranked_set:0000000000000000000b0003"));
@@ -220,7 +234,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         Assert.Empty(_cosmetics.Copied);
 
         await answer.After!();
-        var ticket = Js.Parse(await PublishedAsync(MatchmakingRequestService.QueuedChannel))!;
+        var ticket = Js.Parse(await QueuedAsync())!;
         Assert.Equal("1v1", (string?)ticket["matchType"]);
         Assert.Equal((string?)body["id"], (string?)ticket["matchmakingRequestId"]);
         Assert.Equal("0000000000000000000b0700", (string?)ticket["partyId"]);
@@ -244,7 +258,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         // The teammate's loadout becomes their session's too.
         Assert.Equal("character_taz", (string?)await Db.HashGetAsync($"connections:{Mate}", "character"));
         await answer.After!();
-        var ticket = Js.Parse(await PublishedAsync(MatchmakingRequestService.QueuedChannel))!;
+        var ticket = Js.Parse(await QueuedAsync())!;
         Assert.Equal([Me, Mate], ticket["players"]!.AsArray().Select(p => (string?)p!["id"]));
     }
 
@@ -296,17 +310,22 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // Everyone in the lobby is canceled (MatchmakingQueue: their ticket out of its list), and the lobby unreadied.
     public async Task ACancelReachesTheWholeLobbyAndUnreadiesIt()
     {
         Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
         await LobbyAsync(Me, Mate);
         await Db.StringSetAsync($"party_ready:{Lobby}", "1");
+        string ticket = """{"matchType":"2v2","players":[{"id":"0000000000000000000b0001"},{"id":"0000000000000000000b0002"}],"matchmakingRequestId":"0000000000000000000b0800"}""";
+        await Db.ListRightPushAsync("2v2", ticket);
+        await Db.HashSetAsync(MatchmakingQueue.QueuedKey, [new(Me, ticket), new(Mate, ticket)]);
 
         var answer = await Service().CancelAsync("0000000000000000000b0800", Asking(Me), CancellationToken.None);
 
         Assert.Equal("""{"body":{},"metadata":null,"return_code":0}""", Js.Stringify(answer));
-        Assert.Equal("""{"playersIds":["0000000000000000000b0001","0000000000000000000b0002"],"matchmakingId":"0000000000000000000b0800"}""",
-            await PublishedAsync(PartyService.CancelMatchmakingChannel));
+        Assert.Empty(await TicketsAsync());
+        Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Me));
+        Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Mate));
         Assert.False(await Db.KeyExistsAsync($"party_ready:{Lobby}"));
     }
 
@@ -324,7 +343,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         // The stale Casual ticket went when the player queued again.
         Assert.Empty(await Db.ListRangeAsync(MatchmakingWorker.Casual1v1));
         await answer.After!();
-        var ticket = Js.Parse(await PublishedAsync(MatchmakingRequestService.QueuedChannel))!;
+        var ticket = Js.Parse(await QueuedAsync())!;
         Assert.Equal((MatchmakingWorker.Casual1v1, 0), ((string?)ticket["matchType"], (int)ticket["players"]![0]!["skill"]!));
     }
 
@@ -340,11 +359,11 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
 
         Assert.Equal(("casual-retail", Lobby), ((string?)answer.Body["criteria_slug"], (string?)answer.Body["party_id"]));
         await answer.After!();
-        Assert.Equal(MatchmakingWorker.Casual2v2, (string?)Js.Parse(await PublishedAsync(MatchmakingRequestService.QueuedChannel))!["matchType"]);
+        Assert.Equal(MatchmakingWorker.Casual2v2, (string?)Js.Parse(await QueuedAsync())!["matchType"]);
     }
 
     [SkippableFact]
-    // The TS websocket takes cancelled tickets out of 1v1 and 2v2 only: the Casual ones are this service's to remove.
+    // A Casual ticket of theirs that no queue pointer names goes too.
     public async Task ACancelTakesTheLobbysCasualTicketsOut()
     {
         Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
@@ -382,16 +401,15 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
             {
                 var casual = (await Service(mongo).RequestAsync("casual-retail", Asking(player), CancellationToken.None))!;
                 await casual.After!();
-                var casualTicket = Js.Parse(await PublishedAsync(MatchmakingRequestService.QueuedChannel))!;
+                var casualTicket = Js.Parse(await QueuedAsync())!;
                 Assert.Equal(0, (int)casualTicket["players"]![0]!["skill"]!);
-                _published.Clear();
             }
 
             Assert.Equal(1, await ratings.CountDocumentsAsync(MongoDB.Driver.FilterDefinition<MongoDB.Bson.BsonDocument>.Empty));
 
             var regular = (await Service(mongo).RequestAsync("1v1-retail", Asking(Me), CancellationToken.None))!;
             await regular.After!();
-            var regularTicket = Js.Parse(await PublishedAsync(MatchmakingRequestService.QueuedChannel))!;
+            var regularTicket = Js.Parse(await QueuedAsync())!;
             Assert.Equal(1500, (double)regularTicket["players"]![0]!["skill"]!);
             Assert.Equal(1, await ratings.CountDocumentsAsync(MongoDB.Driver.FilterDefinition<MongoDB.Bson.BsonDocument>.Empty));
         }

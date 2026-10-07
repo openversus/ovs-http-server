@@ -15,7 +15,7 @@ namespace OpenVersus.Server.Core.Missions;
 // Mission progress from a match result. Each player's game sends its own (submit_end_of_match_stats, MatchResults), and
 // the match flow hands this {matchId, playerId, winningTeamIndex, missionUpdates (that player's counters, e.g.
 // "Stat:Game:Character:TotalRingouts": 2)} from the stream match:results (MatchResultStream; the game is told through
-// the TS websocket, docs/MIGRATION-BRIDGES.md 4). The match as the game saw it comes from the match notification at {matchId} (players with teamIndex,
+// the realtime gateway, ws:send). The match as the game saw it comes from the match notification at {matchId} (players with teamIndex,
 // mode, map, isCustomGame, gameplayConfigOverride: the TS websocket's config fields, which a C# match overrides) and
 // the player's character and skin from rift_match:{matchId} (a rift match) or player:{id} (what the TS websocket built
 // the match config from).

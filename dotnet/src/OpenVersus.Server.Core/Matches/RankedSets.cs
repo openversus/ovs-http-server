@@ -59,7 +59,7 @@ namespace OpenVersus.Server.Core.Matches;
 //                 ms later the empty config that sends the game back to its menus (a set over at check-in: both 500 ms
 //                 after the answer, as there); FullRankUpdate (FullRankUpdateVariant.SetResult) after a rating, to every
 //                 player of the set but bots, connected or not (FullRankUpdate.SendAsync)
-// Announced       the next game (MatchLaunches: match:notifications, or match:launched with Realtime:Gateway on)
+// Announced       the next game (MatchLaunches: match:launched)
 // Mongo, written  eloratings, playerstats (SetRatings); eloratings for a player with none (FullRankUpdate)
 //
 // The next game's rollback port is IMatchLauncher's (fixed servers: a random one of theirs; on demand: the next port,
@@ -751,7 +751,7 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
         await redis.StringSetAsync($"ranked_set_match:{setId}", matchId, s_currentGameTtl);
         // Announced once the set's keys name this game (a game that cannot be told ends its set: MatchLaunches). A set's
         // next game sends no matchmaking-complete (the TS server sent none).
-        await MatchLaunches.AnnounceAsync(services, redis, matchId, Js.Stringify(notification), []);
+        await MatchLaunches.AnnounceAsync(redis, matchId, Js.Stringify(notification), []);
         log.LogInformation("Created set match {Match} (game {Game}/3) on map {Map}, rollback port {Port}{P2P}", matchId, Number(set["gamesPlayed"]) + 1, map, port,
             p2p ? " (P2P: the players connect to their own nodes; a relay only if no direct path opens)" : "");
     }

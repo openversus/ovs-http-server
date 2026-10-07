@@ -21,7 +21,7 @@
 // either server makes become <id1>, <id2>, ... in order of appearance.
 //
 // The match steps (match-*, set-*) announce a ranked match first, as each server is told of one (TS: match:notifications,
-// to its websocket; C#: match:launched, to the match flow, which needs Realtime:Gateway on), so that each game holds its
+// to its websocket; C#: match:launched, to the match flow), so that each game holds its
 // config when it drops (the TS websocket's matchConfig, C#'s match_config:{player}); each run records which games got
 // one. They need the C# match flow on the stores for the C# run, and nothing C# but the gateway's lobbies and match flow
 // readers: the match flow's bridge (GameplayConfigBridge) would build configs from the TS run's match:notifications.

@@ -34,8 +34,8 @@ namespace OpenVersus.Server.Core.Matches;
 //   connections:{player}:cosmetics  the match's copy of every lobby player's cosmetics (ICosmeticsService.WriteMatchCopyAsync)
 //   online_players              read: a party is only rejoined when everyone in it is online
 //   dll_notifications:{player}  party_left notices for the OpenVersus client
-// Published: matchmaking:cancel {playersIds, matchmakingId: "party-changed"} when someone joins a party (the TS websocket
-// keeps the queue ticket and its tick: it cancels them; with Realtime:Gateway on, cancelled here: MatchmakingQueue).
+// When someone joins a party, everyone in it is canceled ("party-changed": MatchmakingQueue); the TS server published
+// matchmaking:cancel for its websocket, which kept the queue ticket and its tick.
 //
 // Client gate: readying up in a party lobby is what the game does before it sends its matchmaking request, and the one
 // refusal on that path it backs out of (a refused matchmaking request leaves it waiting for its ticket, cancel disabled).
@@ -94,7 +94,6 @@ public interface IPartyService
 internal sealed class PartyService(IServiceProvider services, ICosmeticsService cosmetics, IFunFacts funFacts, IClientUpdateGate gate, IOptionsMonitor<LobbySettings> settings,
     TimeProvider time, ILogger<PartyService> log) : IPartyService
 {
-    public const string CancelMatchmakingChannel = "matchmaking:cancel";
 
     // The TS server's delays before telling the other players, after its answer: the game handles the answer first.
     internal static TimeSpan JoinNoticeDelay = TimeSpan.FromMilliseconds(500);
@@ -390,18 +389,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         // Only a player joining someone else's party is announced (the owner's own join would loop).
         if (me != lobby.OwnerId)
         {
-            if (MatchLaunches.Gateway(services))
-            {
-                await MatchmakingQueue.CancelAsync(redis, lobby.PlayerIds, "party-changed");
-            }
-            else
-            {
-                await redis.PublishAsync(RedisChannel.Literal(CancelMatchmakingChannel), Js.Stringify(new JsonObject
-                {
-                    ["playersIds"] = new JsonArray(lobby.PlayerIds.Select(p => (JsonNode?)p).ToArray()),
-                    ["matchmakingId"] = "party-changed",
-                }));
-            }
+            await MatchmakingQueue.CancelAsync(redis, lobby.PlayerIds, "party-changed");
             var others = lobby.PlayerIds.Where(p => p != me).ToList();
             var notice = PlayerMessages.Update(new JsonObject
             {

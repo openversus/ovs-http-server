@@ -12,15 +12,15 @@
 //
 // Scratch stores, wiped before every step (never point these at data you want to keep):
 //   REF_REDIS_URL, REF_MONGO_URI, REF_JWT_SECRET  as for the other harnesses
-//   REF_WS_URL   the TS websocket on the same scratch stores: it turns party:queued into the game's OnMatchmakerStarted
-//                and the queue push, and matchmaking:cancel into the cancel, for both servers
+//   REF_GAMES_URL  where the games connect: the TS websocket for the TS run (it turns party:queued into the game's
+//                  OnMatchmakerStarted and the queue push, and matchmaking:cancel into the cancel), the C# gateway for the
+//                  C# run (the lobbies queue and cancel themselves: MatchmakingQueue)
 // No matchmaker may run against these stores (it would match the tickets).
 //
-// Gateway mode (REF_GAMES_URL: the TS websocket for the TS run, the C# gateway for the C# run, whose lobbies run with
-// Realtime:Gateway on, as the C# match flow does not need to): the games connect there, after each step's setup (the
-// gateway keeps presence in Redis), and the queue's writes are compared wherever they are made (the TS websocket's
-// included) instead of the party:queued and matchmaking:cancel publishes; the 1 s tick is compared as which request
-// each game was ticked for (>= 1 tick in about 2 s), never by count. C#'s own realtime:queued is left out.
+// The games connect after each step's setup (the gateway keeps presence in Redis), and the queue's writes are compared
+// wherever they are made (the TS websocket's included) instead of the party:queued and matchmaking:cancel publishes; the
+// 1 s tick is compared as which request each game was ticked for (>= 1 tick in about 2 s), never by count. C#'s own
+// realtime:queued is left out. (The mode where the TS websocket also served the C# run went with slice 3e.)
 import fs from "node:fs";
 import { require, need, openScratch, openMonitor, writes, state } from "../refdiff/refdiff.mjs";
 import { connectPlayers } from "../refdiff/gateway.mjs";
@@ -86,6 +86,7 @@ async function call(baseUrl, path, pid, body) {
 }
 
 async function run(baseUrl, outFile) {
+  need("REF_GAMES_URL");
   const { redis, db, close } = await openScratch("queue_diff");
   let recording = null;
   const monitor = await openMonitor(need("REF_REDIS_URL"), (line) => recording?.push(line));

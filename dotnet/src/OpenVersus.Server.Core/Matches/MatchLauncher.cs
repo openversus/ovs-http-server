@@ -26,11 +26,11 @@ namespace OpenVersus.Server.Core.Matches;
 //                 so no ELO) EX 20 min; match:{match}:perks:{bot} (the launch's bot perks, "[]" when none) EX 20 min for
 //                 each bot (bots never send perks_lock, and the TS all-perks-locked check waits for every ticket
 //                 player); {match} (the notification, which /ovs_register reads) EX 20 min
-// Announced       the notification (MatchLaunches: published on match:notifications for the TS websocket, or with
-//                 Realtime:Gateway on appended to match:launched, from which the match flow tells the players)
-// Sent (ws:send)  then matchmaking-complete (MatchmakingComplete: a new request id, a new result id; MatchLaunches sends it,
-//                 at once, or with Realtime:Gateway on once the match's config is built) to the players but
-//                 the bots, as the TS websocket built it from matchmaking:complete
+// Announced       the notification (MatchLaunches: appended to match:launched, from which the match flow tells the
+//                 players; the TS server published match:notifications for its websocket)
+// Sent (ws:send)  then matchmaking-complete (MatchmakingComplete: a new request id, a new result id; MatchLaunches sends it
+//                 once the match's config is built) to the players but the bots, as the TS websocket built it from
+//                 matchmaking:complete
 //
 // The notification may carry gameplayConfigOverride (merged over the websocket's GameplayConfig) and
 // playerConfigOverrides ({player: fields merged over that player's config}): the websocket builds a PvP config, and a
@@ -174,7 +174,6 @@ public interface IMatchLauncher
 internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<RollbackSettings> settings, IHttpClientFactory http,
     TimeProvider time, ILogger<MatchLauncher> log) : IMatchLauncher
 {
-    public const string NotificationChannel = "match:notifications";
     public const string CurrentPortKey = "rollback:current_port";
     public const string DeployClient = "rollback-deploy";
     private static readonly TimeSpan s_ttl = TimeSpan.FromMinutes(20);
@@ -284,7 +283,7 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
             DeployIfOnDemand(rollbackPort, matchId);
         }
 
-        await MatchLaunches.AnnounceAsync(services, redis, matchId, Js.Stringify(notification),
+        await MatchLaunches.AnnounceAsync(redis, matchId, Js.Stringify(notification),
             [new MatchComplete([.. launch.Players.Where(p => !p.IsBot).Select(p => p.PlayerId)], matchmakingRequestId)]);
 
         log.LogInformation("Started {Mode} match {Match} on rollback port {Port}{P2P}: {Players}", launch.Mode, matchId, rollbackPort,
@@ -403,8 +402,6 @@ public static class MatchLauncherHosting
     public static WebApplicationBuilder AddMatchLauncher(this WebApplicationBuilder builder)
     {
         builder.AddSetting<RollbackSettings>("Rollback");
-        // Realtime:Gateway decides how a match is announced (MatchLaunches), here and in the matchmaker.
-        builder.AddSetting<Access.RealtimeSettings>("Realtime");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IMatchLauncher, MatchLauncher>();
         builder.Services.AddHttpClient(MatchLauncher.DeployClient, c => c.Timeout = TimeSpan.FromSeconds(30));
@@ -418,7 +415,7 @@ public static class MatchLauncherHosting
     {
         if (app.Services.GetService<IMatchLauncher>() is not null)
         {
-            app.Lifetime.ApplicationStarted.Register(() => app.Logger.LogWarning("MIGRATION BRIDGE: P2P is switched twice, Rollback:P2P (here, now {P2P}) for the matches C# starts and the TS server's P2P_ROLLBACK for custom lobby rematches and its own matchmaker; keep them the same. See dotnet/docs/MIGRATION-BRIDGES.md (8)",
+            app.Lifetime.ApplicationStarted.Register(() => app.Logger.LogWarning("MIGRATION BRIDGE: P2P is switched twice, Rollback:P2P (here, now {P2P}) for the matches C# starts and the TS server's P2P_ROLLBACK for its own matchmaker's, and a P2P node's port still comes from the TS server's /api/identify; keep the two the same. See dotnet/docs/MIGRATION-BRIDGES.md (8)",
                 app.Services.GetRequiredService<IOptionsMonitor<RollbackSettings>>().CurrentValue.P2P));
         }
     }

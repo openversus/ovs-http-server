@@ -282,6 +282,11 @@ async function run(baseUrl, outFile, filter) {
   let recording = null;
   const monitor = await openMonitor(need("REF_REDIS_URL"), (line) => recording?.push(line));
   const self = (await redis.sendCommand(["CLIENT", "INFO"])).match(/\baddr=(\S+)/)[1];
+  // The matches a request launches: TS publishes each on match:notifications, C# appends it to match:launched.
+  let launching = null;
+  const sub = redis.duplicate();
+  await sub.connect();
+  await sub.subscribe("match:notifications", (m) => launching?.push(JSON.parse(m)));
 
   recording = [];
   const games = await connectPlayers(need("REF_WS_URL"), PLAYERS.map((id) => ({ id, token: token(id) })));
@@ -325,20 +330,27 @@ async function run(baseUrl, outFile, filter) {
     async function record(label, method, path, pid, body) {
       games.clear();
       recording = [];
+      launching = [];
+      const lastLaunch = (await redis.xRevRange("match:launched", "+", "-", { COUNT: 1 }))[0]?.id ?? "0-0";
       const started = Date.now();
       const answer = await request(baseUrl, method, path, pid, body);
       await sleep(400);
       const lines = recording.filter((l) => l.match(/\[\d+ ([^\]]+)\]/)?.[1] !== wsAddr).map(canonLine);
       recording = null;
+      const launched = [...launching, ...(await redis.xRange("match:launched", `(${lastLaunch}`, "+")).map((e) => JSON.parse(e.message.notification))];
+      launching = null;
       const all = writes(lines, self);
       const made = answer.body?.body?.lobby?.MatchID;
       if (/create_custom_game_lobby/.test(path) && made) t.lobby = made;
       steps.push(normalize({
         label, request: `${method} ${path}`, pid, status: answer.status, answer: answer.body,
-        writes: all.filter((w) => !w.startsWith("publish ") || STATEFUL.has(w.split(" ")[1])),
-        published: all.filter((w) => w.startsWith("publish ")).map((w) => w.split(" ")[1]),
+        // Left out: a launch (compared as launched), each C# service's registry entry and C#'s own launch bookkeeping.
+        writes: all.filter((w) => (!w.startsWith("publish ") || STATEFUL.has(w.split(" ")[1])) && !/^publish match:notifications |^(set|zadd) ovs:instance|^set match_announced:|^hdel realtime:queued /.test(w)),
+        published: all.filter((w) => w.startsWith("publish ") && !w.startsWith("publish match:notifications ")).map((w) => w.split(" ")[1]),
+        launched,
         frames: games.all(),
-        state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^active_ip_accounts:|^player_heartbeats$/.test(k))
+        // ... and the C# services' streams (made again with their consumer groups after a flush).
+        state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^active_ip_accounts:|^player_heartbeats$|^ovs:instance|^match:launched$|^match:results$|^realtime:connections$|^match_announced:/.test(k))
           .map(([k, v]) => [k, typeof v.value === "string" && /^[[{]/.test(v.value) ? { ...v, value: (k.startsWith("custom_lobby_ssc:") ? stored : sorted)(parseJson(v.value)) } : v])),
       }, scenarioStarted, ids, codes));
       return answer;
@@ -361,6 +373,7 @@ async function run(baseUrl, outFile, filter) {
 
   games.close();
   monitor.destroy();
+  await sub.quit();
   fs.writeFileSync(outFile, JSON.stringify({ baseUrl, scenarios }, null, 1));
   console.log(`${scenarios.length} scenarios -> ${outFile}`);
   await close();
@@ -455,7 +468,16 @@ const scripted = (ts, cs) => {
   const split = ts.writes.flatMap((w) => { const m = /^set (custom_lobby_ssc:(?:<new id \d+>|\S+)) (.+) EX (\d+)$/.exec(w); return m ? [`set ${m[1]} ${m[2]}`, `expire ${m[1]} ${m[3]}`] : [w]; });
   return JSON.stringify(split) === JSON.stringify(cs.writes);
 };
+// Lobbies stay open to a client the gate would turn away (decided 2026-10-06: only the paths into a match are gated):
+// the TS server refused a player with no session (no client version) at the custom lobby's door, with the update toast.
+const lobbyStaysOpen = {
+  why: "lobbies stay open to a client the update gate would turn away (only the paths into a match are gated); the TS server refused it with the update toast",
+  holds: (ts, cs) => ts.answer?.body?.error === "client_update_required" && cs.status === 200 && cs.answer?.return_code === 0 && !!cs.answer?.body?.lobby,
+};
+
 const EXPECTED = {
+  "create-no-session / create": lobbyStaysOpen,
+  "join-zero-preferences-no-session / join 3": lobbyStaysOpen,
   "join-twice / join 2 again": {
     why: "a player already in the lobby is answered the lobby, not added again (the TS server put them in a second team)",
     holds: (ts, cs) => teamOf(lobbyOf(ts), P2).length === 2 && teamOf(lobbyOf(cs), P2).length === 1 && ids(lobbyOf(cs)).length === 2
@@ -534,11 +556,23 @@ function diffRuns(fileA, fileB) {
     for (let i = 0; i < count; i++) {
       steps++;
       const p = x?.steps[i], q = y?.steps[i];
+      // A launch: TS's websocket told the players (GameServerReadyNotification, matchmaking-complete, the config) when it
+      // heard match:notifications; C#'s match flow does it from match:launched, and is not run here (config_diff compares
+      // what it sends, through the gateway). The launched matches are compared, and TS's messages of the launch left out
+      // once C# is seen to have sent none.
+      const told = (f) => ["GameServerReadyNotification", "OnGameplayConfigNotified"].includes(f?.data?.template_id) || f?.cmd === "matchmaking-complete";
+      if (p?.launched?.length && q?.frames && !Object.values(q.frames).flat().some(told)) {
+        p.frames = Object.fromEntries(Object.entries(p.frames).map(([id, f]) => [id, f.filter((m) => !told(m))]));
+        // ... and what the TS websocket wrote beside the config (the fighters, the cosmetics' match copy and cache), absent in C#.
+        for (const k of Object.keys(p.state ?? {}).filter((k) => /^match_characters:|^connections:[0-9a-f]{24}:cosmetics$|^player:[0-9a-f]{24}:cosmetics$/.test(k) && !(k in (q.state ?? {})))) {
+          delete p.state[k];
+        }
+      }
       // A probe counts lost changes: what is compared is whether there were any. A TTL over two hours is compared to
       // the hour: a long scenario (every game mode, at the TS server's 1.5 s each) ages a 2-day key past a minute.
       const hours = (state) => state && Object.fromEntries(Object.entries(state).map(([k, v]) => [k, typeof v?.ttl === "string" && /^~\d+m$/.test(v.ttl) && parseInt(v.ttl.slice(1)) >= 120 ? { ...v, ttl: `~${Math.round(parseInt(v.ttl.slice(1)) / 60)}h` } : v]));
       const lossy = (step) => (step ? { ...step, state: hours(step.state), ...("probe" in step ? { probe: step.probe > 0 } : {}) } : step);
-      const parts = ["label", "status", "answer", "writes", "frames", "state", "probe", "error"].filter((k) => show(lossy(p)?.[k]) !== show(lossy(q)?.[k]));
+      const parts = ["label", "status", "answer", "writes", "launched", "frames", "state", "probe", "error"].filter((k) => show(lossy(p)?.[k]) !== show(lossy(q)?.[k]));
       const label = `${name} / ${i + 1} ${p?.label ?? q?.label}`;
       const expected = EXPECTED[`${name} / ${p?.label}`];
       if (!parts.length) {

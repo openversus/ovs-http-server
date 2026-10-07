@@ -45,8 +45,7 @@ version of the node, would need.
 
 ## The gateway (`OpenVersus.Server.Realtime`, the `ws` service)
 
-Built, not yet handed out by /access (the TS websocket still holds the players; the switch comes when every channel
-below has moved). Each node:
+The game's realtime connection (/access hands out its address: `Realtime:Domain` and `Realtime:Port`). Each node:
 
 - takes every websocket upgrade on its public port (WEBSOCKET_PORT), any path; the client's IP is the reverse proxy's
   forwarded one (`ClientAddress`, the rule every service uses). Any other request there but `/health/*` is answered
@@ -96,31 +95,27 @@ holding the game instead, and compares that with the close).
 
 ## Moving it without a big switch
 
-A TS websocket handler only runs when something publishes its channel. When an HTTP route moves to C#, it stops
-publishing the TS channel and sends its messages through `ws:send` instead, so the TS handler falls silent and nothing
-is done twice. Each slice (a route and the messages it causes) can be tried in game while the TS websocket still holds
-the sockets.
+How it was moved (history; the TS websocket is not run any more). A TS websocket handler only runs when something
+publishes its channel. When an HTTP route moved to C#, it stopped publishing the TS channel and sent its messages through
+`ws:send` instead, so the TS handler fell silent and nothing was done twice, and each slice could be tried in game while
+the TS websocket still held the sockets.
 
 The exception is the part that shares the in-memory state above: queueing, match configs, perks, match end, disconnect
-and rejoin. Those handlers move together with the gateway and the matchmaker. Until then, C# publishes the TS channels
-they listen to as the TS server does (`matchmaking:cancel` from a party join and the game's cancel, `party:queued` from
-the matchmaking request, `match:notifications` from a match's start; MIGRATION-BRIDGES.md 2). The channels whose TS
-handler only built a message (a lobby join, matchmaking-complete, a toast, a ranked set's check-in, leaver and ranks)
-are built by their C# publishers and sent through `ws:send` since slice 3b. Slice 3c moves the rest behind one cluster
-switch, `Realtime:Gateway` (off: the TS websocket, as before): a launched match is appended to the stream `match:launched`,
-and the match flow tells its players (`GameServerReadyNotification`, then the config: `MatchLaunches`) and ends it
-(MatchEnd, whatever `MatchEnd:Enabled` says); the perks lock sends each game its config again once the perks are merged
+and rejoin. Those handlers moved together with the gateway and the matchmaker. The channels whose TS handler only built
+a message (a lobby join, matchmaking-complete, a toast, a ranked set's check-in, leaver and ranks) were built by their C#
+publishers and sent through `ws:send` from slice 3b. Slice 3c moved the rest behind one cluster switch, which slice 3e
+removed with the TS websocket's side of it: a launched match is appended to the stream `match:launched`, and the match
+flow tells its players (`GameServerReadyNotification`, then the config: `MatchLaunches`) and ends it (`MatchEnd`); the
+perks lock sends each game its config again once the perks are merged
 (`PerksLock`); the rollback callbacks send `game-server-instance-ready`; a queued party's
 ticket, its OnMatchmakerStarted and cancel are `MatchmakingQueue`'s, its 1 s tick the gateway's (`realtime:queued`,
 `GatewayTicks`); the update toast is `ClientUpdateGate`'s, and the connection stays open (the TS websocket closed it
 10 s later; an outdated player is turned away at each gameplay transition instead).
 
-Done so far: rift progress, missions and reward tracks (MIGRATION-BRIDGES.md 4), the party lobby routes (invite,
-join, leave, mode, ready, loadout lock) and the custom lobby (its routes, its messages, the match start; its match end
-and rematch vote are ported too, `MatchEnd` and `Rematches`: the rematch routes answer from C#, the match end with
-`MatchEnd:Enabled`), and the matchmaking worker (its own executable, `OpenVersus.Server.Matchmaking`; on by default, `Matchmaking:Enabled`; the queue side, the
-tickets and their tick, stays with the websocket). The match config is built by the match flow (`GameplayConfigs`, kept per player; MIGRATION-BRIDGES.md 9), and still
-sent by the TS websocket unless `Realtime:Gateway` is on.
+Everything the TS websocket did is C#'s: rift progress, missions and reward tracks, the party lobby routes, the custom
+lobby with its match end and rematch (`MatchEnd`, `Rematches`), the matchmaking worker (its own executable,
+`OpenVersus.Server.Matchmaking`), the queue and its tick, the match config (`GameplayConfigs`, kept per player, sent by
+the match flow), and the disconnects (above).
 
 ## A node restart without disconnecting anyone
 

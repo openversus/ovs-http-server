@@ -228,13 +228,19 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
         Assert.Empty(await QueuedAsync("2v2"));
     }
 
-    // The match records this test's tick made (the cleanup leaves none from before).
+    // The match records this test's tick made (the cleanup leaves none from before); the launch stream (match:launched)
+    // is no record.
     private async Task<List<JsonObject>> MatchesAsync()
     {
         var server = _redis!.GetServer(_redis.GetEndPoints()[0]);
         var matches = new List<JsonObject>();
         foreach (var key in server.Keys(15, "match:*"))
         {
+            if (await Db.KeyTypeAsync(key) != RedisType.String)
+            {
+                continue;
+            }
+
             matches.Add(JsonNode.Parse((await Db.StringGetAsync(key)).ToString())!.AsObject());
         }
 

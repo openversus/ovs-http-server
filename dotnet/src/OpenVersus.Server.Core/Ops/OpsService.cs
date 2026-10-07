@@ -27,7 +27,7 @@ namespace OpenVersus.Server.Core.Ops;
 //   player_ranked_set:{playerId} the ranked set a player's game belongs to
 //   ranked_set:{setId}           the set's state, JSON: { players, mode, scores, gamesPlayed, conceded }
 //   match_characters:{setId}     JSON { playerId: character }
-//   ws:disconnect                published { playerId }: the TS websocket closes that player's connection
+//   ws:disconnect                published { playerId }: the realtime gateway node holding that player's connection drops it
 // Mongo
 //   playertesters                one document per player: _id (ObjectId; its hex is the player id above), name,
 //                                hydraUsername, steamId, public_id, profile_id
@@ -290,9 +290,9 @@ internal sealed class OpsService : IOpsService
         return await FindPlayerAsync(id.ToString());
     }
 
-    // The websocket is the TS service's (src/websocket.ts): it closes the player's socket when it hears ws:disconnect
-    // {playerId}, with terminate(), the path its heartbeat timeout takes, so the usual cleanup runs (ticket, lobby,
-    // session) and the client logs out. docs/MIGRATION-BRIDGES.md (4).
+    // The realtime gateway node holding the player's connection drops it when it hears ws:disconnect {playerId} (no code:
+    // at once, as the TS websocket's terminate()), so its close runs the usual cleanup (ticket, lobby, session) and the
+    // client logs out.
     public const string DisconnectChannel = "ws:disconnect";
 
     public async Task<ControlResult<DisconnectView>> DisconnectPlayerAsync(string who)

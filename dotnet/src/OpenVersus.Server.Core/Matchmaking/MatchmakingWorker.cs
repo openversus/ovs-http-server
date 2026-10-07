@@ -486,7 +486,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
 
         // Announced once its set is written (a match that cannot be told ends its set: MatchLaunches), with one
         // matchmaking-complete per ticket: each party's own request.
-        await MatchLaunches.AnnounceAsync(services, redis, matchId, Js.Stringify(notification),
+        await MatchLaunches.AnnounceAsync(redis, matchId, Js.Stringify(notification),
             [.. tickets.Select(t => new MatchComplete([.. t.Players.Select(p => p.Id)], t.Json["matchmakingRequestId"], Searching: true))]);
 
         log.LogInformation("Created {Mode} match {Match} from {Queue} with {Players} players across {Tickets} tickets on rollback port {Port}{P2P}", mode, matchId, queue, total, tickets.Count, port,

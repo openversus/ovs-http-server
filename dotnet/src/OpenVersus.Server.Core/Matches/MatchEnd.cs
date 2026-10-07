@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -46,7 +45,7 @@ namespace OpenVersus.Server.Core.Matches;
 // Mongo           FullRankUpdate's reads (eloratings made when missing), and RankedSets' ratings
 //
 // Unlike there:
-//   a Casual game has a rematch (Rematches); TS declined it for everyone a second after its end (MIGRATION-BRIDGES.md 7).
+//   a Casual game has a rematch (Rematches); TS declined it for everyone a second after its end.
 //   handled once per match (match_end:{match}): a second /ovs_end_match (a relay and a node, a retry) changes nothing; TS
 //     counted the game again for every publish (and each websocket replica would have).
 //   the echo is the config kept for this match only (TS echoed whatever its connection held, a newer match's included).
@@ -56,12 +55,6 @@ namespace OpenVersus.Server.Core.Matches;
 //   party preservation is skipped when any player is still in a set (TS asked Promise.any, which settled with the first
 //     player's answer).
 //   the web custom lobby's end (custom_lobby_match:{match}) is not ported: its pages were retired (docs/REALTIME.md).
-
-public sealed class MatchEndSettings
-{
-    [Description("The match flow ends matches itself (MatchEnd) instead of publishing match:end for the TS websocket. Off until the realtime gateway replaces the TS websocket, which keeps each player's match config in its own memory (docs/MIGRATION-BRIDGES.md 2); on only where no TS websocket holds the players (the parity harness). Realtime:Gateway on ends them here whatever this says.")]
-    public bool Enabled { get; set; }
-}
 
 public interface IMatchEnd
 {
@@ -293,10 +286,9 @@ internal sealed class MatchEnd(IServiceProvider services, IRankedSets sets, EloR
 
 public static class MatchEndHosting
 {
-    /// <summary>The match's end (MatchEnd:Enabled; RollbackCallbacks calls it), and the sweep that sends its delayed messages.</summary>
+    /// <summary>The match's end (RollbackCallbacks calls it), and the sweep that sends its delayed messages.</summary>
     public static WebApplicationBuilder AddMatchEnd(this WebApplicationBuilder builder)
     {
-        builder.AddSetting<MatchEndSettings>("MatchEnd");
         builder.AddSetting<SeasonSettings>("Season");
         builder.AddEloRatings();
         builder.Services.TryAddSingleton(TimeProvider.System);

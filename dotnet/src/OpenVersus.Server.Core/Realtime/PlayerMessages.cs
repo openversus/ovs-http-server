@@ -6,7 +6,7 @@ namespace OpenVersus.Server.Core.Realtime;
 
 /// <summary>
 /// What a player's game is told outside an answer: websocket messages (through ws:send, which every websocket node
-/// hears and delivers to the players it holds; docs/MIGRATION-BRIDGES.md 4 while that is the TS websocket), and the
+/// hears and delivers to the players it holds), and the
 /// OpenVersus client's notification queue (dll_notifications:{player}, polled through GET /ovs/notifications).
 /// </summary>
 public static class PlayerMessages

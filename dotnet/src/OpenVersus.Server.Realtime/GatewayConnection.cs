@@ -8,8 +8,13 @@ namespace OpenVersus.Server.Realtime;
 /// One game's socket on this node. Everything sent to it goes through one queue and one writer (a websocket takes one
 /// send at a time): the id frame, pings, delivered messages, and a close. A game that stops reading until the queue is
 /// full is cut off rather than held in memory.
+/// <para>
+/// On an edge's link (<paramref name="edge"/>) each frame goes in the edge's envelope (<see cref="GatewayEdge"/>), and
+/// closing the game is an instruction to the edge followed by the link's normal close: any other end of the link reads,
+/// at the edge, as this node letting go of the game, which the edge then attaches to another node.
+/// </para>
 /// </summary>
-internal sealed class GatewayConnection(WebSocket socket, GatewayConnectionInfo info, long connectedMs)
+internal sealed class GatewayConnection(WebSocket socket, GatewayConnectionInfo info, long connectedMs, bool edge = false)
 {
     private const int QueueLimit = 4096;
 
@@ -21,10 +26,17 @@ internal sealed class GatewayConnection(WebSocket socket, GatewayConnectionInfo 
 
     private long _lastAnswerMs = connectedMs;
     private int _closing;
+    private volatile bool _closedGame;
 
     private sealed record Outgoing(byte[]? Message, WebSocketCloseStatus Status, string? Reason);
 
     public GatewayConnectionInfo Info { get; } = info;
+
+    /// <summary>Whether the socket is an edge's link rather than the game's own.</summary>
+    public bool Edge => edge;
+
+    /// <summary>This node closed the game (<see cref="Close"/>, <see cref="Abort"/>): the session ends here.</summary>
+    public bool ClosedGame => _closedGame;
 
     /// <summary>When the game last answered a ping (ms; the handshake counts as one).</summary>
     public long LastAnswerMs
@@ -33,42 +45,87 @@ internal sealed class GatewayConnection(WebSocket socket, GatewayConnectionInfo 
         set => Interlocked.Exchange(ref _lastAnswerMs, value);
     }
 
-    /// <summary>Queues a message; false when the game has stopped reading (the queue is full) and was cut off.</summary>
-    public bool Send(byte[] message)
+    /// <summary>Queues a frame for the game; false when the game has stopped reading (the queue is full) and was cut off.</summary>
+    public bool Send(byte[] frame) => Queue(edge ? GatewayEdge.Unlogged(frame) : frame);
+
+    /// <summary>
+    /// Queues a delivered message: on an edge's link with its entry in the player's replay log (<paramref name="logged"/>,
+    /// from ws:send's seqs), so the edge knows how far the game got; as <see cref="Send"/> otherwise.
+    /// </summary>
+    public bool Deliver(byte[] message, StreamId? logged) =>
+        edge && logged is { } id ? Queue(GatewayEdge.Logged(id, message)) : Send(message);
+
+    /// <summary>On an edge's link, the head of the player's replay log at the claim: queued first, before the id frame.</summary>
+    public bool SendPosition(StreamId head) => !edge || Queue(GatewayEdge.Position(head));
+
+    /// <summary>Closes the game with a close handshake after what is already queued; once, whoever asks first.</summary>
+    public void Close(WebSocketCloseStatus status, string? reason) => CloseGame((int)status, status, reason);
+
+    /// <summary>
+    /// Drops the game at once, no close handshake (the TS websocket's terminate()); on an edge's link, tells the edge to,
+    /// unless a close is already on its way (then the link itself is dropped, as a direct socket would be).
+    /// </summary>
+    public void Abort()
     {
-        if (Volatile.Read(ref _closing) != 0)
+        if (edge && Volatile.Read(ref _closing) == 0)
         {
-            return true;
+            CloseGame(0, WebSocketCloseStatus.NormalClosure, null);
+            return;
         }
 
-        if (_out.Writer.TryWrite(new Outgoing(message, default, null)))
-        {
-            return true;
-        }
-
-        Abort();
-        return false;
+        _closedGame = true;
+        Drop();
     }
 
-    /// <summary>Closes with a close handshake after what is already queued; once, whoever asks first.</summary>
-    public void Close(WebSocketCloseStatus status, string? reason)
+    /// <summary>Answers the other side's close with its code (the game's, or on an edge's link the edge's: the session ended).</summary>
+    public void Answer(WebSocketCloseStatus status, string? reason)
+    {
+        if (Interlocked.Exchange(ref _closing, 1) == 0 && !_out.Writer.TryWrite(new Outgoing(null, status, reason)))
+        {
+            Drop();
+        }
+    }
+
+    /// <summary>Ends the socket at once (a game, or an edge, that stopped reading: the queue is full).</summary>
+    public void Drop()
+    {
+        Interlocked.Exchange(ref _closing, 1);
+        socket.Abort();
+    }
+
+    // Closing the game: the close itself, or on an edge's link the instruction (code 0: drop it), then the link's normal
+    // close. Once, whoever asks first.
+    private void CloseGame(int code, WebSocketCloseStatus status, string? reason)
     {
         if (Interlocked.Exchange(ref _closing, 1) != 0)
         {
             return;
         }
 
-        if (!_out.Writer.TryWrite(new Outgoing(null, status, reason)))
+        _closedGame = true;
+        bool queued = edge
+            ? _out.Writer.TryWrite(new Outgoing(GatewayEdge.Close(code, reason), default, null)) && _out.Writer.TryWrite(new Outgoing(null, WebSocketCloseStatus.NormalClosure, null))
+            : _out.Writer.TryWrite(new Outgoing(null, status, reason));
+        if (!queued)
         {
-            Abort();
+            Drop();
         }
     }
 
-    /// <summary>Drops the connection at once, no close handshake (the TS websocket's terminate()).</summary>
-    public void Abort()
+    private bool Queue(byte[] bytes)
     {
-        Interlocked.Exchange(ref _closing, 1);
-        socket.Abort();
+        if (Volatile.Read(ref _closing) != 0)
+        {
+            return true;
+        }
+
+        if (_out.Writer.TryWrite(new Outgoing(bytes, default, null)))
+        {
+            return true;
+        }
+
+        Drop();
+        return false;
     }
 
     /// <summary>Sends what is queued until the connection closes or <see cref="Complete"/>.</summary>

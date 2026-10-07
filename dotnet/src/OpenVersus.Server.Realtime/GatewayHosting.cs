@@ -213,12 +213,13 @@ internal sealed class GatewaySubscriber(IServiceProvider services, GatewayNode n
         }
     }
 
-    // {playerIds, message}: message encoded once (a JS object's key order, as the TS websocket's JSON.parse gave it),
-    // then queued for each named player held here.
+    // {playerIds, message, seqs?}: message encoded once (a JS object's key order, as the TS websocket's JSON.parse gave
+    // it), then queued for each named player held here, with the player's entry in their replay log (seqs) for an edge.
     private void Deliver(string json)
     {
         byte[] bytes;
         JsonArray? playerIds;
+        JsonObject? seqs;
         try
         {
             if (Js.Parse(json) is not JsonObject send)
@@ -228,6 +229,7 @@ internal sealed class GatewaySubscriber(IServiceProvider services, GatewayNode n
             }
 
             playerIds = send["playerIds"] as JsonArray;
+            seqs = send["seqs"] as JsonObject;
             bytes = HydraEncoder.Encode(send["message"], webSocket: true);
         }
         catch (Exception e) when (e is System.Text.Json.JsonException or HydraFormatException or InvalidOperationException)
@@ -243,7 +245,7 @@ internal sealed class GatewaySubscriber(IServiceProvider services, GatewayNode n
                 continue;
             }
 
-            if (!connection.Send(bytes))
+            if (!connection.Deliver(bytes, StreamId.TryParse(Text(seqs?[(string)id!]), out var seq) ? seq : null))
             {
                 log.LogWarning("Player {Player} with IP {Ip} stopped reading its messages; connection dropped", connection.Info.PlayerId, connection.Info.Ip);
             }

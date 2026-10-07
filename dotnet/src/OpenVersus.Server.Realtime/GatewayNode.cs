@@ -32,6 +32,35 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
     public async Task HandleAsync(HttpContext context)
     {
         string ip = ClientAddress.Of(context, stripMapped: true);
+
+        // An edge's link to a game (GatewayEdge): trusted only with the shared secret, and named by the edge.
+        string? edgeConnectionId = null;
+        if (context.Request.Headers.ContainsKey(GatewayEdge.SecretHeader))
+        {
+            if (!GatewayEdge.SecretMatches(context.Request.Headers[GatewayEdge.SecretHeader], settings.CurrentValue.EdgeSecret))
+            {
+                log.LogWarning("Refused an edge link from {Remote}: its secret is not Gateway:EdgeSecret (or none is set)", context.Connection.RemoteIpAddress);
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            edgeConnectionId = context.Request.Headers[GatewayEdge.ConnectionIdHeader];
+            if (!GatewayEdge.IsConnectionId(edgeConnectionId))
+            {
+                log.LogWarning("Refused an edge link from {Remote}: no usable {Header}", context.Connection.RemoteIpAddress, GatewayEdge.ConnectionIdHeader);
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
+
+            if (context.Request.Headers.ContainsKey(GatewayEdge.ResumeAfterHeader))
+            {
+                log.LogWarning("Refused an edge's resume of connection {Connection}: this node does not resume links yet", edgeConnectionId);
+                context.Response.StatusCode = StatusCodes.Status501NotImplemented;
+                return;
+            }
+        }
+
+        bool edge = edgeConnectionId is not null;
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
         var stopping = lifetime.ApplicationStopping;
         if (services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis)
@@ -79,16 +108,36 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
             // Nothing is sent before the close. The TS websocket's close carried no code; .NET cannot send a close frame
             // without one (it writes 1005, which the protocol forbids on the wire and a client refuses), so 1000.
             log.LogWarning("Rejected the websocket handshake from {Ip}: {Error}", ip, e.Message);
+            if (edge)
+            {
+                // The token is as bad on every node: the edge closes the game rather than trying another.
+                await SendAsync(socket, GatewayEdge.Close((int)WebSocketCloseStatus.NormalClosure, null));
+            }
+
             await CloseAsync(socket, WebSocketCloseStatus.NormalClosure, null);
             return;
         }
 
-        var info = new GatewayConnectionInfo(Guid.NewGuid().ToString("N"), playerId, instance.Id, ip, GatewayPresence.TokenHash(token));
-        var connection = new GatewayConnection(socket, info, time.GetUtcNow().ToUnixTimeMilliseconds());
+        var info = new GatewayConnectionInfo(edgeConnectionId ?? Guid.NewGuid().ToString("N"), playerId, instance.Id, ip, GatewayPresence.TokenHash(token),
+            Guid.NewGuid().ToString("N"));
+        var connection = new GatewayConnection(socket, info, time.GetUtcNow().ToUnixTimeMilliseconds(), edge);
         var writer = connection.WriteAsync(stopping);
-        connection.Send(GatewayProtocol.IdFrame);
-        connection.Send([GatewayProtocol.Ping]);
-        await RecordAsync("handshake", playerId, () => GatewayPresence.ConnectedAsync(redis, info, time.GetUtcNow()));
+        if (edge)
+        {
+            // The claim first: the edge's position (the head of the player's log at the claim) goes before the id frame,
+            // so an edge that never got it knows the game never got the id frame either.
+            GatewayClaim? claim = null;
+            await RecordAsync("handshake", playerId, async () => claim = await GatewayPresence.ConnectedAsync(redis, info, time.GetUtcNow()));
+            connection.SendPosition(claim?.LogHead ?? StreamId.Zero);
+            connection.Send(GatewayProtocol.IdFrame);
+            connection.Send([GatewayProtocol.Ping]);
+        }
+        else
+        {
+            connection.Send(GatewayProtocol.IdFrame);
+            connection.Send([GatewayProtocol.Ping]);
+            await RecordAsync("handshake", playerId, () => GatewayPresence.ConnectedAsync(redis, info, time.GetUtcNow()));
+        }
 
         // After the claim (realtime:conn names this connection now), so the one it replaces closes as not current.
         _current.AddOrUpdate(playerId, connection, (_, old) =>
@@ -96,9 +145,10 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
             old.Close(WebSocketCloseStatus.NormalClosure, "replaced");
             return connection;
         });
-        log.LogInformation("Player {Player} with IP {Ip} connected (connection {Connection})", playerId, ip, info.Id);
+        log.LogInformation("Player {Player} with IP {Ip} connected (connection {Connection}{Edge})", playerId, ip, info.Id, edge ? ", through an edge" : "");
 
         string reason = "closed by the game";
+        bool otherSideClosed = false;
         try
         {
             while (await ReceiveAsync(socket, stopping) is { } message)
@@ -119,9 +169,15 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
         {
             if (socket.State == WebSocketState.CloseReceived)
             {
-                // The game closed first: its close is answered with its own code and reason, as the TS websocket's
-                // was (1000 when it sent none: see above).
-                connection.Close(socket.CloseStatus is { } status && status != WebSocketCloseStatus.Empty ? status : WebSocketCloseStatus.NormalClosure,
+                // The game closed first (on an edge's link: the edge, for the game, which closed or dropped): its close is
+                // answered with its own code and reason, as the TS websocket's was (1000 when it sent none: see above).
+                otherSideClosed = true;
+                if (edge && (int?)socket.CloseStatus == GatewayEdge.GameDroppedCode)
+                {
+                    reason = "dropped, at the edge";
+                }
+
+                connection.Answer(socket.CloseStatus is { } status && status != WebSocketCloseStatus.Empty ? status : WebSocketCloseStatus.NormalClosure,
                     socket.CloseStatusDescription);
             }
 
@@ -130,10 +186,58 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
             await writer;
         }
 
+        // A detached edge link is let go of as of when it ended, not when the grace ran out.
+        var ended = time.GetUtcNow();
+        bool reaped = edge && !otherSideClosed && !connection.ClosedGame;
+        if (reaped && !await DetachedAsync(connection, stopping))
+        {
+            return;
+        }
+
         bool wasCurrent = false;
-        await RecordAsync("close", playerId, async () => wasCurrent = await GatewayPresence.ClosedAsync(redis, info, time.GetUtcNow()));
-        log.LogInformation("Player {Player} disconnected ({Reason}; connection {Connection}{Replaced})", playerId, reason, info.Id,
-            wasCurrent ? "" : ", already replaced");
+        await RecordAsync("close", playerId, async () => wasCurrent = await GatewayPresence.ClosedAsync(redis, info, ended, reaped));
+        log.LogInformation("Player {Player} disconnected ({Reason}; connection {Connection}{Replaced})", playerId, reaped ? "the edge's link never came back" : reason,
+            info.Id, wasCurrent ? "" : ", already replaced");
+    }
+
+    // An edge's link that ended without the edge's close and without this node closing the game: the edge let go of this
+    // node (to move the game to another) or died. The game is let go of only after Gateway:EdgeDetachGraceMs, and then
+    // only if no other node has taken it (the release is the socket's own: GatewayPresence.ClosedAsync); true when it is
+    // to be let go of now. A node that stops leaves it for a resume elsewhere (or the reaper, once this node is gone).
+    private async Task<bool> DetachedAsync(GatewayConnection connection, CancellationToken stopping)
+    {
+        var info = connection.Info;
+        if (stopping.IsCancellationRequested)
+        {
+            log.LogInformation("Player {Player}'s edge link let go of as this node stops (connection {Connection}): left for another node", info.PlayerId, info.Id);
+            return false;
+        }
+
+        int grace = settings.CurrentValue.EdgeDetachGraceMs;
+        log.LogInformation("Player {Player}'s edge link ended without a close (connection {Connection}): let go of in {Ms} ms unless another node takes it",
+            info.PlayerId, info.Id, grace);
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(grace), time, stopping);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    // One frame on a socket nothing else is writing to yet (the handshake's).
+    private static async Task SendAsync(WebSocket socket, byte[] frame)
+    {
+        using var wait = new CancellationTokenSource(s_closeWait);
+        try
+        {
+            await socket.SendAsync(frame, WebSocketMessageType.Binary, endOfMessage: true, wait.Token);
+        }
+        catch (Exception e) when (e is WebSocketException or OperationCanceledException)
+        {
+        }
     }
 
     // A Redis failure is logged and the connection carries on, as the TS websocket's writes were (not awaited, logged).

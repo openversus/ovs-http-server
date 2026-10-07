@@ -59,6 +59,19 @@ The game's realtime connection (/access hands out its address: `Realtime:Domain`
   (`HydraEncoder.Encode(..., webSocket: true)`, from the JSON read with a JS object's key order), and closes on
   `ws:disconnect {playerId, connectionId?, except?, code?, reason?}` (no code: dropped at once, the ops command's).
 
+An upgrade that presents `X-OVS-Edge` (the shared `Gateway:EdgeSecret`; refused when it does not match or none is set)
+is an edge's link for one game (`GatewayEdge`, Core, is the codec both ends use), named by the edge's
+`X-OVS-Connection-Id`. The handshake is the game's, as above, but every frame the node sends the edge is wrapped:
+unlogged (the id frame, pings, ticks), logged (a delivered message with its entry's id in the player's replay log), a
+position (the log's head at the claim, sent first, before the id frame), or close the game (its code; 0 to drop it).
+The edge closes the game only on that instruction; any other end of the link is the node letting go, after which the
+edge attaches the game to another node (that resume is not built yet: a node refuses `X-OVS-Resume-After` with 501). The other way round, the edge's close on the link is the game's end (closed, or
+dropped: code 4999), handled at once as a direct close; a link that ends without one (the edge moved the game, or died)
+is let go of only after `Gateway:EdgeDetachGraceMs` (30 s), as a server failure (a disconnected event marked reaped),
+and not at all if another socket has taken the connection by then. A node that stops leaves its edge links' players for
+another node. `realtime:conn:{player}` names the socket holding the connection (`attach`), and only that socket releases
+it, so a link moved away and back to the same node is not let go of by its old socket.
+
 `GatewayPresence` (Core) keeps who is connected where:
 
 - `realtime:conn:{player}`: the player's current connection (id, node, ip, at, the session token's SHA-256), its TTL

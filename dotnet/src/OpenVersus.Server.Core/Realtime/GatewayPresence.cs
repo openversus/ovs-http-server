@@ -12,14 +12,16 @@ namespace OpenVersus.Server.Core.Realtime;
 // touching it, so a reconnect is never undone by the old socket's close. Each connection's id is minted where the
 // game's socket is held, and carried through every event, so a consumer can tell "this connection" from "the player".
 //
-// Redis, written  realtime:conn:{player} (hash: id, node, ip, at ms, token (its SHA-256); PEXPIRE 3 min, renewed by every
-//                 answer to the ping)
+// Redis, written  realtime:conn:{player} (hash: id, node, ip, at ms, token (its SHA-256), attach (the socket holding it on
+//                 that node: an edge's link moved to another node keeps the id, and only the socket holding it now
+//                 releases it); PEXPIRE 3 min, renewed by every answer to the ping)
 //                 online_players (SADD at the handshake; SREM when the current connection closes)
 //                 player_heartbeats (ZADD ms at the handshake and every answer; ZREM when the current connection closes)
 //                 active_ip_accounts:{ip} (the TS redisTouchPlayerSession at the handshake and every answer; ZREM at the close)
 //                 realtime:connections (XADD, MAXLEN ~10,000; fields type, player, connection, at: connected and
 //                 disconnected also node, ip, token (its SHA-256); replaced also replacedBy; a reaped disconnected
-//                 also reaped "1")
+//                 also reaped "1", as is a close no game asked for: an edge's link that never came back; resumed
+//                 (an edge's connection re-attached to a node: node, ip, token; no reader acts on it))
 // Redis, read     rejoin_pending:{player} (MatchEnd: while it lives, a close keeps the player online and their IP's
 //                 session, as the TS websocket's pendingRejoin did, for the party's rejoin, which reads online_players;
 //                 at its expiry LobbyDisconnects takes a player who did not come back offline. The heartbeat goes all
@@ -27,7 +29,8 @@ namespace OpenVersus.Server.Core.Realtime;
 //                 session, so a close in that window is a game that is gone, whose party's ticket is dropped at once
 //                 instead of 41 s later)
 // Published       ws:disconnect {playerId, except, code, reason} when a connection replaces one (the node holding the
-//                 old one closes it; the TS websocket left a replaced socket open and stopped pinging it)
+//                 old one closes it; the TS websocket left a replaced socket open and stopped pinging it), through the
+//                 player's replay log (PlayerMessages.DisconnectAsync)
 //
 // Unlike the TS websocket: presence (online_players, the heartbeat, the IP's session) goes at the close itself, before
 // anything else; TS removed online_players last, after a pre-game dodge's rating, and the match flow's rollback
@@ -57,36 +60,46 @@ public static class GatewayPresence
     private static readonly TimeSpan s_activeSession = TimeSpan.FromSeconds(90);
     private static readonly TimeSpan s_activeIpTtl = TimeSpan.FromSeconds(180);
 
-    // The connection becomes the player's current one; returns the id of the one it replaced, or nil.
+    // The connection becomes the player's current one; returns the id of the one it replaced ('' for none) and the head of
+    // the player's replay log ('' for none), read with the claim: what an edge's connection has already missed.
     private const string ClaimScript = """
         local old = redis.call('HGET', KEYS[1], 'id')
-        redis.call('HSET', KEYS[1], 'id', ARGV[1], 'node', ARGV[2], 'ip', ARGV[3], 'at', ARGV[4], 'token', ARGV[6])
+        redis.call('HSET', KEYS[1], 'id', ARGV[1], 'node', ARGV[2], 'ip', ARGV[3], 'at', ARGV[4], 'token', ARGV[6], 'attach', ARGV[7])
         redis.call('PEXPIRE', KEYS[1], ARGV[5])
-        return old
+        local head = redis.call('XREVRANGE', KEYS[2], '+', '-', 'COUNT', 1)[1]
+        return {old or '', head and head[1] or ''}
         """;
 
-    // Only the current connection lets the player go: 1 when it was the current one.
+    // Only the current connection, on the socket that holds it now, lets the player go: 1 when it did. An entry without
+    // attach (an older node's) is let go by its id.
     private const string ReleaseScript = """
         if redis.call('HGET', KEYS[1], 'id') == ARGV[1] then
-          redis.call('DEL', KEYS[1])
-          return 1
+          local attach = redis.call('HGET', KEYS[1], 'attach')
+          if not attach or attach == '' or attach == ARGV[2] then
+            redis.call('DEL', KEYS[1])
+            return 1
+          end
         end
         return 0
         """;
 
     /// <summary>
     /// A connection completed its handshake: it becomes the player's current one (a connection it replaces is asked to
-    /// close, wherever it is), and the player is online. Returns the replaced connection's id, if any.
+    /// close, wherever it is), and the player is online. Returns the replaced connection's id, if any, and the head of the
+    /// player's replay log at the claim.
     /// </summary>
-    public static async Task<string?> ConnectedAsync(IDatabase redis, GatewayConnectionInfo connection, DateTimeOffset now)
+    public static async Task<GatewayClaim> ConnectedAsync(IDatabase redis, GatewayConnectionInfo connection, DateTimeOffset now)
     {
         long ms = now.ToUnixTimeMilliseconds();
-        var replaced = (string?)await redis.ScriptEvaluateAsync(ClaimScript, [ConnectionKey(connection.PlayerId)],
-            [connection.Id, connection.Node, connection.Ip, ms, (long)ConnectionTtl.TotalMilliseconds, connection.TokenHash]);
-        if (replaced == connection.Id)
+        var claim = (RedisResult[])(await redis.ScriptEvaluateAsync(ClaimScript, [ConnectionKey(connection.PlayerId), PlayerMessages.LogKey(connection.PlayerId)],
+            [connection.Id, connection.Node, connection.Ip, ms, (long)ConnectionTtl.TotalMilliseconds, connection.TokenHash, connection.Attachment]))!;
+        string? replaced = (string?)claim[0];
+        if (replaced == connection.Id || replaced == "")
         {
             replaced = null;
         }
+
+        StreamId.TryParse((string?)claim[1], out var head);
 
         await redis.SortedSetAddAsync(Heartbeats, connection.PlayerId, ms);
         await redis.SetAddAsync(OnlinePlayers, connection.PlayerId);
@@ -94,17 +107,51 @@ public static class GatewayPresence
         if (replaced is not null)
         {
             await AppendAsync(redis, "replaced", connection.PlayerId, replaced, ms, [new("replacedBy", connection.Id)]);
-            await redis.PublishAsync(RedisChannel.Literal(GatewayChannels.Disconnect), Js.Stringify(new JsonObject
+            await PlayerMessages.DisconnectAsync(redis, new JsonObject
             {
                 ["playerId"] = connection.PlayerId,
                 ["except"] = connection.Id,
                 ["code"] = 1000,
                 ["reason"] = "replaced",
-            }));
+            });
         }
 
         await AppendAsync(redis, "connected", connection, ms);
-        return replaced;
+        return new GatewayClaim(replaced, head);
+    }
+
+    // An edge's connection re-attached on another socket (another node, or this one again): only while it is still the
+    // player's current connection, opened with the same session (not replaced by a newer login, not let go of by its old
+    // socket or the reaper); 1 when it was. The node and the socket holding it now are written, so only this socket
+    // releases it, and the reaper leaves it alone.
+    private const string ResumeScript = """
+        if redis.call('HGET', KEYS[1], 'id') ~= ARGV[1] or redis.call('HGET', KEYS[1], 'token') ~= ARGV[4] then
+          return 0
+        end
+        redis.call('HSET', KEYS[1], 'node', ARGV[2], 'attach', ARGV[3])
+        redis.call('PEXPIRE', KEYS[1], ARGV[5])
+        return 1
+        """;
+
+    /// <summary>
+    /// An edge re-attached the player's connection here (<paramref name="connection"/>: its id and session as before,
+    /// this node, a new socket): it is theirs again only if it is still their current connection; then the player is
+    /// touched as an answer to the ping touches them, and a resumed event is appended (no connected: the game never
+    /// left). False: refused.
+    /// </summary>
+    public static async Task<bool> ResumedAsync(IDatabase redis, GatewayConnectionInfo connection, DateTimeOffset now)
+    {
+        long ms = now.ToUnixTimeMilliseconds();
+        if ((long)await redis.ScriptEvaluateAsync(ResumeScript, [ConnectionKey(connection.PlayerId)],
+            [connection.Id, connection.Node, connection.Attachment, connection.TokenHash, (long)ConnectionTtl.TotalMilliseconds]) != 1)
+        {
+            return false;
+        }
+
+        await redis.SortedSetAddAsync(Heartbeats, connection.PlayerId, ms);
+        await TouchSessionAsync(redis, connection, ms);
+        await AppendAsync(redis, "resumed", connection, ms);
+        return true;
     }
 
     /// <summary>The game answered the ping on its current connection: it is still there.</summary>
@@ -118,11 +165,13 @@ public static class GatewayPresence
 
     /// <summary>
     /// A connection closed. Only the player's current connection takes them offline (and not while a post-match rejoin
-    /// is pending); true when it was the current one, and a disconnected event was appended.
+    /// is pending); true when it was the current one, and a disconnected event was appended. <paramref name="reaped"/>:
+    /// no game asked for this close (an edge's link that never came back), so the readers take it as the server's failure,
+    /// as a reaped close.
     /// </summary>
-    public static async Task<bool> ClosedAsync(IDatabase redis, GatewayConnectionInfo connection, DateTimeOffset now)
+    public static async Task<bool> ClosedAsync(IDatabase redis, GatewayConnectionInfo connection, DateTimeOffset now, bool reaped = false)
     {
-        if ((long)await redis.ScriptEvaluateAsync(ReleaseScript, [ConnectionKey(connection.PlayerId)], [connection.Id]) != 1)
+        if ((long)await redis.ScriptEvaluateAsync(ReleaseScript, [ConnectionKey(connection.PlayerId)], [connection.Id, connection.Attachment]) != 1)
         {
             return false;
         }
@@ -137,7 +186,7 @@ public static class GatewayPresence
             }
         }
 
-        await AppendAsync(redis, "disconnected", connection, now.ToUnixTimeMilliseconds());
+        await AppendAsync(redis, "disconnected", connection, now.ToUnixTimeMilliseconds(), reaped);
         return true;
     }
 
@@ -200,9 +249,9 @@ public static class GatewayPresence
 
     // connected and disconnected name the connection's node, IP and session (its token's hash); replaced names the
     // connection that replaced it.
-    private static Task AppendAsync(IDatabase redis, string type, GatewayConnectionInfo connection, long ms) =>
+    private static Task AppendAsync(IDatabase redis, string type, GatewayConnectionInfo connection, long ms, bool reaped = false) =>
         AppendAsync(redis, type, connection.PlayerId, connection.Id, ms,
-            [new("node", connection.Node), new("ip", connection.Ip), new("token", connection.TokenHash)]);
+            [new("node", connection.Node), new("ip", connection.Ip), new("token", connection.TokenHash), .. reaped ? new NameValueEntry[] { new("reaped", "1") } : []]);
 
     private static Task AppendAsync(IDatabase redis, string type, string playerId, string connectionId, long ms, NameValueEntry[] fields) =>
         redis.StreamAddAsync(ConnectionsStream,
@@ -211,19 +260,27 @@ public static class GatewayPresence
 }
 
 /// <summary>
-/// One game connection: its id (minted where the socket is held), the player, the node holding it, the client's IP (as
-/// the reverse proxy reports it), and the hash of the session token it was opened with (<see cref="GatewayPresence.TokenHash"/>).
+/// One game connection: its id (minted where the socket is held: the node, or the edge in front of it), the player, the
+/// node holding it, the client's IP (as the reverse proxy reports it), the hash of the session token it was opened with
+/// (<see cref="GatewayPresence.TokenHash"/>), and the socket holding it on that node (<paramref name="Attachment"/>,
+/// minted per socket: an edge's connection keeps its id from node to node, and only its current socket releases it).
 /// </summary>
-public sealed record GatewayConnectionInfo(string Id, string PlayerId, string Node, string Ip, string TokenHash);
+public sealed record GatewayConnectionInfo(string Id, string PlayerId, string Node, string Ip, string TokenHash, string Attachment = "");
+
+/// <summary>What a connection's claim found: the connection it replaced (null: none), and the head of the player's replay log.</summary>
+public sealed record GatewayClaim(string? Replaced, StreamId LogHead);
 
 /// <summary>The channels every gateway node hears.</summary>
 public static class GatewayChannels
 {
-    /// <summary>{playerIds, message}: each node sends message to the players whose current connection it holds.</summary>
+    /// <summary>
+    /// {playerIds, message, seqs?}: each node sends message to the players whose current connection it holds. seqs
+    /// ({player: stream id}) names each player's entry in their replay log (<see cref="PlayerMessages"/>).
+    /// </summary>
     public const string Send = ProfileNotifications.WsSendChannel;
 
     /// <summary>
-    /// {playerId, connectionId?, except?, code?, reason?}: the node holding the player's connection closes it, only if it
+    /// {playerId, connectionId?, except?, code?, reason?, seq?}: the node holding the player's connection closes it, only if it
     /// is <c>connectionId</c> and is not <c>except</c> when those are given; with a code, a close handshake with that
     /// code and reason, without one at once (the ops command's, as the TS websocket's terminate()).
     /// </summary>

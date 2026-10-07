@@ -388,7 +388,7 @@ internal sealed class OpsService : IOpsService
         }
 
         var view = await ViewAsync(found.Value!);
-        long heard = await redis.PublishAsync(RedisChannel.Literal(DisconnectChannel), JsonSerializer.Serialize(new { playerId = view.Id }));
+        long heard = await Realtime.PlayerMessages.DisconnectAsync(redis, new JsonObject { ["playerId"] = view.Id });
         if (heard == 0)
         {
             return ControlResult<DisconnectView>.Refused($"no websocket service is listening on {DisconnectChannel} (not running, or older than this command)");

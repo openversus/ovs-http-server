@@ -49,7 +49,7 @@ public sealed class MatchToastsTests : IAsyncLifetime
         {
             if (m.ToString().Contains(Toastee, StringComparison.Ordinal))
             {
-                _published.Enqueue(m.ToString());
+                _published.Enqueue(Realtime.PlayerMessagesTests.WithoutSequences(m.ToString()));
             }
         });
     }

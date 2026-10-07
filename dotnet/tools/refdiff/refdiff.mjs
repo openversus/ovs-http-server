@@ -16,6 +16,12 @@ export { require };
 // Set in a Redis this harness has flushed; any other non-empty Redis is refused (the bench's is real dev data).
 const SCRATCH_MARKER = "refdiff:scratch";
 
+// The C# services' replay log (realtime:out:{player}, PlayerMessages: each message and forced close a player is sent,
+// kept a minute for the edge): TS has none. Left out of every state and write here, and the sequences it appends to
+// ws:send (seqs) and ws:disconnect (seq) are taken off the publish, so both servers' publishes compare as they are.
+// gateway_diff asserts the log itself.
+export const REPLAY_LOG = /^realtime:out:/;
+
 export function need(name) {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is not set`);
@@ -70,7 +76,7 @@ export function toPlain(value) {
 export async function dump(redis, db, skip = []) {
   const keys = {};
   for await (const key of redis.scanIterator({ COUNT: 1000 })) {
-    if (key === SCRATCH_MARKER) continue;
+    if (key === SCRATCH_MARKER || REPLAY_LOG.test(key)) continue;
     const type = await redis.type(key);
     const ttl = await redis.ttl(key);
     let value;
@@ -241,15 +247,19 @@ export function writes(lines, self) {
   return lines
     .filter((line) => line.match(/\[\d+ ([^\]]+)\]/)?.[1] !== self)
     .map((line) => [...line.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]))
-    .filter((parts) => parts.length && WRITES.has(parts[0].toLowerCase()) && parts[1] !== "refdiff:scratch")
+    .filter((parts) => parts.length && WRITES.has(parts[0].toLowerCase()) && parts[1] !== "refdiff:scratch" && !REPLAY_LOG.test(parts[1] ?? ""))
     .map(canonicalWrite).map((parts) => parts.join(" "));
 }
 
 // The C# Redis client spells some writes differently: SETEX k s v and PSETEX k ms v are SET k v EX s, SET k v PX ms is
 // SET k v EX s, PEXPIRE k ms is EXPIRE k s, HMSET is HSET, UNLINK is DEL. GETDEL is left out with the reads: whether it
-// deleted anything shows in the state after. One MONITOR command's parts in, the TS client's spelling out (lower case).
+// deleted anything shows in the state after. A publish loses the replay log's sequences (REPLAY_LOG), as MONITOR quotes
+// them, by their text: parsing the payload would reorder integer-like keys. One MONITOR command's parts in, the TS
+// client's spelling out (lower case).
 export function canonicalWrite(parts) {
   const [cmd, ...args] = [parts[0].toLowerCase(), ...parts.slice(1)];
+  if (cmd === "publish" && args[0] === "ws:send") return [cmd, args[0], args[1].replace(/,\\"seqs\\":\{[^{}]*\}\}$/, "}")];
+  if (cmd === "publish" && args[0] === "ws:disconnect") return [cmd, args[0], args[1].replace(/,\\"seq\\":\\"\d+-\d+\\"\}$/, "}")];
   const seconds = (ms) => String(Math.round(Number(ms) / 1000));
   if (cmd === "setex") return ["set", args[0], args[2], "EX", args[1]];
   if (cmd === "psetex") return ["set", args[0], args[2], "EX", seconds(args[1])];
@@ -263,7 +273,7 @@ export function canonicalWrite(parts) {
 export async function state(redis) {
   const out = {};
   for await (const key of redis.scanIterator({ COUNT: 1000 })) {
-    if (key === "refdiff:scratch") continue;
+    if (key === "refdiff:scratch" || REPLAY_LOG.test(key)) continue;
     const type = await redis.type(key);
     const ttl = await redis.ttl(key);
     const value = type === "string" ? await redis.get(key) : type === "hash" ? Object.fromEntries(Object.entries(await redis.hGetAll(key)).sort()) : type;

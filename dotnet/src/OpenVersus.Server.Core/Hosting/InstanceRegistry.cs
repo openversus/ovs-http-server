@@ -17,9 +17,12 @@ namespace OpenVersus.Server.Core.Hosting;
 /// <summary>One readiness check of an instance, as its last heartbeat saw it.</summary>
 public sealed record InstanceCheck(string Status, string? Description);
 
-/// <summary>An instance as the registry knows it. <see cref="State"/>: Ready, NotReady, Stopped, or Missing (no heartbeat lately).</summary>
+/// <summary>
+/// An instance as the registry knows it. <see cref="State"/>: Ready, NotReady, Stopped, or Missing (no heartbeat lately).
+/// <see cref="Address"/>: where it is reached, for an instance that others reach one by one (<see cref="ServiceInstance.Address"/>).
+/// </summary>
 public sealed record InstanceReport(string Service, string Instance, string? Version, DateTimeOffset Started, DateTimeOffset Seen, string State,
-    Dictionary<string, InstanceCheck> Checks);
+    Dictionary<string, InstanceCheck> Checks, string? Address = null);
 
 /// <summary>Every instance the registry knows, and the services there are.</summary>
 public sealed record ClusterView(DateTimeOffset At, IReadOnlyList<InstanceReport> Instances, IReadOnlyList<string> Services);
@@ -67,15 +70,22 @@ public static class InstanceRegistry
     }
 }
 
-/// <summary>Writes this instance into the registry every <see cref="InstanceRegistry.Interval"/>, and Stopped when it stops.</summary>
+/// <summary>
+/// Writes this instance into the registry every <see cref="InstanceRegistry.Interval"/>, and Stopped when it stops; also at
+/// once when the server has started (its listeners are bound: an <see cref="ServiceInstance.Address"/> set then is in the
+/// registry without waiting) and when the host starts stopping (a draining service shows as such at once).
+/// </summary>
 internal sealed class InstanceHeartbeat(IServiceProvider services, ServiceDefinition service, ServiceInstance instance, HealthCheckService health,
-    ILogger<InstanceHeartbeat> log) : BackgroundService
+    IHostApplicationLifetime lifetime, ILogger<InstanceHeartbeat> log) : BackgroundService
 {
     // Resolved while the host starts: a host can be stopped after its services are disposed (a test server's is).
     private readonly IConnectionMultiplexer? _redis = services.GetService<IConnectionMultiplexer>();
+    private readonly SemaphoreSlim _wake = new(0);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        using var started = lifetime.ApplicationStarted.Register(() => _wake.Release());
+        using var stopping = lifetime.ApplicationStopping.Register(() => _wake.Release());
         while (!stoppingToken.IsCancellationRequested)
         {
             if (_redis?.GetDatabase() is { } redis)
@@ -94,7 +104,7 @@ internal sealed class InstanceHeartbeat(IServiceProvider services, ServiceDefini
 
             try
             {
-                await Task.Delay(InstanceRegistry.Interval, stoppingToken);
+                await _wake.WaitAsync(InstanceRegistry.Interval, stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -120,5 +130,5 @@ internal sealed class InstanceHeartbeat(IServiceProvider services, ServiceDefini
     }
 
     private InstanceReport Report(string state, Dictionary<string, InstanceCheck> checks) =>
-        new(service.Name, instance.Id, instance.Version, instance.Started, DateTimeOffset.UtcNow, state, checks);
+        new(service.Name, instance.Id, instance.Version, instance.Started, DateTimeOffset.UtcNow, state, checks, instance.Address);
 }

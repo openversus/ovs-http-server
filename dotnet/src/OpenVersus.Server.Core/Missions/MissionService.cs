@@ -418,11 +418,7 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
             {
                 Report(unknown, playerId, matchId);
                 log.LogInformation("Missions for {Player} moved by match {Match} ({Character}, {Mode}, {Map}, PvP {PvP})", playerId, matchId, character, match.Mode, match.Map, match.IsPvP);
-                await redis.PublishAsync(RedisChannel.Literal(RiftProgressService.WsSendChannel), Js.Stringify(new JsonObject
-                {
-                    ["playerIds"] = new JsonArray(playerId),
-                    ["message"] = UpdatesComplete(Answer(state, playerId, live)["body"]!.DeepClone().AsObject(), playerId),
-                }));
+                await PlayerMessages.SendAsync(redis, [playerId], UpdatesComplete(Answer(state, playerId, live)["body"]!.DeepClone().AsObject(), playerId));
                 return;
             }
         }

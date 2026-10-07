@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text;
+using OpenVersus.Server.Core.Settings;
 
 namespace OpenVersus.Server.Core.Realtime;
 
@@ -68,4 +69,13 @@ public sealed class GatewaySettings
     [Description("How often each node looks for the players of gateway nodes that are gone (ms).")]
     [Range(100, 60000)]
     public int ReapIntervalMs { get; set; } = 5000;
+
+    [Description("The secret an edge presents (X-OVS-Edge) when it opens a game's link to a node; shared by the edges and the nodes. Unset: no edge is taken, and a link that presents one is refused. Games connecting directly are not affected. At least 32 characters.")]
+    [Secret]
+    [MinLength(32)]
+    public string? EdgeSecret { get; set; }
+
+    [Description("A game's link from an edge that ends without the edge's close (the edge let go of this node to move the game to another, or the edge died) is let go of after this long (ms) unless another node has taken the game by then; the player is then taken offline as a server failure (a disconnected event marked reaped). Longer than the edge's give-up time.")]
+    [Range(1000, 600000)]
+    public int EdgeDetachGraceMs { get; set; } = 30000;
 }

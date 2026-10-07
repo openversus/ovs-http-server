@@ -59,6 +59,26 @@ The game's realtime connection (/access hands out its address: `Realtime:Domain`
   (`HydraEncoder.Encode(..., webSocket: true)`, from the JSON read with a JS object's key order), and closes on
   `ws:disconnect {playerId, connectionId?, except?, code?, reason?}` (no code: dropped at once, the ops command's).
 
+An upgrade that presents `X-OVS-Edge` (the shared `Gateway:EdgeSecret`; refused when it does not match or none is set)
+is an edge's link for one game (`GatewayEdge`, Core, is the codec both ends use), named by the edge's
+`X-OVS-Connection-Id`. The handshake is the game's, as above, but every frame the node sends the edge is wrapped:
+unlogged (the id frame, pings, ticks), logged (a delivered message with its entry's id in the player's replay log), a
+position (the log's head at the claim, sent first, before the id frame), or close the game (its code; 0 to drop it).
+The edge closes the game only on that instruction; any other end of the link is the node letting go, after which the
+edge attaches the game to another node: a resume (`X-OVS-Resume-After`: the last log entry the game received, with the
+game's original first frame, whose token is checked for its signature but not its expiry). A node takes it only while
+the connection is still the player's current one, opened with the same session (otherwise it tells the edge to close
+the game); it then holds the connection on this socket (a `resumed` event, no `connected`, no id frame), and sends the
+game what its log holds after that entry, in order, holding whatever is delivered meanwhile and sending it after,
+without what the replay already sent; a close in the log that applies to the connection closes the game there. There is
+no check that the log still reaches back: whatever a trim dropped was delivered before the gap, as long as the replay
+window (`PlayerMessages.ReplayWindow`) is longer than any gap a resume covers. The other way round, the edge's close on the link is the game's end (closed, or
+dropped: code 4999), handled at once as a direct close; a link that ends without one (the edge moved the game, or died)
+is let go of only after `Gateway:EdgeDetachGraceMs` (30 s), as a server failure (a disconnected event marked reaped),
+and not at all if another socket has taken the connection by then. A node that stops leaves its edge links' players for
+another node. `realtime:conn:{player}` names the socket holding the connection (`attach`), and only that socket releases
+it, so a link moved away and back to the same node is not let go of by its old socket.
+
 `GatewayPresence` (Core) keeps who is connected where:
 
 - `realtime:conn:{player}`: the player's current connection (id, node, ip, at, the session token's SHA-256), its TTL
@@ -89,6 +109,13 @@ The game's realtime connection (/access hands out its address: `Realtime:Domain`
   again first never gets one (their new connection replaces the dead one); if a custom lobby is left over from that
   session, their first `create_party_lobby` takes them out of it rather than into it (/access records it in the session).
 
+Failover: `tools/realtime/failover_proof.mjs` runs fake games through a real edge to real nodes (each its own process)
+with numbered messages sent all along, and loses a node: SIGKILL (with a close sent while its games have no node, and
+the reaper's time after), SIGTERM, SIGSTOP (a host that sends nothing; then woken), two SIGKILLs in a row. Every game
+must get every message once, in order, with no close and no second id frame. Measured once on the bench machine: a
+killed or stopped node's games are moved within about 100 ms; a frozen one's in about 6 s (the link's keep-alive: 2 s,
+then 3 s without an answer). `gateway_diff.mjs` also runs through an edge (REF_CS_WS at the edge, REF_WAIT_FOR_NODE=1).
+
 Parity with the TS websocket: `tools/realtime/gateway_diff.mjs` (raw frames, closes, Redis writes) and
 `tools/realtime/disconnect_diff.mjs` (what a dropped game's close does to the lobbies; its reap mode kills the node
 holding the game instead, and compares that with the close).
@@ -117,6 +144,35 @@ lobby with its match end and rematch (`MatchEnd`, `Rematches`), the matchmaking 
 `OpenVersus.Server.Matchmaking`), the queue and its tick, the match config (`GameplayConfigs`, kept per player, sent by
 the match flow), and the disconnects (above).
 
+## The edge (`OpenVersus.Server.Edge`, the `edge` service)
+
+The game's websocket in front of the gateway nodes (EDGE_PORT, 3001 by default; behind the TLS-terminating proxy). It
+holds each game's socket and links it to a gateway node (one websocket per game, the link above), forwarding the game's
+frames as they are and taking the node's out of their envelope, so the game gets exactly what a direct connection gets.
+It keeps nothing outside memory: an edge that dies takes its games' sockets with it, and there is nothing to resume.
+
+- Nodes are found in the instance registry: ready `ws` instances with an address. A node advertises
+  `ws://<host>:<port>` once its listener is bound: its public port, on the host `WEBSOCKET_ADVERTISE` names (or, given
+  a network such as `172.20.0.0/16`, its own address in it: for a container on several networks), or its first IPv4
+  address that is not a loopback (a container's own). The edge passes the game's address on as `X-Real-IP`
+  (the rule every service reads first).
+- Toward the game, websocket keep-alive is off, as on a node; the link to the node has it on (`Edge:KeepAliveMs`,
+  `Edge:KeepAliveTimeoutMs`), so a node that dies without closing anything is noticed in seconds.
+- The game is closed when its node says so (with the node's code), when no node is ready for it (1001 "going away"),
+  or when a node refuses the edge (another `Gateway:EdgeSecret`: 1011, logged as an error). The game's own close is
+  passed to the node with its code (1000 for one without a code), and its socket dropping as 4999.
+- A stopping edge (SIGTERM) stops listening (the proxy sends it no new games) and keeps its games until they leave
+  (`Edge:DrainTimeoutMs`, 0: no limit), showing as not ready in the registry (the `draining` check); its control API
+  stops listening with it. Without `Gateway:EdgeSecret` it is not ready.
+- When the link ends without the node closing the game (the node stopped, crashed, or stopped answering the link's
+  keep-alive), the edge moves the game at once: to another ready node (a node that failed any game on this edge is
+  avoided by every game for the registry's TTL, as the registry may still list it; it is tried again only when there is
+  no other), as a resume after the last log entry the game was sent, once the game has its id frame; before that, as a
+  new connection (the new node sends the id frame). Meanwhile the edge pings the game itself, at once and every
+  `Edge:DetachedPingMs`, and drops its answers. A node that refuses the resume (a newer login, or the player let go of)
+  tells the edge to close the game. A game with no node for `Edge:GiveUpMs` (20 s; below the replay window and
+  `Gateway:EdgeDetachGraceMs`) is closed, "going away".
+
 ## A node restart without disconnecting anyone
 
 State in Redis is necessary but not enough: the socket itself lives in one process, and the game logs out when it
@@ -138,8 +194,17 @@ keeps one websocket for its whole session, and goes back to its title screen whe
 that reconnects logs in again first (/access). The gateway already keeps a connection's identity apart from the node
 (its id, minted where the socket is held, in `realtime:conn:{player}` and every event), and takes the client's IP from
 the forwarded headers; the edge will mint the id, pass the IP, and resume a connection on a new node with a check of the
-session (not of the token's expiry). Whether messages sent during a re-attach are kept (a per-player sequence and a short
-replay log) is still to decide.
+session (not of the token's expiry).
+
+Decided 2026-10-07: nothing sent during a re-attach is lost. Every message and forced close for a player goes through
+one helper (`PlayerMessages.SendAsync` and `DisconnectAsync`), which runs one script: append it to the player's replay
+log (`realtime:out:{player}`, a stream; field `message` or `disconnect`), then publish it with the entry's stream id
+(`ws:send` gets `seqs: {player: id}`, `ws:disconnect` gets `seq`). The id is the player's sequence. The log keeps the
+last `PlayerMessages.ReplayWindow` (60 s, by the Redis clock) and expires `ReplayTtl` (5 min) after its newest entry.
+The window must be longer than any re-attach can take (the edge gives up sooner, and the reaper lets a dead node's
+player go after about 30-50 s); then everything a trim drops was already delivered, and a re-attach replays whatever
+follows the last id the game received. The nodes ignore the sequences until they serve an edge. A node's own frames (the
+id frame, the ping, the matchmaking tick) are not logged: whichever node holds the game makes them.
 
 ## Still assuming one instance (not to be ported as it is)
 

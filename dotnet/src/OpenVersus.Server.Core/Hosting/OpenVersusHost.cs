@@ -82,7 +82,14 @@ public static class KnownServices
     /// <summary>The migration's reverse proxy: ported routes to the C# services, the rest to the TS server.</summary>
     public static readonly ServiceDefinition Proxy = new("proxy", "PROXY_PORT", DefaultPublicPort: 8080, DefaultControlPort: 17804);
 
-    public static IReadOnlyList<ServiceDefinition> All { get; } = [Http, Access, Social, Lobbies, Web, Realtime, Matchmaking, MatchFlow, Proxy];
+    /// <summary>
+    /// The edge in front of the realtime gateway (EDGE_PORT): holds the game's websocket and links it to a gateway node,
+    /// moving it to another when that node goes (docs/REALTIME.md). Redis: the nodes are found in the instance registry.
+    /// </summary>
+    public static readonly ServiceDefinition Edge = new("edge", "EDGE_PORT", DefaultPublicPort: 3001, DefaultControlPort: 17810,
+        ServiceStores.Redis);
+
+    public static IReadOnlyList<ServiceDefinition> All { get; } = [Http, Access, Social, Lobbies, Web, Realtime, Edge, Matchmaking, MatchFlow, Proxy];
 
     public static ServiceDefinition? Find(string name) => All.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
 }
@@ -100,6 +107,9 @@ public sealed class ServiceInstance
         .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion;
 
     public DateTimeOffset Started { get; } = DateTimeOffset.UtcNow;
+
+    /// <summary>Where other services reach this instance, for those that are reached one by one (a gateway node: its websocket URL); null otherwise.</summary>
+    public string? Address { get; set; }
 }
 
 /// <summary>

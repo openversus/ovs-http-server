@@ -145,8 +145,9 @@ frames as they are and taking the node's out of their envelope, so the game gets
 It keeps nothing outside memory: an edge that dies takes its games' sockets with it, and there is nothing to resume.
 
 - Nodes are found in the instance registry: ready `ws` instances with an address. A node advertises
-  `ws://<host>:<port>` once its listener is bound: its public port, on the host `WEBSOCKET_ADVERTISE` names, or its
-  first IPv4 address that is not a loopback (a container's own). The edge passes the game's address on as `X-Real-IP`
+  `ws://<host>:<port>` once its listener is bound: its public port, on the host `WEBSOCKET_ADVERTISE` names (or, given
+  a network such as `172.20.0.0/16`, its own address in it: for a container on several networks), or its first IPv4
+  address that is not a loopback (a container's own). The edge passes the game's address on as `X-Real-IP`
   (the rule every service reads first).
 - Toward the game, websocket keep-alive is off, as on a node; the link to the node has it on (`Edge:KeepAliveMs`,
   `Edge:KeepAliveTimeoutMs`), so a node that dies without closing anything is noticed in seconds.
@@ -156,8 +157,13 @@ It keeps nothing outside memory: an edge that dies takes its games' sockets with
 - A stopping edge (SIGTERM) stops listening (the proxy sends it no new games) and keeps its games until they leave
   (`Edge:DrainTimeoutMs`, 0: no limit), showing as not ready in the registry (the `draining` check); its control API
   stops listening with it. Without `Gateway:EdgeSecret` it is not ready.
-- Moving a game to another node when its node goes is slice 3f's next step (f3b); until then a lost node closes the
-  game "going away", as a node's crash did before.
+- When the link ends without the node closing the game (the node stopped, crashed, or stopped answering the link's
+  keep-alive), the edge moves the game: to another ready node (the one lost is tried again only when there is no
+  other), as a resume after the last log entry the game was sent, once the game has its id frame; before that, as a
+  new connection (the new node sends the id frame). Meanwhile the edge pings the game itself, at once and every
+  `Edge:DetachedPingMs`, and drops its answers. A node that refuses the resume (a newer login, or the player let go of)
+  tells the edge to close the game. A game with no node for `Edge:GiveUpMs` (20 s; below the replay window and
+  `Gateway:EdgeDetachGraceMs`) is closed, "going away".
 
 ## A node restart without disconnecting anyone
 

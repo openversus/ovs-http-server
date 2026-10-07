@@ -6,7 +6,9 @@ using System.Net.WebSockets;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,12 +39,13 @@ public sealed class EdgeTests : IAsyncLifetime
     private const int TestRedisDb = 12;
     private const string Ip = "198.51.100.12";
     private const string EdgeSecret = "the-edges-and-the-nodes-share-this";
+    private const int GiveUpMs = 3000;
     private static readonly string? s_redis = Environment.GetEnvironmentVariable("OVS_TEST_REDIS");
     private static readonly TimeSpan s_wait = TimeSpan.FromSeconds(8);
 
     private readonly string _player = Convert.ToHexStringLower(Guid.NewGuid().ToByteArray()[..12]);
     private ConnectionMultiplexer? _redis;
-    private NodeFactory? _node;
+    private readonly List<NodeFactory> _nodes = [];
     private EdgeFactory? _edge;
 
     private IDatabase Redis => _redis!.GetDatabase(TestRedisDb);
@@ -79,6 +82,8 @@ public sealed class EdgeTests : IAsyncLifetime
             builder.UseSetting("EDGE_PORT", "0");
             builder.UseSetting("Gateway:EdgeSecret", secret);
             builder.UseSetting("Edge:DrainTimeoutMs", "3000");
+            builder.UseSetting("Edge:GiveUpMs", GiveUpMs.ToString());
+            builder.UseSetting("Edge:DetachedPingMs", "1000");
         }
     }
 
@@ -138,8 +143,7 @@ public sealed class EdgeTests : IAsyncLifetime
         // Only these tests use this database: earlier runs' instances and connections go.
         await _redis.GetServer(_redis.GetEndPoints()[0]).FlushDatabaseAsync(TestRedisDb);
 
-        _node = StartNode();
-        await WaitForNodeAsync(_node);
+        await StartNodeAsync();
         _edge = new EdgeFactory();
         _edge.UseKestrel(0);
         _edge.StartServer();
@@ -152,7 +156,7 @@ public sealed class EdgeTests : IAsyncLifetime
             return;
         }
 
-        foreach (var factory in new IAsyncDisposable?[] { _edge, _node })
+        foreach (var factory in new IAsyncDisposable?[] { _edge }.Concat(_nodes))
         {
             if (factory is not null)
             {
@@ -163,12 +167,25 @@ public sealed class EdgeTests : IAsyncLifetime
         await _redis.DisposeAsync();
     }
 
-    private static NodeFactory StartNode()
+    // A gateway node, started and in the registry with its address.
+    private async Task<NodeFactory> StartNodeAsync()
     {
         var node = new NodeFactory();
         node.UseKestrel(0);
         node.StartServer();
+        _nodes.Add(node);
+        await WaitForNodeAsync(node);
         return node;
+    }
+
+    // The node holding the player's connection now (realtime:conn names it), stopped as a node update stops it.
+    private async Task<string> StopHolderAsync()
+    {
+        string holder = (await Redis.HashGetAsync(GatewayPresence.ConnectionKey(_player), "node")).ToString();
+        var node = _nodes.Single(n => n.Services.GetRequiredService<ServiceInstance>().Id == holder);
+        _nodes.Remove(node);
+        await node.DisposeAsync();
+        return holder;
     }
 
     // Until the node is in the registry, ready, with its address (written once its listener is bound).
@@ -326,8 +343,12 @@ public sealed class EdgeTests : IAsyncLifetime
             await wrong.DisposeAsync();
         }
 
-        await _node!.DisposeAsync();
-        _node = null;
+        foreach (var node in _nodes.ToList())
+        {
+            _nodes.Remove(node);
+            await node.DisposeAsync();
+        }
+
         await UntilAsync(async () => !(await InstanceRegistry.ReadAsync(Redis, DateTimeOffset.UtcNow)).Instances.Any(i => i.Service == "ws" && i.State == "Ready"));
         var none = await ConnectAsync(wait: false);
         Assert.Equal((WebSocketCloseStatus.EndpointUnavailable, "going away"), await none.Closed.WaitAsync(s_wait));
@@ -352,5 +373,161 @@ public sealed class EdgeTests : IAsyncLifetime
         await PlayerMessages.SendAsync(Redis, [_player], new JsonObject { ["cmd"] = "still here" });
         await Until(() => game.Frames.Any(f => f.SequenceEqual(Encoded("still here"))));
         Assert.False(game.Closed.IsCompleted);
+    }
+
+    private int Count(Game game, string cmd) => game.Frames.Count(f => f.SequenceEqual(Encoded(cmd)));
+
+    private Task SendAsync(string cmd) => PlayerMessages.SendAsync(Redis, [_player], new JsonObject { ["cmd"] = cmd });
+
+    [Fact]
+    // The game's node stops: the edge moves the game to another node (a resume), the game sees no close and no second
+    // id frame, and gets what was sent meanwhile once.
+    public async Task When_its_node_goes_the_game_moves_to_another_and_misses_nothing()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await StartNodeAsync();
+        var game = await ConnectAsync();
+        await SendAsync("m1");
+        await Until(() => Count(game, "m1") == 1);
+
+        string lost = await StopHolderAsync();
+        await SendAsync("m2");
+        await UntilAsync(async () => (await EventsAsync()).Contains("resumed"));
+        await Until(() => Count(game, "m2") == 1);
+        await SendAsync("m3");
+        await Until(() => Count(game, "m3") == 1);
+        await Task.Delay(300);
+
+        Assert.False(game.Closed.IsCompleted);
+        Assert.Equal(1, game.Frames.Count(f => f.SequenceEqual(GatewayProtocol.IdFrame)));
+        Assert.Equal([1, 1, 1], new[] { "m1", "m2", "m3" }.Select(m => Count(game, m)));
+        Assert.NotEqual(lost, (await Redis.HashGetAsync(GatewayPresence.ConnectionKey(_player), "node")).ToString());
+        Assert.Equal(1, (await EventsAsync()).Count(e => e == "connected"));
+        Assert.DoesNotContain("disconnected", await EventsAsync());
+    }
+
+    [Fact]
+    // Two nodes going one after the other: the game moves twice, and still gets everything once, in order.
+    public async Task Two_nodes_going_in_a_row_lose_nothing_either()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await StartNodeAsync();
+        await StartNodeAsync();
+        var game = await ConnectAsync();
+        for (int i = 1; i <= 2; i++)
+        {
+            int resumed = (await EventsAsync()).Count(e => e == "resumed");
+            await StopHolderAsync();
+            await SendAsync($"gap {i}");
+            await UntilAsync(async () => (await EventsAsync()).Count(e => e == "resumed") > resumed);
+            await Until(() => Count(game, $"gap {i}") == 1);
+        }
+
+        await SendAsync("after");
+        await Until(() => Count(game, "after") == 1);
+        var messages = game.Frames.Where(f => f.Length > 1 && !f.SequenceEqual(GatewayProtocol.IdFrame)).ToList();
+        Assert.Equal([Encoded("gap 1"), Encoded("gap 2"), Encoded("after")], messages);
+        Assert.False(game.Closed.IsCompleted);
+    }
+
+    [Fact]
+    // No node for the game: the edge pings it itself (at once, then every Edge:DetachedPingMs) and closes it, "going
+    // away", after Edge:GiveUpMs.
+    public async Task A_game_with_no_node_left_is_pinged_then_closed_after_the_give_up_time()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        var game = await ConnectAsync();
+        int before = game.Frames.Count;
+        var started = DateTime.UtcNow;
+        await StopHolderAsync();
+
+        var closed = await game.Closed.WaitAsync(s_wait);
+        var after = game.Frames.Skip(before).ToList();
+        Assert.Equal((WebSocketCloseStatus.EndpointUnavailable, "going away"), closed);
+        Assert.True(DateTime.UtcNow - started >= TimeSpan.FromMilliseconds(GiveUpMs - 200));
+        Assert.True(after.Count >= 3, $"{after.Count} pings");
+        Assert.All(after, f => Assert.Equal([GatewayProtocol.Ping], f));
+    }
+
+    [Fact]
+    // The next node refuses the resume (the player logged in again elsewhere meanwhile): the game is closed, as told.
+    public async Task A_refused_resume_closes_the_game()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await StartNodeAsync();
+        var game = await ConnectAsync();
+        await Redis.HashSetAsync(GatewayPresence.ConnectionKey(_player), "id", "a-newer-login");
+        await StopHolderAsync();
+
+        Assert.Equal((WebSocketCloseStatus.NormalClosure, "resume refused"), await game.Closed.WaitAsync(s_wait));
+    }
+
+    [Fact]
+    // A node that goes before the game got its id frame (here: one that sends the edge its position and drops the link)
+    // leaves nothing to resume: the next node takes the game as new, and the game gets its id frame once.
+    public async Task A_game_that_never_got_its_id_frame_is_taken_as_new_by_the_next_node()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        foreach (var node in _nodes.ToList())
+        {
+            _nodes.Remove(node);
+            await node.DisposeAsync();
+        }
+
+        await using var dropper = await StartDropperAsync();
+        var game = await ConnectAsync(wait: false);
+        await Task.Delay(700);
+        Assert.Empty(game.Frames);
+
+        await StartNodeAsync();
+        await Until(() => game.Frames.Count >= 2);
+        await UntilAsync(async () => (await EventsAsync()).Contains("connected"));
+        Assert.Equal(GatewayProtocol.IdFrame, game.Frames.First());
+        Assert.DoesNotContain("resumed", await EventsAsync());
+        Assert.False(game.Closed.IsCompleted);
+    }
+
+    // A "node" in the registry that, once it has the game's first frame, sends a position and drops the link.
+    private async Task<WebApplication> StartDropperAsync()
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseKestrel(k => k.Listen(System.Net.IPAddress.Loopback, 0));
+        var app = builder.Build();
+        app.UseWebSockets();
+        app.Run(async context =>
+        {
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            await socket.ReceiveAsync(new byte[65536], CancellationToken.None);
+            await socket.SendAsync(GatewayEdge.Position(new StreamId(1, 0)), WebSocketMessageType.Binary, true, CancellationToken.None);
+            await Task.Delay(100);
+            socket.Abort();
+        });
+        await app.StartAsync();
+        string address = Address(app.Services);
+        string id = "dropper:" + Guid.NewGuid().ToString("N")[..6];
+        var report = new InstanceReport("ws", id, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "Ready", [], address);
+        await Redis.StringSetAsync(InstanceRegistry.Key(id), System.Text.Json.JsonSerializer.Serialize(report, System.Text.Json.JsonSerializerOptions.Web), TimeSpan.FromMinutes(1));
+        await Redis.SortedSetAddAsync(InstanceRegistry.Index, $"ws/{id}", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        return app;
     }
 }

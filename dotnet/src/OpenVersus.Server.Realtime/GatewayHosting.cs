@@ -45,21 +45,29 @@ public static class GatewayHosting
         return addresses.Select(BindingAddress.Parse).Where(a => !a.IsUnixPipe && a.Port != control).Select(a => (int?)a.Port).FirstOrDefault();
     }
 
-    // WEBSOCKET_ADVERTISE, else the first IPv4 address of an interface that is up and not a loopback, else 127.0.0.1.
+    // WEBSOCKET_ADVERTISE: a host, or a network (CIDR: this node's address inside it, for a container on several
+    // networks); unset, the first IPv4 address of an interface that is up and not a loopback; else 127.0.0.1.
     internal static string AdvertisedHost(IConfiguration configuration)
     {
-        if (configuration["WEBSOCKET_ADVERTISE"] is { Length: > 0 } host)
+        string? advertise = configuration["WEBSOCKET_ADVERTISE"];
+        System.Net.IPNetwork? network = null;
+        if (advertise is { Length: > 0 })
         {
-            return host;
+            if (!System.Net.IPNetwork.TryParse(advertise, out var parsed))
+            {
+                return advertise;
+            }
+
+            network = parsed;
         }
 
-        return System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+        var addresses = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
             .Where(i => i.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up
                 && i.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
             .SelectMany(i => i.GetIPProperties().UnicastAddresses)
             .Select(a => a.Address)
-            .FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !System.Net.IPAddress.IsLoopback(a))?.ToString()
-            ?? "127.0.0.1";
+            .Where(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !System.Net.IPAddress.IsLoopback(a));
+        return (network is { } within ? addresses.FirstOrDefault(within.Contains) : addresses.FirstOrDefault())?.ToString() ?? "127.0.0.1";
     }
 
     /// <summary>

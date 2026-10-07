@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Realtime;
+using StackExchange.Redis;
 
 namespace OpenVersus.Server.Edge;
 
@@ -62,6 +63,14 @@ internal sealed class EdgeSession(WebSocket game, string ip, EdgeNodes nodes, Ed
     // The last entry of the player's replay log the game was sent (or the head of the log when the first link was made):
     // what a resume asks the next node to send after. Null until a node gave one.
     private StreamId? _cursor;
+
+    // The game got its id frame: from then on a new node resumes its session (with the cursor); before, a new node takes
+    // it as new (the position and the id frame come again). Also when the edge may ping it itself.
+    private bool _handshaken;
+
+    // While the game has no node: since when (Environment.TickCount64), and the edge's own pings to it.
+    private long? _detachedAt;
+    private CancellationTokenSource? _pinging;
 
     // A frame for the game, or (Frame null) its close: Code 0 drops it with no close handshake.
     private sealed record ToGame(byte[]? Frame, int Code, string? Reason);
@@ -127,33 +136,124 @@ internal sealed class EdgeSession(WebSocket game, string ip, EdgeNodes nodes, Ed
         }
     }
 
+    // Links the game to a node, and to another each time its node goes (a resume: the new node sends what the game
+    // missed), until the game leaves or is closed. Nodes that went or failed are tried again only when there is no other;
+    // a game that has had no node for Edge:GiveUpMs is closed. A game that never had a node is closed at once when there
+    // is none.
     private async Task LinkAsync()
     {
         var excluded = new HashSet<string>();
-        var node = await nodes.PickAsync(excluded);
-        if (node is null)
+        try
         {
-            log.LogWarning("No gateway node to take the game from {Ip} (connection {Connection}); closed", ip, _id);
-            CloseGame((int)WebSocketCloseStatus.EndpointUnavailable, "going away");
-            return;
-        }
+            while (!_ended.Task.IsCompleted)
+            {
+                EdgeNode? node;
+                try
+                {
+                    node = await nodes.PickAsync(excluded);
+                }
+                catch (Exception e) when (e is RedisException or TimeoutException)
+                {
+                    // The registry could not be read: no node this try (a game in a gap keeps trying).
+                    log.LogWarning("Gateway nodes not found for the game from {Ip} (connection {Connection}): {Error}", ip, _id, e.Message);
+                    node = null;
+                }
 
-        switch (await AttachAsync(node))
+                if (node is null && _detachedAt is null && !_handshaken)
+                {
+                    log.LogWarning("No gateway node to take the game from {Ip} (connection {Connection}); closed", ip, _id);
+                    CloseGame((int)WebSocketCloseStatus.EndpointUnavailable, "going away");
+                    return;
+                }
+
+                var outcome = node is null ? Outcome.Failed : await AttachAsync(node);
+                switch (outcome)
+                {
+                    case Outcome.Ended or Outcome.Closed:
+                        return;
+                    case Outcome.Misconfigured:
+                        CloseGame((int)WebSocketCloseStatus.InternalServerError, "edge misconfigured");
+                        return;
+                    case Outcome.Detached:
+                        // A new gap: the node just lost is the one not to try first.
+                        excluded.Clear();
+                        Detach("lost its node", node!);
+                        break;
+                    default:
+                        Detach("could not be linked", node);
+                        break;
+                }
+
+                if (node is not null)
+                {
+                    excluded.Add(node.Instance);
+                }
+
+                if (Environment.TickCount64 - _detachedAt >= settings.GiveUpMs)
+                {
+                    log.LogWarning("The game from {Ip} (connection {Connection}) has had no gateway node for {Ms} ms; closed", ip, _id, settings.GiveUpMs);
+                    CloseGame((int)WebSocketCloseStatus.EndpointUnavailable, "going away");
+                    return;
+                }
+
+                await Task.WhenAny(Task.Delay(RetryDelay), _ended.Task);
+            }
+        }
+        finally
         {
-            case Outcome.Misconfigured:
-                CloseGame((int)WebSocketCloseStatus.InternalServerError, "edge misconfigured");
-                return;
-            case Outcome.Failed or Outcome.Detached:
-                // Moving the game to another node is not built yet: the game is closed as a node's crash closed it before.
-                log.LogWarning("The game from {Ip} (connection {Connection}) lost its node {Node}; closed", ip, _id, node.Instance);
-                CloseGame((int)WebSocketCloseStatus.EndpointUnavailable, "going away");
-                return;
+            StopPinging();
         }
     }
 
-    // One link to a node, from its upgrade to its end.
+    // How long between two tries to link a game that has no node.
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(500);
+
+    // The game has no node (from the first failure on): the gap's start, and the edge pings the game itself, at once
+    // and then every Edge:DetachedPingMs, so its ~30 s without a ping never runs out (only once it has its id frame).
+    private void Detach(string what, EdgeNode? node)
+    {
+        if (_detachedAt is not null)
+        {
+            return;
+        }
+
+        _detachedAt = Environment.TickCount64;
+        log.LogInformation("The game from {Ip} (connection {Connection}) {What} {Node}: moving it", ip, _id, what, node?.Instance ?? "(none ready)");
+        if (_handshaken)
+        {
+            _pinging = new CancellationTokenSource();
+            _ = PingAsync(_pinging.Token);
+        }
+    }
+
+    private async Task PingAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                SendGame([GatewayProtocol.Ping]);
+                await Task.Delay(settings.DetachedPingMs, ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    // The game has a node again.
+    private void StopPinging()
+    {
+        _pinging?.Cancel();
+        _pinging?.Dispose();
+        _pinging = null;
+        _detachedAt = null;
+    }
+
+    // One link to a node, from its upgrade to its end: a resume after the cursor once the game has its id frame, else new.
     private async Task<Outcome> AttachAsync(EdgeNode node)
     {
+        StreamId? resumeAfter = _handshaken ? _cursor : null;
         using var link = new ClientWebSocket();
         link.Options.KeepAliveInterval = TimeSpan.FromMilliseconds(settings.KeepAliveMs);
         link.Options.KeepAliveTimeout = TimeSpan.FromMilliseconds(settings.KeepAliveTimeoutMs);
@@ -163,6 +263,11 @@ internal sealed class EdgeSession(WebSocket game, string ip, EdgeNodes nodes, Ed
         if (ip.Length > 0)
         {
             link.Options.SetRequestHeader("X-Real-IP", ip);
+        }
+
+        if (resumeAfter is { } after)
+        {
+            link.Options.SetRequestHeader(GatewayEdge.ResumeAfterHeader, after.ToString());
         }
 
         try
@@ -185,7 +290,9 @@ internal sealed class EdgeSession(WebSocket game, string ip, EdgeNodes nodes, Ed
         }
 
         Volatile.Write(ref _link, link);
-        log.LogInformation("Game from {Ip} linked to gateway node {Node} (connection {Connection})", ip, node.Instance, _id);
+        StopPinging();
+        log.LogInformation("Game from {Ip} {How} gateway node {Node} (connection {Connection})", ip, resumeAfter is { } from ? $"resumed after {from} on" : "linked to",
+            node.Instance, _id);
         if (_ended.Task.IsCompleted)
         {
             // The game left while the link was being made: the node is told as the reader would have told it.
@@ -223,6 +330,7 @@ internal sealed class EdgeSession(WebSocket game, string ip, EdgeNodes nodes, Ed
                 switch (frame.Kind)
                 {
                     case GatewayEdge.Kind.Unlogged:
+                        _handshaken |= frame.Frame.AsSpan().SequenceEqual(GatewayProtocol.IdFrame);
                         SendGame(frame.Frame);
                         break;
                     case GatewayEdge.Kind.Logged when _cursor is not { } cursor || frame.Id > cursor:

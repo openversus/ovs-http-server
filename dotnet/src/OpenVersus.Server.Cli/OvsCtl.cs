@@ -31,22 +31,22 @@ public static class OvsCtl
                 .WithDescription("Every instance of every service: ready or not, version, uptime, last heard from. With a service or instance: its checks. --probe: this service only, for a container's health check.")
                 .WithExample("health").WithExample("health", "matchmaking").WithExample("health", "--probe");
             config.AddCommand<StatusCommand>("status").WithDescription("The service's status: instance, version, uptime, whether settings are shared.");
-            config.AddCommand<QueuesCommand>("queues").WithDescription("Who is waiting in each matchmaking queue, and for how long.");
-            config.AddCommand<OnlineCommand>("online").WithDescription("How many players are connected (--players: who).");
-            config.AddCommand<MatchesCommand>("matches").WithDescription("Matches in progress, as the website's /matches shows them.");
+            config.AddCommand<QueuesCommand>("queues").WithDescription("Who is waiting in each matchmaking queue, and for how long. Asks the matchmaking service by default.");
+            config.AddCommand<OnlineCommand>("online").WithDescription("How many players are connected (--players: who, and through which gateway node and edge). Asks the access service by default.");
+            config.AddCommand<MatchesCommand>("matches").WithDescription("Matches in progress, as the website's /matches shows them. Asks the match flow service by default.");
             config.AddCommand<LobbyCommand>("lobby").WithDescription("A custom lobby by its join code (any case) or its id, or every custom lobby (--all): leader, mode, and who is on which team, with each member's LobbyPlayerIndex. Asks the lobbies service unless --service or OVS_SERVICE says otherwise.")
                 .WithExample("lobby", "GQRBM").WithExample("lobby", "--all");
             config.AddBranch("player", player =>
             {
-                player.SetDescription("Player records.");
-                player.AddCommand<PlayerOnlineCommand>("online").WithDescription("Who is connected, with each one's name, username, id, Steam id and IP.");
-                player.AddCommand<PlayerShowCommand>("show").WithDescription("A player's record.");
+                player.SetDescription("Player records. Asks the access service by default.");
+                player.AddCommand<PlayerOnlineCommand>("online").WithDescription("Who is connected, with each one's name, username, id, Steam id, IP, gateway node and edge.");
+                player.AddCommand<PlayerShowCommand>("show").WithDescription("A player's record, and their connection: the gateway node and the edge it goes through.");
                 player.AddCommand<PlayerRenameCommand>("rename").WithDescription("Rename a player (an administrator's rename: no censoring).");
                 player.AddCommand<PlayerDisconnectCommand>("disconnect").WithDescription("Close a player's game connection, as a heartbeat timeout would (the game logs out).");
             });
             config.AddBranch("settings", settings =>
             {
-                settings.SetDescription("Read and change settings while the service runs.");
+                settings.SetDescription("Read and change settings while the service runs. get, set and unset ask the first running service that has the key, unless one is named.");
                 settings.AddCommand<ListCommand>("list").WithDescription("Every setting, its value and its overrides.");
                 settings.AddCommand<GetCommand>("get").WithDescription("One setting, with its description.");
                 settings.AddCommand<SetCommand>("set").WithDescription("Override a setting (for every replica by default).");
@@ -57,6 +57,42 @@ public static class OvsCtl
     }
 
     /// <summary>Prints the reply's value (as JSON with --json, else with <paramref name="render"/>) or its error.</summary>
+    /// <summary>
+    /// The service a setting's command asks: the one chosen (--service, OVS_SERVICE, --socket, --port); else the
+    /// command's default if it has the key, else the first running service that has it (a setting belongs to the services
+    /// that read it: Gateway:* the ws and edge services, Realtime:* access and http, ...), named on the console unless
+    /// --json. Null client: none has it, with why.
+    /// </summary>
+    public static async Task<(ControlClient? Client, string? Error)> ServiceWithAsync(IAnsiConsole console, KeySettings settings,
+        Func<string, ControlClient>? clientFor = null)
+    {
+        if (settings.ServiceNamed)
+        {
+            return (ControlClient.For(settings), null);
+        }
+
+        bool reached = false;
+        foreach (string service in KnownServices.All.Select(s => s.Name).Where(n => n != settings.Service).Prepend(settings.Service))
+        {
+            var client = clientFor?.Invoke(service) ?? ControlClient.For(settings, service);
+            var probe = await client.GetAsync(settings.Key);
+            if (probe.Value is not null || (!probe.Unreachable && probe.Error?.StartsWith("unknown setting", StringComparison.Ordinal) == false))
+            {
+                if (service != settings.Service && !settings.Json)
+                {
+                    console.MarkupLineInterpolated($"[grey]Asking the {service} service: it has {settings.Key}.[/]");
+                }
+
+                return (client, null);
+            }
+
+            reached |= !probe.Unreachable;
+            client.Dispose();
+        }
+
+        return (null, reached ? $"no running service has a setting '{settings.Key}'" : "no service's control API could be reached");
+    }
+
     internal static int Report<T>(IAnsiConsole console, ConnectionSettings settings, ControlReply<T> reply, Action<T> render)
     {
         if (reply.Error is not null)
@@ -371,7 +407,14 @@ public sealed class GetCommand : AsyncCommand<KeySettings>
 
     protected override async Task<int> ExecuteAsync(CommandContext context, KeySettings settings, CancellationToken cancellation)
     {
-        using var client = ControlClient.For(settings);
+        var (found, error) = await OvsCtl.ServiceWithAsync(_console, settings);
+        if (found is not { } client)
+        {
+            _console.MarkupLineInterpolated($"[red]{error}[/]");
+            return OvsCtl.Refused;
+        }
+
+        using var _ = client;
         return OvsCtl.Report(_console, settings, await client.GetAsync(settings.Key), setting =>
         {
             _console.Write(OvsCtl.SettingsTable([setting]));
@@ -409,7 +452,14 @@ public sealed class SetCommand : AsyncCommand<SetSettings>
 
     protected override async Task<int> ExecuteAsync(CommandContext context, SetSettings settings, CancellationToken cancellation)
     {
-        using var client = ControlClient.For(settings);
+        var (found, error) = await OvsCtl.ServiceWithAsync(_console, settings);
+        if (found is not { } client)
+        {
+            _console.MarkupLineInterpolated($"[red]{error}[/]");
+            return OvsCtl.Refused;
+        }
+
+        using var _ = client;
         return OvsCtl.Report(_console, settings, await client.SetAsync(settings.Key, settings.Value, settings.Scope), setting =>
             _console.Write(OvsCtl.SettingsTable([setting])));
     }
@@ -426,7 +476,14 @@ public sealed class UnsetCommand : AsyncCommand<ScopedSettings>
 
     protected override async Task<int> ExecuteAsync(CommandContext context, ScopedSettings settings, CancellationToken cancellation)
     {
-        using var client = ControlClient.For(settings);
+        var (found, error) = await OvsCtl.ServiceWithAsync(_console, settings);
+        if (found is not { } client)
+        {
+            _console.MarkupLineInterpolated($"[red]{error}[/]");
+            return OvsCtl.Refused;
+        }
+
+        using var _ = client;
         return OvsCtl.Report(_console, settings, await client.UnsetAsync(settings.Key, settings.Scope), setting =>
             _console.Write(OvsCtl.SettingsTable([setting])));
     }

@@ -6,6 +6,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Ops;
+using OpenVersus.Server.Core.Realtime;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Tests;
@@ -171,6 +172,29 @@ public sealed class OpsTests : IAsyncLifetime
         Assert.Equal("Gen_Bob", names[_bob.ToString()]);
         Assert.Equal("Unknown", names["ghost"]);
         Assert.Equal("queued", online.Players!.Single(p => p.Id == _alice.ToString()).Status);
+    }
+
+    [SkippableFact]
+    // The way each player is connected (realtime:conn): the gateway node, and the edge in front of it ("" directly; null
+    // when an older node wrote the entry); and in a player's record, the connection with its id and since when.
+    public async Task OnlinePlayersAndAPlayersRecordShowTheirWayIn()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        string a = _alice.ToString(), b = _bob.ToString();
+        await Redis.HashSetAsync(GatewayPresence.ConnectionKey(a),
+            [new HashEntry("id", "conn-a"), new HashEntry("node", "node-1"), new HashEntry("edge", "edge-1"), new HashEntry("at", 1_800_000_000_000)]);
+        await Redis.HashSetAsync(GatewayPresence.ConnectionKey(b), [new HashEntry("id", "conn-b"), new HashEntry("node", "node-2")]);
+
+        var players = (await Ops.OnlineAsync(withPlayers: true)).Value!.Players!.ToDictionary(p => p.Id);
+        Assert.Equal(("node-1", "edge-1"), (players[a].Node, players[a].Edge));
+        Assert.Equal(("node-2", null), (players[b].Node, players[b].Edge));
+        Assert.Equal((null, null), (players["ghost"].Node, players["ghost"].Edge));
+
+        Assert.Equal(new ConnectionView("conn-a", "node-1", "edge-1", 1_800_000_000_000), (await Ops.FindPlayerAsync(a)).Value!.Connection);
+        Assert.Equal(new ConnectionView("conn-b", "node-2", null, null), (await Ops.FindPlayerAsync(b)).Value!.Connection);
+        await Redis.HashSetAsync(GatewayPresence.ConnectionKey(b), "edge", "");
+        Assert.Equal("", (await Ops.FindPlayerAsync(b)).Value!.Connection!.Edge);
+        Assert.Null((await Ops.FindPlayerAsync(_dup1.ToString())).Value!.Connection);
     }
 
     [SkippableFact]

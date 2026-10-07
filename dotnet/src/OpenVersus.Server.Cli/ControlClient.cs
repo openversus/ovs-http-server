@@ -12,12 +12,29 @@ using Spectre.Console.Cli;
 
 namespace OpenVersus.Server.Cli;
 
-/// <summary>Which service to talk to, and how to reach it. Every command takes these.</summary>
+/// <summary>
+/// Which service to talk to, and how to reach it. Every command takes these. A command asks the service its data belongs
+/// to unless one is named (<see cref="DefaultService"/>); every service with the stores answers every ops command, so
+/// naming another still works (from inside another service's container, say).
+/// </summary>
 public class ConnectionSettings : CommandSettings
 {
+    private string? _service;
+
+    /// <summary>The service this command asks when none is named.</summary>
+    protected virtual string DefaultService => "http";
+
     [CommandOption("-s|--service <SERVICE>")]
-    [Description("The service: http, access, social, lobbies, web, ws, matchmaking, matchflow or proxy (default: OVS_SERVICE, else http). Picks the default socket and port.")]
-    public string Service { get; set; } = Environment.GetEnvironmentVariable(ServiceVariable) is { Length: > 0 } service ? service : "http";
+    [Description("The service: http, access, social, lobbies, web, ws, edge, matchmaking, matchflow or proxy (default: OVS_SERVICE, else the one the command is about). Picks the default socket and port.")]
+    public string Service
+    {
+        get => _service ?? (Environment.GetEnvironmentVariable(ServiceVariable) is { Length: > 0 } service ? service : DefaultService);
+        set => _service = value;
+    }
+
+    /// <summary>Whether the service was chosen (--service, OVS_SERVICE, --socket or --port): no other is tried for it.</summary>
+    public bool ServiceNamed => _service is not null || Socket is not null || Port is not null
+        || Environment.GetEnvironmentVariable(ServiceVariable) is { Length: > 0 };
 
     /// <summary>The default service: each service's container image sets it to its own.</summary>
     public const string ServiceVariable = "OVS_SERVICE";
@@ -69,9 +86,10 @@ public sealed class ControlClient : IDisposable
     /// An explicit --port or --socket wins; otherwise the service's default socket when it exists (and this OS has
     /// Unix sockets), else its default port.
     /// </summary>
-    public static ControlClient For(ConnectionSettings settings)
+    /// <summary>The client for the settings' service (or <paramref name="other"/>, a service's name, instead).</summary>
+    public static ControlClient For(ConnectionSettings settings, string? other = null)
     {
-        var service = KnownServices.Find(settings.Service)!;
+        var service = KnownServices.Find(other ?? settings.Service)!;
         if (settings.Port is int port)
         {
             return OverPort(port);

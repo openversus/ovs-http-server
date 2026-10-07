@@ -9,7 +9,8 @@ using StackExchange.Redis;
 namespace OpenVersus.Server.Edge;
 
 /// <summary>The games this edge holds, one <see cref="EdgeSession"/> each.</summary>
-internal sealed class EdgeGames(EdgeNodes nodes, IOptionsMonitor<EdgeSettings> settings, IOptionsMonitor<GatewaySettings> gateway, ILogger<EdgeSession> log)
+internal sealed class EdgeGames(EdgeNodes nodes, IOptionsMonitor<EdgeSettings> settings, IOptionsMonitor<GatewaySettings> gateway, ServiceInstance instance,
+    ILogger<EdgeSession> log)
 {
     private int _count;
 
@@ -24,7 +25,7 @@ internal sealed class EdgeGames(EdgeNodes nodes, IOptionsMonitor<EdgeSettings> s
         Interlocked.Increment(ref _count);
         try
         {
-            await new EdgeSession(game, ip, nodes, settings.CurrentValue, gateway.CurrentValue.EdgeSecret ?? "", log).RunAsync();
+            await new EdgeSession(game, ip, nodes, settings.CurrentValue, gateway.CurrentValue.EdgeSecret ?? "", instance.Id, log).RunAsync();
         }
         finally
         {
@@ -39,7 +40,7 @@ internal sealed class EdgeGames(EdgeNodes nodes, IOptionsMonitor<EdgeSettings> s
 /// (or there is no node for it); the game's own close, or its socket dropping, is passed on to the node as the session's
 /// end. Everything is in memory: an edge that dies takes its games' sockets with it, and there is nothing to resume.
 /// </summary>
-internal sealed class EdgeSession(WebSocket game, string ip, EdgeNodes nodes, EdgeSettings settings, string secret, ILogger log)
+internal sealed class EdgeSession(WebSocket game, string ip, EdgeNodes nodes, EdgeSettings settings, string secret, string edgeInstance, ILogger log)
 {
     // The game's first frame holds its session token (about 1 KB); a node's frames are whatever the game is sent.
     private const int MaxGameMessageBytes = 64 * 1024;
@@ -265,6 +266,7 @@ internal sealed class EdgeSession(WebSocket game, string ip, EdgeNodes nodes, Ed
         link.Options.CollectHttpResponseDetails = true;
         link.Options.SetRequestHeader(GatewayEdge.SecretHeader, secret);
         link.Options.SetRequestHeader(GatewayEdge.ConnectionIdHeader, _id);
+        link.Options.SetRequestHeader(GatewayEdge.EdgeInstanceHeader, edgeInstance);
         if (ip.Length > 0)
         {
             link.Options.SetRequestHeader("X-Real-IP", ip);

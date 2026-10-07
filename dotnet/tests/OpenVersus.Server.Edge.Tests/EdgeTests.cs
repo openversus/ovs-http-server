@@ -280,6 +280,7 @@ public sealed class EdgeTests : IAsyncLifetime
         var connection = await Redis.HashGetAllAsync(GatewayPresence.ConnectionKey(_player));
         Assert.Equal(Ip, connection.Single(e => e.Name == "ip").Value.ToString());
         Assert.Matches("^[0-9a-f]{32}$", connection.Single(e => e.Name == "id").Value.ToString());
+        Assert.Equal(_edge!.Services.GetRequiredService<ServiceInstance>().Id, connection.Single(e => e.Name == "edge").Value.ToString());
     }
 
     [Fact]

@@ -46,9 +46,12 @@ public sealed record QueuedTicket(string PartyId, string MatchmakingRequestId, l
 /// <summary>One queue: how many parties and players are in it, and who.</summary>
 public sealed record QueueView(string Queue, int Tickets, int Players, IReadOnlyList<QueuedTicket> Entries);
 
-/// <summary>A connected player.</summary>
-/// <summary>A connected player: who, and the handles the player commands take (username, Steam id, the IP connected from).</summary>
-public sealed record OnlinePlayer(string Id, string Name, string? Status, string? Username = null, string? SteamId = null, string? Ip = null);
+/// <summary>
+/// A connected player: who, the handles the player commands take (username, Steam id, the IP connected from), and the
+/// way in: the gateway node holding the connection, and the edge it comes through ("": directly; null: not recorded).
+/// </summary>
+public sealed record OnlinePlayer(string Id, string Name, string? Status, string? Username = null, string? SteamId = null, string? Ip = null,
+    string? Node = null, string? Edge = null);
 
 /// <summary>How many players are connected, and (when asked) who.</summary>
 public sealed record OnlineView(long Count, IReadOnlyList<OnlinePlayer>? Players);
@@ -68,8 +71,15 @@ public sealed record LobbyMember(int Team, string Id, string Name, bool IsBot, i
 /// <summary>A custom lobby: its id, join code, game mode, leader, and members (by team, then in the order they joined).</summary>
 public sealed record LobbyView(string Id, string? Code, string? Mode, string? LeaderId, string? LeaderName, IReadOnlyList<LobbyMember> Members);
 
-/// <summary>A player's record.</summary>
-public sealed record PlayerView(string Id, string Name, string? HydraUsername, string? SteamId, string? PublicId, string? ProfileId, bool Online, string? Status);
+/// <summary>
+/// A player's current connection (realtime:conn): its id, the gateway node holding it, the edge it comes through ("":
+/// directly; null: not recorded, an older node's entry), and since when (ms).
+/// </summary>
+public sealed record ConnectionView(string Id, string? Node, string? Edge, long? SinceMs);
+
+/// <summary>A player's record, and their current connection if they have one.</summary>
+public sealed record PlayerView(string Id, string Name, string? HydraUsername, string? SteamId, string? PublicId, string? ProfileId, bool Online, string? Status,
+    ConnectionView? Connection = null);
 
 /// <summary>A forced disconnect sent: to whom, whether they were online, and how many websocket services heard it.</summary>
 public sealed record DisconnectView(string Id, string Name, bool WasOnline, long Websockets);
@@ -181,8 +191,9 @@ internal sealed class OpsService : IOpsService
         {
             string id = member.ToString();
             var handles = await redis.HashGetAsync($"connections:{id}", ["hydraUsername", "steamId", "current_ip"]);
+            var way = await redis.HashGetAsync(Realtime.GatewayPresence.ConnectionKey(id), ["node", "edge"]);
             players.Add(new OnlinePlayer(id, await DisplayNameAsync(redis, id), (string?)await redis.HashGetAsync($"player:{id}", "status"),
-                NullIfEmpty(handles[0]), NullIfEmpty(handles[1]), NullIfEmpty(handles[2])));
+                NullIfEmpty(handles[0]), NullIfEmpty(handles[1]), NullIfEmpty(handles[2]), NullIfEmpty(way[0]), (string?)way[1]));
         }
 
         return ControlResult<OnlineView>.Ok(new OnlineView(count, players.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList()));
@@ -473,14 +484,20 @@ internal sealed class OpsService : IOpsService
         string id = player["_id"].AsObjectId.ToString();
         bool online = false;
         string? status = null;
+        ConnectionView? connection = null;
         if (Redis is { } redis)
         {
             online = await redis.SetContainsAsync("online_players", id);
             status = await redis.HashGetAsync($"player:{id}", "status");
+            var entry = await redis.HashGetAsync(Realtime.GatewayPresence.ConnectionKey(id), ["id", "node", "edge", "at"]);
+            if (!entry[0].IsNullOrEmpty)
+            {
+                connection = new ConnectionView(entry[0].ToString(), NullIfEmpty(entry[1]), (string?)entry[2], (long?)entry[3]);
+            }
         }
 
         return new PlayerView(id, Str(player, "name") ?? "", Str(player, "hydraUsername"), Str(player, "steamId"), Str(player, "public_id"),
-            player.TryGetValue("profile_id", out var profile) && !profile.IsBsonNull ? profile.ToString() : null, online, status);
+            player.TryGetValue("profile_id", out var profile) && !profile.IsBsonNull ? profile.ToString() : null, online, status, connection);
     }
 
     private async Task<MatchView> MatchAsync(IDatabase redis, string setId, string matchId, string? mode, JsonElement players, JsonElement? set)

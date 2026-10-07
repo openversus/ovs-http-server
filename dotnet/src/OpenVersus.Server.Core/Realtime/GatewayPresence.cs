@@ -14,7 +14,8 @@ namespace OpenVersus.Server.Core.Realtime;
 //
 // Redis, written  realtime:conn:{player} (hash: id, node, ip, at ms, token (its SHA-256), attach (the socket holding it on
 //                 that node: an edge's link moved to another node keeps the id, and only the socket holding it now
-//                 releases it); PEXPIRE 3 min, renewed by every answer to the ping)
+//                 releases it), edge (the edge instance the game comes through; empty: connected directly);
+//                 PEXPIRE 3 min, renewed by every answer to the ping)
 //                 online_players (SADD at the handshake; SREM when the current connection closes)
 //                 player_heartbeats (ZADD ms at the handshake and every answer; ZREM when the current connection closes)
 //                 active_ip_accounts:{ip} (the TS redisTouchPlayerSession at the handshake and every answer; ZREM at the close)
@@ -64,7 +65,7 @@ public static class GatewayPresence
     // the player's replay log ('' for none), read with the claim: what an edge's connection has already missed.
     private const string ClaimScript = """
         local old = redis.call('HGET', KEYS[1], 'id')
-        redis.call('HSET', KEYS[1], 'id', ARGV[1], 'node', ARGV[2], 'ip', ARGV[3], 'at', ARGV[4], 'token', ARGV[6], 'attach', ARGV[7])
+        redis.call('HSET', KEYS[1], 'id', ARGV[1], 'node', ARGV[2], 'ip', ARGV[3], 'at', ARGV[4], 'token', ARGV[6], 'attach', ARGV[7], 'edge', ARGV[8])
         redis.call('PEXPIRE', KEYS[1], ARGV[5])
         local head = redis.call('XREVRANGE', KEYS[2], '+', '-', 'COUNT', 1)[1]
         return {old or '', head and head[1] or ''}
@@ -92,7 +93,7 @@ public static class GatewayPresence
     {
         long ms = now.ToUnixTimeMilliseconds();
         var claim = (RedisResult[])(await redis.ScriptEvaluateAsync(ClaimScript, [ConnectionKey(connection.PlayerId), PlayerMessages.LogKey(connection.PlayerId)],
-            [connection.Id, connection.Node, connection.Ip, ms, (long)ConnectionTtl.TotalMilliseconds, connection.TokenHash, connection.Attachment]))!;
+            [connection.Id, connection.Node, connection.Ip, ms, (long)ConnectionTtl.TotalMilliseconds, connection.TokenHash, connection.Attachment, connection.Edge]))!;
         string? replaced = (string?)claim[0];
         if (replaced == connection.Id || replaced == "")
         {
@@ -128,7 +129,7 @@ public static class GatewayPresence
         if redis.call('HGET', KEYS[1], 'id') ~= ARGV[1] or redis.call('HGET', KEYS[1], 'token') ~= ARGV[4] then
           return 0
         end
-        redis.call('HSET', KEYS[1], 'node', ARGV[2], 'attach', ARGV[3])
+        redis.call('HSET', KEYS[1], 'node', ARGV[2], 'attach', ARGV[3], 'edge', ARGV[6])
         redis.call('PEXPIRE', KEYS[1], ARGV[5])
         return 1
         """;
@@ -143,7 +144,7 @@ public static class GatewayPresence
     {
         long ms = now.ToUnixTimeMilliseconds();
         if ((long)await redis.ScriptEvaluateAsync(ResumeScript, [ConnectionKey(connection.PlayerId)],
-            [connection.Id, connection.Node, connection.Attachment, connection.TokenHash, (long)ConnectionTtl.TotalMilliseconds]) != 1)
+            [connection.Id, connection.Node, connection.Attachment, connection.TokenHash, (long)ConnectionTtl.TotalMilliseconds, connection.Edge]) != 1)
         {
             return false;
         }
@@ -263,9 +264,10 @@ public static class GatewayPresence
 /// One game connection: its id (minted where the socket is held: the node, or the edge in front of it), the player, the
 /// node holding it, the client's IP (as the reverse proxy reports it), the hash of the session token it was opened with
 /// (<see cref="GatewayPresence.TokenHash"/>), and the socket holding it on that node (<paramref name="Attachment"/>,
-/// minted per socket: an edge's connection keeps its id from node to node, and only its current socket releases it).
+/// minted per socket: an edge's connection keeps its id from node to node, and only its current socket releases it), and
+/// the edge instance the game comes through (<paramref name="Edge"/>; empty: connected directly).
 /// </summary>
-public sealed record GatewayConnectionInfo(string Id, string PlayerId, string Node, string Ip, string TokenHash, string Attachment = "");
+public sealed record GatewayConnectionInfo(string Id, string PlayerId, string Node, string Ip, string TokenHash, string Attachment = "", string Edge = "");
 
 /// <summary>What a connection's claim found: the connection it replaced (null: none), and the head of the player's replay log.</summary>
 public sealed record GatewayClaim(string? Replaced, StreamId LogHead);

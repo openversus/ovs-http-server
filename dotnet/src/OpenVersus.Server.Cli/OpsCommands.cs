@@ -5,7 +5,13 @@ using Spectre.Console.Cli;
 
 namespace OpenVersus.Server.Cli;
 
-public sealed class QueuesCommand : AsyncCommand<ConnectionSettings>
+/// <summary>The matchmaking service by default: the queues are its.</summary>
+public sealed class QueuesSettings : ConnectionSettings
+{
+    protected override string DefaultService => "matchmaking";
+}
+
+public sealed class QueuesCommand : AsyncCommand<QueuesSettings>
 {
     private readonly IAnsiConsole _console;
 
@@ -14,7 +20,7 @@ public sealed class QueuesCommand : AsyncCommand<ConnectionSettings>
         _console = console;
     }
 
-    protected override async Task<int> ExecuteAsync(CommandContext context, ConnectionSettings settings, CancellationToken cancellation)
+    protected override async Task<int> ExecuteAsync(CommandContext context, QueuesSettings settings, CancellationToken cancellation)
     {
         using var client = ControlClient.For(settings);
         return OvsCtl.Report(_console, settings, await client.QueuesAsync(), queues =>
@@ -45,6 +51,9 @@ public sealed class QueuesCommand : AsyncCommand<ConnectionSettings>
 
 public sealed class OnlineSettings : ConnectionSettings
 {
+    // The access service by default: players and their sessions are its (and it has their names, in Mongo).
+    protected override string DefaultService => "access";
+
     [CommandOption("--players")]
     [Description("List the players too, not just how many.")]
     public bool Players { get; set; }
@@ -67,7 +76,13 @@ public sealed class OnlineCommand : AsyncCommand<OnlineSettings>
 }
 
 /// <summary>ovsctl player online: who is connected, with every handle the player commands take.</summary>
-public sealed class PlayerOnlineCommand : AsyncCommand<ConnectionSettings>
+/// <summary>The access service by default: players and their sessions are its.</summary>
+public sealed class PlayerOnlineSettings : ConnectionSettings
+{
+    protected override string DefaultService => "access";
+}
+
+public sealed class PlayerOnlineCommand : AsyncCommand<PlayerOnlineSettings>
 {
     private readonly IAnsiConsole _console;
 
@@ -76,7 +91,7 @@ public sealed class PlayerOnlineCommand : AsyncCommand<ConnectionSettings>
         _console = console;
     }
 
-    protected override async Task<int> ExecuteAsync(CommandContext context, ConnectionSettings settings, CancellationToken cancellation)
+    protected override async Task<int> ExecuteAsync(CommandContext context, PlayerOnlineSettings settings, CancellationToken cancellation)
     {
         using var client = ControlClient.For(settings);
         return OvsCtl.Report(_console, settings, await client.OnlineAsync(true), online => OnlineRender.Show(_console, online));
@@ -94,18 +109,26 @@ internal static class OnlineRender
         }
 
         var table = new Table().Border(TableBorder.Rounded)
-            .AddColumn("Name").AddColumn("Username").AddColumn("Id").AddColumn("Steam id").AddColumn("IP").AddColumn("Status");
+            .AddColumn("Name").AddColumn("Username").AddColumn("Id").AddColumn("Steam id").AddColumn("IP").AddColumn("Status")
+            .AddColumn("Gateway node").AddColumn("Edge");
         foreach (var p in players)
         {
             table.AddRow(Markup.Escape(p.Name), Markup.Escape(p.Username ?? "-"), $"[grey]{Markup.Escape(p.Id)}[/]",
-                Markup.Escape(p.SteamId ?? "-"), Markup.Escape(p.Ip ?? "-"), Markup.Escape(p.Status ?? "-"));
+                Markup.Escape(p.SteamId ?? "-"), Markup.Escape(p.Ip ?? "-"), Markup.Escape(p.Status ?? "-"),
+                Markup.Escape(p.Node ?? "-"), PlayerRender.Edge(p.Edge));
         }
 
         console.Write(table);
     }
 }
 
-public sealed class MatchesCommand : AsyncCommand<ConnectionSettings>
+/// <summary>The match flow service by default: matches in progress are its.</summary>
+public sealed class MatchesSettings : ConnectionSettings
+{
+    protected override string DefaultService => "matchflow";
+}
+
+public sealed class MatchesCommand : AsyncCommand<MatchesSettings>
 {
     private readonly IAnsiConsole _console;
 
@@ -114,7 +137,7 @@ public sealed class MatchesCommand : AsyncCommand<ConnectionSettings>
         _console = console;
     }
 
-    protected override async Task<int> ExecuteAsync(CommandContext context, ConnectionSettings settings, CancellationToken cancellation)
+    protected override async Task<int> ExecuteAsync(CommandContext context, MatchesSettings settings, CancellationToken cancellation)
     {
         using var client = ControlClient.For(settings);
         return OvsCtl.Report(_console, settings, await client.MatchesAsync(), matches =>
@@ -144,15 +167,8 @@ public sealed class MatchesCommand : AsyncCommand<ConnectionSettings>
 
 public sealed class LobbySettings : ConnectionSettings
 {
-    // The lobbies service by default, the one the command is about; --service or OVS_SERVICE still choose (every service
-    // with Redis answers it, e.g. from inside another service's container).
-    public LobbySettings()
-    {
-        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(ServiceVariable)))
-        {
-            Service = "lobbies";
-        }
-    }
+    // The lobbies service by default, the one the command is about.
+    protected override string DefaultService => "lobbies";
 
     [CommandArgument(0, "[CODE]")]
     [Description("The lobby's join code (any case), or its id.")]
@@ -216,6 +232,9 @@ public sealed class LobbyCommand : AsyncCommand<LobbySettings>
 
 public class PlayerSettings : ConnectionSettings
 {
+    // The access service by default: players and their sessions are its.
+    protected override string DefaultService => "access";
+
     [CommandArgument(0, "<WHO>")]
     [Description("The player: their id, their exact name (any case), their generated username, their Steam id, or the IP address they are connected from (online players only).")]
     public string Who { get; set; } = "";
@@ -239,8 +258,24 @@ internal static class PlayerRender
         grid.AddRow("[grey]Steam id[/]", Markup.Escape(p.SteamId is { Length: > 0 } s ? s : "-"));
         grid.AddRow("[grey]Public id[/]", Markup.Escape(p.PublicId ?? "-"));
         grid.AddRow("[grey]Connected[/]", p.Online ? $"[green]yes[/] ({Markup.Escape(p.Status ?? "?")})" : "no");
+        if (p.Connection is { } connection)
+        {
+            grid.AddRow("[grey]Gateway node[/]", Markup.Escape(connection.Node ?? "-"));
+            grid.AddRow("[grey]Through edge[/]", Edge(connection.Edge));
+            string since = connection.SinceMs is { } ms ? $" since {DateTimeOffset.FromUnixTimeMilliseconds(ms).ToLocalTime():yyyy-MM-dd HH:mm:ss}" : "";
+            grid.AddRow("[grey]Connection[/]", $"[grey]{Markup.Escape(connection.Id)}[/]{Markup.Escape(since)}");
+        }
+
         console.Write(grid);
     }
+
+    // The edge a connection comes through: its instance; "" connected directly; null not recorded (an older node).
+    public static string Edge(string? edge) => edge switch
+    {
+        null => "[grey]?[/]",
+        "" => "[grey]none (direct)[/]",
+        _ => Markup.Escape(edge),
+    };
 }
 
 public sealed class PlayerShowCommand : AsyncCommand<PlayerSettings>

@@ -459,6 +459,8 @@ public sealed class GatewayTests : IAsyncLifetime
         Assert.Equal([GatewayProtocol.Ping], first[2].Frame);
         Assert.Equal("edge-conn-1", await CurrentConnectionAsync());
         Assert.False((await Redis.HashGetAsync(GatewayPresence.ConnectionKey(_player), "attach")).IsNullOrEmpty);
+        // An edge that does not name itself is recorded as such.
+        Assert.Equal("unknown", (string?)await Redis.HashGetAsync(GatewayPresence.ConnectionKey(_player), "edge"));
 
         var hello = new JsonObject { ["cmd"] = "hello" };
         byte[] expected = Core.Hydra.HydraEncoder.Encode(hello.DeepClone(), webSocket: true);
@@ -575,6 +577,7 @@ public sealed class GatewayTests : IAsyncLifetime
 
         var game = await ConnectAsync();
         string? id = await CurrentConnectionAsync();
+        Assert.Equal("", (string?)await Redis.HashGetAsync(GatewayPresence.ConnectionKey(_player), "edge"));
         await Redis.HashDeleteAsync(GatewayPresence.ConnectionKey(_player), "attach");
         await game.Socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
 

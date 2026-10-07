@@ -28,6 +28,9 @@ public static class GatewayEdge
     /// <summary>A resume: the last stream id the game received (<see cref="StreamId"/>).</summary>
     public const string ResumeAfterHeader = "X-OVS-Resume-After";
 
+    /// <summary>The edge's own instance id (as the registry names it): recorded with the connection, for the operators.</summary>
+    public const string EdgeInstanceHeader = "X-OVS-Edge-Instance";
+
     /// <summary>The edge's close code on the link when the game's socket dropped (no close from the game).</summary>
     public const int GameDroppedCode = 4999;
 

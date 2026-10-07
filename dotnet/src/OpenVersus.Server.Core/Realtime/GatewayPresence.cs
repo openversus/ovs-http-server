@@ -20,7 +20,8 @@ namespace OpenVersus.Server.Core.Realtime;
 //                 active_ip_accounts:{ip} (the TS redisTouchPlayerSession at the handshake and every answer; ZREM at the close)
 //                 realtime:connections (XADD, MAXLEN ~10,000; fields type, player, connection, at: connected and
 //                 disconnected also node, ip, token (its SHA-256); replaced also replacedBy; a reaped disconnected
-//                 also reaped "1", as is a close no game asked for: an edge's link that never came back)
+//                 also reaped "1", as is a close no game asked for: an edge's link that never came back; resumed
+//                 (an edge's connection re-attached to a node: node, ip, token; no reader acts on it))
 // Redis, read     rejoin_pending:{player} (MatchEnd: while it lives, a close keeps the player online and their IP's
 //                 session, as the TS websocket's pendingRejoin did, for the party's rejoin, which reads online_players;
 //                 at its expiry LobbyDisconnects takes a player who did not come back offline. The heartbeat goes all
@@ -117,6 +118,40 @@ public static class GatewayPresence
 
         await AppendAsync(redis, "connected", connection, ms);
         return new GatewayClaim(replaced, head);
+    }
+
+    // An edge's connection re-attached on another socket (another node, or this one again): only while it is still the
+    // player's current connection, opened with the same session (not replaced by a newer login, not let go of by its old
+    // socket or the reaper); 1 when it was. The node and the socket holding it now are written, so only this socket
+    // releases it, and the reaper leaves it alone.
+    private const string ResumeScript = """
+        if redis.call('HGET', KEYS[1], 'id') ~= ARGV[1] or redis.call('HGET', KEYS[1], 'token') ~= ARGV[4] then
+          return 0
+        end
+        redis.call('HSET', KEYS[1], 'node', ARGV[2], 'attach', ARGV[3])
+        redis.call('PEXPIRE', KEYS[1], ARGV[5])
+        return 1
+        """;
+
+    /// <summary>
+    /// An edge re-attached the player's connection here (<paramref name="connection"/>: its id and session as before,
+    /// this node, a new socket): it is theirs again only if it is still their current connection; then the player is
+    /// touched as an answer to the ping touches them, and a resumed event is appended (no connected: the game never
+    /// left). False: refused.
+    /// </summary>
+    public static async Task<bool> ResumedAsync(IDatabase redis, GatewayConnectionInfo connection, DateTimeOffset now)
+    {
+        long ms = now.ToUnixTimeMilliseconds();
+        if ((long)await redis.ScriptEvaluateAsync(ResumeScript, [ConnectionKey(connection.PlayerId)],
+            [connection.Id, connection.Node, connection.Attachment, connection.TokenHash, (long)ConnectionTtl.TotalMilliseconds]) != 1)
+        {
+            return false;
+        }
+
+        await redis.SortedSetAddAsync(Heartbeats, connection.PlayerId, ms);
+        await TouchSessionAsync(redis, connection, ms);
+        await AppendAsync(redis, "resumed", connection, ms);
+        return true;
     }
 
     /// <summary>The game answered the ping on its current connection: it is still there.</summary>

@@ -28,7 +28,18 @@ internal sealed class GatewayConnection(WebSocket socket, GatewayConnectionInfo 
     private int _closing;
     private volatile bool _closedGame;
 
+    // While a resume replays the player's log: what ws:send and ws:disconnect bring meanwhile, in order (EndReplay).
+    private readonly Lock _gate = new();
+    private List<Held>? _held;
+
+    // On an edge's link, the highest entry of the player's log queued here (the position at a new link, the replay's
+    // last, or a delivery): a delivery at or below it was sent already (ws:send can reach this node after the replay
+    // read the same entry from the log), and is dropped.
+    private StreamId _lastLogged;
+
     private sealed record Outgoing(byte[]? Message, WebSocketCloseStatus Status, string? Reason);
+
+    private sealed record Held(byte[]? Message, StreamId? Seq, bool Close, int? Code, string? Reason);
 
     public GatewayConnectionInfo Info { get; } = info;
 
@@ -50,13 +61,139 @@ internal sealed class GatewayConnection(WebSocket socket, GatewayConnectionInfo 
 
     /// <summary>
     /// Queues a delivered message: on an edge's link with its entry in the player's replay log (<paramref name="logged"/>,
-    /// from ws:send's seqs), so the edge knows how far the game got; as <see cref="Send"/> otherwise.
+    /// from ws:send's seqs), so the edge knows how far the game got; as <see cref="Send"/> otherwise. Held while the log
+    /// is being replayed.
     /// </summary>
-    public bool Deliver(byte[] message, StreamId? logged) =>
-        edge && logged is { } id ? Queue(GatewayEdge.Logged(id, message)) : Send(message);
+    public bool Deliver(byte[] message, StreamId? logged)
+    {
+        lock (_gate)
+        {
+            if (_held is not null)
+            {
+                _held.Add(new Held(message, logged, false, null, null));
+                return true;
+            }
+
+            return DeliverNow(message, logged);
+        }
+    }
+
+    /// <summary>
+    /// A ws:disconnect for this connection: closes the game with <paramref name="code"/> and <paramref name="reason"/>,
+    /// or drops it without a code. Held while the log is being replayed.
+    /// </summary>
+    public void Disconnect(int? code, string? reason, StreamId? logged)
+    {
+        lock (_gate)
+        {
+            if (_held is not null)
+            {
+                _held.Add(new Held(null, logged, true, code, reason));
+                return;
+            }
+        }
+
+        CloseFor(code, reason);
+    }
+
+    /// <summary>Closes the game as a ws:disconnect asks: with its code and reason, or dropped without a code.</summary>
+    public void CloseFor(int? code, string? reason)
+    {
+        if (code is { } status)
+        {
+            Close((WebSocketCloseStatus)status, reason);
+        }
+        else
+        {
+            Abort();
+        }
+    }
+
+    /// <summary>
+    /// A resume is replaying the player's log after <paramref name="after"/> (the last entry the game received): what is
+    /// delivered from now on is held until <see cref="EndReplay"/>.
+    /// </summary>
+    public void BeginReplay(StreamId after)
+    {
+        lock (_gate)
+        {
+            _held = [];
+            _lastLogged = after;
+        }
+    }
+
+    /// <summary>One entry of the player's log, replayed: queued at once, ahead of what is held.</summary>
+    public bool Replay(byte[] message, StreamId id)
+    {
+        lock (_gate)
+        {
+            _lastLogged = id;
+        }
+
+        return Queue(edge ? GatewayEdge.Logged(id, message) : message);
+    }
+
+    /// <summary>
+    /// The replay is done, up to <paramref name="replayed"/>: what was held is queued in order, but for what the replay
+    /// already sent (an entry at or below it, delivered live while the log was being read); then delivery is live again.
+    /// </summary>
+    public void EndReplay(StreamId replayed)
+    {
+        lock (_gate)
+        {
+            var held = _held ?? [];
+            _held = null;
+            foreach (var item in held)
+            {
+                if (item.Seq is { } seq && seq <= replayed)
+                {
+                    continue;
+                }
+
+                if (item.Close)
+                {
+                    CloseFor(item.Code, item.Reason);
+                }
+                else
+                {
+                    DeliverNow(item.Message!, item.Seq);
+                }
+            }
+        }
+    }
+
+    // Under _gate.
+    private bool DeliverNow(byte[] message, StreamId? logged)
+    {
+        if (!edge || logged is not { } id)
+        {
+            return Send(message);
+        }
+
+        if (id <= _lastLogged)
+        {
+            return true;
+        }
+
+        _lastLogged = id;
+        return Queue(GatewayEdge.Logged(id, message));
+    }
 
     /// <summary>On an edge's link, the head of the player's replay log at the claim: queued first, before the id frame.</summary>
-    public bool SendPosition(StreamId head) => !edge || Queue(GatewayEdge.Position(head));
+    public bool SendPosition(StreamId head)
+    {
+        if (!edge)
+        {
+            return true;
+        }
+
+        lock (_gate)
+        {
+            _lastLogged = head;
+        }
+
+        return Queue(GatewayEdge.Position(head));
+    }
 
     /// <summary>Closes the game with a close handshake after what is already queued; once, whoever asks first.</summary>
     public void Close(WebSocketCloseStatus status, string? reason) => CloseGame((int)status, status, reason);

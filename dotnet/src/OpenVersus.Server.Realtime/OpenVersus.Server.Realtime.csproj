@@ -6,4 +6,8 @@
     <ProjectReference Include="..\OpenVersus.Server.Core\OpenVersus.Server.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenVersus.Server.Realtime.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -65,7 +65,14 @@ is an edge's link for one game (`GatewayEdge`, Core, is the codec both ends use)
 unlogged (the id frame, pings, ticks), logged (a delivered message with its entry's id in the player's replay log), a
 position (the log's head at the claim, sent first, before the id frame), or close the game (its code; 0 to drop it).
 The edge closes the game only on that instruction; any other end of the link is the node letting go, after which the
-edge attaches the game to another node (that resume is not built yet: a node refuses `X-OVS-Resume-After` with 501). The other way round, the edge's close on the link is the game's end (closed, or
+edge attaches the game to another node: a resume (`X-OVS-Resume-After`: the last log entry the game received, with the
+game's original first frame, whose token is checked for its signature but not its expiry). A node takes it only while
+the connection is still the player's current one, opened with the same session (otherwise it tells the edge to close
+the game); it then holds the connection on this socket (a `resumed` event, no `connected`, no id frame), and sends the
+game what its log holds after that entry, in order, holding whatever is delivered meanwhile and sending it after,
+without what the replay already sent; a close in the log that applies to the connection closes the game there. There is
+no check that the log still reaches back: whatever a trim dropped was delivered before the gap, as long as the replay
+window (`PlayerMessages.ReplayWindow`) is longer than any gap a resume covers. The other way round, the edge's close on the link is the game's end (closed, or
 dropped: code 4999), handled at once as a direct close; a link that ends without one (the edge moved the game, or died)
 is let go of only after `Gateway:EdgeDetachGraceMs` (30 s), as a server failure (a disconnected event marked reaped),
 and not at all if another socket has taken the connection by then. A node that stops leaves its edge links' players for

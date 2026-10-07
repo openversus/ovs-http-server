@@ -254,10 +254,10 @@ internal sealed class GatewaySubscriber(IServiceProvider services, GatewayNode n
 
     private void Disconnect(string json)
     {
-        JsonObject request;
+        GatewayDisconnect request;
         try
         {
-            request = Js.Parse(json) as JsonObject ?? throw new InvalidOperationException("not a JSON object");
+            request = GatewayDisconnect.Parse(json);
         }
         catch (Exception e) when (e is System.Text.Json.JsonException or InvalidOperationException)
         {
@@ -265,34 +265,51 @@ internal sealed class GatewaySubscriber(IServiceProvider services, GatewayNode n
             return;
         }
 
-        string? playerId = Text(request["playerId"]);
-        string? only = Text(request["connectionId"]), except = Text(request["except"]);
-        if (playerId is null || !node.TryGet(playerId, out var connection))
+        if (request.PlayerId is null || !node.TryGet(request.PlayerId, out var connection))
         {
-            if (except is null)
+            if (request.Except is null)
             {
-                log.LogInformation("Forced disconnect of {Player}: not connected to this node", playerId);
+                log.LogInformation("Forced disconnect of {Player}: not connected to this node", request.PlayerId);
             }
 
             return;
         }
 
-        if ((only is not null && only != connection.Info.Id) || except == connection.Info.Id)
+        if (!request.AppliesTo(connection.Info.Id))
         {
             return;
         }
 
-        if (request["code"] is { } code && code.GetValueKind() == System.Text.Json.JsonValueKind.Number)
+        if (request.Code is not null)
         {
-            var status = (WebSocketCloseStatus)(int)code.GetValue<double>();
-            log.LogInformation("Closing player {Player}'s connection {Connection}: {Reason}", playerId, connection.Info.Id, Text(request["reason"]));
-            connection.Close(status, Text(request["reason"]));
-            return;
+            log.LogInformation("Closing player {Player}'s connection {Connection}: {Reason}", request.PlayerId, connection.Info.Id, request.Reason);
+        }
+        else
+        {
+            log.LogWarning("Forced disconnect of {Player} with IP {Ip} (administrator); closing the connection", request.PlayerId, connection.Info.Ip);
         }
 
-        log.LogWarning("Forced disconnect of {Player} with IP {Ip} (administrator); closing the connection", playerId, connection.Info.Ip);
-        connection.Abort();
+        connection.Disconnect(request.Code, request.Reason, request.Seq);
     }
+
+    private static string? Text(JsonNode? node) => node?.GetValueKind() == System.Text.Json.JsonValueKind.String ? (string)node! : null;
+}
+
+/// <summary>
+/// A ws:disconnect request ({playerId, connectionId?, except?, code?, reason?, seq?}), live or replayed from the player's
+/// log: it applies to a connection only if it is <c>connectionId</c> and is not <c>except</c>, when those are given.
+/// </summary>
+internal sealed record GatewayDisconnect(string? PlayerId, string? Only, string? Except, int? Code, string? Reason, StreamId? Seq)
+{
+    public static GatewayDisconnect Parse(string json)
+    {
+        var request = Js.Parse(json) as JsonObject ?? throw new InvalidOperationException("not a JSON object");
+        return new GatewayDisconnect(Text(request["playerId"]), Text(request["connectionId"]), Text(request["except"]),
+            request["code"] is { } code && code.GetValueKind() == System.Text.Json.JsonValueKind.Number ? (int)code.GetValue<double>() : null,
+            Text(request["reason"]), StreamId.TryParse(Text(request["seq"]), out var seq) ? seq : null);
+    }
+
+    public bool AppliesTo(string connectionId) => (Only is null || Only == connectionId) && Except != connectionId;
 
     private static string? Text(JsonNode? node) => node?.GetValueKind() == System.Text.Json.JsonValueKind.String ? (string)node! : null;
 }

@@ -3,6 +3,8 @@ using System.Net.WebSockets;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Access;
+using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Hydra;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Realtime;
 using StackExchange.Redis;
@@ -33,8 +35,10 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
     {
         string ip = ClientAddress.Of(context, stripMapped: true);
 
-        // An edge's link to a game (GatewayEdge): trusted only with the shared secret, and named by the edge.
+        // An edge's link to a game (GatewayEdge): trusted only with the shared secret, and named by the edge; a resume
+        // names the last entry of the player's log the game received.
         string? edgeConnectionId = null;
+        StreamId? resumeAfter = null;
         if (context.Request.Headers.ContainsKey(GatewayEdge.SecretHeader))
         {
             if (!GatewayEdge.SecretMatches(context.Request.Headers[GatewayEdge.SecretHeader], settings.CurrentValue.EdgeSecret))
@@ -52,11 +56,17 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
                 return;
             }
 
-            if (context.Request.Headers.ContainsKey(GatewayEdge.ResumeAfterHeader))
+            if (context.Request.Headers.TryGetValue(GatewayEdge.ResumeAfterHeader, out var after))
             {
-                log.LogWarning("Refused an edge's resume of connection {Connection}: this node does not resume links yet", edgeConnectionId);
-                context.Response.StatusCode = StatusCodes.Status501NotImplemented;
-                return;
+                if (!StreamId.TryParse(after, out var id))
+                {
+                    log.LogWarning("Refused an edge's resume of connection {Connection}: {Header} \"{Value}\" is not a stream id", edgeConnectionId,
+                        GatewayEdge.ResumeAfterHeader, after.ToString());
+                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                    return;
+                }
+
+                resumeAfter = id;
             }
         }
 
@@ -100,7 +110,8 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
         {
             token = GatewayProtocol.TokenOf(first);
             string secret = access.CurrentValue.JwtSecret ?? throw new AccessTokenException("Access:JwtSecret is not set");
-            var claims = AccessTokens.Verify(token, secret, time.GetUtcNow());
+            // A resume's token was checked at the game's handshake; the session may outlive it.
+            var claims = AccessTokens.Verify(token, secret, time.GetUtcNow(), checkExpiry: resumeAfter is null);
             playerId = claims["id"] is { } id && id.GetValueKind() == JsonValueKind.String ? (string)id! : throw new AccessTokenException("the token names no player");
         }
         catch (Exception e) when (e is FormatException or AccessTokenException)
@@ -122,7 +133,39 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
             Guid.NewGuid().ToString("N"));
         var connection = new GatewayConnection(socket, info, time.GetUtcNow().ToUnixTimeMilliseconds(), edge);
         var writer = connection.WriteAsync(stopping);
-        if (edge)
+        if (resumeAfter is not null)
+        {
+            // The game never left: no id frame, no connected event. Refused (nothing to let go of here) unless the
+            // connection is still the player's current one.
+            bool resumed;
+            try
+            {
+                resumed = await GatewayPresence.ResumedAsync(redis, info, time.GetUtcNow());
+            }
+            catch (Exception e) when (e is RedisException or TimeoutException)
+            {
+                // Let go of plainly: another node may do better.
+                log.LogError("Could not resume player {Player}'s connection {Connection}: {Error}", playerId, info.Id, e.Message);
+                connection.Drop();
+                connection.Complete();
+                await writer;
+                return;
+            }
+
+            if (!resumed)
+            {
+                log.LogInformation("Refused the resume of player {Player}'s connection {Connection}: no longer their current one (replaced, or let go of)",
+                    playerId, info.Id);
+                connection.Close(WebSocketCloseStatus.NormalClosure, "resume refused");
+                await DrainAsync(socket, stopping);
+                connection.Complete();
+                await writer;
+                return;
+            }
+
+            connection.BeginReplay(resumeAfter.Value);
+        }
+        else if (edge)
         {
             // The claim first: the edge's position (the head of the player's log at the claim) goes before the id frame,
             // so an edge that never got it knows the game never got the id frame either.
@@ -145,7 +188,16 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
             old.Close(WebSocketCloseStatus.NormalClosure, "replaced");
             return connection;
         });
-        log.LogInformation("Player {Player} with IP {Ip} connected (connection {Connection}{Edge})", playerId, ip, info.Id, edge ? ", through an edge" : "");
+        if (resumeAfter is { } replayFrom)
+        {
+            int replayed = await ReplayAsync(redis, connection, replayFrom);
+            log.LogInformation("Player {Player} with IP {Ip} resumed here (connection {Connection}, through an edge; {Count} message(s) replayed)",
+                playerId, ip, info.Id, replayed);
+        }
+        else
+        {
+            log.LogInformation("Player {Player} with IP {Ip} connected (connection {Connection}{Edge})", playerId, ip, info.Id, edge ? ", through an edge" : "");
+        }
 
         string reason = "closed by the game";
         bool otherSideClosed = false;
@@ -224,6 +276,94 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
         catch (OperationCanceledException)
         {
             return false;
+        }
+    }
+
+    /// <summary>Called between the steps of a replay (tests: "joined" before the log is read, "read" after).</summary>
+    internal Func<string, Task>? ReplayPaused { get; set; }
+
+    // A resumed connection is sent what the player's log holds after the last entry the game received (the edge's
+    // position), in order, while what is delivered meanwhile is held; then the held ones, but for what the replay
+    // already sent. A close in the log that applies to this connection closes the game there. The window is the log's:
+    // whatever a trim dropped was delivered before the gap (PlayerMessages.ReplayWindow). How many messages were sent.
+    private async Task<int> ReplayAsync(IDatabase redis, GatewayConnection connection, StreamId after)
+    {
+        var info = connection.Info;
+        var last = after;
+        int sent = 0;
+        try
+        {
+            if (ReplayPaused is { } joined)
+            {
+                await joined("joined");
+            }
+
+            var entries = await redis.StreamRangeAsync(PlayerMessages.LogKey(info.PlayerId), $"({after}", "+");
+            if (ReplayPaused is { } read)
+            {
+                await read("read");
+            }
+
+            foreach (var entry in entries)
+            {
+                if (!StreamId.TryParse(entry.Id, out var id))
+                {
+                    continue;
+                }
+
+                last = id;
+                if (entry["disconnect"] is { IsNull: false } close)
+                {
+                    var request = GatewayDisconnect.Parse(close.ToString());
+                    if (request.AppliesTo(info.Id))
+                    {
+                        log.LogInformation("Player {Player}'s connection {Connection}: a close from the log, replayed ({Reason})", info.PlayerId, info.Id,
+                            request.Reason ?? "dropped");
+                        connection.CloseFor(request.Code, request.Reason);
+                        break;
+                    }
+
+                    continue;
+                }
+
+                try
+                {
+                    connection.Replay(HydraEncoder.Encode(Js.Parse(entry["message"].ToString())!, webSocket: true), id);
+                    sent++;
+                }
+                catch (Exception e) when (e is JsonException or HydraFormatException or InvalidOperationException)
+                {
+                    log.LogError("Player {Player}'s log entry {Entry} is not a message: {Error}", info.PlayerId, id, e.Message);
+                }
+            }
+        }
+        catch (Exception e) when (e is RedisException or TimeoutException or JsonException or InvalidOperationException)
+        {
+            // Without the log the game would miss messages: let go of plainly, so the edge tries another node.
+            log.LogError("Could not replay player {Player}'s log (connection {Connection}): {Error}", info.PlayerId, info.Id, e.Message);
+            connection.Drop();
+        }
+        finally
+        {
+            connection.EndReplay(last);
+        }
+
+        return sent;
+    }
+
+    // Reads until the other side's close (or the socket's end, or a few seconds): after a close this node started.
+    private static async Task DrainAsync(WebSocket socket, CancellationToken stopping)
+    {
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(stopping);
+        wait.CancelAfter(s_closeWait);
+        try
+        {
+            while (await ReceiveAsync(socket, wait.Token) is not null)
+            {
+            }
+        }
+        catch (Exception e) when (e is WebSocketException or OperationCanceledException)
+        {
         }
     }
 

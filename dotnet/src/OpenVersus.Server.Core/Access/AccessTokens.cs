@@ -115,9 +115,11 @@ public static class AccessTokens
 
     /// <summary>
     /// The claims of a token this secret signed, as jsonwebtoken's verify accepts it: HS256 only, a matching signature,
-    /// and not expired (exp) or not yet valid (nbf). Throws <see cref="AccessTokenException"/> otherwise.
+    /// and not expired (exp) or not yet valid (nbf). Throws <see cref="AccessTokenException"/> otherwise. Without
+    /// <paramref name="checkExpiry"/>, an expired token is accepted (a session that outlives the token it was opened with:
+    /// an edge re-attaching a game whose handshake checked the token once); everything else is checked as ever.
     /// </summary>
-    public static JsonObject Verify(string token, string secret, DateTimeOffset now)
+    public static JsonObject Verify(string token, string secret, DateTimeOffset now, bool checkExpiry = true)
     {
         string[] parts = token.Split('.');
         if (parts.Length != 3)
@@ -153,7 +155,7 @@ public static class AccessTokens
             throw new AccessTokenException("jwt not active");
         }
 
-        if (claims["exp"] is { } exp && (exp.GetValueKind() != JsonValueKind.Number || seconds >= exp.GetValue<double>()))
+        if (claims["exp"] is { } exp && (exp.GetValueKind() != JsonValueKind.Number || (checkExpiry && seconds >= exp.GetValue<double>())))
         {
             throw new AccessTokenException("jwt expired");
         }

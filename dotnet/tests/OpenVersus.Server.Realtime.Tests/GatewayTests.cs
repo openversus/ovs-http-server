@@ -160,9 +160,10 @@ public sealed class GatewayTests : IAsyncLifetime
     }
 
     // As the game's: 0x13 bytes, the token's length (u16, big-endian), the token, a 12-byte id.
-    private byte[] FirstFrame()
+    private byte[] FirstFrame(TimeSpan? lifetime = null, string? secret = null)
     {
-        byte[] token = Encoding.UTF8.GetBytes(AccessTokens.Sign(new JsonObject { ["id"] = _player }, ServiceFactory<Program>.Secret, TimeSpan.FromHours(1), DateTimeOffset.UtcNow));
+        byte[] token = Encoding.UTF8.GetBytes(AccessTokens.Sign(new JsonObject { ["id"] = _player }, secret ?? ServiceFactory<Program>.Secret,
+            lifetime ?? TimeSpan.FromHours(1), DateTimeOffset.UtcNow));
         var frame = new byte[0x15 + token.Length + 12];
         BinaryPrimitives.WriteUInt16BigEndian(frame.AsSpan(0x13), (ushort)token.Length);
         token.CopyTo(frame, 0x15);
@@ -175,7 +176,10 @@ public sealed class GatewayTests : IAsyncLifetime
         private readonly TaskCompletionSource<(WebSocketCloseStatus? Status, string? Reason)> _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public required ClientWebSocket Socket { get; init; }
+        public required byte[] FirstFrame { get; init; }
         public List<GatewayEdge.Envelope> Frames { get; } = [];
+
+        public GatewayEdge.Envelope[] Of(GatewayEdge.Kind kind) => [.. Snapshot().Where(f => f.Kind == kind)];
 
         /// <summary>How the node ended the link (null status: dropped with no close handshake).</summary>
         public Task<(WebSocketCloseStatus? Status, string? Reason)> Closed => _closed.Task;
@@ -223,7 +227,27 @@ public sealed class GatewayTests : IAsyncLifetime
     }
 
     // An edge's link for this test's player, named connectionId, with the game's first frame sent and the handshake done.
-    private async Task<EdgeLink> ConnectEdgeAsync(string connectionId, string secret = EdgeSecret, string? resumeAfter = null)
+    private async Task<EdgeLink> ConnectEdgeAsync(string connectionId, string secret = EdgeSecret, byte[]? frame = null)
+    {
+        int connected = (await EventsAsync()).Count(e => e.StartsWith("connected "));
+        var link = await OpenEdgeAsync(connectionId, frame ?? FirstFrame(), secret, null);
+        await Until(() => link.Snapshot().Length >= 3);
+        await UntilAsync(async () => (await EventsAsync()).Count(e => e.StartsWith("connected ")) > connected);
+        return link;
+    }
+
+    // A resume of connectionId after the stream id the game got (the game's first frame as it was): back once the node has
+    // answered (a resumed event, or a close).
+    private async Task<EdgeLink> ResumeEdgeAsync(string connectionId, string after, byte[] frame)
+    {
+        int resumed = (await EventsAsync()).Count(e => e == $"resumed {connectionId}");
+        var link = await OpenEdgeAsync(connectionId, frame, EdgeSecret, after);
+        await UntilAsync(async () => link.Closed.IsCompleted || link.Of(GatewayEdge.Kind.Close).Length > 0
+            || (await EventsAsync()).Count(e => e == $"resumed {connectionId}") > resumed);
+        return link;
+    }
+
+    private async Task<EdgeLink> OpenEdgeAsync(string connectionId, byte[] frame, string secret, string? resumeAfter)
     {
         var client = new ClientWebSocket();
         client.Options.SetRequestHeader("x-forwarded-for", Ip);
@@ -236,13 +260,26 @@ public sealed class GatewayTests : IAsyncLifetime
 
         string address = _factory!.Services.GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
         await client.ConnectAsync(new Uri(address.Replace("http://", "ws://", StringComparison.Ordinal)), CancellationToken.None);
-        var link = new EdgeLink { Socket = client };
+        var link = new EdgeLink { Socket = client, FirstFrame = frame };
         _ = link.ReadAsync();
-        int connected = (await EventsAsync()).Count(e => e.StartsWith("connected "));
-        await client.SendAsync(FirstFrame(), WebSocketMessageType.Binary, true, CancellationToken.None);
-        await Until(() => link.Snapshot().Length >= 3);
-        await UntilAsync(async () => (await EventsAsync()).Count(e => e.StartsWith("connected ")) > connected);
+        await client.SendAsync(frame, WebSocketMessageType.Binary, true, CancellationToken.None);
         return link;
+    }
+
+    private GatewayNode Node => _factory!.Services.GetRequiredService<GatewayNode>();
+
+    private async Task<string> LastLoggedAsync() => (await Redis.StreamRangeAsync(PlayerMessages.LogKey(_player))).Last().Id!;
+
+    private static byte[] Encoded(string cmd) => Core.Hydra.HydraEncoder.Encode(new JsonObject { ["cmd"] = cmd }, webSocket: true);
+
+    private Task SendAsync(string cmd) => PlayerMessages.SendAsync(Redis, [_player], new JsonObject { ["cmd"] = cmd });
+
+    // The edge's link let go of (as an edge does when it moves the game): the node has dropped it once a message for the
+    // player no longer reaches it.
+    private async Task DetachAsync(EdgeLink link)
+    {
+        link.Socket.Abort();
+        await UntilAsync(() => Task.FromResult(!Node.TryGet(_player, out _)));
     }
 
     private async Task<List<string>> EventsAsync() =>
@@ -253,9 +290,9 @@ public sealed class GatewayTests : IAsyncLifetime
 
     private async Task<string?> CurrentConnectionAsync() => await Redis.HashGetAsync(GatewayPresence.ConnectionKey(_player), "id");
 
-    private static async Task Until(Func<bool> done)
+    private static async Task Until(Func<bool> done, TimeSpan? wait = null)
     {
-        var until = DateTime.UtcNow + s_wait;
+        var until = DateTime.UtcNow + (wait ?? s_wait);
         while (!done())
         {
             Assert.True(DateTime.UtcNow < until, "timed out");
@@ -543,5 +580,209 @@ public sealed class GatewayTests : IAsyncLifetime
 
         await UntilAsync(async () => (await EventsAsync()).Contains($"disconnected {id}"));
         Assert.Null(await CurrentConnectionAsync());
+    }
+
+    [Fact]
+    // A resume takes the connection on the new socket (the same id; a resumed event, no connected, no id frame) and replays
+    // only what the game missed, after the last entry it got; the old socket's grace then lets nothing go; delivery is
+    // live again after.
+    public async Task A_resume_moves_the_connection_and_replays_only_what_the_game_missed()
+    {
+        if (_factory is null)
+        {
+            return;
+        }
+
+        var first = await ConnectEdgeAsync("edge-r1");
+        await SendAsync("m1");
+        await Until(() => first.Of(GatewayEdge.Kind.Logged).Length == 1);
+        string got = first.Of(GatewayEdge.Kind.Logged)[0].Id.ToString();
+        string? attach = await Redis.HashGetAsync(GatewayPresence.ConnectionKey(_player), "attach");
+        await DetachAsync(first);
+        await SendAsync("m2");
+        await SendAsync("m3");
+
+        var second = await ResumeEdgeAsync("edge-r1", got, first.FirstFrame);
+        await Until(() => second.Of(GatewayEdge.Kind.Logged).Length == 2);
+
+        var log = (await Redis.StreamRangeAsync(PlayerMessages.LogKey(_player))).Select(e => e.Id.ToString()).ToList();
+        var replayed = second.Of(GatewayEdge.Kind.Logged);
+        Assert.Equal([Encoded("m2"), Encoded("m3")], replayed.Select(f => f.Frame));
+        Assert.Equal(log[1..], replayed.Select(f => f.Id.ToString()));
+        Assert.Empty(second.Of(GatewayEdge.Kind.Position));
+        Assert.DoesNotContain(second.Snapshot(), f => f.Frame.SequenceEqual(GatewayProtocol.IdFrame));
+        Assert.Equal("edge-r1", await CurrentConnectionAsync());
+        Assert.NotEqual(attach, (string?)await Redis.HashGetAsync(GatewayPresence.ConnectionKey(_player), "attach"));
+        var events = await EventsAsync();
+        Assert.Equal(1, events.Count(e => e == "connected edge-r1"));
+        Assert.Contains("resumed edge-r1", events);
+
+        await Task.Delay(GraceMs + 500);
+        Assert.Equal("edge-r1", await CurrentConnectionAsync());
+        Assert.DoesNotContain("disconnected edge-r1", await EventsAsync());
+
+        await SendAsync("m4");
+        await Until(() => second.Of(GatewayEdge.Kind.Logged).Length == 3);
+        Assert.Equal(Encoded("m4"), second.Of(GatewayEdge.Kind.Logged)[2].Frame);
+
+        // ws:send can reach the node after the replay read the same entry from the log: an entry at or below the last
+        // one sent is dropped, a later one is not.
+        var channel = RedisChannel.Literal(GatewayChannels.Send);
+        await Redis.PublishAsync(channel, $$$"""{"playerIds":["{{{_player}}}"],"message":{"cmd":"m2"},"seqs":{"{{{_player}}}":"{{{log[1]}}}"}}""");
+        await Redis.PublishAsync(channel, $$$"""{"playerIds":["{{{_player}}}"],"message":{"cmd":"later"},"seqs":{"{{{_player}}}":"99999999999999-0"}}""");
+        await Until(() => second.Of(GatewayEdge.Kind.Logged).Length == 4);
+        await Task.Delay(200);
+        Assert.Equal([Encoded("m2"), Encoded("m3"), Encoded("m4"), Encoded("later")], second.Of(GatewayEdge.Kind.Logged).Select(f => f.Frame));
+    }
+
+    [Fact]
+    // What is sent while the log is being replayed arrives once and in order: one sent before the log is read (in the
+    // log, and delivered live while held) once, one sent after it is read after the replayed ones.
+    public async Task What_is_sent_during_a_replay_arrives_once_and_in_order()
+    {
+        if (_factory is null)
+        {
+            return;
+        }
+
+        var first = await ConnectEdgeAsync("edge-r2");
+        string got = first.Of(GatewayEdge.Kind.Position)[0].Id.ToString();
+        await DetachAsync(first);
+        await SendAsync("missed");
+        Node.ReplayPaused = async phase =>
+        {
+            await SendAsync(phase == "joined" ? "while joining" : "after the read");
+            await Task.Delay(300);
+        };
+
+        var second = await ResumeEdgeAsync("edge-r2", got, first.FirstFrame);
+        await Until(() => second.Of(GatewayEdge.Kind.Logged).Length >= 3);
+        await Task.Delay(300);
+
+        Assert.Equal([Encoded("missed"), Encoded("while joining"), Encoded("after the read")], second.Of(GatewayEdge.Kind.Logged).Select(f => f.Frame));
+        Assert.Equal((await Redis.StreamRangeAsync(PlayerMessages.LogKey(_player))).Select(e => e.Id.ToString()),
+            second.Of(GatewayEdge.Kind.Logged).Select(f => f.Id.ToString()));
+    }
+
+    [Fact]
+    // A resume is refused (the edge is told to close the game; nothing changes here) unless the connection is still the
+    // player's current one, opened with the same session.
+    public async Task A_resume_is_refused_unless_the_connection_is_still_current()
+    {
+        if (_factory is null)
+        {
+            return;
+        }
+
+        var first = await ConnectEdgeAsync("edge-r3");
+        string got = first.Of(GatewayEdge.Kind.Position)[0].Id.ToString();
+        await DetachAsync(first);
+        string key = GatewayPresence.ConnectionKey(_player);
+
+        // Replaced by a newer login.
+        await Redis.HashSetAsync(key, "id", "a-newer-login");
+        var replaced = await ResumeEdgeAsync("edge-r3", got, first.FirstFrame);
+        Assert.Equal((1000, "resume refused"), (Assert.Single(replaced.Of(GatewayEdge.Kind.Close)).Code, replaced.Of(GatewayEdge.Kind.Close)[0].Reason));
+        Assert.Equal(WebSocketCloseStatus.NormalClosure, (await replaced.Closed.WaitAsync(s_wait)).Status);
+        Assert.Equal("a-newer-login", await CurrentConnectionAsync());
+
+        // Another session under the same id.
+        await Redis.HashSetAsync(key, [new("id", "edge-r3"), new("token", "another-session")]);
+        Assert.Single((await ResumeEdgeAsync("edge-r3", got, first.FirstFrame)).Of(GatewayEdge.Kind.Close));
+
+        // Let go of already.
+        await Redis.KeyDeleteAsync(key);
+        Assert.Single((await ResumeEdgeAsync("edge-r3", got, first.FirstFrame)).Of(GatewayEdge.Kind.Close));
+        Assert.Null(await CurrentConnectionAsync());
+        Assert.DoesNotContain("resumed edge-r3", await EventsAsync());
+    }
+
+    [Fact]
+    // A resume checks the token's signature, not its expiry (the session outlives it); a bad signature is refused. The old
+    // link is still attached here (the edge gave up on a node that is still up): the resume takes the connection from
+    // it, and its own close then lets nothing go.
+    public async Task A_resume_takes_an_expired_token_but_not_a_bad_one()
+    {
+        if (_factory is null)
+        {
+            return;
+        }
+
+        long signedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var first = await ConnectEdgeAsync("edge-r4", frame: FirstFrame(TimeSpan.FromSeconds(2)));
+        string got = first.Of(GatewayEdge.Kind.Position)[0].Id.ToString();
+        await Until(() => DateTimeOffset.UtcNow.ToUnixTimeSeconds() >= signedAt + 3, TimeSpan.FromSeconds(5));
+
+        var resumed = await ResumeEdgeAsync("edge-r4", got, first.FirstFrame);
+        Assert.Empty(resumed.Of(GatewayEdge.Kind.Close));
+        Assert.Contains("resumed edge-r4", await EventsAsync());
+        Assert.Equal(("replaced", 1000), (Assert.Single(first.Of(GatewayEdge.Kind.Close)).Reason, first.Of(GatewayEdge.Kind.Close)[0].Code));
+        await first.Closed.WaitAsync(s_wait);
+        await Task.Delay(300);
+        Assert.Equal("edge-r4", await CurrentConnectionAsync());
+        Assert.DoesNotContain("disconnected edge-r4", await EventsAsync());
+
+        var forged = await ResumeEdgeAsync("edge-r4", got, FirstFrame(secret: "a-different-secret-entirely-0123456789"));
+        Assert.Single(forged.Of(GatewayEdge.Kind.Close));
+        await Assert.ThrowsAsync<WebSocketException>(() => ResumeEdgeAsync("edge-r4", "not-an-id", first.FirstFrame));
+    }
+
+    [Fact]
+    // The window's rule, not a reach-back check: a game whose last entry is older than everything in the log (trimmed by
+    // the sends after it) is replayed the whole log, and a close in the log that applies to it closes it there.
+    public async Task A_resume_replays_from_its_position_whatever_the_log_still_holds_and_applies_a_close_in_it()
+    {
+        if (_factory is null)
+        {
+            return;
+        }
+
+        var first = await ConnectEdgeAsync("edge-r5");
+        await DetachAsync(first);
+        await SendAsync("n1");
+        await PlayerMessages.DisconnectAsync(Redis, new JsonObject { ["playerId"] = _player, ["connectionId"] = "another-connection", ["code"] = 4003 });
+        await SendAsync("n2");
+        await PlayerMessages.DisconnectAsync(Redis, new JsonObject { ["playerId"] = _player, ["code"] = 4002, ["reason"] = "closed in the gap" });
+        await SendAsync("n3");
+
+        var second = await ResumeEdgeAsync("edge-r5", "1-0", first.FirstFrame);
+        await second.Closed.WaitAsync(s_wait);
+
+        Assert.Equal([Encoded("n1"), Encoded("n2")], second.Of(GatewayEdge.Kind.Logged).Select(f => f.Frame));
+        var close = Assert.Single(second.Of(GatewayEdge.Kind.Close));
+        Assert.Equal((4002, "closed in the gap"), (close.Code, close.Reason));
+        await UntilAsync(async () => (await EventsAsync()).Contains("disconnected edge-r5"));
+    }
+
+    [Fact]
+    // A close that arrives while the log is being replayed is held with the messages, and applied after the replayed
+    // ones, in its place.
+    public async Task A_close_that_arrives_during_a_replay_is_applied_after_the_replayed_messages()
+    {
+        if (_factory is null)
+        {
+            return;
+        }
+
+        var first = await ConnectEdgeAsync("edge-r6");
+        string got = first.Of(GatewayEdge.Kind.Position)[0].Id.ToString();
+        await DetachAsync(first);
+        await SendAsync("missed");
+        Node.ReplayPaused = async phase =>
+        {
+            if (phase == "read")
+            {
+                await PlayerMessages.DisconnectAsync(Redis, new JsonObject { ["playerId"] = _player, ["code"] = 4004, ["reason"] = "held close" });
+                await Task.Delay(300);
+            }
+        };
+
+        var second = await ResumeEdgeAsync("edge-r6", got, first.FirstFrame);
+        await second.Closed.WaitAsync(s_wait);
+
+        var frames = second.Snapshot().Where(f => f.Kind is GatewayEdge.Kind.Logged or GatewayEdge.Kind.Close).ToList();
+        Assert.Equal([GatewayEdge.Kind.Logged, GatewayEdge.Kind.Close], frames.Select(f => f.Kind));
+        Assert.Equal(Encoded("missed"), frames[0].Frame);
+        Assert.Equal((4004, "held close"), (frames[1].Code, frames[1].Reason));
     }
 }

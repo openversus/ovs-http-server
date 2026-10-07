@@ -64,6 +64,8 @@ public sealed class SettingsTests : IDisposable
         var client = _factory.CreateGameClient();
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/control/status")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.PutAsync("/control/settings/Stubs:StatusCode", new StringContent("200"))).StatusCode);
+        // A control path the service does not have is no game route either (the game's fallback asked for a token).
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/control/ops/no-such")).StatusCode);
         Assert.Equal(501, (int)(await client.GetAsync(StubPath)).StatusCode);
     }
 }

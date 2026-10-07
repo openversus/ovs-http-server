@@ -152,6 +152,10 @@ public sealed class ControlClient : IDisposable
 
     public Task<ControlReply<MatchView[]>> MatchesAsync() => SendAsync<MatchView[]>(HttpMethod.Get, "/control/ops/matches");
 
+    public Task<ControlReply<LobbyView[]>> LobbiesAsync() => SendAsync<LobbyView[]>(HttpMethod.Get, "/control/ops/lobbies");
+
+    public Task<ControlReply<LobbyView>> LobbyAsync(string code) => SendAsync<LobbyView>(HttpMethod.Get, $"/control/ops/lobbies/{Uri.EscapeDataString(code)}");
+
     public Task<ControlReply<PlayerView>> PlayerAsync(string who) => SendAsync<PlayerView>(HttpMethod.Get, $"/control/ops/players/{Uri.EscapeDataString(who)}");
 
     public Task<ControlReply<PlayerView>> RenameAsync(string who, string name) =>

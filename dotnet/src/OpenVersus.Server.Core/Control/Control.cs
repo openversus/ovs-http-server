@@ -122,14 +122,24 @@ public static class ControlApi
         control.MapDelete("/settings/{key}", async (string key, string? scope, IControlService service) =>
             TryScope(scope, out var parsed) ? ToResult(await service.RemoveSettingAsync(key, parsed)) : BadScope(scope));
 
-        // The live game's state: queues, who is connected, matches in progress, player records.
+        // The live game's state: queues, who is connected, matches in progress, custom lobbies, player records.
         control.MapGet("/ops/queues", async (IOpsService ops) => ToResult(await ops.QueuesAsync()));
         control.MapGet("/ops/online", async (bool? players, IOpsService ops) => ToResult(await ops.OnlineAsync(players == true)));
         control.MapGet("/ops/matches", async (IOpsService ops) => ToResult(await ops.MatchesAsync()));
+        control.MapGet("/ops/lobbies", async (IOpsService ops) => ToResult(await ops.LobbiesAsync()));
+        control.MapGet("/ops/lobbies/{code}", async (string code, IOpsService ops) => ToResult(await ops.LobbyAsync(code)));
         control.MapGet("/ops/players/{who}", async (string who, IOpsService ops) => ToResult(await ops.FindPlayerAsync(who)));
         control.MapPut("/ops/players/{who}/name", async (string who, HttpRequest request, IOpsService ops) =>
             ToResult(await ops.RenamePlayerAsync(who, await new StreamReader(request.Body).ReadToEndAsync())));
         control.MapPost("/ops/players/{who}/disconnect", async (string who, IOpsService ops) => ToResult(await ops.DisconnectPlayerAsync(who)));
+
+        // Any other path under /control is said to be one, with the service and its version (a CLI newer than the service
+        // asks for endpoints it does not have): the game's fallback would answer it, asking for a game token.
+        control.Map("/{**path}", (HttpContext http, IControlService service) =>
+        {
+            var status = service.Status();
+            return Results.NotFound(new { error = $"no control endpoint {http.Request.Method} {http.Request.Path} on {status.Service} (version {status.Version ?? "unknown"})" });
+        });
 
         return routes;
     }

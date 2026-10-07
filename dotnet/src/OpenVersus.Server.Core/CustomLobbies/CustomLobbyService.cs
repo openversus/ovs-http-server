@@ -1168,6 +1168,34 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
         };
     }
 
+    /// <summary>
+    /// The lobby a join code (any case) or a lobby id names, and its id (ovsctl lobby); null when there is none. A code is
+    /// looked up first, as GET /matches/{code} does.
+    /// </summary>
+    internal static async Task<(string Id, JsonObject Lobby)?> FindAsync(IDatabase redis, string codeOrId)
+    {
+        string id = codeOrId.Length <= 10 && await redis.StringGetAsync($"lobby_code:{codeOrId.ToUpperInvariant()}") is { IsNullOrEmpty: false } coded
+            ? coded.ToString()
+            : codeOrId;
+        return await GetLobbyAsync(redis, id) is { } lobby ? (id, lobby) : null;
+    }
+
+    /// <summary>Every stored lobby, with its id (ovsctl lobby --all).</summary>
+    internal static async Task<List<(string Id, JsonObject Lobby)>> AllAsync(IConnectionMultiplexer multiplexer, IDatabase redis)
+    {
+        var lobbies = new List<(string Id, JsonObject Lobby)>();
+        await foreach (var key in RedisScan.KeysAsync(multiplexer, redis.Database, LobbyKey("*")))
+        {
+            string id = key.ToString()[LobbyKey("").Length..];
+            if (await GetLobbyAsync(redis, id) is { } lobby)
+            {
+                lobbies.Add((id, lobby));
+            }
+        }
+
+        return lobbies;
+    }
+
     /// <summary>A lobby as stored, repaired (getLobby); null when there is none or it is not JSON.</summary>
     private static async Task<JsonObject?> GetLobbyAsync(IDatabase redis, string lobbyId)
     {
@@ -1263,7 +1291,7 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
     private static JsonObject Players(JsonObject team) => team["Players"] as JsonObject ?? [];
 
     // A player, not a bot: BotSettingSlug is exactly "" (the TS server's test both ways).
-    private static bool IsHuman(JsonNode? player) => player?["BotSettingSlug"] is JsonValue v && v.TryGetValue<string>(out var s) && s.Length == 0;
+    internal static bool IsHuman(JsonNode? player) => player?["BotSettingSlug"] is JsonValue v && v.TryGetValue<string>(out var s) && s.Length == 0;
 
     /// <summary>The keys of the lobby's map <paramref name="field"/> (Object.keys): the players in it, for PlayerGameplayPreferences.</summary>
     private static List<string> Ids(JsonObject lobby, string field) =>

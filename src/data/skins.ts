@@ -2,7 +2,6 @@ import { CHROMIUM_SHAGGY_SLUG, CHROMIUM_BANANAGUARD_SLUG, CHROMIUM_SUPERMAN_SLUG
 import { GOTH_MORTY_SLUG } from "./gothMortySkin";
 import { SHIRTLESS_TATTOO_SHAGGY_SLUG } from "./ovsBattlepassInventory";
 import { PINK_MOUNTAINEER_JASON_SLUG } from "./pinkMountaineerJason";
-import { JADE_SUPERMAN_SLUG } from "./jadeSuperman";
 
 const CHROMIUM_WONDER_WOMAN_SLUG = CHROMIUM_PILOT[0].slug;
 const CHROMIUM_HARLEY_QUINN_SLUG = CHROMIUM_PILOT[1].slug;
@@ -91,7 +90,6 @@ export const ENABLED_SKINS = {
     Slugs: [
       "skin_superman_default",
       CHROMIUM_SUPERMAN_SLUG,
-      JADE_SUPERMAN_SLUG,
       "skin_ovs_omniman_superman",
       "skin_c003_s01",
       "skin_c003_s02",

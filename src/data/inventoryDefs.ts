@@ -7,7 +7,6 @@ import { OVS_ANNOUNCER_INVENTORY } from "./ovsAnnouncers";
 import { UNRELEASED_COSMETICS_INVENTORY } from "./unreleasedCosmetics";
 import { OVS_DEV_BADGE_INVENTORY } from "./ovsDevBadge";
 import { ONE_TOUGH_BANANA_INVENTORY } from "./oneToughBananaTaunt";
-import { JADE_SUPERMAN_INVENTORY, JADE_SUPERMAN_SLUG } from "./jadeSuperman";
 
 export interface InventoryDefData {
   AssetPath: string;
@@ -49,7 +48,6 @@ export const INVENTORY_DEFINITIONS: InvetoryKeysDefs = {
   ...UNRELEASED_COSMETICS_INVENTORY,
   ...OVS_DEV_BADGE_INVENTORY,
   ...ONE_TOUGH_BANANA_INVENTORY,
-  [JADE_SUPERMAN_SLUG]: JADE_SUPERMAN_INVENTORY,
   [CHROMIUM_SHAGGY_SLUG]: CHROMIUM_SHAGGY_INVENTORY,
   ...CHROMIUM_PAIR_INVENTORY,
   [CHROMIUM_BATMAN_SLUG]: CHROMIUM_BATMAN_INVENTORY,

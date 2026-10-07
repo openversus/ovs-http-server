@@ -504,12 +504,6 @@
     "character_slug": "character_c019"
   },
   {
-    "slug": "skin_ovs_jade_superman",
-    "assetType": "SkinData",
-    "assetPath": "/OVS/Rewards/Skins/Jade/Superman/Catalog/skin_ovs_jade_superman.skin_ovs_jade_superman",
-    "character_slug": "character_superman"
-  },
-  {
     "slug": "announcer_pack_ovs_test",
     "assetType": "AnnouncerPackData",
     "assetPath": "/OVS/Rewards/AnnouncerPacks/announcer_pack_ovs_test.announcer_pack_ovs_test",

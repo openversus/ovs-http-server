@@ -34,6 +34,8 @@ public static class OvsCtl
             config.AddCommand<QueuesCommand>("queues").WithDescription("Who is waiting in each matchmaking queue, and for how long.");
             config.AddCommand<OnlineCommand>("online").WithDescription("How many players are connected (--players: who).");
             config.AddCommand<MatchesCommand>("matches").WithDescription("Matches in progress, as the website's /matches shows them.");
+            config.AddCommand<LobbyCommand>("lobby").WithDescription("A custom lobby by its join code (any case) or its id, or every custom lobby (--all): leader, mode, and who is on which team, with each member's LobbyPlayerIndex. Asks the lobbies service unless --service or OVS_SERVICE says otherwise.")
+                .WithExample("lobby", "GQRBM").WithExample("lobby", "--all");
             config.AddBranch("player", player =>
             {
                 player.SetDescription("Player records.");

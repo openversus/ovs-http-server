@@ -6,8 +6,8 @@ namespace OpenVersus.Server.Core.Realtime;
 
 /// <summary>
 /// Profile notifications (MissionUpdatesComplete, RewardTrackStatesUpdated, ...) as WB's websocket sent them and the TS
-/// websocket sends EndOfMatchPayload, delivered through the TS websocket's ws:send channel ({playerIds, message}: it
-/// sends message, as it is, to each connected player named; docs/MIGRATION-BRIDGES.md 4).
+/// websocket sent EndOfMatchPayload, delivered through ws:send ({playerIds, message}: the realtime gateway sends message,
+/// as it is, to each connected player named).
 /// </summary>
 public static class ProfileNotifications
 {

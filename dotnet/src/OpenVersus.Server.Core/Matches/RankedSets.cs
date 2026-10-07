@@ -59,7 +59,7 @@ namespace OpenVersus.Server.Core.Matches;
 //                 ms later the empty config that sends the game back to its menus (a set over at check-in: both 500 ms
 //                 after the answer, as there); FullRankUpdate (FullRankUpdateVariant.SetResult) after a rating, to every
 //                 player of the set but bots, connected or not (FullRankUpdate.SendAsync)
-// Announced       the next game (MatchLaunches: match:notifications, or match:launched with Realtime:Gateway on)
+// Announced       the next game (MatchLaunches: match:launched)
 // Mongo, written  eloratings, playerstats (SetRatings); eloratings for a player with none (FullRankUpdate)
 //
 // The next game's rollback port is IMatchLauncher's (fixed servers: a random one of theirs; on demand: the next port,
@@ -511,22 +511,27 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
             log.LogWarning("FALLBACK: match {Match} ended with no set — recovered via pending_winner={Winner}", matchId, pending);
         }
 
-        double team0 = Number(scores.Count > 0 ? scores[0] : null), team1 = Number(scores.Count > 1 ? scores[1] : null);
-        if (team0 >= 2 || team1 >= 2 || gamesPlayed >= 3)
-        {
-            return await SetOverAsync(redis, existingSet, setId, matchId, playerIds, team0, team1);
-        }
-
-        // A player of this set whose flag names it left mid-game: the set is conceded at the check-in.
+        // A player of this set whose flag names it left mid-game: the set is conceded at the check-in, or, when this game
+        // ends it on score, that player quit (End Game: no set XP for them).
         string? dodger = null;
         foreach (string id in playerIds)
         {
             if ((string?)await redis.StringGetAsync($"ranked_disconnect:{id}") == setId)
             {
                 dodger = id;
-                log.LogInformation("Match {Match} — player {Player} dodged, set will be marked conceded", matchId, id);
                 break;
             }
+        }
+
+        double team0 = Number(scores.Count > 0 ? scores[0] : null), team1 = Number(scores.Count > 1 ? scores[1] : null);
+        if (team0 >= 2 || team1 >= 2 || gamesPlayed >= 3)
+        {
+            return await SetOverAsync(redis, existingSet, setId, matchId, playerIds, team0, team1, dodger);
+        }
+
+        if (dodger is not null)
+        {
+            log.LogInformation("Match {Match} — player {Player} dodged, set will be marked conceded", matchId, dodger);
         }
 
         var state = new JsonObject
@@ -555,7 +560,8 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
 
     // The set is over: rated once (elo_processed_set "set_complete"), the winner the team with more wins, each fighter
     // this game's (match_characters:{match}, else game 1's, else the connection); then dropped.
-    private async Task<GameEndResult> SetOverAsync(IDatabase redis, JsonObject? set, string setId, string matchId, IReadOnlyList<string> playerIds, double team0Wins, double team1Wins)
+    private async Task<GameEndResult> SetOverAsync(IDatabase redis, JsonObject? set, string setId, string matchId, IReadOnlyList<string> playerIds, double team0Wins, double team1Wins,
+        string? quitter = null)
     {
         log.LogInformation("Ranked set {Set} — set complete ({Team0}-{Team1}), processing ELO", setId, team0Wins, team1Wins);
         int winnerTeam = team0Wins > team1Wins ? 0 : 1;
@@ -575,7 +581,8 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
             try
             {
                 await ratings.RateAsync(new SetOutcome(winners, losers, Text(set?["mode"]) ?? "", (int)team0Wins, (int)team1Wins, winnerTeam, false,
-                    await CharactersAsync(redis, [.. winners, .. losers], setId, matchId), matchId), CancellationToken.None);
+                    await CharactersAsync(redis, [.. winners, .. losers], setId, matchId), matchId,
+                    QuitterIds: quitter is { Length: > 0 } ? [quitter] : null), CancellationToken.None);
             }
             catch (Exception e) when (e is not OutOfMemoryException)
             {
@@ -754,7 +761,7 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
         await redis.StringSetAsync($"ranked_set_match:{setId}", matchId, s_currentGameTtl);
         // Announced once the set's keys name this game (a game that cannot be told ends its set: MatchLaunches). A set's
         // next game sends no matchmaking-complete (the TS server sent none).
-        await MatchLaunches.AnnounceAsync(services, redis, matchId, Js.Stringify(notification), []);
+        await MatchLaunches.AnnounceAsync(redis, matchId, Js.Stringify(notification), []);
         log.LogInformation("Created set match {Match} (game {Game}/3) on map {Map}, rollback port {Port}{P2P}", matchId, Number(set["gamesPlayed"]) + 1, map, port,
             p2p ? " (P2P: the players connect to their own nodes; a relay only if no direct path opens)" : "");
     }

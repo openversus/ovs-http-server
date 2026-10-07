@@ -38,8 +38,7 @@ namespace OpenVersus.Server.Core.Matchmaking;
 //   FFA  the public Free For All queue (processFfaQueue): the 4 oldest solo tickets of distinct players, no skill; a
 //        blocked group waits (no other four are tried). Outside its window (FfaSchedule, Ffa:WeekendOnly) nothing is
 //        matched: every ticket in it goes, and each is cancelled as the TS cancelMatchmakingForAll does
-//        (matchmaking:cancel {playersIds, matchmakingId}, which the TS websocket turns into the game's cancel; with
-//        Realtime:Gateway on, MatchmakingQueue's cancel, which sends it itself; each
+//        (MatchmakingQueue's cancel: the ticket's tick stops and the game is told, with the ticket's request id; each
 //        player's party_ready:{lobby} deleted). Each player is a team of their own (team and index 0..3, a random one
 //        hosts); the map is a 2v2 one; the match is unranked (no set; the TS websocket sends it as evtq_ffa, mode FFA,
 //        not ranked, from mode "FFA") but not a password match, as the TS worker writes it.
@@ -342,24 +341,11 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
         return true;
     }
 
-    // cancelMatchmakingForAll for one ticket: each of its players' search ends (matchmaking:cancel for the TS websocket,
-    // or with Realtime:Gateway on, the cancel itself: MatchmakingQueue); their lobbies unready.
-    private async Task CancelAsync(IDatabase redis, Ticket ticket)
+    // cancelMatchmakingForAll for one ticket: each of its players' search ends (MatchmakingQueue's cancel, which tells
+    // the game); their lobbies unready.
+    private static async Task CancelAsync(IDatabase redis, Ticket ticket)
     {
-        if (MatchLaunches.Gateway(services))
-        {
-            await MatchmakingQueue.CancelAsync(redis, ticket.Players.Select(p => p.Id), ticket.Json["matchmakingRequestId"]?.DeepClone());
-        }
-        else
-        {
-            var cancel = new JsonObject { ["playersIds"] = new JsonArray([.. ticket.Players.Select(p => (JsonNode)p.Id)]) };
-            if (ticket.Json["matchmakingRequestId"] is { } request)
-            {
-                cancel["matchmakingId"] = request.DeepClone();
-            }
-
-            await redis.PublishAsync(RedisChannel.Literal(PartyService.CancelMatchmakingChannel), Js.Stringify(cancel));
-        }
+        await MatchmakingQueue.CancelAsync(redis, ticket.Players.Select(p => p.Id), ticket.Json["matchmakingRequestId"]?.DeepClone());
         foreach (var (id, _) in ticket.Players)
         {
             if ((string?)await redis.StringGetAsync($"player_lobby:{id}") is { Length: > 0 } lobby)
@@ -590,7 +576,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
 
         // Announced once its set is written (a match that cannot be told ends its set: MatchLaunches), with one
         // matchmaking-complete per ticket: each party's own request.
-        await MatchLaunches.AnnounceAsync(services, redis, matchId, Js.Stringify(notification),
+        await MatchLaunches.AnnounceAsync(redis, matchId, Js.Stringify(notification),
             [.. tickets.Select(t => new MatchComplete([.. t.Players.Select(p => p.Id)], t.Json["matchmakingRequestId"], Searching: true))]);
 
         log.LogInformation("Created {Mode} match {Match} from {Queue} with {Players} players across {Tickets} tickets on rollback port {Port}{P2P}", mode, matchId, queue, total, tickets.Count, port,

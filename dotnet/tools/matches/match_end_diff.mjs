@@ -1,5 +1,5 @@
 // A match's end on the TS websocket (handleOnMatchEnd, from match:end) and on the C# match flow (MatchEnd, from
-// /ovs_end_match with MatchEnd:Enabled), scenario by scenario: what each player's game is sent (EndOfMatchPayload,
+// /ovs_end_match), scenario by scenario: what each player's game is sent (EndOfMatchPayload,
 // FullRankUpdate, MatchSetLeaverNotification, the empty config, RematchDeclinedNotification, in order, after the delays),
 // every Redis write the server made (MONITOR), the Redis state after, and the ratings and set stats in Mongo. Run from the
 // repository root (it uses the TS server's node_modules):
@@ -14,9 +14,9 @@
 // end is over (end: the frames and writes until then), and lists every match published meanwhile (started: a rematch).
 //
 // The TS websocket runs in both: in the C# run it only delivers what C# sends through ws:send (C# publishes no
-// match:end there, so the TS websocket never ends the match). Each step publishes the match's notification first, so the
-// TS websocket holds each player's config and the C# match flow keeps it (GameplayConfigs:Mode Shadow: the TS websocket
-// is the one that writes beside the config, in both runs, so nothing races at the config), then seeds the set
+// match:end there, so the TS websocket never ends the match). Each step launches the match first, as each server does
+// (TS: published on match:notifications, so its websocket holds each player's config; C#: appended to match:launched,
+// so the match flow builds, keeps and sends it, with what goes beside it), then seeds the set
 // as RankedSets and submit_end_of_match_stats leave it, then ends the match. game_result_received is seeded for every
 // match that finished, so the TS websocket's own disconnect handling (when a step closes its games) is a normal leave.
 // The TS websocket must be PR #49's code as committed. Scratch stores, wiped before every step: REF_REDIS_URL,
@@ -154,14 +154,17 @@ async function run(side, outFile, only) {
     }
     const seeded = await seed?.();
     const lobby = typeof seeded === "string" ? seeded : null;
-    // The match as launched: its config kept and published (the TS websocket holds it per connection, C# per player).
+    // The match as launched: its config kept and announced (the TS websocket holds it per connection, C# per player).
     await redis.set(MATCH, JSON.stringify(config), { EX: 1200 });
-    await redis.publish("match:notifications", JSON.stringify(config));
+    if (side === "ts") await redis.publish("match:notifications", JSON.stringify(config));
+    else await redis.xAdd("match:launched", "*", { match: MATCH, notification: JSON.stringify(config) });
     await sleep(1500);
     if (ended) await redis.set(`game_result_received:${MATCH}`, "1", { EX: 600 });
     games.clear();
     recording = [];
     published = [];
+    // C# announces a match (a rematch) on the stream: the entries after this one are the step's.
+    const launchedBefore = side === "cs" ? (await redis.xRevRange("match:launched", "+", "-", { COUNT: 1 }))[0]?.id ?? "0-0" : null;
     const started = Date.now();
     for (let i = 0; i < (twice ? 2 : 1); i++) {
       if (side === "ts") {
@@ -180,12 +183,15 @@ async function run(side, outFile, only) {
     }
     const lines = recording;
     recording = null;
-    const matches = published;
+    const matches = side === "ts" ? published
+      : (await redis.xRange("match:launched", `(${launchedBefore}`, "+")).map((e) => JSON.parse(e.message.notification));
     published = null;
     // Left out: each server's own bookkeeping (the TS websocket's presence for the fake games, the C# instance registry),
-    // the messages C# publishes for the TS websocket to deliver (compared as frames), and C#'s own keys, kept apart.
+    // the messages C# publishes for the TS websocket to deliver and TS's matchmaking:complete (both compared as the
+    // frames they become), a rematch's launch (compared as started: TS publishes it on match:notifications, C# appends it
+    // to match:launched), and C#'s own keys, kept apart.
     const writesOf = (from) => writes(from, self)
-      .filter((w) => !/^(set|zadd|zrem|del) ovs:instance|^zadd player_heartbeats|^(sadd|srem) online_players|^(zadd|expire|zremrangebyscore) active_ip_accounts:|^publish ws:send /.test(w))
+      .filter((w) => !/^(set|zadd|zrem|del) ovs:instance|^zadd player_heartbeats|^(sadd|srem) online_players|^(zadd|expire|zremrangebyscore) active_ip_accounts:|^publish ws:send |^publish (match:notifications|matchmaking:complete) /.test(w))
       .map((w) => w.replace(/\\(["\\])/g, "$1"))
       // DEL of several keys, as one each (the C# client sends them together).
       .flatMap((w) => (w.startsWith("del ") ? w.split(" ").slice(1).map((k) => `del ${k}`) : [w]))
@@ -195,7 +201,7 @@ async function run(side, outFile, only) {
         return m ? [`set ${m[1]} ${canonLobby(m[2])}`, ...(m[3] ? [`expire ${m[1]} ${m[4]}`] : [])] : [w];
       });
     const all = writesOf(lines);
-    const own = (w) => /^(zadd|zrem) (realtime|rematch):due|^set match_end:|^(set|del) match_config:|^set rejoin_pending:|^del ranked_set_match:|^set ranked_set_lock:|^del ranked_set_lock:/.test(w);
+    const own = (w) => /^(zadd|zrem) (realtime|rematch):due|^set match_end:|^(set|del) match_config:|^set rejoin_pending:|^del ranked_set_match:|^set ranked_set_lock:|^del ranked_set_lock:|^del ranked_set_crashed:|^set match_announced:|^hdel realtime:queued /.test(w);
     function frameSet() {
       return Object.fromEntries(HUMANS.map((id) => [id, games.frames(id).filter((f) => !f?.raw).map((f) => normalize(f, started))]));
     }
@@ -212,7 +218,7 @@ async function run(side, outFile, only) {
       writes: all.filter((w) => !own(w)).sort(),
       own: [...new Set(all.filter(own).map((w) => w.split(" ").slice(0, 2).join(" ")))].sort(),
       state: Object.fromEntries(Object.entries(await state(redis))
-        .filter(([k]) => !/^ovs:instance|^player_heartbeats$|^online_players$|^active_ip_accounts:|^match:results$|^(realtime|rematch):due$|^match_end:|^match_config:|^rejoin_pending:/.test(k))
+        .filter(([k]) => !/^ovs:instance|^player_heartbeats$|^online_players$|^active_ip_accounts:|^match:results$|^(realtime|rematch):due$|^match_end:|^match_config:|^rejoin_pending:|^match:launched$|^match_announced:|^realtime:connections$|^ranked_set_crashed:/.test(k))
         .map(([k, v]) => [k, k.startsWith("custom_lobby_ssc:") && typeof v.value === "string" ? { ...v, value: canonLobby(v.value) } : v])),
       mongo,
       started: matches.map((m) => ({
@@ -412,11 +418,11 @@ function casualVote(ts, cs, voters) {
 // Differences decided for the port; each check asserts the difference, then compares the rest.
 const EXPECTED = {
   "casual-decline": {
-    why: "a Casual game has a rematch (MIGRATION-BRIDGES.md 7): TS declined it a second after the end, C# opens the vote",
+    why: "a Casual game has a rematch: TS declined it a second after the end, C# opens the vote",
     check: (ts, cs) => casualVote(ts, cs, [P1]),
   },
   "party-kept": {
-    why: "a Casual game has a rematch (MIGRATION-BRIDGES.md 7): TS declined it a second after the end, C# opens the vote",
+    why: "a Casual game has a rematch: TS declined it a second after the end, C# opens the vote",
     check: (ts, cs) => casualVote(ts, cs, [P1]),
   },
   "casual-everyone-accepts": {
@@ -504,6 +510,17 @@ function diffRuns(fileA, fileB, current = "Season:SeasonSix") {
     if (y.own.some((w) => w.startsWith("del ranked_set_match:"))) {
       for (const k of Object.keys(x.state).filter((k) => k.startsWith("ranked_set_match:"))) delete x.state[k];
     }
+    // A rematch's GameServerReadyNotification: C# tells a player on the server's own machine 127.0.0.1 from the gateway's
+    // connection entry (realtime:conn:{player} ip); the games here are on the TS websocket, so it has none and names the
+    // relay where TS named loopback. Asserted, then C#'s taken as TS's (config_diff compares both through the gateway).
+    const ready = (run) => Object.values(run.frames).flat().filter((f) => f?.data?.template_id === "GameServerReadyNotification");
+    const [tsReady, csReady] = [ready(x), ready(y)];
+    // Only where both sides launched (a step's expected difference may be that one side did not).
+    if (tsReady.length && csReady.length && (tsReady.length !== csReady.length || tsReady.some((f) => f.data.IPAddress !== "127.0.0.1") || new Set(csReady.map((f) => f.data.IPAddress)).size > 1)) {
+      differing++;
+      console.log(`${name}: GameServerReadyNotification addresses are not TS loopback / one C# address`);
+    }
+    for (const f of csReady) f.data.IPAddress = "127.0.0.1";
     const fullRank = seasons(y, current);
     if (Object.values(x.frames).flat().some((f) => f?.data?.template_id === "FullRankUpdate") && fullRank === 0) {
       differing++;

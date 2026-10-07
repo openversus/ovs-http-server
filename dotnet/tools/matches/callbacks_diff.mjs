@@ -15,15 +15,16 @@
 // (as the other harnesses). Both servers need the same MatchUpdateKey (REF_MATCH_UPDATE_KEY, their MATCHUPDATEKEY),
 // the same node signing key (P2P_NODE_SIGNING_KEY_FILE; REF_NODE_PUBLIC_KEY is its public half, a
 // node-config-public-key.txt), UDP_SERVER_IP and UDP_PORT, and fixed rollback servers (ON_DEMAND_ROLLBACK=0: a relay
-// request deploys nothing), and the C# match flow MatchEnd:Enabled off (the TS websocket ends the match in both runs: the
-// match:end publish is compared). ECDSA signatures differ on every signing, so a signature is compared by whether it verifies.
+// request deploys nothing). The C# match flow ends a match itself (MatchEnd; the end is match_end_diff's to compare) where
+// the TS server published match:end: the end-match steps assert that much. ECDSA signatures differ on every signing, so a
+// signature is compared by whether it verifies.
 // The dodge steps also need REF_WS_URL and REF_JWT_SECRET: the TS websocket (PR #49's code as committed) turns the TS
 // server's ranked_set:fullrankupdate into each connected player's FullRankUpdate and delivers what C# sends through
 // ws:send. In those steps the players online get a fake game for the step (connected after the setup, closed after), and
 // what their games were sent is compared; each run is checked to use only its own channel.
 //
-// Release mode (REF_GAMES_URL set: the TS websocket for the TS run, the C# gateway for the C# run, whose match flow runs
-// with Realtime:Gateway on): only the steps that tell the players to connect, with a fake game for each player and the
+// Release mode (REF_GAMES_URL set: the TS websocket for the TS run, the C# gateway for the C# run): only the steps that
+// tell the players to connect, which the other mode leaves out (C# tells connected games only), with a fake game for each player and the
 // spectator of the match (P2's reports no address: a player on the server's own machine), and what the games were sent
 // (game-server-instance-ready) compared instead of the TS server's game_server_ready:notifications publish. Run the TS
 // websocket with USE_INTERNAL_ROLLBACK=1 and the same UDP_SERVER_IP as the C# side, as every deployment.
@@ -41,9 +42,9 @@ const MATCH = oid(100), SET = oid(101), OTHER = oid(102);
 const KEY = "matchkey-from-the-game";
 const IP = "198.51.100.8";
 const RELEASE = !!process.env.REF_GAMES_URL;
-const CHANNELS = new Set(RELEASE ? ["match:end"] : ["game_server_ready:notifications", "match:end"]);
-// The steps release mode runs; register-player-gone only there.
-const RELEASE_STEPS = new Set(["register-relay", "register-twice", "register-no-match-port", "register-match-port-zero", "register-p2p-held",
+const CHANNELS = new Set(["match:end"]);
+// The steps release mode runs, and only it.
+const RELEASE_STEPS = new Set(["register-relay", "register-hostname-ignored", "register-field-edges", "register-twice", "register-no-match-port", "register-match-port-zero", "register-p2p-held",
   "register-p2p-after-relay-asked", "p2p-ready", "p2p-failed-then-relay-registers", "mvsi-register", "register-player-gone"]);
 let publicKey;
 const verifies = (bytes, signature) => {
@@ -113,7 +114,7 @@ async function run(baseUrl, outFile) {
 
   const steps = [];
   async function step(name, setup, calls, { waitMs = 700, games: withGames = false, connected = [P1, P2, SPEC] } = {}) {
-    if (RELEASE ? !RELEASE_STEPS.has(name) : name === "register-player-gone") return;
+    if (RELEASE !== RELEASE_STEPS.has(name)) return;
     await redis.flushDb();
     await redis.set("refdiff:scratch", "1");
     await db.dropDatabase();
@@ -320,6 +321,22 @@ function unrated(ts, cs) {
 
 // Release mode's decided differences.
 const instanceReady = (f) => f?.cmd === "game-server-instance-ready";
+// Every game (the players and the spectator) told game-server-instance-ready with the relay and the match's port, where
+// TS told nobody.
+function toldWithoutWaitingForBots(why) {
+  return {
+    why,
+    check: (ts, cs) => {
+      const ok = Object.values(ts.frames).every((f) => f.length === 0)
+        && [P1, P2, SPEC].every((id) => cs.frames[id]?.length === 1 && instanceReady(cs.frames[id][0])
+          && cs.frames[id][0].payload.game_server_instance.host !== "127.0.0.1" && cs.frames[id][0].payload.game_server_instance.port === 57003)
+        && new Set([P1, P2, SPEC].map((id) => cs.frames[id][0].payload.game_server_instance.host)).size === 1;
+      const strip = (run) => ({ ...clone(run), frames: {} });
+      return { ok, ts: strip(ts), cs: strip(cs) };
+    },
+  };
+}
+
 const RELEASE_EXPECTED = {
   // A player gone at release (decided 2026-10-06): TS told nobody and left the others waiting on their loading screen; C#
   // tells nobody either, and shows each game still connected (P1, the spectator) why, then closes it after 5 s.
@@ -344,20 +361,28 @@ const RELEASE_EXPECTED = {
   },
   // The legacy registry lists the bots (decided 2026-10-06): TS waited for their games too, so a match with a bot never
   // released anyone; C# waits for the players only and tells each game (players and spectator) as for /ovs_register.
-  "mvsi-register": {
-    why: "a bot is not waited for in C#; TS aborted every match with one",
-    check: (ts, cs) => {
-      const ok = Object.values(ts.frames).every((f) => f.length === 0)
-        && [P1, P2, SPEC].every((id) => cs.frames[id]?.length === 1 && instanceReady(cs.frames[id][0])
-          && cs.frames[id][0].payload.game_server_instance.host !== "127.0.0.1" && cs.frames[id][0].payload.game_server_instance.port === 57003)
-        && new Set([P1, P2, SPEC].map((id) => cs.frames[id][0].payload.game_server_instance.host)).size === 1;
-      const strip = (run) => ({ ...clone(run), frames: {} });
-      return { ok, ts: strip(ts), cs: strip(cs) };
-    },
+  "mvsi-register": toldWithoutWaitingForBots("a bot is not waited for in C#; TS aborted every match with one"),
+  // The same with the odd roster: TS also waited for a "yes" bot and for the entry with no playerId (never connected).
+  "register-field-edges": toldWithoutWaitingForBots("a bot, and an entry with no playerId, are not waited for in C#; TS aborted the match for them"),
+};
+
+// The match's end: TS published match:end and its websocket ended the match (it runs in both runs, for the dodges); C#
+// ends it itself (MatchEnd), once (match_end:{match}). What the end does is match_end_diff's to compare: here only that
+// each side ended it, and the answer.
+const ENDED = {
+  why: "the match's end: TS published match:end for its websocket to end it; C# ends it itself (MatchEnd; compared by match_end_diff)",
+  check: (ts, cs) => {
+    const ok = ts.published.some((p) => p.channel === "match:end" && p.message.matchId === MATCH) && cs.published.length === 0
+      && cs.writes.includes(`set match_end:${MATCH} 1 EX 600 NX`);
+    const strip = (run) => ({ ...clone(run), writes: null, published: null, state: null });
+    return { ok, ts: strip(ts), cs: strip(cs) };
   },
 };
 
 const EXPECTED = {
+  "end-match": ENDED,
+  "end-match-from-a-node": ENDED,
+  "mvsi-end-match": ENDED,
   "disconnect-still-online": { why: "C# also deletes the set's current game (ranked_set_match, its own pointer)", check: pointer },
   "dodge-rated-in-set": { why: "C# also deletes the set's current game (ranked_set_match, its own pointer)", check: pointer },
   "disconnect-spectator-online": {
@@ -374,6 +399,18 @@ const EXPECTED = {
     check: (ts, cs) => {
       const ok = JSON.stringify(ts.writes) === JSON.stringify([`set ranked_disconnect:${SPEC} 1 EX 600`]) && empty(cs);
       const strip = (run) => { const o = clone(run); o.writes = null; delete o.state[`ranked_disconnect:${SPEC}`]; return o; };
+      return { ok, ts: strip(ts), cs: strip(cs) };
+    },
+  },
+  "dodge-custom-game": {
+    why: "a custom game's pregame leave: TS did nothing (the others sat at perk select); C# calls the match off unrated (decided 2026-10-07): the others sent match_cancel, the end claimed (match_end), no flag",
+    check: (ts, cs) => {
+      const cancel = (id) => cs.lists[id]?.length === 1 && cs.lists[id][0].includes('"opponent_dodge"');
+      const ok = empty(ts) && Object.values(ts.lists).every((l) => l.length === 0) && cancel(P1) && !cs.lists[P2]?.length
+        && cs.mongo.eloratings.length === 0 && cs.mongo.playerstats.length === 0
+        && cs.state[`match_end:${MATCH}`]?.value === "called_off" && cs.state[`match_called_off:${MATCH}`]?.value === "rollback_pregame_dodge"
+        && !cs.writes.some((w) => w.includes("ranked_disconnect") || w.includes("player_ranked_set") || w.includes("ranked_set:"));
+      const strip = (run) => ({ ...clone(run), writes: null, published: null, state: null, lists: null });
       return { ok, ts: strip(ts), cs: strip(cs) };
     },
   },
@@ -415,6 +452,36 @@ function dodgeFlag(name, ts, cs) {
   return true;
 }
 
+// A pregame dodge calls the match off (C# only, decided 2026-10-07: match_called_off:{match} for 20 minutes, so a later
+// leave of the same match changes nothing): asserted wherever TS processed a dodge (its elo_processed_set write), and its
+// absence everywhere else; then taken out of C#'s run. The custom game's step asserts it in its own expected difference.
+function calledOff(name, ts, cs) {
+  if (name === "dodge-custom-game") return true;
+  const key = `match_called_off:${MATCH}`;
+  const marks = cs.writes.filter((w) => w.startsWith("set match_called_off:"));
+  if (!ts.writes.some((w) => w.startsWith("set elo_processed_set:"))) return marks.length === 0 && !(key in cs.state);
+  if (marks.length !== 1 || !/^set \S+ rollback_pregame_dodge EX 1200$/.test(marks[0]) || cs.state[key]?.value !== "rollback_pregame_dodge") return false;
+  cs.writes.splice(cs.writes.indexOf(marks[0]), 1);
+  delete cs.state[key];
+  return true;
+}
+
+// A player set idle (a dodge, a crash): C# writes the status only while player:{id} exists (TS made a record holding the
+// status alone for a player whose keys were gone). The harness seeds no player records, so each TS idle write C# did not
+// make is asserted to be for a player C# holds no record of, then taken out with the record it made.
+function idleRecords(ts, cs) {
+  const idle = (run) => run.writes.filter((w) => /^hset player:[0-9a-f]{24} status idle$/.test(w));
+  const csIdle = idle(cs);
+  for (const w of idle(ts)) {
+    if (csIdle.includes(w)) continue;
+    const key = w.split(" ")[1];
+    if (key in cs.state) return false;
+    ts.writes.splice(ts.writes.indexOf(w), 1);
+    delete ts.state[key];
+  }
+  return true;
+}
+
 // FullRankUpdate's season: TS's is always Season:SeasonFive, C#'s Season:Current (decided: as ranked_data and the login).
 function season(run, wanted) {
   let ok = true;
@@ -447,6 +514,14 @@ function diffRuns(fileA, fileB) {
     if (x && y && !dodgeFlag(name, x, y)) {
       differing++;
       console.log(`${name}: NOT the decided dodge flag (TS "1"; C# the set's id in a rated game, none otherwise): A ${JSON.stringify(x.writes.filter((w) => w.includes("ranked_disconnect")))} B ${JSON.stringify(y.writes.filter((w) => w.includes("ranked_disconnect")))}`);
+    }
+    if (x && y && !calledOff(name, x, y)) {
+      differing++;
+      console.log(`${name}: NOT the decided call-off mark (C#: match_called_off wherever TS processed a dodge, nowhere else): B ${JSON.stringify(y.writes.filter((w) => w.includes("match_called_off")))}`);
+    }
+    if (x && y && !idleRecords(x, y)) {
+      differing++;
+      console.log(`${name}: C# skipped setting idle a player whose record exists`);
     }
     if (!season(x, (k) => k === "Season:SeasonFive") || !season(y, (k) => /^Season:\w+$/.test(k))) {
       differing++;

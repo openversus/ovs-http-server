@@ -92,6 +92,21 @@ public sealed class ControlTests
     }
 
     [Fact]
+    // A path the control API does not have (a CLI newer than the service) is said to be one, with the service's name and
+    // version; the public listener still answers a bare 404.
+    public async Task AnUnknownControlPathSaysSo()
+    {
+        await using var host = await StartAsync();
+        var reply = await host.ControlPortClient.GetAsync("/control/ops/no-such");
+        Assert.Equal(HttpStatusCode.NotFound, reply.StatusCode);
+        Assert.StartsWith("no control endpoint GET /control/ops/no-such on test (version ", (await reply.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
+
+        var outside = await host.Public.GetAsync("/control/ops/no-such");
+        Assert.Equal(HttpStatusCode.NotFound, outside.StatusCode);
+        Assert.Empty(await outside.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task ASettingChangedThroughTheControlApiReachesTheService()
     {
         await using var host = await StartAsync();

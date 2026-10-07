@@ -31,7 +31,7 @@ namespace OpenVersus.Server.Core.CustomLobbies;
 // any lobby read, goes through the TS server's repair (FixEmptyTables). cjson also writes keys in its own order: the
 // game reads the lobby by key, and has been taking that order all along.
 //
-// Redis, the TS server's keys (MIGRATION-BRIDGES.md 2; the TS match end and rematch read them while MatchEnd:Enabled is off):
+// Redis, the TS server's keys (MIGRATION-BRIDGES.md 2):
 //   custom_lobby_ssc:{lobby}            the lobby, JSON; EX 2 days (every change renews it)
 //   ssc_custom_lobby_player:{player}    the lobby a player is in; EX 2 days, 20 min once a match starts
 //   lobby_code:{code}                   the lobby a code names, SET NX; EX 2 days (the last player out deletes it)
@@ -72,6 +72,19 @@ public sealed class CustomLobbySettings
     [Description("Milliseconds set_game_mode_for_custom_game waits before changing the mode. The TS server waited 1500, for a reason nobody remembers; 0 until something shows it is needed.")]
     [Range(0, 10000)]
     public int GameModeDelayMs { get; set; }
+
+    [Description("The player index a started match gives its spectators: Numbered, 8888, 8889, ... in the lobby's order (as the TS server's start); All8888, 8888 for every one, the index a game sends as a spectator whatever it was given. All8888 needs P2P nodes that count spectators by order (and a rendezvous that numbers them): an older host node expects one spectator, and every other one falls back to the relay alone, a split match.")]
+    public SpectatorIndexes SpectatorIndexes { get; set; } = SpectatorIndexes.Numbered;
+}
+
+/// <summary>The player index a started match gives its spectators (<see cref="CustomLobbySettings.SpectatorIndexes"/>).</summary>
+public enum SpectatorIndexes
+{
+    /// <summary>8888, 8889, ... in the lobby's order, as the TS server's start.</summary>
+    Numbered,
+
+    /// <summary>8888 for every spectator: the index a game sends as a spectator, whatever it was given.</summary>
+    All8888,
 }
 
 public interface ICustomLobbyService
@@ -807,7 +820,8 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
 
         // Player indexes as the TS server gives them (the rollback server depends on these): within a team, players
         // before bots, index = place in team * 2 + team, renumbered players first when that leaves one past the player
-        // count (HumansFirst); the first player (not a bot) of the walk hosts; spectators 8888, 8889, ... on team -1.
+        // count (HumansFirst); the first player (not a bot) of the walk hosts; spectators 8888, 8889, ... on team -1 (all
+        // 8888 with CustomLobbies:SpectatorIndexes All8888).
         var entries = new List<MatchPlayer>();
         var spectatorEntries = new List<MatchPlayer>();
         int humansSeen = 0;
@@ -817,6 +831,7 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
             if (teamIndex == 4)
             {
                 int next = 0;
+                bool same = settings.CurrentValue.SpectatorIndexes == SpectatorIndexes.All8888;
                 foreach (var (id, player) in Players(team))
                 {
                     if (!IsHuman(player))
@@ -825,7 +840,7 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
                     }
 
                     string ip = playing.TryGetValue(id, out var p) ? p.Ip : watching.TryGetValue(id, out var w) ? w.Ip : "";
-                    spectatorEntries.Add(new MatchPlayer(id, 8888 + next++, -1, false, ip, false, IsSpectator: true));
+                    spectatorEntries.Add(new MatchPlayer(id, same ? 8888 : 8888 + next++, -1, false, ip, false, IsSpectator: true));
                 }
             }
             else if (teamIndex is >= 0 and <= 3)
@@ -1161,6 +1176,34 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
         };
     }
 
+    /// <summary>
+    /// The lobby a join code (any case) or a lobby id names, and its id (ovsctl lobby); null when there is none. A code is
+    /// looked up first, as GET /matches/{code} does.
+    /// </summary>
+    internal static async Task<(string Id, JsonObject Lobby)?> FindAsync(IDatabase redis, string codeOrId)
+    {
+        string id = codeOrId.Length <= 10 && await redis.StringGetAsync($"lobby_code:{codeOrId.ToUpperInvariant()}") is { IsNullOrEmpty: false } coded
+            ? coded.ToString()
+            : codeOrId;
+        return await GetLobbyAsync(redis, id) is { } lobby ? (id, lobby) : null;
+    }
+
+    /// <summary>Every stored lobby, with its id (ovsctl lobby --all).</summary>
+    internal static async Task<List<(string Id, JsonObject Lobby)>> AllAsync(IConnectionMultiplexer multiplexer, IDatabase redis)
+    {
+        var lobbies = new List<(string Id, JsonObject Lobby)>();
+        await foreach (var key in RedisScan.KeysAsync(multiplexer, redis.Database, LobbyKey("*")))
+        {
+            string id = key.ToString()[LobbyKey("").Length..];
+            if (await GetLobbyAsync(redis, id) is { } lobby)
+            {
+                lobbies.Add((id, lobby));
+            }
+        }
+
+        return lobbies;
+    }
+
     /// <summary>A lobby as stored, repaired (getLobby); null when there is none or it is not JSON.</summary>
     private static async Task<JsonObject?> GetLobbyAsync(IDatabase redis, string lobbyId)
     {
@@ -1276,7 +1319,7 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
     private static JsonObject Players(JsonObject team) => team["Players"] as JsonObject ?? [];
 
     // A player, not a bot: BotSettingSlug is exactly "" (the TS server's test both ways).
-    private static bool IsHuman(JsonNode? player) => player?["BotSettingSlug"] is JsonValue v && v.TryGetValue<string>(out var s) && s.Length == 0;
+    internal static bool IsHuman(JsonNode? player) => player?["BotSettingSlug"] is JsonValue v && v.TryGetValue<string>(out var s) && s.Length == 0;
 
     /// <summary>The keys of the lobby's map <paramref name="field"/> (Object.keys): the players in it, for PlayerGameplayPreferences.</summary>
     private static List<string> Ids(JsonObject lobby, string field) =>

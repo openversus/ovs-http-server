@@ -20,8 +20,8 @@ namespace OpenVersus.Server.Core.Clients;
 // Redis, read     connections:{id} clientVersion, identityRegistered ("1"); client_update_modal_nonce:{id} (the calendar)
 // Redis, written  client_update_modal_cooldown:{id} "1" (SET NX EX 15: one request per player per 15 s)
 //                 client_update_modal_nonce:{id} (INCR, then EXPIRE 86400)
-// Published       client_update:modal {"playerId", "nonce"} (the TS websocket shows the player the update toast, and closes
-//                 their connection 10 s later); with Realtime:Gateway on, the toast is sent from here through ws:send and
+// Sent (ws:send)  the update toast (ToastReceivedNotification from the update notifier). The TS server published
+//                 client_update:modal for its websocket, which sent the toast and closed the connection 10 s later; here
 //                 the connection stays open: the player is turned away at every gameplay transition instead, each time
 //                 with the toast (at most one per 15 s)
 
@@ -136,7 +136,6 @@ internal sealed class ClientUpdateGate(IServiceProvider services, IAccountResolv
 {
     private static readonly TimeSpan s_cooldown = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan s_nonceLifetime = TimeSpan.FromDays(1);
-    public const string ModalChannel = "client_update:modal";
 
     /// <summary>The profile the update toast is from (the TS UPDATE_NOTIFICATION_PROFILES[0]; ProfilesService names it).</summary>
     public const string UpdateNotifierId = "00000000000000000000a003";
@@ -198,23 +197,15 @@ internal sealed class ClientUpdateGate(IServiceProvider services, IAccountResolv
             }
 
             string nonceKey = $"client_update_modal_nonce:{id}";
-            long nonce = await redis.StringIncrementAsync(nonceKey);
+            await redis.StringIncrementAsync(nonceKey);
             await redis.KeyExpireAsync(nonceKey, s_nonceLifetime);
-            if (Matches.MatchLaunches.Gateway(services))
-            {
-                await UpdateToastAsync(redis, id);
-            }
-            else
-            {
-                await redis.PublishAsync(RedisChannel.Literal(ModalChannel), Js.Stringify(new JsonObject { ["playerId"] = id, ["nonce"] = nonce }));
-            }
-
+            await UpdateToastAsync(redis, id);
             return true;
         }));
     }
 
-    // With Realtime:Gateway on, the update toast the TS websocket sent for client_update:modal, to the player's game (a
-    // player not connected gets nothing: no gateway holds them). Unlike the TS websocket, the connection is not closed
+    // The update toast the TS websocket sent for client_update:modal, to the player's game (a player not connected gets
+    // nothing: no gateway holds them). Unlike the TS websocket, the connection is not closed
     // afterwards: an outdated player stays online and is turned away at each gameplay transition.
     private static Task UpdateToastAsync(IDatabase redis, string playerId) =>
         Realtime.PlayerMessages.SendAsync(redis, [playerId], Realtime.ProfileNotifications.Message(new JsonObject

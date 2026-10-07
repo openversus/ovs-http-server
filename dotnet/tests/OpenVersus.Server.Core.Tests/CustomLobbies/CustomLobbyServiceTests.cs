@@ -87,10 +87,10 @@ public sealed class CustomLobbyServiceTests : IAsyncLifetime
 
     private IDatabase Db => _redis!.GetDatabase();
 
-    private ICustomLobbyService Service(Launcher? launcher = null) => new CustomLobbyService(
+    private ICustomLobbyService Service(Launcher? launcher = null, CustomLobbySettings? settings = null) => new CustomLobbyService(
         new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
         launcher ?? new Launcher(), new CurrentClients(), new TestOptions<LobbySettings>(new LobbySettings()),
-        new TestOptions<CustomLobbySettings>(new CustomLobbySettings()), TimeProvider.System, NullLogger<CustomLobbyService>.Instance);
+        new TestOptions<CustomLobbySettings>(settings ?? new CustomLobbySettings()), TimeProvider.System, NullLogger<CustomLobbyService>.Instance);
 
     private static PartyRequest Asking(string player, JsonObject body) => new(player, null, "198.51.100.7", body);
 
@@ -322,6 +322,32 @@ public sealed class CustomLobbyServiceTests : IAsyncLifetime
         // The loadout the websocket's match config reads.
         Assert.Equal("character_taz", (string?)await Db.HashGetAsync($"connections:{Guest}", "character"));
         Assert.Equal("character_wonder_woman", (string?)await Db.HashGetAsync($"connections:{Leader}", "character"));
+    }
+
+    [Theory]
+    // Spectators in the lobby's order: 8888, 8889 (Numbered, as the TS server); with All8888 both 8888, the index every game
+    // sends as a spectator.
+    [InlineData(SpectatorIndexes.Numbered, 8888, 8889)]
+    [InlineData(SpectatorIndexes.All8888, 8888, 8888)]
+    public async Task TheStartNumbersSpectatorsAsTheSettingSays(SpectatorIndexes indexes, int first, int second)
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        var launcher = new Launcher();
+        await SeedAsync("Solos",
+            (0, Leader, Player(Leader, "2026-10-01T10:00:00.000Z")),
+            (1, Bot, Player(Bot, "2026-10-01T10:00:00.500Z", "Hard")),
+            (4, Guest, Player(Guest, "2026-10-01T10:00:01.000Z")),
+            (4, Third, Player(Third, "2026-10-01T10:00:02.000Z")));
+
+        var answer = await Service(launcher, new CustomLobbySettings { SpectatorIndexes = indexes }).AnswerAsync("start_custom_match", Asking(Leader, new JsonObject { ["LobbyId"] = Lobby }));
+
+        Assert.Equal(0, answer["return_code"]!.GetValue<int>());
+        var spectators = launcher.Launched!.Players.Where(p => p.IsSpectator).ToList();
+        Assert.Equal([(Guest, first), (Third, second)], spectators.Select(p => (p.PlayerId, p.PlayerIndex)));
     }
 
     [Fact]

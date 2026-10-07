@@ -142,6 +142,78 @@ public sealed class MatchesCommand : AsyncCommand<ConnectionSettings>
     }
 }
 
+public sealed class LobbySettings : ConnectionSettings
+{
+    // The lobbies service by default, the one the command is about; --service or OVS_SERVICE still choose (every service
+    // with Redis answers it, e.g. from inside another service's container).
+    public LobbySettings()
+    {
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(ServiceVariable)))
+        {
+            Service = "lobbies";
+        }
+    }
+
+    [CommandArgument(0, "[CODE]")]
+    [Description("The lobby's join code (any case), or its id.")]
+    public string? Code { get; set; }
+
+    [CommandOption("--all")]
+    [Description("Every custom lobby, oldest first, instead of one.")]
+    public bool All { get; set; }
+
+    public override ValidationResult Validate() =>
+        base.Validate() is { Successful: false } connection ? connection
+        : All == (Code is not null) ? ValidationResult.Error("give a lobby's code or id, or --all (not both)")
+        : ValidationResult.Success();
+}
+
+public sealed class LobbyCommand : AsyncCommand<LobbySettings>
+{
+    private readonly IAnsiConsole _console;
+
+    public LobbyCommand(IAnsiConsole console)
+    {
+        _console = console;
+    }
+
+    protected override async Task<int> ExecuteAsync(CommandContext context, LobbySettings settings, CancellationToken cancellation)
+    {
+        using var client = ControlClient.For(settings);
+        if (settings.All)
+        {
+            return OvsCtl.Report(_console, settings, await client.LobbiesAsync(), lobbies =>
+            {
+                _console.MarkupLineInterpolated($"[bold]{lobbies.Length}[/] custom lobby(ies)");
+                foreach (var lobby in lobbies)
+                {
+                    Show(lobby);
+                }
+            });
+        }
+
+        return OvsCtl.Report(_console, settings, await client.LobbyAsync(settings.Code!), Show);
+    }
+
+    private void Show(LobbyView lobby)
+    {
+        _console.MarkupLineInterpolated($"[bold]{lobby.Id}[/]  code {lobby.Code ?? "(none yet)"}  mode {lobby.Mode ?? "?"}  leader {lobby.LeaderName ?? "?"} [grey]({lobby.LeaderId ?? "?"})[/]");
+        var table = new Table().Border(TableBorder.Rounded).AddColumn("Team").AddColumn("Name").AddColumn("Id").AddColumn("LobbyPlayerIndex").AddColumn("Joined").AddColumn("Ready");
+        foreach (var m in lobby.Members)
+        {
+            table.AddRow(
+                m.Team == 4 ? "spectators" : $"team {m.Team}",
+                Markup.Escape(m.Name),
+                $"[grey]{Markup.Escape(m.Id)}[/]",
+                m.LobbyPlayerIndex?.ToString() ?? "?",
+                Markup.Escape(m.JoinedAt ?? "?"),
+                m.Ready ? "yes" : "");
+        }
+
+        _console.Write(table);
+    }
+}
+
 public class PlayerSettings : ConnectionSettings
 {
     [CommandArgument(0, "<WHO>")]

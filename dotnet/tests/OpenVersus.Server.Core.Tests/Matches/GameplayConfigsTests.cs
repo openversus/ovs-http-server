@@ -82,7 +82,7 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
         var services = Services();
         var ranked = new TestOptions<RankedSettings>(new RankedSettings { DefaultElo = 1000 });
         return new GameplayConfigs(services, new CosmeticsService(services, NullLogger<CosmeticsService>.Instance),
-            new EloRatings(services, ranked, TimeProvider.System, NullLogger<EloRatings>.Instance), ranked, TimeProvider.System, NullLogger<GameplayConfigs>.Instance);
+            new EloRatings(services, ranked, TimeProvider.System, NullLogger<EloRatings>.Instance), TimeProvider.System, NullLogger<GameplayConfigs>.Instance);
     }
 
     private static JsonObject Notification(string matchId) => new()
@@ -107,12 +107,14 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
     private async Task<JsonObject> KeptAsync(string playerId) => (JsonObject)JsonNode.Parse((string)(await Db.StringGetAsync(GameplayConfigs.Key(playerId)))!)!;
 
     [SkippableFact]
-    public async Task ShadowKeepsEachPlayersConfigAndWritesNothingTheTsServerReads()
+    // Each player's config kept for the match's 20 minutes, and what the TS websocket wrote beside it: the fighters for the
+    // set, a missing match copy of the cosmetics, a missing rating (made at 1000: Gold 1).
+    public async Task TheBuildKeepsEachPlayersConfigAndWhatTheTsWebsocketWroteBesideIt()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         await SeedAsync();
 
-        var message = await Configs().BuildAsync(Notification(Match), GameplayConfigMode.Shadow, default);
+        var message = await Configs().BuildAsync(Notification(Match), default);
 
         Assert.NotNull(message);
         foreach (string player in new[] { P1, P2 })
@@ -121,23 +123,9 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
             Assert.InRange((await Db.KeyTimeToLiveAsync(GameplayConfigs.Key(player)))!.Value.TotalSeconds, 1190, 1200);
         }
 
-        Assert.False(await Db.KeyExistsAsync($"match_characters:{Match}"));
-        Assert.False(await Db.KeyExistsAsync($"connections:{P2}:cosmetics"));
-        Assert.Equal(0, await Mongo.GetCollection<BsonDocument>("eloratings").CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty));
-        // No rating read as the one it would be made with (1000: Gold 1).
         var p2 = message!["data"]!["GameplayConfig"]!["Players"]![P2]!;
         Assert.Equal("Gold", p2["RankedTier"]!.GetValue<string>());
         Assert.Equal(1, p2["RankedDivision"]!.GetValue<int>());
-    }
-
-    [SkippableFact]
-    public async Task OnAlsoWritesWhatTheTsWebsocketWritesBesideIt()
-    {
-        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
-        await SeedAsync();
-
-        await Configs().BuildAsync(Notification(Match), GameplayConfigMode.On, default);
-
         Assert.Equal($"{{\"{P1}\":\"character_jake\",\"{P2}\":\"character_finn\"}}", (string?)await Db.StringGetAsync($"match_characters:{Match}"));
         Assert.True(await Db.KeyExistsAsync($"connections:{P2}:cosmetics"));
         var ratings = await Mongo.GetCollection<BsonDocument>("eloratings").Find(FilterDefinition<BsonDocument>.Empty).ToListAsync();
@@ -146,12 +134,36 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // End Game: a public FFA match is evtq_ffa, unranked, ModeString FFA; a custom game with friendly fire has
+    // bModeGrantsProgress false (the OVS client's marker); a ranked 1v1 is neither.
+    public async Task AnFfaMatchIsUnrankedEvtqFfaAndFriendlyFireMarksACustomGame()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        JsonNode Config(JsonObject? message) => message!["data"]!["GameplayConfig"]!;
+
+        var ranked = Config(await Configs().BuildAsync(Notification(Match), default));
+        Assert.Equal(("", true, true, "ranked-1v1"), ((string?)ranked["EventQueueSlug"], (bool)ranked["bIsRanked"]!, (bool)ranked["bModeGrantsProgress"]!, (string?)ranked["ModeString"]));
+
+        var ffaNotification = Notification(Match);
+        ffaNotification["mode"] = "FFA";
+        var ffa = Config(await Configs().BuildAsync(ffaNotification, default));
+        Assert.Equal(("evtq_ffa", false, true, "FFA"), ((string?)ffa["EventQueueSlug"], (bool)ffa["bIsRanked"]!, (bool)ffa["bModeGrantsProgress"]!, (string?)ffa["ModeString"]));
+
+        var custom = Notification(Match);
+        custom["isCustomGame"] = true;
+        custom["worldBuffs"] = new JsonArray("ovs_friendly_fire");
+        var friendly = Config(await Configs().BuildAsync(custom, default));
+        Assert.Equal((false, false), ((bool)friendly["bIsRanked"]!, (bool)friendly["bModeGrantsProgress"]!));
+    }
+
+    [SkippableFact]
     public async Task ThePerksLockKeepsTheConfigsTtlAndMergesEveryLockedPlayer()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         await SeedAsync();
         var configs = Configs();
-        await configs.BuildAsync(Notification(Match), GameplayConfigMode.Shadow, default);
+        await configs.BuildAsync(Notification(Match), default);
         await Db.KeyExpireAsync(GameplayConfigs.Key(P1), TimeSpan.FromSeconds(100));
         await Db.StringSetAsync($"match:{Match}:perks:{P1}", "[\"perk_a\"]");
         await Db.StringSetAsync($"match:{Match}:perks:{P2}", "[]");
@@ -181,7 +193,7 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
         await Db.HashSetAsync($"connections:{spectator}", [new("character", "character_jake")]);
         await Db.StringSetAsync(Match, Js.Stringify(notification), TimeSpan.FromMinutes(20));
         var configs = Configs();
-        await configs.BuildAsync(notification, GameplayConfigMode.Shadow, default);
+        await configs.BuildAsync(notification, default);
         await Db.StringSetAsync($"match:{Match}:perks:{P1}", "[\"perk_a\"]");
         await Db.StringSetAsync($"match:{Match}:perks:{P2}", "[]");
 
@@ -201,9 +213,9 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         await SeedAsync();
         var configs = Configs();
-        await configs.BuildAsync(Notification(Other), GameplayConfigMode.Shadow, default);
+        await configs.BuildAsync(Notification(Other), default);
         string otherConfig = (string)(await Db.StringGetAsync(GameplayConfigs.Key(P2)))!;
-        await configs.BuildAsync(Notification(Match), GameplayConfigMode.Shadow, default);
+        await configs.BuildAsync(Notification(Match), default);
         // P2 has moved on to the other match since.
         await Db.StringSetAsync(GameplayConfigs.Key(P2), otherConfig);
         await Db.StringSetAsync($"match:{Match}:perks:{P1}", "[\"perk_a\"]");
@@ -225,7 +237,7 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         await SeedAsync();
         var configs = Configs();
-        await configs.BuildAsync(Notification(Match), GameplayConfigMode.Shadow, default);
+        await configs.BuildAsync(Notification(Match), default);
         foreach (string holder in new[] { P1, P2 })
         {
             var kept = await KeptAsync(holder);
@@ -247,36 +259,6 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    public async Task TheBridgeBuildsOnlyWhenSwitchedOn()
-    {
-        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
-        await SeedAsync();
-        var settings = new TestOptions<GameplayConfigSettings>(new GameplayConfigSettings { Mode = GameplayConfigMode.Off });
-        using var bridge = new GameplayConfigBridge(Services(), Configs(), settings, NullLogger<GameplayConfigBridge>.Instance);
-        await bridge.StartAsync(default);
-        try
-        {
-            await Task.Delay(300);
-            await Db.PublishAsync(RedisChannel.Literal(MatchLauncher.NotificationChannel), Js.Stringify(Notification(Match)));
-            await Task.Delay(700);
-            Assert.False(await Db.KeyExistsAsync(GameplayConfigs.Key(P1)));
-
-            settings.CurrentValue = new GameplayConfigSettings { Mode = GameplayConfigMode.Shadow };
-            await Db.PublishAsync(RedisChannel.Literal(MatchLauncher.NotificationChannel), Js.Stringify(Notification(Match)));
-            for (int i = 0; i < 40 && !await Db.KeyExistsAsync(GameplayConfigs.Key(P1)); i++)
-            {
-                await Task.Delay(100);
-            }
-
-            Assert.True(await Db.KeyExistsAsync(GameplayConfigs.Key(P1)));
-        }
-        finally
-        {
-            await bridge.StopAsync(default);
-        }
-    }
-
-    [SkippableFact]
     public async Task ABotPlaysWhatItsBotConfigSaysElseTheDefaults()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
@@ -289,7 +271,7 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
             notification["players"]!.AsArray().Add(new JsonObject { ["playerId"] = bot, ["partyId"] = Match, ["playerIndex"] = 2, ["teamIndex"] = 1, ["isHost"] = false, ["ip"] = "", ["isBot"] = true });
         }
 
-        var message = await Configs().BuildAsync(notification, GameplayConfigMode.Shadow, default);
+        var message = await Configs().BuildAsync(notification, default);
 
         var players = message!["data"]!["GameplayConfig"]!["Players"]!;
         // Number("hard") is NaN (null here), Number("") 0.

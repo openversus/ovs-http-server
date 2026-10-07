@@ -132,6 +132,17 @@ public sealed class OpsTests : IAsyncLifetime
         await Redis.StringSetAsync("ranked_set:s2", """{"players":[{"playerId":"x1","teamIndex":0},{"playerId":"x2","teamIndex":1}],"mode":"ranked-2v2","scores":[0,2],"gamesPlayed":2,"conceded":true}""");
         await Redis.StringSetAsync("match_started:m3", "1");
         await Redis.StringSetAsync("m3", """{"players":[{"playerId":"x3","teamIndex":0}],"mode":"custom","isCustomGame":true}""");
+
+        // A custom lobby and its code, as CustomLobbyService keeps them: Alice leads it from the spectators, Bob and a bot play.
+        await Redis.StringSetAsync("lobby_code:QX7RT", "lobby1");
+        await Redis.StringSetAsync("custom_lobby_ssc:lobby0", """{"MatchID":"lobby0","LeaderID":"x9","Teams":[{"TeamIndex":0,"Players":{"x9":{"BotSettingSlug":""}}}]}""");
+        await Redis.StringSetAsync("custom_lobby_ssc:lobby1", """
+            {"MatchID":"lobby1","LeaderID":"@A","LobbyCode":"QX7RT","GameModeSlug":"gm_classic_1v1",
+             "Teams":[{"TeamIndex":0,"Players":{"@B":{"BotSettingSlug":"","LobbyPlayerIndex":1,"JoinedAt":"2026-10-07T08:00:02.000Z"}}},
+                      {"TeamIndex":1,"Players":{"BotPlayer1":{"BotSettingSlug":"Hard","LobbyPlayerIndex":2,"JoinedAt":"2026-10-07T08:00:03.000Z"}}},
+                      {"TeamIndex":4,"Players":{"@A":{"BotSettingSlug":"","LobbyPlayerIndex":0,"JoinedAt":"2026-10-07T08:00:00.000Z"}}}],
+             "ReadyPlayers":{"@B":true}}
+            """.Replace("@A", a).Replace("@B", b));
     }
 
     [SkippableFact]
@@ -160,6 +171,37 @@ public sealed class OpsTests : IAsyncLifetime
         Assert.Equal("Gen_Bob", names[_bob.ToString()]);
         Assert.Equal("Unknown", names["ghost"]);
         Assert.Equal("queued", online.Players!.Single(p => p.Id == _alice.ToString()).Status);
+    }
+
+    [SkippableFact]
+    public async Task ALobbyIsFoundByItsCodeInAnyCaseOrItsId()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        var lobby = (await Ops.LobbyAsync("qx7rt")).Value!;
+        Assert.Equal(("lobby1", "QX7RT", "gm_classic_1v1", _alice.ToString(), "Alice"), (lobby.Id, lobby.Code, lobby.Mode, lobby.LeaderId, lobby.LeaderName));
+        Assert.Equal(
+            [new LobbyMember(0, _bob.ToString(), "Gen_Bob", false, 1, "2026-10-07T08:00:02.000Z", true),
+             new LobbyMember(1, "BotPlayer1", "bot (Hard)", true, 2, "2026-10-07T08:00:03.000Z", false),
+             new LobbyMember(4, _alice.ToString(), "Alice", false, 0, "2026-10-07T08:00:00.000Z", false)],
+            lobby.Members);
+        Assert.Equal("lobby1", (await Ops.LobbyAsync("lobby1")).Value!.Id);
+
+        // A member who is not connected (no connection hash) is named from their player record.
+        await Redis.KeyDeleteAsync($"connections:{_alice}");
+        Assert.Equal("Alice", (await Ops.LobbyAsync("QX7RT")).Value!.LeaderName);
+
+        var missing = await Ops.LobbyAsync("NOPE1");
+        Assert.True(missing.NotFound);
+    }
+
+    [SkippableFact]
+    public async Task EveryLobbyIsListedOldestFirstWithItsMembers()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        var lobbies = (await Ops.LobbiesAsync()).Value!;
+        Assert.Equal([("lobby0", null), ("lobby1", "QX7RT")], lobbies.Select(l => (l.Id, l.Code)));
+        Assert.Equal(["x9"], lobbies[0].Members.Select(m => m.Id));
+        Assert.Equal(3, lobbies[1].Members.Count);
     }
 
     [SkippableFact]

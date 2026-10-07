@@ -17,15 +17,12 @@ namespace OpenVersus.Server.Core.Matches;
 // A match is announced once it is made: by MatchLauncher (custom lobbies, Casual bots and rematches, rift nodes), by the
 // matchmaker (MatchmakingWorker) and by a ranked set's next game (RankedSets), with the matchmaking-complete each party is
 // owed (MatchComplete: its players and the request it answers; none for a set's next game). The notification is kept at
-// {match} (EX 20 min: /ovs_register and everything after it read it), then:
-//   Realtime:Gateway off: published on match:notifications, as the TS server did, and matchmaking-complete sent at once;
-//     the TS websocket tells the players (GameServerReadyNotification, then the config) and the match flow builds its own
-//     copy of the config beside it (GameplayConfigBridge, GameplayConfigs:Mode; docs/MIGRATION-BRIDGES.md 9).
-//   on: appended to the stream match:launched (with the matchmaking-completes), which the match flow reads as one consumer
-//     group ("matchflow", MatchLaunchStream), so each match is told once whatever the number of replicas, and one launched
-//     while no replica runs waits for the next. Per match, the config is built and kept first (GameplayConfigs, Mode On:
-//     its writes beside it too), then, as the TS websocket's handleMatchFound, handleMatchMakingComplete and
-//     handleSendGamePlayConfig sent them:
+// {match} (EX 20 min: /ovs_register and everything after it read it), then appended to the stream match:launched (with
+// the matchmaking-completes), which the match flow reads as one consumer group ("matchflow", MatchLaunchStream), so each
+// match is told once whatever the number of replicas, and one launched while no replica runs waits for the next. (The TS
+// server published match:notifications, for its websocket to tell the players.) Per match, the config is built and kept
+// first (GameplayConfigs, with its writes beside it), then, as the TS websocket's handleMatchFound,
+// handleMatchMakingComplete and handleSendGamePlayConfig sent them:
 //       each player's game (bots have none; spectators included) sent GameServerReadyNotification {MatchKey, MatchID,
 //       Port, template_id, IPAddress}: a P2P match, the player's own node (127.0.0.1, the port its client reported,
 //       connections:{player} nodePort, else Rollback:P2PNodePort); else 127.0.0.1 for a player on the server's own
@@ -50,7 +47,7 @@ namespace OpenVersus.Server.Core.Matches;
 //     any replica takes over launches left pending 10 s (XAUTOCLAIM), and drops one after 5 deliveries.
 //
 // Redis, written  {match} (the notification) EX 20 min; match:launched (XADD, MAXLEN ~10,000; fields match,
-//                 notification, complete) or match:notifications (published); match_announced:{match} EX 20 min;
+//                 notification, complete); match_announced:{match} EX 20 min;
 //                 abandoned: {match}, match:{match}, the set's ranked_set, ranked_set_checkins, match_to_set and its
 //                 players' player_ranked_set deleted; dll_notifications:{player} (admin_banner)
 // Redis, read     realtime:conn:{player} ip; connections:{player} nodePort (P2P); match_to_set:{match}, ranked_set:{set}
@@ -76,35 +73,19 @@ public static class MatchLaunches
     /// <summary>How long a game that cannot be cancelled has to show the banner before its connection closes.</summary>
     public static readonly TimeSpan CloseAfter = TimeSpan.FromSeconds(5);
 
-    /// <summary>
-    /// Keeps <paramref name="notification"/> at {match} and announces it with each party's matchmaking-complete: published
-    /// and sent at once, or appended to match:launched with Realtime:Gateway on.
-    /// </summary>
-    public static async Task AnnounceAsync(IServiceProvider services, IDatabase redis, string matchId, string notification, IReadOnlyList<MatchComplete> complete)
+    /// <summary>Keeps <paramref name="notification"/> at {match} and appends it to match:launched with each party's matchmaking-complete.</summary>
+    public static async Task AnnounceAsync(IDatabase redis, string matchId, string notification, IReadOnlyList<MatchComplete> complete)
     {
         await redis.StringSetAsync(matchId, notification, s_ttl);
-        if (Gateway(services))
+        var parties = new JsonArray([.. complete.Select(c => (JsonNode)new JsonObject
         {
-            var parties = new JsonArray([.. complete.Select(c => (JsonNode)new JsonObject
-            {
-                ["playerIds"] = new JsonArray([.. c.PlayerIds.Select(id => (JsonNode)id)]),
-                ["requestId"] = c.RequestId?.DeepClone(),
-                ["searching"] = c.Searching,
-            })]);
-            await redis.StreamAddAsync(Stream, [new("match", matchId), new("notification", notification), new("complete", Js.Stringify(parties))],
-                maxLength: 10_000, useApproximateMaxLength: true);
-            return;
-        }
-
-        await redis.PublishAsync(RedisChannel.Literal(MatchLauncher.NotificationChannel), notification);
-        foreach (var party in complete)
-        {
-            await PlayerMessages.SendAsync(redis, party.PlayerIds, MatchLauncher.MatchmakingComplete(matchId, party.RequestId, ObjectId.GenerateNewId().ToString()));
-        }
+            ["playerIds"] = new JsonArray([.. c.PlayerIds.Select(id => (JsonNode)id)]),
+            ["requestId"] = c.RequestId?.DeepClone(),
+            ["searching"] = c.Searching,
+        })]);
+        await redis.StreamAddAsync(Stream, [new("match", matchId), new("notification", notification), new("complete", Js.Stringify(parties))],
+            maxLength: 10_000, useApproximateMaxLength: true);
     }
-
-    /// <summary>Realtime:Gateway, as this executable reads it (off where the setting is not bound).</summary>
-    public static bool Gateway(IServiceProvider services) => services.GetService<IOptionsMonitor<RealtimeSettings>>()?.CurrentValue.Gateway == true;
 
     /// <summary>GameServerReadyNotification for one player, as the TS websocket's handleMatchFound built it.</summary>
     public static JsonObject GameServerReady(string matchId, JsonNode? matchKey, JsonNode port, string address) =>
@@ -326,7 +307,7 @@ internal sealed class MatchLaunchStream(IServiceProvider services, IGameplayConf
         JsonObject? config = null;
         try
         {
-            config = await configs.BuildAsync(notification, GameplayConfigMode.On, ct);
+            config = await configs.BuildAsync(notification, ct);
         }
         catch (Exception e) when (e is not (OperationCanceledException or RedisException or TimeoutException))
         {
@@ -458,11 +439,10 @@ internal sealed class MatchLaunchStream(IServiceProvider services, IGameplayConf
 
 public static class MatchLaunchesHosting
 {
-    /// <summary>The match flow's reader of match:launched (Realtime:Gateway on); needs IGameplayConfigs (AddGameplayConfigs).</summary>
+    /// <summary>The match flow's reader of match:launched; needs IGameplayConfigs (AddGameplayConfigs).</summary>
     public static WebApplicationBuilder AddMatchLaunches(this WebApplicationBuilder builder)
     {
         builder.AddSetting<RollbackSettings>("Rollback");
-        builder.AddSetting<RealtimeSettings>("Realtime");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddHostedService<MatchLaunchStream>();
         return builder;

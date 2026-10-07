@@ -23,9 +23,8 @@ public static class BotDefaults
     /// What makes a match unranked for the TS websocket and match end: isCustomGame is the only marker they have. With it
     /// the config is unranked (bIsRanked false, ModeString "1v1"/"2v2" instead of "ranked-1v1"), no ranked set (best of 3)
     /// is opened, so the match ends back in the menus (RematchDeclinedNotification) instead of waiting for set check-ins,
-    /// and none of the TS rating paths rate it (MIGRATION-BRIDGES.md 6). Used for the Casual queue's matches. The TS
-    /// websocket also declines every rematch of such a match: Casual has no rematch until match end is C#'s
-    /// (MIGRATION-BRIDGES.md 7, which says what the rematch must do).
+    /// and none of the TS rating paths rate it (MIGRATION-BRIDGES.md 6). Used for the Casual queue's matches, whose
+    /// rematch is C#'s (Rematches); the TS websocket declined every rematch of such a match.
     /// </summary>
     public static JsonObject UnrankedNotificationFields() => new() { ["isCustomGame"] = true };
 

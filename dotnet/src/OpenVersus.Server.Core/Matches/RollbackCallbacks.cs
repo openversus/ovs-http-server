@@ -30,8 +30,8 @@ namespace OpenVersus.Server.Core.Matches;
 //                   error object would start a broken match (it takes any JSON object as a config).
 //   /mvsi_register  the older form, for MVSI rollback servers: every player, bots included, as {player_index, ip,
 //                   is_host}; unsigned; the players told to connect at once.
-//   /ovs_end_match, /mvsi_end_match   every player has left the rollback server (or a P2P host's node): match:end, which
-//                   the TS websocket answers with the match's end. Results come from the game's
+//   /ovs_end_match, /mvsi_end_match   every player has left the rollback server (or a P2P host's node): the match's end
+//                   (MatchEnd; the TS server published match:end for its websocket). Results come from the game's
 //                   submit_end_of_match_stats, never from here.
 //   /ovs_match_started  a P2P host node's first frame (a rollback server reports it as a match status event instead):
 //                   match_started:{match}, which keeps a mid-game disconnect from cancelling the match.
@@ -42,10 +42,8 @@ namespace OpenVersus.Server.Core.Matches;
 // Redis, read     {match} (the match config: players, matchKey, matchId, p2p, rollbackPort); connections:{player}
 //                 username, character; match:{match} rollbackPort; p2p_relay:{match}
 // Redis, written  match_started:{match} "1" EX 10 min; p2p_relay:{match} "1" NX EX 20 min
-// Published       game_server_ready:notifications {containerMatchId, playerIds, resultId, rollbackPort (match:{match}'s, else
-//                 Rollback:UdpPort)}: the TS websocket sends each player game-server-instance-ready (127.0.0.1 and their
-//                 node's port in a P2P match); match:end {playersIds, matchId}
-// Sent (ws:send)  with Realtime:Gateway on, game-server-instance-ready from here instead, as the TS websocket built it, to
+// Sent (ws:send)  game-server-instance-ready (the TS server published game_server_ready:notifications for its websocket to
+//                 send it), as the TS websocket built it, to
 //                 each player and spectator (not the bots: no game): host Rollback:UdpServerIp (every deployment sets
 //                 USE_INTERNAL_ROLLBACK, whose TS default sent 127.0.0.1; no player-on-this-machine branch here, unlike
 //                 GameServerReadyNotification, as TS), a P2P match 127.0.0.1 and the player's node port; port match:{match}'s,
@@ -96,8 +94,6 @@ public interface IRollbackCallbacks
 internal sealed class RollbackCallbacks(IServiceProvider services, IMatchLauncher launcher, INodeConfig nodeConfig,
     IOptionsMonitor<RollbackSettings> settings, TimeProvider time, ILogger<RollbackCallbacks> log) : IRollbackCallbacks
 {
-    public const string InstanceReadyChannel = "game_server_ready:notifications";
-    public const string EndOfMatchChannel = "match:end";
     public const int MatchDuration = 36000;
     private static readonly TimeSpan s_startedTtl = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan s_relayTtl = TimeSpan.FromMinutes(20);
@@ -190,23 +186,10 @@ internal sealed class RollbackCallbacks(IServiceProvider services, IMatchLaunche
                 ready.MatchId, ready.MatchId, settings.CurrentValue.UdpPort);
         }
 
-        if (MatchLaunches.Gateway(services))
-        {
-            await TellAsync(redis, ready, port);
-            return;
-        }
-
-        await redis.PublishAsync(RedisChannel.Literal(InstanceReadyChannel), Js.Stringify(new JsonObject
-        {
-            ["containerMatchId"] = ready.MatchId,
-            ["playerIds"] = ready.PlayerIds.DeepClone(),
-            ["resultId"] = ObjectId.GenerateNewId().ToString(),
-            ["rollbackPort"] = port,
-        }));
-        log.LogInformation("Sent game-server-instance-ready for match {Match}: {Reason}", ready.MatchId, ready.Reason);
+        await TellAsync(redis, ready, port);
     }
 
-    // Realtime:Gateway on: game-server-instance-ready sent from here (the TS websocket's handleGameServerInstanceReady),
+    // game-server-instance-ready (the TS websocket's handleGameServerInstanceReady),
     // once every player is connected; a player gone releases the others.
     private async Task TellAsync(IDatabase redis, InstanceReady ready, JsonNode port)
     {
@@ -272,20 +255,15 @@ internal sealed class RollbackCallbacks(IServiceProvider services, IMatchLaunche
             return;
         }
 
-        // Ended here (MatchEnd:Enabled, or Realtime:Gateway: no TS websocket holds the players), else by the TS websocket,
-        // which hears match:end (docs/MIGRATION-BRIDGES.md 2).
-        if ((services.GetService<IOptionsMonitor<MatchEndSettings>>()?.CurrentValue.Enabled == true || MatchLaunches.Gateway(services))
-            && services.GetService<IMatchEnd>() is { } matchEnd)
+        // The TS server published match:end, for its websocket to end the match.
+        if (services.GetService<IMatchEnd>() is not { } matchEnd)
         {
-            log.LogInformation("Match {Match} ended on its rollback server ({Route}): ending it here", match.Id, route);
-            await matchEnd.EndAsync(match.Id, [.. all.Select(p => Text(p["playerId"])).OfType<string>()]);
+            log.LogError("Match {Match} ended on its rollback server ({Route}), but this service does not end matches (no IMatchEnd)", match.Id, route);
             return;
         }
 
-        var end = new JsonObject { ["playersIds"] = PlayerIds(all) };
-        Copy(match.Config, "matchId", end, "matchId");
-        await redis.PublishAsync(RedisChannel.Literal(EndOfMatchChannel), Js.Stringify(end));
-        log.LogInformation("Match {Match} ended on its rollback server ({Route}): published match:end", match.Id, route);
+        log.LogInformation("Match {Match} ended on its rollback server ({Route}): ending it here", match.Id, route);
+        await matchEnd.EndAsync(match.Id, [.. all.Select(p => Text(p["playerId"])).OfType<string>()]);
     }
 
     public async Task MatchStartedAsync(JsonNode? body)

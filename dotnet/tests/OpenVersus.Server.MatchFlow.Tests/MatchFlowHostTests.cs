@@ -104,12 +104,11 @@ public sealed class MatchFlowHostTests : IClassFixture<ServiceFactory<Program>>
             .ToList();
 
         // NodeKeyCheck runs once at startup and returns: it logs whether the P2P node signing key is the expected one.
-        // GameplayConfigBridge builds match configs from the TS websocket's channels (MIGRATION-BRIDGES.md 9).
         // RankedSetXpSubscriber pays End Game's ranked-set XP (MIGRATION-BRIDGES.md 10).
         // DelayedMessageSweep sends the match end's delayed websocket messages (realtime:due).
-        // MatchLaunchStream tells each launched match's players about it (match:launched, Realtime:Gateway on).
+        // MatchLaunchStream tells each launched match's players about it (match:launched).
         // MatchDisconnects acts on a game that closed its websocket mid-match (realtime:connections).
-        Assert.Equal(["ClusterSettingsSync", "DelayedMessageSweep", "GameplayConfigBridge", "InstanceHeartbeat", "MatchDisconnects", "MatchLaunchStream", "MatchResultStream", "NodeKeyCheck", "RankedSetXpSubscriber"], hosted);
+        Assert.Equal(["ClusterSettingsSync", "DelayedMessageSweep", "InstanceHeartbeat", "MatchDisconnects", "MatchLaunchStream", "MatchResultStream", "NodeKeyCheck", "RankedSetXpSubscriber"], hosted);
     }
 
     [Fact]

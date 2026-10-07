@@ -61,7 +61,7 @@ public sealed class RankedSetsTests : IAsyncLifetime
         await _mongo.DropDatabaseAsync(TestMongoDb);
         await CleanAsync();
         // Channels ignore the database: only this class's set and players count.
-        foreach (string channel in new[] { ProfileNotifications.WsSendChannel, MatchLauncher.NotificationChannel })
+        foreach (string channel in new[] { ProfileNotifications.WsSendChannel })
         {
             await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(channel), (_, m) =>
             {
@@ -264,7 +264,9 @@ public sealed class RankedSetsTests : IAsyncLifetime
             Assert.InRange((await Db.KeyTimeToLiveAsync(key))!.Value, TimeSpan.FromMinutes(19), TimeSpan.FromMinutes(20));
         }
 
-        Assert.Contains(await PublishedAsync(), p => p.Channel == MatchLauncher.NotificationChannel && p.Message["matchId"]!.GetValue<string>() == game);
+        // Announced for the match flow to tell the players (MatchLaunches), with no matchmaking-complete owed.
+        var launch = Assert.Single(await Db.StreamRangeAsync(MatchLaunches.Stream), e => (string?)e["match"] == game);
+        Assert.Equal("[]", (string?)launch["complete"]);
         Assert.Null(await RatingAsync(P1));
     }
 
@@ -517,6 +519,42 @@ public sealed class RankedSetsTests : IAsyncLifetime
         Assert.False(rating.Contains("characters_1v1"));
         Assert.Null(await RatingAsync(P2));
         AssertLeavers(await SentAsync(), P2);
+    }
+
+    [SkippableFact]
+    // End Game: a player who walked out of the game that ends the set on score quit, so the set's XP pays only the winner
+    // (RankedSetXpPayout; the TS websocket passed its dodgedByPlayer as the quitter).
+    public async Task AWalkoutInTheDecidingGameIsTheSetsQuitter()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        var paid = new ConcurrentQueue<JsonObject>();
+        var channel = RedisChannel.Literal("reward_tracks:ranked_set");
+        await _redis!.GetSubscriber().SubscribeAsync(channel, (_, m) =>
+        {
+            if (m.ToString().Contains(Prefix, StringComparison.Ordinal))
+            {
+                paid.Enqueue((JsonObject)JsonNode.Parse(m.ToString())!);
+            }
+        });
+        try
+        {
+            await SeedAsync(gamesPlayed: 1, team0: 2, team1: 0);
+            await Db.StringSetAsync($"ranked_disconnect:{P2}", Set);
+
+            var result = await Sets().GameEndedAsync(Set, [P1, P2], new JsonObject { ["players"] = Players(), ["mode"] = "1v1", ["matchId"] = Set }, counts: true);
+            for (int i = 0; i < 50 && paid.IsEmpty; i++)
+            {
+                await Task.Delay(20);
+            }
+
+            await Task.Delay(100);
+            Assert.Equal(GameEnd.Over, result.Kind);
+            Assert.Equal([P1], paid.Select(p => (string)p["playerId"]!));
+        }
+        finally
+        {
+            await _redis.GetSubscriber().UnsubscribeAsync(channel);
+        }
     }
 
     [SkippableFact]

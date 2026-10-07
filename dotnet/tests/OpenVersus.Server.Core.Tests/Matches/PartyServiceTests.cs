@@ -239,14 +239,10 @@ public sealed class PartyServiceTests : IAsyncLifetime
         var heard = await ListenAsync();
         await SeedLobbyAsync(Owner);
         await Db.StringSetAsync($"pending_join_lobby:{Guest}", Lobby);
-        var cancels = new ConcurrentQueue<string>();
-        await _redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal("matchmaking:cancel"), (_, m) =>
-        {
-            if (m.ToString().Contains(Guest))
-            {
-                cancels.Enqueue(m.ToString());
-            }
-        });
+        // The owner is searching: a player joining the party takes the party out of the queue ("party-changed").
+        string ticket = $$"""{"matchType":"2v2","players":[{"id":"{{Owner}}"}],"matchmakingRequestId":"party-test"}""";
+        await Db.ListRightPushAsync("2v2", ticket);
+        await Db.HashSetAsync(MatchmakingQueue.QueuedKey, Owner, ticket);
 
         var answer = await Service().JoinAsync(Asking(Guest, "{}"));
 
@@ -256,11 +252,14 @@ public sealed class PartyServiceTests : IAsyncLifetime
         Assert.False(await Db.KeyExistsAsync($"pending_join_lobby:{Guest}"));
         Assert.Equal(Lobby, (string?)await Db.StringGetAsync($"player_lobby:{Guest}"));
 
-        var told = await Eventually(() => heard.TryPeek(out var m) ? m : null);
+        var told = await Eventually(() => heard.FirstOrDefault(m => (string?)m["message"]!["data"]?["template_id"] == "PlayerJoinedLobby"));
         Assert.Equal(Owner, told["playerIds"]!.AsArray().Single()!.GetValue<string>());
-        Assert.Equal("PlayerJoinedLobby", told["message"]!["data"]!["template_id"]!.GetValue<string>());
         Assert.Equal(Guest, told["message"]!["data"]!["Player"]!["Account"]!["id"]!.GetValue<string>());
-        await Eventually(() => cancels.TryPeek(out var c) ? c : null);
+        // Taken out of the queue first, and told so.
+        var canceled = Assert.Single(heard, m => (string?)m["message"]!["cmd"] == "matchmaking-cancel");
+        Assert.Equal(Owner, canceled["playerIds"]!.AsArray().Single()!.GetValue<string>());
+        Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Owner));
+        Assert.DoesNotContain(ticket, (await Db.ListRangeAsync("2v2")).Select(v => v.ToString()));
         // The owner's own pending join points back at the party, so their next join stays in it.
         await Eventually(async () => (string?)await Db.StringGetAsync($"pending_join_lobby:{Owner}"));
 

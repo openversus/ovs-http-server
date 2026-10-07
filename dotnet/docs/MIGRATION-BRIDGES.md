@@ -23,42 +23,19 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   do (the "migration contract" comments at the top of `AccessService`, `FriendsService`, `OpsService`, ...). The C# side copies TS and
   mongoose quirks on purpose (field order, `__v`, timestamps, defaults written into old documents).
 - **Why:** TS services (websocket, matchmaking, the website) still read what C# writes, and the other way round.
-- **Pub/sub channels too:** a message C# publishes is read by the TS websocket, which then tells the game (with
-  `Realtime:Gateway` on, slice 3c, none of the channels below is published: what the TS websocket did is done where the
-  message is caused, `MatchmakingQueue`, `MatchLaunches`, `RollbackCallbacks`, `ClientUpdateGate`). So far:
-  `client_update:modal` (`ClientUpdateGate`, show a player the update
-  toast: `{playerId, nonce}`), `matchmaking:cancel` (`PartyService`, someone joined a party: `{playersIds,
-  matchmakingId: "party-changed"}`; `MatchmakingRequestService`, the game's cancel: `{playersIds, matchmakingId}`; the TS
-  websocket keeps the queue ticket and its tick in memory, so it cancels them) and `party:queued`
-  (`MatchmakingRequestService`, the matchmaking request's ticket, as queueMatch builds it; the TS websocket sends the game
-  OnMatchmakerStarted and pushes the ticket onto the list its `matchType` names, `1v1`, `2v2`, `FFA` or Casual's, which
-  the matchmaker reads),
-  `perks:notifications` (`PerksLock`, every player of a match has locked their perks: `{containerMatchId, playerIds}`;
-  the TS websocket puts the perks into each player's match config, which it holds in memory, and sends it again), and the rollback callbacks' two (`RollbackCallbacks`):
-  `game_server_ready:notifications` (`{containerMatchId, playerIds, resultId, rollbackPort}`: the TS websocket sends each
-  player `game-server-instance-ready`, with 127.0.0.1 and their node's port in a P2P match; with `Realtime:Gateway` on,
-  `RollbackCallbacks` sends it itself, and a player gone at that moment releases the others) and `match:end`
-  (`{playersIds, matchId}`: the TS websocket's `handleOnMatchEnd`, the match's end on its side; the C# match end,
-  `MatchEnd`, is built and off: `MatchEnd:Enabled`, on only where no TS websocket holds the players, or with
-  `Realtime:Gateway`).
-  Their payloads are JSON exactly as the TS server writes them. The party routes' other messages to players
-  (`OnLobbyModeUpdated`, `InviteReceivedForLobby`, `PlayerJoinedLobby`, `PlayerLeftLobby`, `PlayerReadyForLobby`,
-  `OnPlayerLoadoutLocked`) are built in C# and go through `ws:send` (4), as the TS websocket would have built them; so
-  are the custom lobby's (`CustomLobbyService`), which the TS server published on `custom_lobby:notification` for its
-  websocket to relay. That channel is now published only by the TS websocket itself (a player who disconnects leaves
-  their lobby; behind the realtime gateway that is `LobbyDisconnects`', through `ws:send`) and goes with it. The same since slice 3b for the channels whose TS handler only built a message: a
-  lobby join's three messages (`PartyLobbyService`, was `lobby:player_joined`), `matchmaking-complete` (`MatchLauncher`,
-  `MatchmakingWorker`, was `matchmaking:complete`), a toast (`MatchToasts` grants the toastee their 2 and shows it, was
-  `toast:received`), a ranked set's check-in, leaver and ranks (`RankedSets`, and the ranks after a pre-game dodge,
-  `MatchStatusEvents`: was `ranked_set:checkin`, `ranked_set:leaver`, `ranked_set:fullrankupdate`). The TS server's
-  own routes that still publish those channels (a TS-run custom lobby's rematch start, the TS websocket's own pregame
-  dodge) are answered by its websocket as before.
+- **Pub/sub channels:** none is published for the TS websocket any more (slice 3e, the realtime gateway in its place):
+  what its handlers did is done where the message is caused (`MatchmakingQueue` for `party:queued` and
+  `matchmaking:cancel`, `MatchLaunches` for `match:notifications` and `matchmaking:complete`, `RollbackCallbacks` for
+  `game_server_ready:notifications`, `MatchEnd` for `match:end`, `PerksLock` for `perks:notifications`,
+  `ClientUpdateGate` for `client_update:modal`, and since slice 3b the lobby, toast and ranked set channels), and every
+  message to a game goes through `ws:send`, which the realtime gateway delivers. The TS server's own routes that still
+  run behind the proxy (bridge 1) publish their channels to nobody: no TS websocket runs.
 - **Starting a match:** `IMatchLauncher` (`Core/Matches/`, for rifts and custom lobbies) writes what the TS custom lobby
   writes when a match starts (`match:{id}`, `match:{id}:perks:{bot}`, the notification at `{id}`, `rollback:current_port`
-  on demand), publishes `match:notifications` (the TS `MATCH_FOUND_NOTIFICATION`, with a custom game's settings and
-  its spectators; with `Realtime:Gateway` on, appends it to `match:launched` instead: bridge 9) and sends its players
-  `matchmaking-complete` (ws:send; with the switch on, the match flow sends it once the config is built). The TS
-  websocket sends the match to the game, and the match flow's rollback routes (`RollbackCallbacks`) serve it. For modes the websocket does not know,
+  on demand) and appends the notification (the TS `MATCH_FOUND_NOTIFICATION`, with a custom game's settings and its
+  spectators) to `match:launched`, from which the match flow builds the config and tells the players (`MatchLaunches`:
+  `GameServerReadyNotification`, `matchmaking-complete`, the config), and its rollback routes (`RollbackCallbacks`)
+  serve it. For modes the websocket does not know,
   the notification carries two fields added to the TS type for this (`src/config/redis.ts`): `gameplayConfigOverride`
   and `playerConfigOverrides`, merged over the websocket's PvP gameplay config in `handleSendGamePlayConfig`, and
   `gameplayConfigTemplate` / `gameplayConfigData` (the config sent under another template, with fields beside it: a
@@ -79,10 +56,7 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   rematch read it) and `bot_config:{bot}` (the TS websocket builds a bot's match config from it), TTLs as the TS
   server's. The match end and the rematch are ported (`MatchEnd` in the match flow opens the vote; `Rematches` in
   lobbies answers `rematch_accept`/`rematch_decline` and runs its timer, with the TS keys
-  `ssc_custom_lobby_rematch_timer:{lobby}` and `ssc_custom_lobby_rematch_accept:{lobby}`). The match end runs only with
-  `MatchEnd:Enabled`; until then the TS websocket ends the match and opens the vote (those two keys, and its own 25 s
-  timer in its process), and the C# routes count the accepts on it: the last accept starts the rematch from C# (the
-  TS timer then finds its key gone), a decline ends it; with no decline and not every accept, the TS timer starts it.
+  `ssc_custom_lobby_rematch_timer:{lobby}` and `ssc_custom_lobby_rematch_accept:{lobby}`).
 - **Matchmaking** (`MatchmakingWorker` in its own executable, `OpenVersus.Server.Matchmaking`; on unless `Matchmaking:Enabled` is false): the queues `1v1`, `2v2` and `FFA` (ticket JSON lists the TS
   websocket fills when a party queues and empties on a cancel or disconnect), `player_heartbeats`,
   `player:{id}:blocked` and `player:{id}` `ip` are read as the TS worker reads them; a match writes what the TS worker
@@ -157,118 +131,38 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   forwarding code, `Batch:TsUrl`, `Batch:ForwardRoutes`, `Batch:ForwardTimeoutSeconds`, the startup warning and this
   entry go; `/batch` keeps running its sub-requests in C#.
 
-### 4. Rift and mission progress from match results reach the game through the TS websocket
+### 6. Ratings (ELO): a player leaving a match is still rated by the TS server, which asks "does this match count" its own way
 
-- **Decided:** 2026-09-30, on the condition that it is recorded here: each piece has to be ported to C#.
-- **What:** the results themselves are C#'s now: the http service's `submit_end_of_match_stats` (`MatchResults`)
-  appends each report to the stream `match:results`, and the match flow (`MatchResultStream`) records missions, match
-  XP, rift progress and the match's stats from it (see "Not bridges"). What is left is telling the game: the rift
-  progress (`RiftProgressService`: `OnLobbyRuntimeDataUpdated`, `OnLobbyRiftStateUpdated`) and the missions
-  (`MissionProgress`: `MissionUpdatesComplete`, a `profile-notification`) are published on `ws:send` (`{playerIds,
-  message}`), a generic channel the TS websocket (`src/websocket.ts`) answers by sending `message`, as it is, to each
-  connected player named. `MatchResultStream` logs a `MIGRATION BRIDGE` warning at startup for this.
-- **Why:** the client never asks for its rift progress; the server works it out from the match result and pushes it.
-  Only the TS websocket reaches the game.
-- **Delete when:** the websocket is ported (`ws:send` is then answered by the C# gateway).
-
-### 5. `ovsctl player disconnect` closes the connection through the TS websocket
-
-- **What:** the control API (`POST /control/ops/players/{who}/disconnect`, `OpsService.DisconnectPlayerAsync`)
-  publishes `ws:disconnect` (`{playerId}`); the TS websocket (`src/websocket.ts`) closes that player's socket with
-  `terminate()`, the path its heartbeat timeout takes, so the usual cleanup runs and the game logs out. The command
-  refuses when no websocket service is subscribed (the publish reached nobody). Every C# service logs a
-  `MIGRATION BRIDGE` warning for it at startup (each has the control API).
-- **Why:** a client stuck on an unanswered call has no way out of the menu; this frees it without restarting the game
-  or the websocket service.
-- **Delete when:** the realtime gateway holds the players (the bench switch): it already answers `ws:disconnect` itself
-  (`OpenVersus.Server.Realtime`, with a connection id or an exception when given), so the channel stays as the gateway's;
-  the TS handler and the startup warning go.
-
-### 6. Ratings (ELO) are still partly the TS server's, which asks "does this match count" its own ways
-
-- **What:** a set ended between its games is rated in C# (`RankedSets`: the set over at its check-ins, a concede, an
-  opponent who disconnected and stayed offline; `SetRatings`, the TS `processSetResult` and `recordSetStats` value for
-  value), and only when `RatedMatches` says the set counts: the regular 1v1/2v2 queues, no bot, not a password match, not
-  a custom game. So is a pre-game dodge the rollback server reports (`MatchStatusEvents`, the TS `handlers/match_status.ts`;
-  unrated, it does the rest all the same). The TS server still rates in three places: a set won at a game's end (the
-  websocket's `handleOnMatchEnd`, with the set's `elo_processed_set` key between the two so a set is rated once), a
-  pre-game dodge or a disconnect the websocket sees (`websocket.ts`; the same `elo_processed` and `elo_processed_set` keys
-  as `MatchStatusEvents`, so whichever comes first decides, and a rift dodge the websocket sees first is still rated), and
-  a player leaving a match (`PUT /matches/:id/leave`, `processMatchLeave` then `processMatchResult`). The leave skips a
-  match whose `match:{id}` has `isPasswordMatch`; the websocket's paths skip only a match config with `isCustomGame`, and
-  none of them leaves bots out. Every match C# starts
-  (`MatchLauncher`: rift nodes, custom lobbies; the Casual queue's matches too) has `isPasswordMatch` and a mode of 1v1 or
-  2v2; a custom lobby's and the Casual queue's (human or bots: `BotDefaults.UnrankedNotificationFields`) also have
-  `isCustomGame`, which keeps them out of all of them and out of the TS best-of-3 sets. A rift match has not: a player who
-  leaves one before or during it is charged on their regular 1v1/2v2 rating, and the bot gets a rating document. Read in
-  the code, not seen yet: the bench's eloratings had no bot ids (2026-10-02). TS is not changed for it (it is going away).
+- **What:** every rating path that ran in the TS websocket is C#'s now (`RankedSets`, `MatchEnd`, `MatchStatusEvents`,
+  `MatchDisconnects`; `SetRatings`, the TS `processSetResult` and `recordSetStats` value for value), and each asks
+  `RatedMatches`: the regular 1v1/2v2 queues, no bot, not a password match, not a custom game. One TS path is left: a
+  player leaving a match (`PUT /matches/:id/leave`, `processMatchLeave` then `processMatchResult`), which skips only a
+  match whose `match:{id}` has `isPasswordMatch` and leaves bots in. Every match C# starts (`MatchLauncher`: rift nodes,
+  custom lobbies, the Casual queue's) has `isPasswordMatch`, so none of them is rated there.
 - **Rule (for the port):** ratings count for the regular 1v1/2v2 queues only (ranked sets included); never rifts, custom
   lobbies or Casual (Casual may get a rating of its own, kept apart). Every C# rating path asks `RatedMatches`
   (`Core/Leaderboards`), and it never rates a bot.
-- **Until then:** do not ship rift matches to prod before the TS paths are ported, or accept the leak there (giving rift
-  matches `isCustomGame` would close it, untested: it also changes what the TS websocket does at a rift match's end).
-- **Delete when:** match results (the set won at a game's end included), the websocket's dodges and disconnects, and the
-  match leave are ported and ask `RatedMatches`.
+- **Delete when:** the match leave is ported and asks `RatedMatches`.
 
-### 7. A Casual match ends with no rematch: the TS websocket declines it for everyone
+### 8. P2P is switched in two places, and a P2P node's port is still the TS server's
 
-- **What:** a Casual queue match (people or bots) is unranked, marked `isCustomGame` for the TS websocket
-  (`BotDefaults.UnrankedNotificationFields`). At an unranked match's end that is not a custom lobby's, the TS websocket
-  (`handleOnMatchEnd`, websocket.ts) sends every player `RematchDeclinedNotification` one second later
-  (`sendRematchDeclinedToPlayers`): the game shows the rematch option, which then disappears as if the opponent (a bot
-  too) had declined, and everyone goes back to the menus. Seen on the bench, 2026-10-02.
-- **What it must do (the requirement for the port):** unranked is single games with an optional rematch (no best-of-3
-  set; that is ranked only). At a Casual match's end the rematch option stays up for its timer; a bot always accepts
-  (at the latest when the timer runs out); when every player has accepted (`rematch_accept`, or the game's timer), a new
-  single game starts against the same opponents (bots: the same fighters), never rated; any decline (`rematch_decline`)
-  sends everyone back to the menus.
-- **Why:** match end is still the TS websocket's; C# cannot stop its decline without changing TS, which is going away.
-- **Built:** the C# match end opens a Casual match's vote (`MatchEnd`, `RematchVotes`), and lobbies takes the accepts and
-  declines and starts the rematch (`Rematches`, with its timer), as above; on only with `MatchEnd:Enabled`, which stays
-  off while the TS websocket holds the players.
-- **Delete when:** the realtime gateway replaces the TS websocket and `MatchEnd:Enabled` is on.
+- **What:** whether eligible matches run P2P (on the players' own nodes) is `Rollback:P2P` for every match C# starts
+  (`MatchLauncher`: custom lobbies and their rematches, the Casual queue, rift nodes; the C# matchmaker; a ranked set's
+  next game, `RankedSets`), and the TS server's `P2P_ROLLBACK` environment variable for the matches its own matchmaker
+  starts when it runs. Both write `p2p` into the match config with the same rule (`Matches/P2P.cs`,
+  `src/services/nodePort.ts` hasP2PHost: every match with a human who plays). The match flow serves the nodes
+  (`RollbackCallbacks`, `NodeConfig`) and sends each game to its node (`MatchLaunches`: 127.0.0.1 and the port its client
+  reported, `Rollback:P2PNodePort` when none). That port comes from `/api/identify`, still the TS server's.
+  `Rollback:P2P` takes `P2P_ROLLBACK` when it is not set itself, but a cluster setting changed through the control API is
+  not seen by TS.
+- **Until then:** do not run the TS matchmaker beside the C# one; change both together if it runs. Each executable that
+  starts matches logs the C# value once it has started (the cluster settings are loaded by then).
+- **Delete when:** `/api/identify` is ported and the TS matchmaker is retired.
 
-### 8. P2P is switched in two places, and parts of a P2P match are still the TS server's
-
-- **What:** whether eligible matches run P2P (on the players' own nodes) is `Rollback:P2P` for the matches C# starts
-  (`MatchLauncher`: custom lobbies, the Casual queue, rift nodes; the C# matchmaker) and the TS server's `P2P_ROLLBACK`
-  environment variable for the ones it still starts: a custom lobby's rematch, and its own matchmaker when it runs (a
-  ranked set's next game is C#'s: `RankedSets`). Both write `p2p` into the match config with the same rule
-  (`Matches/P2P.cs`, `src/services/nodePort.ts` hasP2PHost: every match with a human who plays). The match flow serves
-  the nodes (`RollbackCallbacks`: `/ovs_register` signed and holding game-server-instance-ready, `/ovs_p2p_ready`,
-  `/ovs_p2p_failed`, `/ovs_match_started`; `NodeConfig`: `/ovs_node_config`); the rest of a P2P match is TS:
-  `/api/identify` (the node's port) and the websocket (sends the game to `127.0.0.1` and that port, P2P_NODE_PORT when
-  the client reported none; with `Realtime:Gateway` on, the match flow sends it, `MatchLaunches`, Rollback:P2PNodePort). `Rollback:P2P` takes `P2P_ROLLBACK` when it is not set itself, but a cluster setting changed
-  through the control API is not seen by TS: with the two different, a custom lobby's game and its rematch can disagree,
-  and so can a set's game 1 when the TS matchmaker made it.
-- **Until then:** change both together; each executable that starts matches logs the C# value once it has started (the
-  cluster settings are loaded by then).
-- **Delete when:** custom lobby rematches start in C# (`Rematches`, with `MatchEnd:Enabled`), `/api/identify` is ported,
-  the TS matchmaker is retired, and the websocket reads `p2p` and the node port from C#'s config (the realtime gateway:
-  `Realtime:Gateway`, slice 3c).
-
-### 9. The match flow builds match configs from the TS websocket's channels, and the TS websocket still sends them
-
-- **What:** `GameplayConfigBridge` (`Core/Matches/GameplayConfigs.cs`, in the match flow) subscribes to
-  `match:notifications` and `perks:notifications`, the channels the TS websocket builds and sends each match's config
-  from, and builds the same config (`GameplayConfigs`), kept per player in `match_config:{player}`, as
-  `GameplayConfigs:Mode` says: `Off` (the default) nothing; `Shadow` the config only, writing nothing the TS server reads,
-  so it can be compared with what the TS websocket sends while that still sends it; `On` also what the TS websocket
-  writes beside it (`match_characters`, the cosmetics match copy, a missing rating). C# sends nothing: the game still gets
-  its config from the TS websocket, whose copy lives in its memory. Subscribing catches every match, the ones the TS
-  server still starts (a custom lobby's rematch) included; with more than one match flow replica, each builds the same
-  config.
-- **Until then:** `Off` by default; the bench runs `Shadow` while the C# config is compared with what TS sends.
-  With `Realtime:Gateway` on (slice 3c), the launchers no longer publish `match:notifications`: they append each match to
-  the stream `match:launched` (`MatchLaunches`), and the match flow (`MatchLaunchStream`) builds the config (`On`, whatever
-  the setting says) and sends it, after each player's `GameServerReadyNotification` and each party's
-  `matchmaking-complete`, through the gateway; a match whose config cannot be built is called off instead (nobody is told
-  of it; a searching game is cancelled, any other closed after a banner). The bridge then
-  hears no C# match; a match the TS server still starts (its custom lobby rematch timer, only reached with match end off,
-  which the switch turns on) would get no C# config.
-  With the switch on, the perks lock (`PerksLock`) publishes nothing either: it merges the perks into the kept configs
-  (`IGameplayConfigs`) and sends each game its copy.
-- **Delete when:** the realtime gateway replaces the TS websocket (slice 3e): the bridge and the setting go.
+Retired with slice 3e (the realtime gateway in the TS websocket's place; numbers are not reused): 4 (rift and mission
+progress reached the game through the TS websocket), 5 (`ovsctl player disconnect` through the TS websocket), 7 (the TS
+websocket declined every Casual rematch), 9 (the match flow built configs from the TS websocket's channels, which still
+sent them; with it the settings `MatchEnd:Enabled`, `GameplayConfigs:Mode` and `Realtime:Gateway`).
 
 ### 10. End Game's ranked-set XP is settled by the TS server and paid by C#
 

@@ -21,7 +21,7 @@
 // either server makes become <id1>, <id2>, ... in order of appearance.
 //
 // The match steps (match-*, set-*) announce a ranked match first, as each server is told of one (TS: match:notifications,
-// to its websocket; C#: match:launched, to the match flow, which needs Realtime:Gateway on), so that each game holds its
+// to its websocket; C#: match:launched, to the match flow), so that each game holds its
 // config when it drops (the TS websocket's matchConfig, C#'s match_config:{player}); each run records which games got
 // one. They need the C# match flow on the stores for the C# run, and nothing C# but the gateway's lobbies and match flow
 // readers: the match flow's bridge (GameplayConfigBridge) would build configs from the TS run's match:notifications.
@@ -429,9 +429,15 @@ const SPECTATOR = {
     a.eloratings = b.eloratings;
   },
 };
+const CALLED_OFF = {
+  what: "C# marks the dodged match called off (match_called_off for 20 minutes: a later leave of it changes nothing; decided 2026-10-07); TS kept no mark",
+  check: (ts, cs) => !ts.writes.some((w) => w.startsWith("set match_called_off:"))
+    && JSON.stringify(cs.writes.filter((w) => w.startsWith("set match_called_off:"))) === JSON.stringify([`set match_called_off:${MATCH} pregame_dodge EX 1200`]),
+  adjust: (a, b) => { take(b.writes, /^set match_called_off:/); },
+};
 // TS looks for the custom lobby with KEYS on every disconnect and its web custom lobby with a GET: reads, not recorded.
 const EXPECTED = {
-  "match-pregame-dodge": [RANKS, DODGER_FLAG, DODGER_IDLE],
+  "match-pregame-dodge": [RANKS, DODGER_FLAG, DODGER_IDLE, CALLED_OFF],
   "match-mid-game": [FLAG_VALUE],
   "match-after-result": [FLAG_TTL],
   "match-spectator": [SPECTATOR],

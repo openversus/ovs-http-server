@@ -70,8 +70,7 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
     private IDatabase Db => _redis!.GetDatabase();
 
     // FFA always open unless a test says otherwise (the window has tests of its own: FfaScheduleTests).
-    private MatchmakingWorker Worker(Ports? ports = null, bool p2p = false, FfaSettings? ffa = null, TimeProvider? time = null, bool gateway = false) => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!)
-            .AddSingleton<Microsoft.Extensions.Options.IOptionsMonitor<OpenVersus.Server.Core.Access.RealtimeSettings>>(new TestOptions<OpenVersus.Server.Core.Access.RealtimeSettings>(new() { Gateway = gateway })).BuildServiceProvider(),
+    private MatchmakingWorker Worker(Ports? ports = null, bool p2p = false, FfaSettings? ffa = null, TimeProvider? time = null) => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
         ports ?? new Ports(), new TestOptions<MatchmakingSettings>(new MatchmakingSettings()), new TestOptions<RollbackSettings>(new RollbackSettings { P2P = p2p }),
         new TestOptions<FfaSettings>(ffa ?? new FfaSettings { WeekendOnly = false }), time ?? TimeProvider.System, NullLogger<MatchmakingWorker>.Instance);
 
@@ -235,13 +234,19 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
         Assert.Empty(await QueuedAsync("2v2"));
     }
 
-    // The match records this test's tick made (the cleanup leaves none from before).
+    // The match records this test's tick made (the cleanup leaves none from before); the launch stream (match:launched)
+    // is no record.
     private async Task<List<JsonObject>> MatchesAsync()
     {
         var server = _redis!.GetServer(_redis.GetEndPoints()[0]);
         var matches = new List<JsonObject>();
         foreach (var key in server.Keys(15, "match:*"))
         {
+            if (await Db.KeyTypeAsync(key) != RedisType.String)
+            {
+                continue;
+            }
+
             matches.Add(JsonNode.Parse((await Db.StringGetAsync(key)).ToString())!.AsObject());
         }
 
@@ -433,7 +438,8 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
 
     [Fact]
     // Outside the window (a Tuesday in New York) every FFA ticket goes and its search is cancelled for its players, as
-    // cancelMatchmakingForAll; the lobby has to ready again. The other queues are not touched.
+    // cancelMatchmakingForAll, through MatchmakingQueue: the player's tick (realtime:queued) stops instead of searching
+    // for a ticket that is gone, and the lobby has to ready again. The other queues are not touched.
     public async Task AClosedFfaQueueCancelsEverySearchInIt()
     {
         if (_redis is null)
@@ -441,58 +447,26 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
             return;
         }
 
-        var cancels = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        var channel = RedisChannel.Literal(PartyService.CancelMatchmakingChannel);
-        await _redis.GetSubscriber().SubscribeAsync(channel, (_, m) => cancels.Enqueue(m.ToString()));
-        try
-        {
-            await QueueAsync(MatchmakingWorker.Ffa, [1], age: 2);
-            await QueueAsync(MatchmakingWorker.Ffa, [2], age: 1);
-            await QueueAsync("1v1", [3], age: 1);
-            await Db.StringSetAsync($"player_lobby:{Id(1)}", Id(900));
-            await Db.StringSetAsync($"party_ready:{Id(900)}", "1");
-            var tuesday = new Clock(DateTimeOffset.Parse("2026-10-06T18:00:00Z"));
-            await Worker(ffa: new FfaSettings(), time: tuesday).TickAsync(Db);
-
-            Assert.Empty(await QueuedAsync(MatchmakingWorker.Ffa));
-            Assert.Single(await QueuedAsync("1v1"));
-            Assert.Empty(await MatchesAsync());
-            Assert.False(await Db.KeyExistsAsync($"party_ready:{Id(900)}"));
-            for (int i = 0; i < 50 && cancels.Count < 2; i++)
-            {
-                await Task.Delay(20);
-            }
-
-            Assert.Equal(
-            [
-                $$"""{"playersIds":["{{Id(1)}}"],"matchmakingId":"{{Id(501)}}"}""",
-                $$"""{"playersIds":["{{Id(2)}}"],"matchmakingId":"{{Id(502)}}"}""",
-            ], cancels.Order());
-        }
-        finally
-        {
-            await _redis.GetSubscriber().UnsubscribeAsync(channel);
-        }
-    }
-
-    [Fact]
-    // With Realtime:Gateway on, nothing hears matchmaking:cancel: the closed FFA queue cancels through MatchmakingQueue,
-    // so the player's tick (realtime:queued) stops instead of searching for a ticket that is gone.
-    public async Task AClosedFfaQueueBehindTheGatewayStopsTheSearch()
-    {
-        if (_redis is null)
-        {
-            return;
-        }
-
         await Db.KeyDeleteAsync(MatchmakingQueue.QueuedKey);
-        string ticket = await QueueAsync(MatchmakingWorker.Ffa, [1], age: 1);
-        await Db.HashSetAsync(MatchmakingQueue.QueuedKey, Id(1), (string?)await Db.ListGetByIndexAsync(MatchmakingWorker.Ffa, 0) ?? ticket);
+        await QueueAsync(MatchmakingWorker.Ffa, [1], age: 2);
+        await QueueAsync(MatchmakingWorker.Ffa, [2], age: 1);
+        await QueueAsync("1v1", [3], age: 1);
+        foreach (var (player, index) in new[] { (1, 0), (2, 1) })
+        {
+            await Db.HashSetAsync(MatchmakingQueue.QueuedKey, Id(player), (string?)await Db.ListGetByIndexAsync(MatchmakingWorker.Ffa, index) ?? "");
+        }
+
+        await Db.StringSetAsync($"player_lobby:{Id(1)}", Id(900));
+        await Db.StringSetAsync($"party_ready:{Id(900)}", "1");
         var tuesday = new Clock(DateTimeOffset.Parse("2026-10-06T18:00:00Z"));
-        await Worker(ffa: new FfaSettings(), time: tuesday, gateway: true).TickAsync(Db);
+        await Worker(ffa: new FfaSettings(), time: tuesday).TickAsync(Db);
 
         Assert.Empty(await QueuedAsync(MatchmakingWorker.Ffa));
+        Assert.Single(await QueuedAsync("1v1"));
+        Assert.Empty(await MatchesAsync());
+        Assert.False(await Db.KeyExistsAsync($"party_ready:{Id(900)}"));
         Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Id(1)));
+        Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Id(2)));
         await Db.KeyDeleteAsync(MatchmakingQueue.QueuedKey);
     }
 }

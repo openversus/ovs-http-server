@@ -8,7 +8,7 @@ using StackExchange.Redis;
 namespace OpenVersus.Server.Core.Tests.Matches;
 
 /// <summary>
-/// A party's place in a queue with Realtime:Gateway on (<see cref="MatchmakingQueue"/>): who is told and given the tick,
+/// A party's place in a queue (<see cref="MatchmakingQueue"/>): who is told and given the tick,
 /// what a cancel and a found match take away. Parity with the TS websocket is tools/matches/queue_diff.mjs. Real Redis
 /// (database 15, OVS_TEST_REDIS).
 /// </summary>

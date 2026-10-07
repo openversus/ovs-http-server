@@ -42,7 +42,6 @@ internal sealed class MatchResultStream(IServiceProvider services, IMissionServi
             return;
         }
 
-        log.LogWarning("MIGRATION BRIDGE: mission and rift progress from match results reach the game through the TS websocket (ws:send); see dotnet/docs/MIGRATION-BRIDGES.md (4)");
         var lastClaim = DateTimeOffset.MinValue;
         while (!stoppingToken.IsCancellationRequested)
         {

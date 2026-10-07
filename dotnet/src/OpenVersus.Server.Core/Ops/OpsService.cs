@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -6,6 +7,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Control;
+using OpenVersus.Server.Core.CustomLobbies;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Ops;
@@ -27,7 +29,10 @@ namespace OpenVersus.Server.Core.Ops;
 //   player_ranked_set:{playerId} the ranked set a player's game belongs to
 //   ranked_set:{setId}           the set's state, JSON: { players, mode, scores, gamesPlayed, conceded }
 //   match_characters:{setId}     JSON { playerId: character }
-//   ws:disconnect                published { playerId }: the TS websocket closes that player's connection
+//   ws:disconnect                published { playerId }: the realtime gateway node holding that player's connection drops it
+//   lobby_code:{CODE}            a custom lobby's join code -> the lobby's id; custom_lobby_ssc:{lobbyId} the lobby, JSON
+//                                (CustomLobbyService: LeaderID, LobbyCode, GameModeSlug, Teams [{ TeamIndex, Players: { id:
+//                                { BotSettingSlug, LobbyPlayerIndex, JoinedAt } } }], ReadyPlayers { id: true })
 // Mongo
 //   playertesters                one document per player: _id (ObjectId; its hex is the player id above), name,
 //                                hydraUsername, steamId, public_id, profile_id
@@ -54,6 +59,15 @@ public sealed record MatchPlayer(string Id, string Name, string Character);
 /// <summary>A match (a ranked set, or a single game) in progress, as the website's /matches shows it.</summary>
 public sealed record MatchView(string SetId, string MatchId, string? Mode, IReadOnlyList<int> Scores, int GamesPlayed, bool Conceded, IReadOnlyDictionary<string, IReadOnlyList<MatchPlayer>> Teams);
 
+/// <summary>
+/// A custom lobby's member: the team (4: the spectators), id, name (a bot: its difficulty), LobbyPlayerIndex (the
+/// member count when they joined), when they joined, and whether they are ready.
+/// </summary>
+public sealed record LobbyMember(int Team, string Id, string Name, bool IsBot, int? LobbyPlayerIndex, string? JoinedAt, bool Ready);
+
+/// <summary>A custom lobby: its id, join code, game mode, leader, and members (by team, then in the order they joined).</summary>
+public sealed record LobbyView(string Id, string? Code, string? Mode, string? LeaderId, string? LeaderName, IReadOnlyList<LobbyMember> Members);
+
 /// <summary>A player's record.</summary>
 public sealed record PlayerView(string Id, string Name, string? HydraUsername, string? SteamId, string? PublicId, string? ProfileId, bool Online, string? Status);
 
@@ -71,6 +85,12 @@ public interface IOpsService
     Task<ControlResult<OnlineView>> OnlineAsync(bool withPlayers);
 
     Task<ControlResult<IReadOnlyList<MatchView>>> MatchesAsync();
+
+    /// <summary>A custom lobby by its join code (any case) or its id.</summary>
+    Task<ControlResult<LobbyView>> LobbyAsync(string codeOrId);
+
+    /// <summary>Every custom lobby, oldest first.</summary>
+    Task<ControlResult<IReadOnlyList<LobbyView>>> LobbiesAsync();
 
     /// <summary>A player by id (ObjectId hex), else by exact name (any case), else by generated username, else by Steam
     /// id, else by the IP address an online player is connected from.</summary>
@@ -230,6 +250,60 @@ internal sealed class OpsService : IOpsService
         return ControlResult<IReadOnlyList<MatchView>>.Ok(results);
     }
 
+    public async Task<ControlResult<LobbyView>> LobbyAsync(string codeOrId)
+    {
+        if (Redis is not { } redis)
+        {
+            return NoRedis<LobbyView>();
+        }
+
+        if (await CustomLobbyService.FindAsync(redis, codeOrId.Trim()) is not { } found)
+        {
+            return ControlResult<LobbyView>.Missing($"no custom lobby has the code or id '{codeOrId}'");
+        }
+
+        return ControlResult<LobbyView>.Ok(await LobbyViewAsync(redis, found.Id, found.Lobby));
+    }
+
+    public async Task<ControlResult<IReadOnlyList<LobbyView>>> LobbiesAsync()
+    {
+        if (Redis is not { } redis)
+        {
+            return NoRedis<IReadOnlyList<LobbyView>>();
+        }
+
+        // Lobby ids are ObjectIds: in id order, the oldest first.
+        var views = new List<LobbyView>();
+        foreach (var (id, lobby) in (await CustomLobbyService.AllAsync(_services.GetRequiredService<IConnectionMultiplexer>(), redis)).OrderBy(l => l.Id, StringComparer.Ordinal))
+        {
+            views.Add(await LobbyViewAsync(redis, id, lobby));
+        }
+
+        return ControlResult<IReadOnlyList<LobbyView>>.Ok(views);
+    }
+
+    private async Task<LobbyView> LobbyViewAsync(IDatabase redis, string id, JsonObject lobby)
+    {
+        var ready = lobby["ReadyPlayers"] as JsonObject;
+        var members = new List<LobbyMember>();
+        foreach (var team in (lobby["Teams"] as JsonArray ?? []).OfType<JsonObject>())
+        {
+            int teamIndex = Number(team["TeamIndex"]) ?? -1;
+            foreach (var (playerId, player) in team["Players"] as JsonObject ?? [])
+            {
+                bool human = CustomLobbyService.IsHuman(player);
+                string name = human ? await MemberNameAsync(redis, playerId) : $"bot ({Text(player?["BotSettingSlug"]) ?? "?"})";
+                members.Add(new LobbyMember(teamIndex, playerId, name, !human, Number(player?["LobbyPlayerIndex"]), Text(player?["JoinedAt"]),
+                    ready?[playerId] is JsonValue r && r.GetValueKind() == JsonValueKind.True));
+            }
+        }
+
+        string? leader = Text(lobby["LeaderID"]);
+        return new LobbyView(id, Text(lobby["LobbyCode"]), Text(lobby["GameModeSlug"]), leader,
+            leader is null ? null : await MemberNameAsync(redis, leader),
+            [.. members.OrderBy(m => m.Team).ThenBy(m => m.JoinedAt, StringComparer.Ordinal)]);
+    }
+
     public async Task<ControlResult<PlayerView>> FindPlayerAsync(string who)
     {
         if (Players is not { } players)
@@ -290,9 +364,9 @@ internal sealed class OpsService : IOpsService
         return await FindPlayerAsync(id.ToString());
     }
 
-    // The websocket is the TS service's (src/websocket.ts): it closes the player's socket when it hears ws:disconnect
-    // {playerId}, with terminate(), the path its heartbeat timeout takes, so the usual cleanup runs (ticket, lobby,
-    // session) and the client logs out. docs/MIGRATION-BRIDGES.md (4).
+    // The realtime gateway node holding the player's connection drops it when it hears ws:disconnect {playerId} (no code:
+    // at once, as the TS websocket's terminate()), so its close runs the usual cleanup (ticket, lobby, session) and the
+    // client logs out.
     public const string DisconnectChannel = "ws:disconnect";
 
     public async Task<ControlResult<DisconnectView>> DisconnectPlayerAsync(string who)
@@ -448,6 +522,20 @@ internal sealed class OpsService : IOpsService
         return fields.Select(f => f.ToString()).FirstOrDefault(f => f.Length > 0) ?? "Unknown";
     }
 
+    // A lobby member's name: their connection's (the website's chain), else, for one who is not connected, the name on
+    // their player record.
+    private async Task<string> MemberNameAsync(IDatabase redis, string id)
+    {
+        string name = await DisplayNameAsync(redis, id);
+        if (name != "Unknown" || Players is not { } players || !ObjectId.TryParse(id, out var objectId))
+        {
+            return name;
+        }
+
+        var record = await players.Find(new BsonDocument("_id", objectId)).FirstOrDefaultAsync();
+        return record is not null && Str(record, "name") is { Length: > 0 } stored ? stored : name;
+    }
+
     private async Task<List<string>> KeysAsync(string pattern)
     {
         var multiplexer = _services.GetRequiredService<IConnectionMultiplexer>();
@@ -480,6 +568,11 @@ internal sealed class OpsService : IOpsService
 
     private static string? Str(JsonElement element, string name) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static string? Text(JsonNode? node) => node is JsonValue v && v.TryGetValue(out string? s) ? s : null;
+
+    private static int? Number(JsonNode? node) =>
+        node is JsonValue v && v.GetValueKind() == JsonValueKind.Number ? (int)v.GetValue<double>() : null;
 
     private static string? Str(BsonDocument document, string name) =>
         document.TryGetValue(name, out var v) && v.IsString ? v.AsString : null;

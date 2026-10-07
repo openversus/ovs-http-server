@@ -16,7 +16,7 @@ namespace OpenVersus.Server.Core.Matches;
 // The rematch after a single game: a custom lobby's match, ported from the TS server's (modules/customLobby
 // lobby.service.ts handleSscCustomLobbyMatchEnd, handleSscRematchAccept/Decline, triggerSscRematch; the routes in
 // modules/lobby/shared.routes.ts), and a Casual match's, which the TS server never had (its websocket declined every
-// Casual rematch: MIGRATION-BRIDGES.md 7). Ranked games have no rematch: a set goes on through its check-ins.
+// Casual rematch). Ranked games have no rematch: a set goes on through its check-ins.
 //
 //   Open (MatchEnd, in the match flow): the vote and its timer. A custom lobby's: every ready flag taken down (a script),
 //     ssc_custom_lobby_match:{match} deleted, ssc_custom_lobby_rematch_timer:{lobby} = the match. A Casual match's:

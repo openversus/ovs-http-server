@@ -94,6 +94,24 @@ public sealed class OvsCtlTests : IAsyncLifetime
         Assert.DoesNotContain("Control:Port", filtered);
     }
 
+    [SkippableFact]
+    public void LobbyAsksTheLobbiesServiceUnlessToldOtherwise()
+    {
+        Skip.If(!string.IsNullOrEmpty(Environment.GetEnvironmentVariable(ConnectionSettings.ServiceVariable)), "OVS_SERVICE is set here");
+        Assert.Equal("lobbies", new LobbySettings().Service);
+        Assert.Equal("http", new ConnectionSettings().Service);
+    }
+
+    [Theory]
+    [InlineData("lobby")]
+    [InlineData("lobby", "QX7RT", "--all")]
+    public async Task LobbyTakesACodeOrAllButNotBoth(params string[] args)
+    {
+        var (exit, output) = await Run([.. args, "--port", Port]);
+        Assert.NotEqual(OvsCtl.Done, exit);
+        Assert.Contains("--all", output);
+    }
+
     [Theory]
     [InlineData("settings", "set", "Log:Level", "Loud", "--scope", "instance")]
     [InlineData("settings", "set", "Log:Level", "Debug")]
@@ -110,6 +128,8 @@ public sealed class OvsCtlTests : IAsyncLifetime
     [InlineData("queues")]
     [InlineData("online")]
     [InlineData("matches")]
+    [InlineData("lobby", "QX7RT")]
+    [InlineData("lobby", "--all")]
     [InlineData("player", "show", "someone")]
     [InlineData("player", "rename", "someone", "else")]
     public async Task OpsWithoutTheirDatabaseAreRefusedClearly(params string[] args)

@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.CustomLobbies;
 using OpenVersus.Server.Core.Leaderboards;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Realtime;
@@ -30,15 +31,18 @@ namespace OpenVersus.Server.Core.Matches;
 //                           it crashed, the player is a spectator. Then
 //     - their websocket is still up (online_players): the rollback server failed them, not a dodge. Once per match
 //       (rollback_crash_cleanup:{match}): the match crashed, the set is dropped for every player of it, all are set idle
-//       and told the match was cancelled ("rollback_crash"); no rating.
+//       and told the match was cancelled ("rollback_crash"); no rating; a custom lobby's ready flags come down.
 //     - after the start, in a game RatedMatches counts (a set game): ranked_disconnect:{player} = the set's id
 //       (player_ranked_set, else the match: game 1), so the set's next check-in concedes for them (RankedSets); the flag
 //       counts for that set only.
-//     - before the start (a dodge), unless the match is a custom game: the other team wins the set (rated when
-//       RatedMatches says it counts: SetRatings, a pregame dodge, each player's FullRankUpdate, and the dodger's
-//       ranked_disconnect naming the set), the set is dropped, every player is set idle and the others are told ("opponent_dodge"). Once
-//       per set and match (elo_processed_set:{set} "rollback_pregame_dodge" NX EX 5 min, elo_processed:{match} NX EX 5
-//       min: the TS websocket's disconnect path checks the same keys).
+//     - before the start (a dodge): the match is called off (match_called_off:{match}: any later leave of it changes
+//       nothing). The other team wins the set (rated when RatedMatches says it counts: SetRatings, a pregame dodge, each
+//       player's FullRankUpdate, and the dodger's ranked_disconnect naming the set), the set is dropped, every human of
+//       the match, spectators too, is set idle and the others are told ("opponent_dodge"). A custom game (a custom
+//       lobby's match or a Casual one) is never rated and has no set: its end is claimed instead (match_end:{match},
+//       MatchEnd's once-key), so a late /ovs_end_match opens no rematch vote, and a custom lobby's ready flags come down
+//       as at a match's end. Once per set and match (elo_processed_set:{set} "rollback_pregame_dodge" NX EX 5 min,
+//       elo_processed:{match} NX EX 5 min: the TS websocket's disconnect path checks the same keys).
 // Answered {status: "ok"}; 403 {error: "Invalid signature"} without the key; 500 {error: "Failed to process match status
 // update"} when handling failed (a PlayerDisconnect's failure is logged, not answered).
 //
@@ -55,11 +59,14 @@ namespace OpenVersus.Server.Core.Matches;
 // Redis, read     match_started:{match}, match_ended:{match}, game_result_received:{match}, match_server_crash:{match},
 //                 {match} (players, mode, isCustomGame), match:{match} (RatedMatches), online_players,
 //                 player_ranked_set:{player}, elo_processed:{match}, match_characters:{set}, connections:{player} character;
-//                 match_config:{player} (a websocket close)
+//                 match_config:{player} (a websocket close); match_called_off:{match}; ssc_custom_lobby_match:{match}
 // Redis, written  match_started:{match}, match_ended:{match}, match_server_crash:{match} "1" EX 10 min;
 //                 rollback_crash_cleanup:{match} NX EX 5 min; ranked_disconnect:{player} (the set's id) EX 10 min;
 //                 ranked_set_crashed:{set} "gateway_node_gone" EX 10 min (a reaped close between a set's games); the dedup keys
-//                 above; player:{player} status "idle"; dll_notifications:{player} (match_cancel, PlayerMessages);
+//                 above; match_called_off:{match} (the dodge's reason) EX 20 min, the match's TTL; at a custom game's
+//                 call-off match_end:{match} "called_off" NX EX 20 min, and custom_lobby_ssc:{lobby} ReadyPlayers emptied
+//                 (CustomLobbyService.MatchEndedAsync, the crash's too) with ssc_custom_lobby_match:{match} deleted;
+//                 player:{player} status "idle"; dll_notifications:{player} (match_cancel, PlayerMessages);
 //                 deleted: player_ranked_set:{each player}, ranked_set:{set}, ranked_set_checkins:{set},
 //                 ranked_set_match:{set}, and at a crash match_to_set:{match}, match_started:{match}
 // Sent (ws:send)  FullRankUpdate (FullRankUpdateVariant.SetResult) after a rating, to the match's players but bots,
@@ -77,6 +84,10 @@ namespace OpenVersus.Server.Core.Matches;
 //     any started match, custom and Casual ones included, and its readers took any flag: a stale one conceded the
 //     player's next set).
 //   - an unset key, or the TS placeholder, never matches (MatchUpdateKeys).
+//   - a custom game's pregame leave calls the match off as a dodge does, unrated (decided 2026-10-07; TS left it alone:
+//     everyone else sat at perk select, waiting for the leaver's lock). A dodge releases the spectators too.
+//   - a called-off match stays called off: TS ran a released player's own leave from the rollback server as a crash
+//     (a second cancel), and a close of theirs after the 5-minute dedup keys as another dodge, rated against them.
 //   - a player is set idle only while their record (player:{player}) is there: TS wrote one holding the status alone
 //     for a player whose keys its own close had deleted.
 //   - a websocket close: a spectator's changes nothing (TS took the spectator's team for the dodger's, and rated a set
@@ -106,6 +117,8 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
     private static readonly HashSet<string> s_quiet = ["TickPerformance", "HeartBeat"];
     private static readonly TimeSpan s_flagTtl = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan s_dedupTtl = TimeSpan.FromMinutes(5);
+    // A match's keys live 20 minutes (its config, match_config:{player}): a mark about the match outlives them.
+    private static readonly TimeSpan s_matchTtl = TimeSpan.FromMinutes(20);
 
     public async Task<(int Status, JsonObject Answer)> HandleAsync(string? matchUpdateKey, JsonNode? body, string? from)
     {
@@ -262,6 +275,12 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
                 return;
             }
 
+            if (await redis.KeyExistsAsync(CalledOffKey(matchId)))
+            {
+                log.LogInformation("{What} of {Player} in {Match}: the match was called off already, nothing to do", what, playerId, matchId);
+                return;
+            }
+
             var config = await RollbackCallbacks.JsonAsync(redis, matchId);
             var configPlayers = (config?["players"] as JsonArray)?.OfType<JsonObject>().ToList();
             if (configPlayers?.FirstOrDefault(p => Str(p["playerId"]) == playerId) is { } entry && RollbackCallbacks.Truthy(entry["isSpectator"]))
@@ -340,6 +359,7 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
         await redis.KeyDeleteAsync($"match_to_set:{matchId}");
         await redis.KeyDeleteAsync($"match_started:{matchId}");
 
+        await LobbyReadyResetAsync(redis, matchId);
         await IdleAsync(redis, all);
         await CancelAsync(redis, all, matchId, "Server connection failed — no ELO change", "rollback_crash");
         log.LogInformation("Dropped set {Set} for {Players} player(s) after a rollback crash (no rating)", setId, all.Count);
@@ -358,10 +378,11 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
         return Math.Max(Count(set["gamesPlayed"]), Count(scores?.ElementAtOrDefault(0)) + Count(scores?.ElementAtOrDefault(1)));
     }
 
-    // Before the start: the leaver dodged; the other team wins the set.
+    // Before the start: the leaver dodged and the match is called off; the other team wins the set (a custom game: no set,
+    // no rating, its end claimed).
     private async Task PregameDodgeAsync(IDatabase redis, string matchId, string playerId, JsonObject? config, List<JsonObject>? configPlayers, string reason)
     {
-        if (config is null || configPlayers is null || RollbackCallbacks.Truthy(config["isCustomGame"]))
+        if (config is null || configPlayers is null)
         {
             return;
         }
@@ -371,13 +392,15 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
             return;
         }
 
+        bool custom = RollbackCallbacks.Truthy(config["isCustomGame"]);
         int winnerTeam = IsNumber(leaver["teamIndex"], 0) ? 1 : 0;
         var team0 = configPlayers.Where(p => IsNumber(p["teamIndex"], 0) && !RollbackCallbacks.Truthy(p["isSpectator"])).Select(p => Str(p["playerId"])).ToList();
         var team1 = configPlayers.Where(p => IsNumber(p["teamIndex"], 1) && !RollbackCallbacks.Truthy(p["isSpectator"])).Select(p => Str(p["playerId"])).ToList();
         var winners = winnerTeam == 0 ? team0 : team1;
         var losers = winnerTeam == 0 ? team1 : team0;
 
-        string setId = (string?)await redis.StringGetAsync($"player_ranked_set:{playerId}") is { Length: > 0 } set ? set : matchId;
+        // A custom game is in no set, whatever pointer a player still holds.
+        string setId = !custom && (string?)await redis.StringGetAsync($"player_ranked_set:{playerId}") is { Length: > 0 } set ? set : matchId;
         if (await redis.KeyExistsAsync($"elo_processed:{matchId}"))
         {
             return;
@@ -389,9 +412,14 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
         }
 
         await redis.StringSetAsync($"elo_processed:{matchId}", "1", s_dedupTtl, When.NotExists);
+        await redis.StringSetAsync(CalledOffKey(matchId), reason, s_matchTtl);
 
         string? mode = config["mode"] is JsonValue m && m.TryGetValue(out string? text) ? text : null;
-        if (RatedMatches.WhyNotRated(mode, config["players"] as JsonArray, await RollbackCallbacks.JsonAsync(redis, $"match:{matchId}"), config) is { } why)
+        if (custom)
+        {
+            log.LogInformation("Pregame leave of {Player} in custom game {Match} ({Reason}): called off, no rating", playerId, matchId, reason);
+        }
+        else if (RatedMatches.WhyNotRated(mode, config["players"] as JsonArray, await RollbackCallbacks.JsonAsync(redis, $"match:{matchId}"), config) is { } why)
         {
             log.LogWarning("Pregame dodge of {Player} in {Match} not rated: {Why}", playerId, matchId, why);
         }
@@ -418,22 +446,53 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
             await redis.StringSetAsync($"ranked_disconnect:{playerId}", setId, s_flagTtl);
         }
 
-        var all = configPlayers.Where(p => !RollbackCallbacks.Truthy(p["isSpectator"])).Select(p => Str(p["playerId"])).ToList();
-        foreach (string id in all)
+        if (custom)
         {
-            await redis.KeyDeleteAsync($"player_ranked_set:{id}");
+            // A late /ovs_end_match opens no rematch vote (MatchEnd's once-key); the lobby is out of its match, every ready
+            // flag down, as at a match's end.
+            await redis.StringSetAsync($"match_end:{matchId}", "called_off", s_matchTtl, When.NotExists);
+            await LobbyReadyResetAsync(redis, matchId);
+            await redis.KeyDeleteAsync($"ssc_custom_lobby_match:{matchId}");
+        }
+        else
+        {
+            foreach (string id in configPlayers.Where(p => !RollbackCallbacks.Truthy(p["isSpectator"])).Select(p => Str(p["playerId"])))
+            {
+                await redis.KeyDeleteAsync($"player_ranked_set:{id}");
+            }
+
+            if (setId != matchId)
+            {
+                await redis.KeyDeleteAsync($"ranked_set:{setId}");
+                await redis.KeyDeleteAsync($"ranked_set_checkins:{setId}");
+                await redis.KeyDeleteAsync($"ranked_set_match:{setId}");
+            }
         }
 
-        if (setId != matchId)
-        {
-            await redis.KeyDeleteAsync($"ranked_set:{setId}");
-            await redis.KeyDeleteAsync($"ranked_set_checkins:{setId}");
-            await redis.KeyDeleteAsync($"ranked_set_match:{setId}");
-        }
-
+        // Every human of the match is released, spectators too: they wait on the same screen.
+        var all = configPlayers.Select(p => Str(p["playerId"])).ToList();
         await IdleAsync(redis, all);
         await CancelAsync(redis, all.Where(id => id != playerId), matchId, "Opponent left the match", "opponent_dodge");
-        log.LogInformation("Dropped set {Set} for {Players} player(s) after a pregame dodge", setId, all.Count);
+        if (custom)
+        {
+            log.LogInformation("Called off custom game {Match} for {Players} player(s) after a pregame leave", matchId, all.Count);
+        }
+        else
+        {
+            log.LogInformation("Dropped set {Set} for {Players} player(s) after a pregame dodge", setId, all.Count);
+        }
+    }
+
+    private static string CalledOffKey(string matchId) => $"match_called_off:{matchId}";
+
+    // A custom lobby's match over without its end (MatchEnd): the lobby's ready flags come down as at a match's end
+    // (CustomLobbyService.MatchEndedAsync), so the next start needs everyone ready again.
+    private static async Task LobbyReadyResetAsync(IDatabase redis, string matchId)
+    {
+        if ((string?)await redis.StringGetAsync($"ssc_custom_lobby_match:{matchId}") is { Length: > 0 } lobbyId)
+        {
+            await CustomLobbyService.MatchEndedAsync(redis, lobbyId);
+        }
     }
 
     // Each player's fighter: the set's match_characters, then their connection.

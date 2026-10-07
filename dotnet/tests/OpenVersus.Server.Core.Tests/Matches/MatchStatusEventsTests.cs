@@ -520,17 +520,105 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
         Assert.Single(await NotificationsAsync(P1));
     }
 
+    // A custom lobby's match whose player leaves before the start (custom games skipped the dodge in TS: everyone else sat
+    // at perk select): called off as a dodge, unrated, every human released, spectators too; no set touched, a stale
+    // pointer's included; the end claimed so a late /ovs_end_match opens no rematch vote; the lobby's ready flags down.
     [SkippableFact]
-    public async Task ADodgeInACustomGameIsLeftAlone()
+    public async Task APregameLeaveCallsACustomGameOffUnrated()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
-        await SeedAsync(config: new JsonObject { ["isCustomGame"] = true });
-        await Db.SetAddAsync("online_players", P1);
+        await SeedAsync(players: WithSpectator(), config: new JsonObject { ["isCustomGame"] = true });
+        await SeedLobbyAsync();
+        await SeedSetAsync();
+        await Db.HashSetAsync($"player:{Spectator}", "status", "in_match");
+        await Db.SetAddAsync("online_players", [P1, Spectator]);
 
         await SendAsync(Event("PlayerDisconnect", P2));
 
         Assert.Equal(0, await RatingsAsync());
         Assert.False(await Db.KeyExistsAsync($"ranked_disconnect:{P2}"));
-        Assert.Empty(await NotificationsAsync(P1));
+        Assert.True(await Db.KeyExistsAsync($"ranked_set:{Set}"));
+        Assert.Equal(Set, (string?)await Db.StringGetAsync($"player_ranked_set:{P1}"));
+        foreach (string id in new[] { P1, Spectator })
+        {
+            Assert.Equal("Opponent left the match", Assert.Single(await NotificationsAsync(id))["message"]!.GetValue<string>());
+            Assert.Equal("idle", (string?)await Db.HashGetAsync($"player:{id}", "status"));
+        }
+
+        Assert.Empty(await NotificationsAsync(P2));
+        Assert.Equal("called_off", (string?)await Db.StringGetAsync($"match_end:{Match}"));
+        Assert.Equal("rollback_pregame_dodge", (string?)await Db.StringGetAsync($"match_called_off:{Match}"));
+        Assert.Empty((JsonObject)(await LobbyAsync())["ReadyPlayers"]!);
+        Assert.False(await Db.KeyExistsAsync($"ssc_custom_lobby_match:{Match}"));
     }
+
+    // A Casual match (isCustomGame, no lobby) is called off the same way: its end claimed, so no Casual rematch vote opens.
+    [SkippableFact]
+    public async Task APregameLeaveCallsACasualMatchOffAndClaimsItsEnd()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync(config: new JsonObject { ["isCustomGame"] = true });
+        await SentConfigAsync(P2);
+
+        await Events().GameClosedAsync(P2);
+
+        Assert.Equal(0, await RatingsAsync());
+        Assert.Equal("called_off", (string?)await Db.StringGetAsync($"match_end:{Match}"));
+        Assert.Equal("pregame_dodge", (string?)await Db.StringGetAsync($"match_called_off:{Match}"));
+        Assert.Single(await NotificationsAsync(P1));
+    }
+
+    // After a call-off, the released players leave the match too: their rollback server's PlayerDisconnect (their websocket
+    // still up) is no crash and no second cancel, and a close of theirs after the dedup keys expired is no second dodge
+    // (TS: both, the second rated against the player who stayed).
+    [SkippableFact]
+    public async Task ACalledOffMatchStaysCalledOff()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        await Db.SetAddAsync("online_players", P1);
+        await SendAsync(Event("PlayerDisconnect", P2));
+        Assert.Equal(2, await RatingsAsync());
+
+        await SendAsync(Event("PlayerDisconnect", P1));
+        await Db.KeyDeleteAsync([$"elo_processed:{Match}", $"elo_processed_set:{Match}"]);
+        await SentConfigAsync(P1);
+        await Events().GameClosedAsync(P1);
+
+        Assert.False(await Db.KeyExistsAsync($"match_server_crash:{Match}"));
+        Assert.Single(await NotificationsAsync(P1));
+        var ratings = Mongo.GetCollection<BsonDocument>("eloratings");
+        Assert.Equal(0, (await ratings.Find(new BsonDocument("account_id", P1)).FirstAsync())["losses_1v1"].ToInt32());
+        Assert.Empty(await NotificationsAsync(P2));
+    }
+
+    // A custom lobby's match that crashed: the lobby's ready flags come down (its end never ran: the next start found the
+    // players still ready); the lobby keeps its match, so a late /ovs_end_match runs as before.
+    [SkippableFact]
+    public async Task ACrashInACustomLobbysMatchTakesTheReadyFlagsDown()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync(config: new JsonObject { ["isCustomGame"] = true });
+        await SeedLobbyAsync();
+        await Db.SetAddAsync("online_players", [P1, P2]);
+
+        await SendAsync(Event("PlayerDisconnect", P2));
+
+        Assert.True(await Db.KeyExistsAsync($"match_server_crash:{Match}"));
+        Assert.Empty((JsonObject)(await LobbyAsync())["ReadyPlayers"]!);
+        Assert.Equal(Lobby, (string?)await Db.StringGetAsync($"ssc_custom_lobby_match:{Match}"));
+        Assert.False(await Db.KeyExistsAsync($"match_end:{Match}"));
+    }
+
+    private static readonly string Lobby = Id(200);
+
+    // The custom lobby the match was started from (CustomLobbyService: custom_lobby_ssc:{lobby}, ssc_custom_lobby_match:{match}).
+    private async Task SeedLobbyAsync()
+    {
+        var lobby = new JsonObject { ["MatchID"] = Lobby, ["LeaderID"] = P1, ["ReadyPlayers"] = new JsonObject { [P1] = true, [P2] = true, [Spectator] = true } };
+        await Db.StringSetAsync($"custom_lobby_ssc:{Lobby}", Js.Stringify(lobby), TimeSpan.FromMinutes(5));
+        await Db.StringSetAsync($"ssc_custom_lobby_match:{Match}", Lobby, TimeSpan.FromMinutes(5));
+    }
+
+    private async Task<JsonObject> LobbyAsync() => (JsonObject)Js.Parse((await Db.StringGetAsync($"custom_lobby_ssc:{Lobby}")).ToString())!;
 }

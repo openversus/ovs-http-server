@@ -138,8 +138,17 @@ keeps one websocket for its whole session, and goes back to its title screen whe
 that reconnects logs in again first (/access). The gateway already keeps a connection's identity apart from the node
 (its id, minted where the socket is held, in `realtime:conn:{player}` and every event), and takes the client's IP from
 the forwarded headers; the edge will mint the id, pass the IP, and resume a connection on a new node with a check of the
-session (not of the token's expiry). Whether messages sent during a re-attach are kept (a per-player sequence and a short
-replay log) is still to decide.
+session (not of the token's expiry).
+
+Decided 2026-10-07: nothing sent during a re-attach is lost. Every message and forced close for a player goes through
+one helper (`PlayerMessages.SendAsync` and `DisconnectAsync`), which runs one script: append it to the player's replay
+log (`realtime:out:{player}`, a stream; field `message` or `disconnect`), then publish it with the entry's stream id
+(`ws:send` gets `seqs: {player: id}`, `ws:disconnect` gets `seq`). The id is the player's sequence. The log keeps the
+last `PlayerMessages.ReplayWindow` (60 s, by the Redis clock) and expires `ReplayTtl` (5 min) after its newest entry.
+The window must be longer than any re-attach can take (the edge gives up sooner, and the reaper lets a dead node's
+player go after about 30-50 s); then everything a trim drops was already delivered, and a re-attach replays whatever
+follows the last id the game received. The nodes ignore the sequences until they serve an edge. A node's own frames (the
+id frame, the ping, the matchmaking tick) are not logged: whichever node holds the game makes them.
 
 ## Still assuming one instance (not to be ported as it is)
 

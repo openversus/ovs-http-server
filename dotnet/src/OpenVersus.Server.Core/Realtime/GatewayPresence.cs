@@ -27,7 +27,8 @@ namespace OpenVersus.Server.Core.Realtime;
 //                 session, so a close in that window is a game that is gone, whose party's ticket is dropped at once
 //                 instead of 41 s later)
 // Published       ws:disconnect {playerId, except, code, reason} when a connection replaces one (the node holding the
-//                 old one closes it; the TS websocket left a replaced socket open and stopped pinging it)
+//                 old one closes it; the TS websocket left a replaced socket open and stopped pinging it), through the
+//                 player's replay log (PlayerMessages.DisconnectAsync)
 //
 // Unlike the TS websocket: presence (online_players, the heartbeat, the IP's session) goes at the close itself, before
 // anything else; TS removed online_players last, after a pre-game dodge's rating, and the match flow's rollback
@@ -94,13 +95,13 @@ public static class GatewayPresence
         if (replaced is not null)
         {
             await AppendAsync(redis, "replaced", connection.PlayerId, replaced, ms, [new("replacedBy", connection.Id)]);
-            await redis.PublishAsync(RedisChannel.Literal(GatewayChannels.Disconnect), Js.Stringify(new JsonObject
+            await PlayerMessages.DisconnectAsync(redis, new JsonObject
             {
                 ["playerId"] = connection.PlayerId,
                 ["except"] = connection.Id,
                 ["code"] = 1000,
                 ["reason"] = "replaced",
-            }));
+            });
         }
 
         await AppendAsync(redis, "connected", connection, ms);
@@ -219,11 +220,14 @@ public sealed record GatewayConnectionInfo(string Id, string PlayerId, string No
 /// <summary>The channels every gateway node hears.</summary>
 public static class GatewayChannels
 {
-    /// <summary>{playerIds, message}: each node sends message to the players whose current connection it holds.</summary>
+    /// <summary>
+    /// {playerIds, message, seqs?}: each node sends message to the players whose current connection it holds. seqs
+    /// ({player: stream id}) names each player's entry in their replay log (<see cref="PlayerMessages"/>).
+    /// </summary>
     public const string Send = ProfileNotifications.WsSendChannel;
 
     /// <summary>
-    /// {playerId, connectionId?, except?, code?, reason?}: the node holding the player's connection closes it, only if it
+    /// {playerId, connectionId?, except?, code?, reason?, seq?}: the node holding the player's connection closes it, only if it
     /// is <c>connectionId</c> and is not <c>except</c> when those are given; with a code, a close handshake with that
     /// code and reason, without one at once (the ops command's, as the TS websocket's terminate()).
     /// </summary>

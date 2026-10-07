@@ -17,10 +17,11 @@
 // connected events): run it on the same stores for the C# run.
 //
 // What the C# gateway writes that TS does not (realtime:conn:{player}, the realtime:connections stream, the ws:disconnect
-// it publishes when a connection replaces another) is checked to be there, then left out of the comparison; every other
-// difference is either in EXPECTED, which asserts it, or a failure.
+// it publishes when a connection replaces another, and each player's replay log realtime:out:{player}, whose sequence
+// the C# publishes carry) is checked to be there, then left out of the comparison; every other difference is either in
+// EXPECTED, which asserts it, or a failure.
 import fs from "node:fs";
-import { require, need, openScratch, openMonitor } from "../refdiff/refdiff.mjs";
+import { require, need, openScratch, openMonitor, REPLAY_LOG } from "../refdiff/refdiff.mjs";
 import { initFrame } from "../refdiff/gateway.mjs";
 // After gateway.mjs, which loads mvs-dump with the CLI arguments hidden (its modules run a CLI on import otherwise).
 const { HydraEncoder } = await import(process.cwd() + "/node_modules/mvs-dump/dist/hydra/encoder.js");
@@ -189,7 +190,7 @@ function byMessage(frames) {
 }
 
 // The C#-only keys and channels: proven present by `check`, then dropped from the record compared.
-const CS_ONLY = [/^realtime:conn:/, /^realtime:connections$/];
+const CS_ONLY = [/^realtime:conn:/, /^realtime:connections$/, REPLAY_LOG];
 
 const WRITES = new Set(["set", "setex", "psetex", "expire", "pexpire", "publish", "del", "unlink", "hset", "hmset", "hdel", "sadd", "srem", "zadd", "zrem", "zremrangebyscore", "lpush", "rpush", "lrem", "xadd", "incr"]);
 // Every write from any client but the harness; millisecond timestamps (13 digits) become <ms>.
@@ -282,9 +283,10 @@ const EXPECTED = {
   }],
   "game-closes": [SESSION_DELETE],
   replaced: [{
-    what: "a second login: TS leaves the first socket open (unpinged, dropped by the harness: 1006); C# closes it (1000 replaced), appends replaced and asks every node to close it (ws:disconnect except the new one)",
+    what: "a second login: TS leaves the first socket open (unpinged, dropped by the harness: 1006); C# closes it (1000 replaced), appends replaced and asks every node to close it (ws:disconnect except the new one), through the player's replay log (the request appended, its sequence on the publish)",
     check: (ts, cs) => ts.games.first.close.code === 1006 && cs.games.first.close.code === 1000 && cs.games.first.close.reason === "replaced"
-      && cs.writes.some((w) => w.startsWith("publish ws:disconnect ") && w.includes('\\"reason\\":\\"replaced\\"'))
+      && cs.writes.some((w) => w.startsWith("publish ws:disconnect ") && w.includes('\\"reason\\":\\"replaced\\",\\"seq\\":\\"<ms>-'))
+      && cs.writes.some((w) => w.startsWith(`xadd realtime:out:${P1} MINID <ms> * disconnect `) && w.includes('\\"reason\\":\\"replaced\\"}'))
       && cs.presence.events.filter((e) => e === `replaced ${P1}`).length === 1,
     adjust: (a, b) => { delete a.games.first.close; delete b.games.first.close; },
   }],
@@ -309,7 +311,10 @@ const EXPECTED = {
   "daily-toast-bonus": [{
     what: "the daily toast bonus popup (OnRewardsGranted, the bytes compared): TS sends it at the handshake, then deletes the flag; in C# the access service's reader of the connected event takes the flag first (GETDEL, a read in this record) and sends it",
     check: (ts, cs) => ts.games.P1.frames.length === 3 && cs.games.P1.frames.length === 3 && has(ts.writes, `del daily_toast_bonus_pending:${P1}`)
-      && !has(cs.writes, `del daily_toast_bonus_pending:${P1}`) && cs.writes.filter((w) => w.startsWith("publish ws:send ") && w.includes("OnRewardsGranted")).length === 1,
+      && !has(cs.writes, `del daily_toast_bonus_pending:${P1}`) && cs.writes.filter((w) => w.startsWith("publish ws:send ") && w.includes("OnRewardsGranted")).length === 1
+      // C# also appends the popup to the player's replay log, and its publish names the entry.
+      && cs.writes.some((w) => w.startsWith(`xadd realtime:out:${P1} MINID <ms> * message `) && w.includes("OnRewardsGranted"))
+      && cs.writes.some((w) => w.startsWith("publish ws:send ") && w.includes("OnRewardsGranted") && new RegExp(`,\\\\"seqs\\\\":\\{\\\\"${P1}\\\\":\\\\"<ms>-\\d+\\\\"\\}\\}$`).test(w)),
     adjust: (a, b) => { without(a.writes, `del daily_toast_bonus_pending:${P1}`); b.writes = b.writes.filter((w) => !(w.startsWith("publish ws:send ") && w.includes("OnRewardsGranted"))); },
   }],
 };

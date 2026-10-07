@@ -1,5 +1,4 @@
 using System.Text.Json.Nodes;
-using OpenVersus.Server.Core.Compat;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Realtime;
@@ -30,11 +29,7 @@ public static class ProfileNotifications
 
     /// <summary>Sends <paramref name="data"/> to the player.</summary>
     public static Task SendAsync(IDatabase redis, string playerId, JsonObject data) =>
-        redis.PublishAsync(RedisChannel.Literal(WsSendChannel), Js.Stringify(new JsonObject
-        {
-            ["playerIds"] = new JsonArray(playerId),
-            ["message"] = Message(data, playerId),
-        }));
+        PlayerMessages.SendAsync(redis, [playerId], Message(data, playerId));
 
     /// <summary>RewardTrackStatesUpdated {RewardTrackStates, UpdateContext}, as the client's notification router reads it
     /// (0x140d06c10, build f97148ff). UpdateContext is EMvsRewardTrackUpdateContext: Unknown 0, RewardTrackClaim 1,

@@ -15,7 +15,7 @@ namespace OpenVersus.Server.Core.Realtime;
 // sends 500 ms apart; a restart delays what fell due meanwhile, and sends it.
 //
 // Redis, written  realtime:due (ZADD; ZREM when sent)
-// Published       ws:send (PlayerMessages.SendAsync); ws:disconnect
+// Published       ws:send (PlayerMessages.SendAsync); ws:disconnect (PlayerMessages.DisconnectAsync)
 
 public static class DelayedMessages
 {
@@ -95,7 +95,7 @@ internal sealed class DelayedMessageSweep(IServiceProvider services, TimeProvide
             {
                 if ((string?)entry["channel"] == GatewayChannels.Disconnect)
                 {
-                    await redis.PublishAsync(RedisChannel.Literal(GatewayChannels.Disconnect), Js.Stringify(message));
+                    await PlayerMessages.DisconnectAsync(redis, message);
                     continue;
                 }
 

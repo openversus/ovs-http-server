@@ -106,7 +106,7 @@ public sealed class PerksLockTests : IAsyncLifetime
         {
             if (m.Message.ToString().Contains("0000000000000000000c", StringComparison.Ordinal))
             {
-                sent.Enqueue(m.Message.ToString());
+                sent.Enqueue(Realtime.PlayerMessagesTests.WithoutSequences(m.Message.ToString()));
             }
         });
         await MatchAsync([Other], [Me]);

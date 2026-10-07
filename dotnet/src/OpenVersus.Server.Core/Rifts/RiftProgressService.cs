@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.Static;
 using StackExchange.Redis;
 
@@ -52,7 +53,6 @@ internal sealed class RiftProgressService(IServiceProvider services, IRiftStateS
     ILogger<RiftProgressService> log) : IRiftProgressService
 {
     public const string Collection = "riftinstances";
-    public const string WsSendChannel = "ws:send";
 
     /// <summary>The key start_rift_node writes for a rift match.</summary>
     public static string MatchKey(string matchId) => $"rift_match:{matchId}";
@@ -252,8 +252,7 @@ internal sealed class RiftProgressService(IServiceProvider services, IRiftStateS
         ["cmd"] = "update",
     };
 
-    private static Task SendAsync(IDatabase redis, string playerId, JsonObject message) =>
-        redis.PublishAsync(RedisChannel.Literal(WsSendChannel), Js.Stringify(new JsonObject { ["playerIds"] = new JsonArray(playerId), ["message"] = message }));
+    private static Task SendAsync(IDatabase redis, string playerId, JsonObject message) => PlayerMessages.SendAsync(redis, [playerId], message);
 
     private IMongoCollection<BsonDocument> Instances() =>
         (services.GetService<IMongoDatabase>() ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)")).GetCollection<BsonDocument>(Collection);

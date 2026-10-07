@@ -14,7 +14,7 @@
 // Scratch stores, wiped before every step (never point these at data you want to keep):
 //   REF_REDIS_URL, REF_MONGO_URI, REF_JWT_SECRET  as for the other harnesses
 //   REF_PORT_LOW, REF_PORT_HIGH  the servers' fixed rollback ports (ROLLBACK_UDP_PORT_LOW/HIGH; default 57000, 57019):
-//                     where C#'s next game takes its port from (read by diff)
+//                     where C#'s next game takes its port from (saved with the run; diff checks the C# run's range)
 //   REF_SNAPSHOT_URI  optional: a copy of prod's Mongo (read only). Its ratings and set stats, under the harness's ids
 //                     and names, are rated through whole sets ("replay" steps): real characters maps, streaks and counts.
 //   REF_WS_URL        the TS websocket (PR #49's code as committed), in both runs: it turns the TS server's ranked_set
@@ -161,9 +161,10 @@ async function run(baseUrl, outFile) {
         let message;
         try { message = JSON.parse(text); } catch { message = text; }
         return { channel, message };
-      }).filter((p) => CHANNELS.has(p.channel)),
+      }).filter((p) => CHANNELS.has(p.channel)).concat(await launches(redis)),
       lock: { taken: lock.some((w) => /^set ranked_set_lock:\S+ \S+ /.test(w)), heldAfter: await redis.exists(`ranked_set_lock:${SET}`) },
-      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^ovs:instance|^ranked_set_lock:|^realtime:due$|^player_heartbeats$|^active_ip_accounts:/.test(k))),
+      // The C# services' streams (their consumer groups make them again after every wipe) are bookkeeping, not results.
+      state: Object.fromEntries(Object.entries(await state(redis)).filter(([k]) => !/^ovs:instance|^ranked_set_lock:|^realtime:due$|^player_heartbeats$|^active_ip_accounts:|^match:launched$|^match:results$|^realtime:connections$/.test(k))),
       sets: Object.fromEntries(await Promise.all([`ranked_set_checkins:${SET}`, "online_players"].map(async (k) => [k, (await redis.sMembers(k)).sort()]))),
       mongo: Object.fromEntries(await Promise.all(["eloratings", "playerstats", "playercounters"].map(async (c) => [c,
         JSON.parse(EJSON.stringify(await db.collection(c).find({}, { promoteValues: false, sort: { account_id: 1, accountId: 1 } }).toArray(), { relaxed: false }))]))),
@@ -269,7 +270,7 @@ async function run(baseUrl, outFile) {
 
   monitor.destroy();
   games.close();
-  fs.writeFileSync(outFile, JSON.stringify({ baseUrl, steps }, null, 1));
+  fs.writeFileSync(outFile, JSON.stringify({ baseUrl, ports: [PORT_LOW, PORT_HIGH], steps }, null, 1));
   console.log(`${steps.length} steps -> ${outFile}`);
   await snapshot?.close();
   await close();
@@ -323,13 +324,21 @@ function normalize(step, started) {
 // ── The deliberate differences (RankedSets, "Unlike there"): each step's must hold exactly, and the rest must match ──
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
+// C# appends a launch to the match:launched stream (its consumer sends each game its config) where TS published it on
+// match:notifications: each entry is recorded as that publish, so the two launches compare (the stores are wiped
+// before every step, so the stream holds this step's launches only).
+async function launches(redis) {
+  const entries = await redis.xRange("match:launched", "-", "+").catch(() => []);
+  return entries.map((e) => ({ channel: "match:notifications", message: JSON.parse(e.message.notification) }));
+}
+
 const NEW_GAME = "<new id 1>";
 // The next game's rollback port: TS took INCR rollback:current_port whatever the deploy mode (1 on an empty Redis:
 // the set-match port bug); C# takes the matchmaker's (fixed servers: a random one of [REF_PORT_LOW, REF_PORT_HIGH), the
 // servers' ROLLBACK_UDP_PORT_LOW/HIGH; default 57000..57018). C# also keeps the
 // set's current game (ranked_set_match:{set}), and gives the set's keys written with the next game (ranked_set,
 // player_ranked_set, match_to_set) 20 min where TS gave 10.
-const PORT_LOW = Number(process.env.REF_PORT_LOW ?? 57000), PORT_HIGH = Number(process.env.REF_PORT_HIGH ?? 57019);
+let PORT_LOW = Number(process.env.REF_PORT_LOW ?? 57000), PORT_HIGH = Number(process.env.REF_PORT_HIGH ?? 57019);
 function nextGamePort(ts, cs) {
   const portOf = (run) => [...JSON.stringify(run).matchAll(/\\?"rollbackPort\\?":(\d+)/g)].map((m) => Number(m[1])).filter((p) => p !== 50003);
   const tsPorts = portOf(ts), csPorts = portOf(cs);
@@ -476,6 +485,8 @@ function untie(step) {
 
 function diffRuns(fileA, fileB) {
   const a = JSON.parse(fs.readFileSync(fileA, "utf8")), b = JSON.parse(fs.readFileSync(fileB, "utf8"));
+  // The range the C# run was made with (older files have none: the environment's, as before).
+  if (b.ports) [PORT_LOW, PORT_HIGH] = b.ports;
   let differing = 0;
   const parts = (x, y) => ["answers", "frames", "matchSent", "writes", "published", "lock", "state", "sets", "mongo"].filter((p) => JSON.stringify(x?.[p]) !== JSON.stringify(y?.[p]));
   for (let i = 0; i < Math.max(a.steps.length, b.steps.length); i++) {
@@ -498,13 +509,22 @@ function diffRuns(fileA, fileB) {
       differing++;
       console.log(`${name}: a message on the other server's channel (A: ${a.steps[i]?.channels}; B: ${b.steps[i]?.channels})`);
     }
-    // ranked_set_match:{set} is C#'s alone (the set's current game): TS never writes it, and C# deletes it with the set.
-    // Its SET is asserted where a next game is made (nextGamePort); a C# pointer left behind would still show in state.
-    if (a.steps[i]?.writes.some((w) => w.includes("ranked_set_match:"))) {
+    // C#'s own keys, which TS never writes: ranked_set_match:{set} (the set's current game; its SET is asserted where a
+    // next game is made, nextGamePort; a pointer left behind would still show in state), ranked_set_crashed:{set} (a
+    // reaped gateway node's mark: deleted with every set C# ends), realtime:queued (the gateway's queued players:
+    // cleared at a launch), and the launch's delivery (the match flow's consumer of match:launched: match_announced,
+    // each player's match_config; how much of it lands inside a step is timing; config_diff compares the configs).
+    // Their writes are taken out of C#'s run, the delivery's state too.
+    const own = (w) => /^del ranked_set_match:|^del ranked_set_crashed:|^hdel realtime:queued |^set match_announced:|^(set|del) match_config:/.test(w);
+    if (a.steps[i]?.writes.some((w) => /ranked_set_match:|ranked_set_crashed:|realtime:queued|match_announced:|match_config:/.test(w))) {
       differing++;
-      console.log(`${name}: TS wrote ranked_set_match`);
+      console.log(`${name}: TS wrote a key only C# has (ranked_set_match, ranked_set_crashed, realtime:queued, match_announced, match_config)`);
     }
-    const unpoint = (step) => step && { ...step, writes: step.writes.filter((w) => !w.startsWith("del ranked_set_match:")) };
+    const unpoint = (step) => step && {
+      ...step,
+      writes: step.writes.filter((w) => !own(w)),
+      state: Object.fromEntries(Object.entries(step.state).filter(([k]) => !/^match_announced:|^match_config:/.test(k))),
+    };
     const x = a.steps[i], y = unpoint(b.steps[i]);
     const expected = EXPECTED[name];
     if (expected) {

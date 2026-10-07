@@ -7,8 +7,8 @@
 //   node dotnet/tools/matches/matchmaker_diff.mjs diff <ts.json> <cs.json>
 //
 // Environment: REF_REDIS_URL (the scratch Redis, wiped before every scenario), REF_PORT_LOW / REF_PORT_HIGH (the fixed
-// rollback ports, [low, high)). Exactly one worker must run against REF_REDIS_URL (the TS one: npm run worker; or the
-// C# matchmaker, OpenVersus.Server.Matchmaking), and nothing else that reacts to the published channels (stop the TS
+// rollback ports, [low, high)). Exactly one worker must run against REF_REDIS_URL (the TS one, built as prod runs it: node
+// build/src/workerStart.js; or the C# matchmaker, OpenVersus.Server.Matchmaking), and nothing else that reacts to the published channels (stop the TS
 // websocket). The worker's lock (matchmaking:lock:*) is left out: it is taken every tick, matched or not.
 //
 // What is random is checked, then replaced: every party on one team, teams of half the players each, player indexes
@@ -23,7 +23,8 @@ const { createClient } = require(process.cwd() + "/node_modules/redis");
 const oid = (n) => "0000000000000000000f" + String(n).padStart(4, "0");
 const P = (n) => oid(n);
 const IP = (n) => `198.51.100.${n}`;
-const LOW = Number(need("REF_PORT_LOW")), HIGH = Number(need("REF_PORT_HIGH"));
+// The fixed rollback ports [low, high): required to run, saved with the run; diff takes them from the C# run's file.
+let LOW = Number(process.env.REF_PORT_LOW), HIGH = Number(process.env.REF_PORT_HIGH);
 const enabledMaps = (mode) => JSON.parse(fs.readFileSync(`src/data/maps${mode}.json`, "utf8")).map((o) => Object.values(o)[0]).filter((m) => m.enabled).map((m) => m.id);
 const MAPS = { "1v1": [...enabledMaps("1v1"), "PVE_03"], "2v2": enabledMaps("2v2") };
 
@@ -73,6 +74,7 @@ const SCENARIOS = {
 };
 
 async function run(outFile, filter) {
+  [LOW, HIGH] = [Number(need("REF_PORT_LOW")), Number(need("REF_PORT_HIGH"))];
   const redis = createClient({ url: need("REF_REDIS_URL") });
   await redis.connect();
   if ((await redis.dbSize()) > 0 && !(await redis.exists("refdiff:scratch"))) throw new Error("refusing to flush: not a scratch store");
@@ -111,7 +113,7 @@ async function run(outFile, filter) {
     process.stdout.write(`${name}: ${scenarios.at(-1).published.length} published\n`);
   }
   monitor.destroy();
-  fs.writeFileSync(outFile, JSON.stringify({ scenarios }, null, 1));
+  fs.writeFileSync(outFile, JSON.stringify({ ports: [LOW, HIGH], scenarios }, null, 1));
   console.log(`${scenarios.length} scenarios -> ${outFile}`);
   await redis.quit();
 }
@@ -150,7 +152,7 @@ async function capture(redis, lines, seeded) {
   }
   const state = {};
   for await (const key of redis.scanIterator({ COUNT: 1000 })) {
-    if (key === "refdiff:scratch" || key.startsWith("matchmaking:lock:") || key.startsWith("ovs:instance")) continue;
+    if (key === "refdiff:scratch" || key.startsWith("matchmaking:lock:") || key.startsWith("ovs:instance") || key === "match:launched") continue;
     const type = await redis.type(key);
     const ttl = await redis.ttl(key);
     let value;
@@ -160,6 +162,12 @@ async function capture(redis, lines, seeded) {
     else if (type === "zset") value = (await redis.zRange(key, 0, -1)).length + " members";
     else value = type;
     state[key] = { type, ttl: ttl > 0 ? `~${Math.round(ttl / 60)}m` : ttl, value };
+  }
+  // C# appends a match to the match:launched stream (its match flow then sends each game its config and
+  // matchmaking-complete) where TS published it on match:notifications: each entry is recorded as that publish, so the two
+  // matches are checked and compared alike (the stream itself is left out of the state).
+  for (const e of await redis.xRange("match:launched", "-", "+").catch(() => [])) {
+    published.push(asSent("match:notifications", JSON.parse(e.message.notification)));
   }
   const out = canon({ writes, published, state: Object.fromEntries(Object.entries(state).sort()) }, byParty);
   return rename(out, ids);
@@ -238,8 +246,10 @@ const setTtl = (record, ex, minutes) => {
   for (const [key, v] of Object.entries(record.state)) if (isSetKey(key) && v.ttl === `~${minutes}m`) v.ttl = "<set ttl>";
 };
 const portOnly = {
-  why: "the rollback port is one of the fixed servers'; the TS worker counted up rollback:current_port. The set keys live 20 min (TS: 10)",
+  why: "the rollback port is one of the fixed servers'; the TS worker counted up rollback:current_port. The set keys live 20 min (TS: 10). The TS worker sent each player matchmaking-complete; the C# one sends nothing (its match flow does, once the match's config is built)",
   holds: (ts, cs) => {
+    const complete = (p) => p.channel === "ws:send" && JSON.stringify(p.message).includes("matchmaking-complete");
+    if (!ts.published.some(complete) || cs.published.some((p) => p.channel === "ws:send")) return false;
     const tsPorts = [], csPorts = [];
     const fix = (record, ports) => JSON.parse(JSON.stringify(record, (k, v) => {
       if (k === "rollbackPort") { ports.push(v); return "<port>"; }
@@ -247,13 +257,23 @@ const portOnly = {
     }));
     const t = fix(ts, tsPorts), c = fix(cs, csPorts);
     t.writes = t.writes.filter((w) => w !== "incr rollback:current_port");
+    t.published = t.published.filter((p) => !complete(p));
     delete t.state["rollback:current_port"];
     setTtl(t, 600, 10);
     setTtl(c, 1200, 20);
+    // Compared as sets: C# announces a match ({match}) only after writing its set (decided 2026-10-05), TS before. The
+    // fresh ids are numbered again without TS's matchmaking-complete messages, which carried some of them.
+    for (const r of [t, c]) r.writes.sort();
     return tsPorts.length > 0 && tsPorts.every((v) => Number.isInteger(v) && (v < LOW || v >= HIGH)) && csPorts.every((v) => v === "<port>")
-      && JSON.stringify(t) === JSON.stringify(c);
+      && JSON.stringify(renumber(t)) === JSON.stringify(renumber(c));
   },
 };
+
+// The "<new id N>" names numbered again in order of first appearance.
+function renumber(record) {
+  const ids = new Map();
+  return JSON.parse(JSON.stringify(record).replace(/<new id \d+>/g, (id) => (ids.has(id) || ids.set(id, `<new id ${ids.size + 1}>`), ids.get(id))));
+}
 const EXPECTED = new Proxy({}, { get: (_, name) => (typeof name === "string" && !NO_MATCH.has(name) ? portOnly : undefined) });
 // The scenarios where no match is made (no port, so no difference).
 const NO_MATCH = new Set(["1v1-skill-apart-young", "1v1-stricter-range-wins", "1v1-blocked-by-the-other", "1v1-lone-silent-ticket-stays",
@@ -273,6 +293,8 @@ function teamShapes(record) {
 function diffRuns(fileA, fileB) {
   const read = (f) => { const r = JSON.parse(fs.readFileSync(f, "utf8")); r.scenarios = r.scenarios.map(teamShapes); return r; };
   const a = read(fileA), b = read(fileB);
+  if (b.ports) [LOW, HIGH] = b.ports;
+  else [LOW, HIGH] = [Number(need("REF_PORT_LOW")), Number(need("REF_PORT_HIGH"))];
   let differing = 0;
   for (const name of new Set([...a.scenarios.map((s) => s.name), ...b.scenarios.map((s) => s.name)])) {
     const x = a.scenarios.find((s) => s.name === name), y = b.scenarios.find((s) => s.name === name);

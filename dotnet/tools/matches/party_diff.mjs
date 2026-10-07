@@ -9,10 +9,11 @@
 //   REF_REDIS_URL, REF_MONGO_URI, REF_JWT_SECRET  as for the other harnesses
 //   REF_WS_URL   the TS websocket running on the same scratch stores: it delivers for both servers (the TS server's
 //                channels, the port's ws:send), so the games' frames are compared, not the channels that carry them
-//   REF_TS_URL   the TS server on the same stores: custom lobbies are made through it in both runs (the port forwards
-//                custom lobby requests to it)
+//   REF_TS_URL   the TS server on the same stores: custom lobbies are made through it in both runs, so both start from
+//                the same lobby (the port's own custom lobby routes are custom_lobby_diff's)
 // Publishes are recorded but only those on channels the TS websocket keeps state from are compared as writes; the
-// rest are compared by the frames they turn into.
+// rest are compared by the frames they turn into (since slice 3e, those of the channels the port no longer publishes
+// on too: see retired in diffRuns).
 import fs from "node:fs";
 import { require, need, openScratch, openMonitor, writes, state } from "../refdiff/refdiff.mjs";
 import { connectPlayers } from "../refdiff/gateway.mjs";
@@ -103,7 +104,7 @@ async function run(baseUrl, outFile) {
     lobbyId: LOBBY(n), ownerId: P1, ownerUsername: "Player1", mode: "1v1", playerIds: [P1], createdAt: 1790000000123, ...fields,
   }), { EX: 3600 });
   const inLobby = (pid, n) => redis.set(`player_lobby:${pid}`, LOBBY(n), { EX: 3600 });
-  // A custom lobby made by the TS server (the port forwards its requests there), owned by `pid`; its id.
+  // A custom lobby made by the TS server (the same lobby for both runs), owned by `pid`; its id.
   const customLobby = async (pid) => {
     const made = await call(tsUrl, "create_custom_game_lobby", pid, {});
     const id = made.body?.body?.lobby?.MatchID;
@@ -287,6 +288,20 @@ const EXPECTED = {
     why: "the port answers a refused lock (bAreAllLoadoutsLocked false); the TS server never answers",
     holds: (ts, cs) => String(ts.status).startsWith("<no answer") && cs.status === 200 && cs.answer?.body?.bAreAllLoadoutsLocked === false,
   },
+  "lock-custom": {
+    why: "a loadout lock in a custom lobby: the port writes the lobby through its script (cjson: keys in another order, an empty WorldBuffs stored as {}, which every read turns back into [], fixCjsonEmptyTables; the TTL set by EXPIRE), the TS server SET the JSON whole; compared parsed, with WorldBuffs [] = {} in that key only",
+    holds: (ts, cs) => {
+      const key = Object.keys(ts.state).find((k) => k.startsWith("custom_lobby_ssc:"));
+      if (!key || !cs.state[key] || ts.state[key].ttl !== cs.state[key].ttl) return false;
+      const t = JSON.parse(ts.state[key].value), c = JSON.parse(cs.state[key].value);
+      if (!Array.isArray(t.WorldBuffs) || t.WorldBuffs.length !== 0 || JSON.stringify(c.WorldBuffs) !== "{}") return false;
+      t.WorldBuffs = c.WorldBuffs = [];
+      const sorted = (v) => JSON.stringify(v, (_, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort()) : x));
+      const rest = (st) => JSON.stringify(Object.fromEntries(Object.entries(st).filter(([k]) => k !== key)));
+      return sorted(t) === sorted(c) && rest(ts.state) === rest(cs.state)
+        && JSON.stringify(ts.answer) === JSON.stringify(cs.answer) && JSON.stringify(ts.frames) === JSON.stringify(cs.frames);
+    },
+  },
   "lock-no-player-record": {
     why: "the port answers a refused lock (bAreAllLoadoutsLocked false); the TS server never answers",
     holds: (ts, cs) => String(ts.status).startsWith("<no answer") && cs.status === 200 && cs.answer?.body?.bAreAllLoadoutsLocked === false,
@@ -299,9 +314,21 @@ const sessionWrite = (w) => /^hset connections:[^: ]+ /.test(w);
 // The fun fact flag is taken with GETDEL by the port, GET then DEL by the TS server: the state after shows it went.
 const flagWrite = (w) => /^del fun_fact_pending:/.test(w);
 
+// Since slice 3e the port publishes on none of these: a queued party's ticket and cancel are MatchmakingQueue's, a match
+// goes on match:launched, its perks and end are the match flow's. What TS's publishes did is compared through the frames
+// the games were sent, as for every other channel.
+const retired = (w) => /^publish (matchmaking:cancel|party:queued|match:notifications|perks:notifications|match:end) /.test(w);
+// The C# services' own bookkeeping: the instance registry (written on a timer) and their streams (their consumer groups
+// make them again after every wipe).
+const registry = (w) => /^(set|zadd|zrem|del) ovs:instance/.test(w);
+const bookkeeping = (k) => /^ovs:instance|^(match:launched|match:results|realtime:connections)$/.test(k);
+
 function diffRuns(fileA, fileB) {
   const a = JSON.parse(fs.readFileSync(fileA, "utf8")), b = JSON.parse(fs.readFileSync(fileB, "utf8"));
-  for (const step of [...a.steps, ...b.steps]) step.writes = step.writes?.filter((w) => !sessionWrite(w) && !flagWrite(w));
+  for (const step of [...a.steps, ...b.steps]) {
+    step.writes = step.writes?.filter((w) => !sessionWrite(w) && !flagWrite(w) && !retired(w) && !registry(w));
+    if (step.state) step.state = Object.fromEntries(Object.entries(step.state).filter(([k]) => !bookkeeping(k)));
+  }
   let differing = 0;
   for (let i = 0; i < Math.max(a.steps.length, b.steps.length); i++) {
     const x = a.steps[i], y = b.steps[i];

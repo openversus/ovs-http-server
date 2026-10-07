@@ -73,7 +73,7 @@ public sealed class CustomLobbySettings
     [Range(0, 10000)]
     public int GameModeDelayMs { get; set; }
 
-    [Description("The player index a started match gives its spectators: Numbered, 8888, 8889, ... in the lobby's order (as the TS server's start); All8888, 8888 for every one, the index a game sends as a spectator whatever it was given. All8888 needs rollback servers and P2P nodes that tell spectators apart by the order they connect; older ones take every spectator for the first.")]
+    [Description("The player index a started match gives its spectators: Numbered, 8888, 8889, ... in the lobby's order (as the TS server's start); All8888, 8888 for every one, the index a game sends as a spectator whatever it was given. All8888 needs P2P nodes that count spectators by order (and a rendezvous that numbers them): an older host node expects one spectator, and every other one falls back to the relay alone, a split match.")]
     public SpectatorIndexes SpectatorIndexes { get; set; } = SpectatorIndexes.Numbered;
 }
 

@@ -187,6 +187,7 @@ internal sealed class EdgeSession(WebSocket game, string ip, EdgeNodes nodes, Ed
                 if (node is not null)
                 {
                     excluded.Add(node.Instance);
+                    nodes.Failed(node.Instance);
                 }
 
                 if (Environment.TickCount64 - _detachedAt >= settings.GiveUpMs)
@@ -196,7 +197,11 @@ internal sealed class EdgeSession(WebSocket game, string ip, EdgeNodes nodes, Ed
                     return;
                 }
 
-                await Task.WhenAny(Task.Delay(RetryDelay), _ended.Task);
+                // A node just lost: another is tried at once; after a try that failed, a moment first.
+                if (outcome != Outcome.Detached)
+                {
+                    await Task.WhenAny(Task.Delay(RetryDelay), _ended.Task);
+                }
             }
         }
         finally

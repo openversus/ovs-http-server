@@ -109,6 +109,13 @@ it, so a link moved away and back to the same node is not let go of by its old s
   again first never gets one (their new connection replaces the dead one); if a custom lobby is left over from that
   session, their first `create_party_lobby` takes them out of it rather than into it (/access records it in the session).
 
+Failover: `tools/realtime/failover_proof.mjs` runs fake games through a real edge to real nodes (each its own process)
+with numbered messages sent all along, and loses a node: SIGKILL (with a close sent while its games have no node, and
+the reaper's time after), SIGTERM, SIGSTOP (a host that sends nothing; then woken), two SIGKILLs in a row. Every game
+must get every message once, in order, with no close and no second id frame. Measured once on the bench machine: a
+killed or stopped node's games are moved within about 100 ms; a frozen one's in about 6 s (the link's keep-alive: 2 s,
+then 3 s without an answer). `gateway_diff.mjs` also runs through an edge (REF_CS_WS at the edge, REF_WAIT_FOR_NODE=1).
+
 Parity with the TS websocket: `tools/realtime/gateway_diff.mjs` (raw frames, closes, Redis writes) and
 `tools/realtime/disconnect_diff.mjs` (what a dropped game's close does to the lobbies; its reap mode kills the node
 holding the game instead, and compares that with the close).
@@ -158,8 +165,9 @@ It keeps nothing outside memory: an edge that dies takes its games' sockets with
   (`Edge:DrainTimeoutMs`, 0: no limit), showing as not ready in the registry (the `draining` check); its control API
   stops listening with it. Without `Gateway:EdgeSecret` it is not ready.
 - When the link ends without the node closing the game (the node stopped, crashed, or stopped answering the link's
-  keep-alive), the edge moves the game: to another ready node (the one lost is tried again only when there is no
-  other), as a resume after the last log entry the game was sent, once the game has its id frame; before that, as a
+  keep-alive), the edge moves the game at once: to another ready node (a node that failed any game on this edge is
+  avoided by every game for the registry's TTL, as the registry may still list it; it is tried again only when there is
+  no other), as a resume after the last log entry the game was sent, once the game has its id frame; before that, as a
   new connection (the new node sends the id frame). Meanwhile the edge pings the game itself, at once and every
   `Edge:DetachedPingMs`, and drops its answers. A node that refuses the resume (a newer login, or the player let go of)
   tells the edge to close the game. A game with no node for `Edge:GiveUpMs` (20 s; below the replay window and

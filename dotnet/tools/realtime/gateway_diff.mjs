@@ -211,12 +211,28 @@ async function presence(redis) {
   return out;
 }
 
+// Through an edge (REF_CS_WS at an edge, REF_WAIT_FOR_NODE=1): the wipe before each step takes the gateway node out of
+// the instance registry until its next heartbeat (5 s), and an edge closes a new game when no node is listed; so each step
+// waits for the node to be listed again.
+async function nodeListed(redis) {
+  for (let i = 0; i < 150; i++) {
+    for (const member of await redis.zRange("ovs:instances", 0, -1)) {
+      const [service, instance] = member.split(/\/(.*)/s);
+      const report = service === "ws" ? JSON.parse((await redis.get(`ovs:instance:${instance}`)) ?? "null") : null;
+      if (report?.state === "Ready" && report.address) return;
+    }
+    await sleep(100);
+  }
+  throw new Error("no gateway node in the instance registry after 15 s");
+}
+
 async function run(side, outFile, only) {
   const url = need(side === "ts" ? "REF_TS_WS" : "REF_CS_WS");
   const steps = {};
   for (const [name, step] of Object.entries(STEPS)) {
     if (only && name !== only) continue;
     const { redis, close } = await openScratch("gateway_diff");
+    if (process.env.REF_WAIT_FOR_NODE) await nodeListed(redis);
     const lines = [];
     const monitor = await openMonitor(need("REF_REDIS_URL"), (line) => lines.push(line));
     const self = (await redis.sendCommand(["CLIENT", "INFO"])).match(/\baddr=(\S+)/)[1];

@@ -26,9 +26,9 @@ public sealed class MatchDisconnectsTests : IAsyncLifetime
     {
         public List<string> Closed { get; } = [];
 
-        public Task GameClosedAsync(string playerId)
+        public Task GameClosedAsync(string playerId, bool nodeGone)
         {
-            Closed.Add(playerId);
+            Closed.Add(nodeGone ? $"{playerId} (node gone)" : playerId);
             return Task.CompletedTask;
         }
 
@@ -76,8 +76,8 @@ public sealed class MatchDisconnectsTests : IAsyncLifetime
         _events, TimeProvider.System, NullLogger<MatchDisconnects>.Instance)
     { StreamKey = Stream };
 
-    private Task AppendAsync(string type) => Db.StreamAddAsync(Stream,
-        [new("type", type), new("player", Player), new("connection", Connection), new("at", 1), new("node", "test"), new("ip", ""), new("token", GatewayPresence.TokenHash(Token))]);
+    private Task AppendAsync(string type, params NameValueEntry[] more) => Db.StreamAddAsync(Stream,
+        [new("type", type), new("player", Player), new("connection", Connection), new("at", 1), new("node", "test"), new("ip", ""), new("token", GatewayPresence.TokenHash(Token)), .. more]);
 
     [Fact]
     // Only a disconnect reaches the match, and only from a player who has not come back: one who connected or logged in
@@ -111,5 +111,23 @@ public sealed class MatchDisconnectsTests : IAsyncLifetime
         await AppendAsync("disconnected");
         Assert.Equal(1, await reader.ReadAsync(Db));
         Assert.Equal([Player], _events.Closed);
+    }
+
+    [Fact]
+    // A close the gateway made for a node that died reaches the match as the server's failure.
+    public async Task AReapedDisconnectReachesTheMatchAsTheNodeGone()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        var reader = Reader();
+        await Db.HashSetAsync($"connections:{Player}", "jwt", Token);
+        await reader.EnsureGroupAsync(Db);
+
+        await AppendAsync("disconnected", new NameValueEntry("reaped", "1"));
+        Assert.Equal(1, await reader.ReadAsync(Db));
+        Assert.Equal([$"{Player} (node gone)"], _events.Closed);
     }
 }

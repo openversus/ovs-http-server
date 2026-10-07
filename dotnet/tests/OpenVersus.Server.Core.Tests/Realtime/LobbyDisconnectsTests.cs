@@ -75,6 +75,7 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
         public Task<JsonObject?> SharedAsync(string route, PartyRequest request, string lobbyId, CancellationToken ct) => throw new NotSupportedException();
         public Task<JsonObject?> ByCodeAsync(string code, CancellationToken ct) => throw new NotSupportedException();
         public Task<bool> RematchAsync(string lobbyId, CancellationToken ct) => throw new NotSupportedException();
+        public Task<bool> LeaveLobbyFromBeforeLoginAsync(string playerId) => throw new NotSupportedException();
     }
 
     private readonly Lobbies _lobbies = new();
@@ -449,6 +450,25 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
             Assert.True(await Db.KeyExistsAsync(key), key);
         }
 
+        Assert.True(await Db.KeyExistsAsync($"connections:{Ip}"));
+    }
+
+    [Fact]
+    // A disconnect reaped for a player whose connection entry had run out names no session token: the lobbies are
+    // cleaned up, but the session may be a login's since, so it is kept.
+    public async Task ADisconnectWithNoSessionTokenKeepsTheSession()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await LoggedInAsync();
+
+        Assert.Equal(LobbyDisconnects.Outcome.Done, await Reader().DisconnectedAsync(Db, Closed() with { TokenHash = "" }));
+
+        Assert.Equal(s_cleaned, _lobbies.Calls);
+        Assert.Equal(Token, (string?)await Db.HashGetAsync($"connections:{Player}", "jwt"));
         Assert.True(await Db.KeyExistsAsync($"connections:{Ip}"));
     }
 }

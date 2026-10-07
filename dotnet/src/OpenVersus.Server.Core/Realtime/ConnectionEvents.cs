@@ -12,12 +12,13 @@ namespace OpenVersus.Server.Core.Realtime;
 // ClaimAfter, and dropped (logged) after MaxDeliveries.
 
 /// <summary>One connection event: its type (connected, replaced, disconnected), the player, the connection, the hash of
-/// its session token, when it happened (ms) and the client's address.</summary>
-public sealed record ConnectionEvent(string Type, string PlayerId, string ConnectionId, string TokenHash, long At, string Ip)
+/// its session token, when it happened (ms), the client's address, and whether the connection was closed for a gateway
+/// node that is gone (GatewayReaper) rather than by its own node.</summary>
+public sealed record ConnectionEvent(string Type, string PlayerId, string ConnectionId, string TokenHash, long At, string Ip, bool Reaped = false)
 {
     internal static ConnectionEvent? Of(StreamEntry entry) => (string?)entry["player"] is { Length: > 0 } player
         ? new ConnectionEvent((string?)entry["type"] ?? "", player, (string?)entry["connection"] ?? "", (string?)entry["token"] ?? "",
-            (long?)entry["at"] ?? 0, (string?)entry["ip"] ?? "")
+            (long?)entry["at"] ?? 0, (string?)entry["ip"] ?? "", (string?)entry["reaped"] == "1")
         : null;
 }
 

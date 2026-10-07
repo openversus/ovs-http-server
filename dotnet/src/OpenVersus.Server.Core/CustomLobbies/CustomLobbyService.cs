@@ -102,6 +102,14 @@ public interface ICustomLobbyService
     /// </summary>
     Task PlayerDisconnectedAsync(string playerId);
 
+    /// <summary>
+    /// The first create_party_lobby since a login: a custom lobby the player was still in when they logged in (their
+    /// session's <see cref="CustomLobbyService.LoginField"/>, written by /access) is from an earlier session whose
+    /// disconnect was never handled; they leave it as that disconnect would have, instead of the route following them
+    /// into it. Once per login; true when they left one.
+    /// </summary>
+    Task<bool> LeaveLobbyFromBeforeLoginAsync(string playerId);
+
     /// <summary>The routes <see cref="AnswerAsync"/> answers.</summary>
     static readonly IReadOnlyList<string> Routes =
     [
@@ -117,6 +125,18 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
 {
     private static readonly TimeSpan s_lobbyTtl = TimeSpan.FromDays(2);
     private static readonly TimeSpan s_matchTtl = TimeSpan.FromMinutes(20);
+
+    /// <summary>The session's field (connections:{player}) holding the custom lobby its player was in at its /access, "" for none.</summary>
+    internal const string LoginField = "login_custom_lobby";
+
+    // A hash field, read and removed in one step.
+    private const string TakeFieldScript = """
+        local value = redis.call('HGET', KEYS[1], ARGV[1])
+        if value then
+          redis.call('HDEL', KEYS[1], ARGV[1])
+        end
+        return value
+        """;
     private const string CodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private const string Cluster = LobbyDocuments.Cluster;
 
@@ -922,6 +942,31 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
         await LeaveLobbyAsync(redis, lobbyId!, lobby, playerId);
     }
 
+    // A login starts at the game's title screen, so a pointer that was already there at /access belongs to an earlier
+    // session: its gateway node died, or the lobbies' reader was down, and the game, logging in again before its
+    // disconnect was handled, would follow the pointer at create_party_lobby and wait at 99% "Creating Lobby" until it
+    // gave up (its socket closed some 40 s later). The pointer of a lobby joined since is another value, and the field is
+    // taken at the first create_party_lobby, so the ones after a custom match still follow it.
+    public async Task<bool> LeaveLobbyFromBeforeLoginAsync(string playerId)
+    {
+        var redis = Redis();
+        string? atLogin = (string?)await redis.ScriptEvaluateAsync(TakeFieldScript, [$"connections:{playerId}"], [LoginField]);
+        if (atLogin is not { Length: > 0 } || (string?)await redis.StringGetAsync(PlayerKey(playerId)) != atLogin)
+        {
+            return false;
+        }
+
+        await redis.KeyDeleteAsync(PlayerKey(playerId));
+        if (await GetLobbyAsync(redis, atLogin) is not { } lobby)
+        {
+            return false;
+        }
+
+        log.LogWarning("Player {Player} logged in while still in custom lobby {Lobby} from an earlier session: removed from it", playerId, atLogin);
+        await LeaveLobbyAsync(redis, atLogin, lobby, playerId);
+        return true;
+    }
+
     // The first stored lobby whose JSON holds the id, as the TS close looked (raw.includes); null when none does.
     private async Task<string?> FindLobbyHoldingAsync(string playerId)
     {
@@ -1069,7 +1114,7 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
 
     private static string LobbyKey(string lobbyId) => $"custom_lobby_ssc:{lobbyId}";
 
-    private static string PlayerKey(string playerId) => $"ssc_custom_lobby_player:{playerId}";
+    internal static string PlayerKey(string playerId) => $"ssc_custom_lobby_player:{playerId}";
 
     /// <summary>
     /// A lobby with only <paramref name="me"/> in it (createBaseLobby): their settings, a new id; keys in the TS order.

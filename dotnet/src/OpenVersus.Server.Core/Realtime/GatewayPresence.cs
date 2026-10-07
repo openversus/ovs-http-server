@@ -12,12 +12,14 @@ namespace OpenVersus.Server.Core.Realtime;
 // touching it, so a reconnect is never undone by the old socket's close. Each connection's id is minted where the
 // game's socket is held, and carried through every event, so a consumer can tell "this connection" from "the player".
 //
-// Redis, written  realtime:conn:{player} (hash: id, node, ip, at ms; PEXPIRE 3 min, renewed by every answer to the ping)
+// Redis, written  realtime:conn:{player} (hash: id, node, ip, at ms, token (its SHA-256); PEXPIRE 3 min, renewed by every
+//                 answer to the ping)
 //                 online_players (SADD at the handshake; SREM when the current connection closes)
 //                 player_heartbeats (ZADD ms at the handshake and every answer; ZREM when the current connection closes)
 //                 active_ip_accounts:{ip} (the TS redisTouchPlayerSession at the handshake and every answer; ZREM at the close)
 //                 realtime:connections (XADD, MAXLEN ~10,000; fields type, player, connection, at: connected and
-//                 disconnected also node, ip, token (its SHA-256); replaced also replacedBy)
+//                 disconnected also node, ip, token (its SHA-256); replaced also replacedBy; a reaped disconnected
+//                 also reaped "1")
 // Redis, read     rejoin_pending:{player} (MatchEnd: while it lives, a close keeps the player online and their IP's
 //                 session, as the TS websocket's pendingRejoin did, for the party's rejoin, which reads online_players;
 //                 at its expiry LobbyDisconnects takes a player who did not come back offline. The heartbeat goes all
@@ -32,6 +34,12 @@ namespace OpenVersus.Server.Core.Realtime;
 // PlayerDisconnect calls a player still in online_players a rollback crash (MatchStatusEvents). The heartbeat goes at
 // once as it did in TS: the matchmaker drops a ticket whose player has none. Nothing is cleared at startup (another node
 // holds its own players).
+//
+// A node that dies closes nothing: its players' presence stays, and no disconnected event is appended for them. The other
+// nodes take them offline as the close would have (GatewayReaper, ReapAsync), with a disconnected event marked reaped, once
+// the node is gone from the instance registry and the player has not answered a ping for a while; the readers take a
+// reaped close in a match for a crash (the server failed the player), not a leave. TS had no such thing: a websocket that
+// crashed left its players' heartbeats, sessions, tickets and lobbies, and its restart cleared only online_players.
 
 /// <summary>The gateway's writes for one connection's handshake, answers to the ping, and close.</summary>
 public static class GatewayPresence
@@ -52,7 +60,7 @@ public static class GatewayPresence
     // The connection becomes the player's current one; returns the id of the one it replaced, or nil.
     private const string ClaimScript = """
         local old = redis.call('HGET', KEYS[1], 'id')
-        redis.call('HSET', KEYS[1], 'id', ARGV[1], 'node', ARGV[2], 'ip', ARGV[3], 'at', ARGV[4])
+        redis.call('HSET', KEYS[1], 'id', ARGV[1], 'node', ARGV[2], 'ip', ARGV[3], 'at', ARGV[4], 'token', ARGV[6])
         redis.call('PEXPIRE', KEYS[1], ARGV[5])
         return old
         """;
@@ -74,7 +82,7 @@ public static class GatewayPresence
     {
         long ms = now.ToUnixTimeMilliseconds();
         var replaced = (string?)await redis.ScriptEvaluateAsync(ClaimScript, [ConnectionKey(connection.PlayerId)],
-            [connection.Id, connection.Node, connection.Ip, ms, (long)ConnectionTtl.TotalMilliseconds]);
+            [connection.Id, connection.Node, connection.Ip, ms, (long)ConnectionTtl.TotalMilliseconds, connection.TokenHash]);
         if (replaced == connection.Id)
         {
             replaced = null;
@@ -132,6 +140,44 @@ public static class GatewayPresence
         await AppendAsync(redis, "disconnected", connection, now.ToUnixTimeMilliseconds());
         return true;
     }
+
+    // A connection of a node that is gone, as its close would have let the player go (ClosedAsync), only while the player's
+    // current connection is still that one on that node (''/'' for none at all: its entry ran out) and their last answer
+    // is older than ARGV[4]: one of several nodes doing this at once wins, and a connection that came back (another
+    // node, the same id: the edge's re-attach) is left alone. 1 when it was reaped.
+    private const string ReapScript = """
+        local id = redis.call('HGET', KEYS[1], 'id') or ''
+        if id ~= ARGV[2] or (id ~= '' and (redis.call('HGET', KEYS[1], 'node') or '') ~= ARGV[3]) then
+          return 0
+        end
+        local seen = redis.call('ZSCORE', KEYS[2], ARGV[1])
+        if not seen or tonumber(seen) > tonumber(ARGV[4]) then
+          return 0
+        end
+        redis.call('DEL', KEYS[1])
+        redis.call('ZREM', KEYS[2], ARGV[1])
+        if redis.call('EXISTS', KEYS[4]) == 0 then
+          redis.call('SREM', KEYS[3], ARGV[1])
+          if ARGV[7] ~= '' then
+            redis.call('ZREM', KEYS[5], ARGV[1])
+          end
+        end
+        redis.call('XADD', KEYS[6], 'MAXLEN', '~', 10000, '*', 'type', 'disconnected', 'player', ARGV[1], 'connection', ARGV[2],
+          'at', ARGV[5], 'node', ARGV[3], 'ip', ARGV[7], 'token', ARGV[6], 'reaped', '1')
+        return 1
+        """;
+
+    /// <summary>
+    /// The player's connection <paramref name="connectionId"/> on <paramref name="node"/>, a node that is gone, closes as
+    /// <see cref="ClosedAsync"/> would have closed it (a disconnected event, marked reaped), if it is still their current
+    /// one and they have not answered a ping since <paramref name="answeredBeforeMs"/>. An empty id: the player has no
+    /// connection entry left at all. True when this call reaped it.
+    /// </summary>
+    public static async Task<bool> ReapAsync(IDatabase redis, string playerId, string connectionId, string node, string ip, string tokenHash,
+        long answeredBeforeMs, DateTimeOffset now, string stream = ConnectionsStream) =>
+        (long)await redis.ScriptEvaluateAsync(ReapScript,
+            [ConnectionKey(playerId), Heartbeats, OnlinePlayers, $"rejoin_pending:{playerId}", $"active_ip_accounts:{ip}", stream],
+            [playerId, connectionId, node, answeredBeforeMs, now.ToUnixTimeMilliseconds(), tokenHash, ip]) == 1;
 
     /// <summary>The token's SHA-256 (hex): an event names the session a connection was opened with without carrying it.</summary>
     public static string TokenHash(string token) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));

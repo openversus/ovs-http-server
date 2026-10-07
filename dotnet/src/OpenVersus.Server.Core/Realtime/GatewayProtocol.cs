@@ -60,4 +60,12 @@ public sealed class GatewaySettings
     [Description("A connection that has not sent its first frame (the game's session token) within this time (ms) is closed.")]
     [Range(1000, 600000)]
     public int HandshakeTimeoutMs { get; set; } = 30000;
+
+    [Description("The players of a gateway node that is gone (stopped, or no heartbeat in the instance registry) are taken offline by the other nodes, with a disconnected event each, once their last answer to the ping is older than this (ms). A player whose node is up is that node's to close (SilenceCutoffMs).")]
+    [Range(1000, 600000)]
+    public int ReapAfterMs { get; set; } = 30000;
+
+    [Description("How often each node looks for the players of gateway nodes that are gone (ms).")]
+    [Range(100, 60000)]
+    public int ReapIntervalMs { get; set; } = 5000;
 }

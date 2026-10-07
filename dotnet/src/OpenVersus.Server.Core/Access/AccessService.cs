@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Bans;
+using OpenVersus.Server.Core.CustomLobbies;
 using OpenVersus.Server.Core.Seasons;
 using StackExchange.Redis;
 
@@ -22,11 +23,14 @@ namespace OpenVersus.Server.Core.Access;
 //   identity:{ip}                hash from /api/identify: steamId, epicId, hardwareId, hardwareIdVersion,
 //                                hardwareIdQuality, installId, clientVersion, identityRegistered ("1"), nodePort
 //   active_ip_accounts:{ip}      zset of player ids by last-seen ms (sessions within 90 s count)
+//   ssc_custom_lobby_player:{playerId}  the custom lobby the player is still in from an earlier session, if any
 // Redis, written
 //   connections:{playerId}       hash: the account token's fields (GameplayPreferences as text), hardwareIdVersion,
 //                                hardwareIdQuality, installId, clientVersion, identityRegistered, nodePort (the P2P
 //                                node's port, from the identify token's claim or identity:{ip}; "0" for none; never in
-//                                the account token), jwt; party_key
+//                                the account token), jwt; party_key; login_custom_lobby (the custom lobby the player was
+//                                still in at this login, "" for none: their first create_party_lobby takes them out of it,
+//                                CustomLobbyService; the IP's copy does not get it)
 //   connections:{ip}             the same hash, for old clients; 120 s TTL
 //   active_ip_accounts:{ip}      entries older than 90 s dropped, this player added (score: now ms); 180 s TTL
 //   player:{playerId}:blocked    JSON array of blocked player ids
@@ -560,12 +564,14 @@ internal sealed class AccessService(
         }
 
         var blocked = new JsonArray([.. (player.Get("blockedPlayers") as BsonArray ?? []).Select(b => (JsonNode?)(b.IsString ? JsonValue.Create(b.AsString) : JsonNode.Parse(b.ToJson())))]);
+        // A login starts at the title screen: a custom lobby the player is still in is an earlier session's.
+        string leftOver = (string?)await redis.StringGetAsync(CustomLobbyService.PlayerKey(id)) ?? "";
         long ms = now.ToUnixTimeMilliseconds();
         var batch = redis.CreateBatch();
         var writes = new List<Task>
         {
             batch.StringSetAsync($"player:{id}:blocked", blocked.ToJsonString(s_json)),
-            batch.HashSetAsync($"connections:{id}", [.. connection]),
+            batch.HashSetAsync($"connections:{id}", [.. connection, new HashEntry(CustomLobbyService.LoginField, leftOver)]),
             batch.HashSetAsync($"connections:{ip}", [.. connection]),
             batch.KeyExpireAsync($"connections:{ip}", TimeSpan.FromSeconds(120)),
             batch.StringSetAsync($"fun_fact_pending:{id}", "1", TimeSpan.FromSeconds(60)),

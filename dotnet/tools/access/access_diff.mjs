@@ -11,6 +11,9 @@
 //   REF_BANNED_IP   an IP both servers have in their IP ban file (default 198.51.100.66)
 //   REF_JWT_SECRET  the JWT secret both servers use (enables the identify-token scenario)
 // Never point these at data you want to keep.
+//
+// One difference is the design, asserted on the C# run and then taken out of it (LOGIN_LOBBY): C# writes into the session
+// the custom lobby a login finds its player still in (login_custom_lobby, "" for none), which TS has no field for.
 import fs from "node:fs";
 import { require, need, openScratch, readProfile, toPlain, dump, writeRun, diff } from "../refdiff/refdiff.mjs";
 
@@ -18,9 +21,12 @@ const { ObjectId } = require(process.cwd() + "/node_modules/mongodb");
 // The package entry runs a CLI on import (it opens argv[2]); the decoder module alone does not.
 const { HydraDecoder } = await import(process.cwd() + "/node_modules/mvs-dump/dist/hydra/decoder.js");
 
+// The custom lobby the first player is still in at their second login (a session whose disconnect was never handled).
+const LEFT_OVER_LOBBY = "0000000000000000000a0201";
+
 const [, , command, ...args] = process.argv;
 if (command === "run") await run(args[0], args[1]);
-else if (command === "diff") diff(args[0], args[1]);
+else if (command === "diff") diffAccess(args[0], args[1]);
 else {
   console.error("usage: access_diff.mjs run <baseUrl> <out.json> | diff <a.json> <b.json>");
   process.exit(2);
@@ -49,8 +55,10 @@ async function run(baseUrl, outFile) {
   const first = steps[0].response;
   const idA = first.body?.account?.id;
 
-  // 2. The same player again, with match stats, a party key and a stale ranked set to clean up.
+  // 2. The same player again, with match stats, a party key, a stale ranked set to clean up, and a custom lobby they are
+  // still in from the first session.
   if (idA) {
+    await redis.set(`ssc_custom_lobby_player:${idA}`, LEFT_OVER_LOBBY, { EX: 172800 });
     await redis.set(`player_ranked_set:${idA}`, "set-1");
     await redis.set(`ranked_disconnect:${idA}`, "1");
     await db.collection("playertesters").updateOne({ _id: new ObjectId(idA) }, { $set: { party_key: "AbCd" } });
@@ -140,6 +148,35 @@ async function run(baseUrl, outFile) {
 
   writeRun(outFile, baseUrl, Date.now(), steps, await readProfile(db, "access_diff"));
   await close();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// diff
+
+// C# records in the session the custom lobby its login found the player still in (CustomLobbyService's
+// LeaveLobbyFromBeforeLoginAsync takes them out of it at their first create_party_lobby; the game hung following it):
+// the first player's from their second login on, "" for everyone else. Asserted on every C# session, then taken out.
+function diffAccess(tsFile, csFile) {
+  const cs = JSON.parse(fs.readFileSync(csFile, "utf8"));
+  const first = cs.steps[0]?.response?.body?.account?.id;
+  let wrong = 0, seen = 0;
+  cs.steps.forEach((step, i) => {
+    for (const [key, entry] of Object.entries(step.state?.redis ?? {})) {
+      if (!/^connections:[0-9a-f]{24}$/.test(key) || entry.type !== "hash") continue;
+      const wanted = key === `connections:${first}` && i > 0 ? LEFT_OVER_LOBBY : "";
+      seen++;
+      if (entry.value.login_custom_lobby !== wanted) {
+        wrong++;
+        console.log(`ASSERTION FAILED [${i}:${step.name}] ${key}.login_custom_lobby: ${JSON.stringify(entry.value.login_custom_lobby)}, wanted ${JSON.stringify(wanted)}`);
+      }
+      delete entry.value.login_custom_lobby;
+    }
+  });
+  console.log(`${wrong || !seen ? "ASSERTION FAILED" : "asserted"}: C#'s session records the custom lobby the login found (${seen} sessions)`);
+  const adjusted = `${csFile}.adjusted.json`;
+  fs.writeFileSync(adjusted, JSON.stringify(cs));
+  diff(tsFile, adjusted);
+  if (wrong || !seen) process.exitCode = 1;
 }
 
 async function call(baseUrl, method, ip, body, headers) {

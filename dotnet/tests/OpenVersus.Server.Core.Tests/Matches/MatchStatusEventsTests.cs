@@ -301,6 +301,59 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // The gateway node holding the game's websocket died (a reaped close): the server failed the player, so before the
+    // start it is a crash for everyone, never a dodge.
+    public async Task AGameLostWithItsGatewayNodeBeforeTheStartIsACrash()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        await SeedSetAsync();
+        await SentConfigAsync(P2);
+
+        await Events().GameClosedAsync(P2, nodeGone: true);
+
+        Assert.Equal("1", (string?)await Db.StringGetAsync($"match_server_crash:{Match}"));
+        Assert.False(await Db.KeyExistsAsync($"elo_processed_set:{Set}"));
+        Assert.False(await Db.KeyExistsAsync($"ranked_disconnect:{P2}"));
+        Assert.Equal(0, await RatingsAsync());
+        await AssertSetDroppedAsync();
+        Assert.Equal("Server connection failed — no ELO change", Assert.Single(await NotificationsAsync(P1))["message"]!.GetValue<string>());
+        Assert.Single(await NotificationsAsync(P2));
+    }
+
+    [SkippableFact]
+    // Mid-game too: no flag conceding the set for the player, the match is canceled for everyone, unrated.
+    public async Task AGameLostWithItsGatewayNodeMidGameIsACrash()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        await SeedSetAsync();
+        await SentConfigAsync(P2);
+        await Db.StringSetAsync($"match_started:{Match}", "1");
+
+        await Events().GameClosedAsync(P2, nodeGone: true);
+
+        Assert.Equal("1", (string?)await Db.StringGetAsync($"match_server_crash:{Match}"));
+        Assert.False(await Db.KeyExistsAsync($"ranked_disconnect:{P2}"));
+        Assert.Equal(0, await RatingsAsync());
+        await AssertSetDroppedAsync();
+    }
+
+    [SkippableFact]
+    // Between a set's games: no concede flag; the set is marked for its next check-in to drop it, unrated (RankedSets).
+    public async Task AGameLostWithItsGatewayNodeBetweenASetsGamesMarksTheSetCrashed()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedSetAsync();
+
+        await Events().GameClosedAsync(P2, nodeGone: true);
+
+        Assert.Equal("gateway_node_gone", (string?)await Db.StringGetAsync($"ranked_set_crashed:{Set}"));
+        Assert.False(await Db.KeyExistsAsync($"ranked_disconnect:{P2}"));
+        Assert.True(await Db.KeyExistsAsync($"ranked_set:{Set}"));
+    }
+
+    [SkippableFact]
     // TS took a spectator's team for the dodger's: a spectator closing their game before the start rated the set.
     public async Task ASpectatorsGameClosingChangesNothing()
     {

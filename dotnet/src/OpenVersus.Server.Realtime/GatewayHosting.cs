@@ -24,6 +24,7 @@ public static class GatewayHosting
         builder.Services.AddHostedService<GatewayPings>();
         builder.Services.AddHostedService<GatewayTicks>();
         builder.Services.AddHostedService<GatewaySubscriber>();
+        builder.AddGatewayReaper();
         return builder;
     }
 

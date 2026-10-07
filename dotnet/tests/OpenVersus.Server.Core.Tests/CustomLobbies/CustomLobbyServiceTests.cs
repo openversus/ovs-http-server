@@ -516,4 +516,53 @@ public sealed class CustomLobbyServiceTests : IAsyncLifetime
         await Service().PlayerDisconnectedAsync(Guest);
         Assert.Equal([(0, Leader)], Members(await StoredAsync()));
     }
+
+    [Fact]
+    // A login that finds the player still in a custom lobby (/access wrote it into the session) is an earlier session's
+    // that was never cleaned up (its gateway node died, say): the first create_party_lobby takes them out of it instead of
+    // following them into it. Once per login; a lobby joined since is another pointer, and is kept.
+    public async Task ACustomLobbyFromBeforeTheLoginIsLeftOnceAtTheFirstCreatePartyLobby()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await SeedAsync("Duos", (0, Leader, Player(Leader, "2026-10-01T10:00:00.000Z")), (1, Guest, Player(Guest, "2026-10-01T10:00:01.000Z")));
+        await Db.StringSetAsync($"ssc_custom_lobby_player:{Guest}", Lobby);
+        await Db.HashSetAsync($"connections:{Guest}", [new("jwt", "t"), new(CustomLobbyService.LoginField, Lobby)]);
+
+        Assert.True(await Service().LeaveLobbyFromBeforeLoginAsync(Guest));
+
+        Assert.Equal([(0, Leader)], Members(await StoredAsync()));
+        Assert.False(await Db.KeyExistsAsync($"ssc_custom_lobby_player:{Guest}"));
+        Assert.False(await Db.HashExistsAsync($"connections:{Guest}", CustomLobbyService.LoginField));
+
+        // Joined again since: the next create_party_lobby (after a custom match, say) follows the pointer.
+        await Db.StringSetAsync($"ssc_custom_lobby_player:{Guest}", Lobby);
+        Assert.False(await Service().LeaveLobbyFromBeforeLoginAsync(Guest));
+        Assert.Equal(Lobby, (string?)await Db.StringGetAsync($"ssc_custom_lobby_player:{Guest}"));
+    }
+
+    [Fact]
+    // A login that found no custom lobby (""), or a pointer that names another lobby than the one found at the login,
+    // leaves everything as it is.
+    public async Task NothingIsLeftWhenTheLoginFoundNoCustomLobbyOrAnotherOne()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await SeedAsync("Duos", (0, Leader, Player(Leader, "2026-10-01T10:00:00.000Z")), (1, Guest, Player(Guest, "2026-10-01T10:00:01.000Z")));
+        await Db.StringSetAsync($"ssc_custom_lobby_player:{Guest}", Lobby);
+        await Db.HashSetAsync($"connections:{Guest}", CustomLobbyService.LoginField, "");
+        Assert.False(await Service().LeaveLobbyFromBeforeLoginAsync(Guest));
+
+        await Db.HashSetAsync($"connections:{Guest}", CustomLobbyService.LoginField, "0000000000000000000e0999");
+        Assert.False(await Service().LeaveLobbyFromBeforeLoginAsync(Guest));
+
+        Assert.Equal(2, Counted(await StoredAsync()));
+        Assert.Equal(Lobby, (string?)await Db.StringGetAsync($"ssc_custom_lobby_player:{Guest}"));
+    }
 }

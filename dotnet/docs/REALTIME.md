@@ -62,7 +62,8 @@ below has moved). Each node:
 
 `GatewayPresence` (Core) keeps who is connected where:
 
-- `realtime:conn:{player}`: the player's current connection (id, node, ip, at), its TTL renewed by the ping's answer.
+- `realtime:conn:{player}`: the player's current connection (id, node, ip, at, the session token's SHA-256), its TTL
+  renewed by the ping's answer.
   A second login claims it, and the connection it replaced is closed wherever it is (`ws:disconnect` with `except`;
   the TS websocket left it open). A close that is not the current connection's changes nothing.
 - `online_players`, `player_heartbeats`, `active_ip_accounts:{ip}`: written at the handshake and each answer, and
@@ -79,9 +80,19 @@ below has moved). Each node:
   mid-game leave of a set game, a leave between a set's games (`MatchStatusEvents.GameClosedAsync`); for a P2P match it is
   the only such signal (a node sends no PlayerDisconnect). The access service's (`DailyToastPopups`, group `access`)
   shows a game that connects the daily toast bonus /access granted it (OnRewardsGranted, as the TS handshake did).
+- A node that dies closes nothing. The other nodes take its players offline as their close would have
+  (`GatewayReaper`, every `Gateway:ReapIntervalMs`): a player who has not answered a ping for `Gateway:ReapAfterMs`
+  (30 s) and whose connection is on a node that is gone (stopped, or missing from the instance registry for 10 s, so
+  about 30 s after a crash) gets a disconnected event marked reaped, which the readers handle as any close but for the
+  match: there it is the server's failure (a crash, unrated; a set between its games is dropped at its next check-in).
+  One script per player acts only while the connection is still the current one on that node, so several nodes reaping
+  at once reap a player once, and a connection the edge moves to another node is left alone. A player whose game logs in
+  again first never gets one (their new connection replaces the dead one); if a custom lobby is left over from that
+  session, their first `create_party_lobby` takes them out of it rather than into it (/access records it in the session).
 
 Parity with the TS websocket: `tools/realtime/gateway_diff.mjs` (raw frames, closes, Redis writes) and
-`tools/realtime/disconnect_diff.mjs` (what a dropped game's close does to the lobbies).
+`tools/realtime/disconnect_diff.mjs` (what a dropped game's close does to the lobbies; its reap mode kills the node
+holding the game instead, and compares that with the close).
 
 ## Moving it without a big switch
 
@@ -140,8 +151,7 @@ replay log) is still to decide.
 - The TS websocket empties the whole online set when it starts: with two nodes, that removes the other node's players.
   Presence has to be per node or kept alive by the heartbeat. (The gateway clears nothing at start.)
 - Disconnect cleanup (queue ticket, lobby, session) runs only when the node that held the socket sees it close. A node
-  that dies runs none of it: a reaper, under a lock, has to clean up after players whose heartbeat stopped
-  (`ZRANGEBYSCORE player_heartbeats` older than 80 s).
+  that dies runs none of it. (The gateway's reaper, above.)
 - `player_heartbeats` is per player, not per connection: a stale socket on one node is kept alive by the player's new
   connection on another. It needs a connection id (in the member, or a current-connection key), which also lets a node
   close a connection that has been replaced elsewhere. (The gateway's `realtime:conn:{player}`.)

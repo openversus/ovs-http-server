@@ -353,6 +353,23 @@ public sealed class RankedSetsTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // A player's gateway node died between the games (MatchStatusEvents marks the set): the next check-in drops it unrated
+    // and sends everyone back, as for a crashed game.
+    public async Task ASetMarkedCrashedBetweenItsGamesIsDroppedUnratedAtTheNextCheckIn()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync(gamesPlayed: 1, 1, 0);
+        await Db.StringSetAsync($"ranked_set_crashed:{Set}", "gateway_node_gone");
+
+        await Sets().CheckinAsync(P1, Set);
+
+        await AssertDroppedAsync();
+        Assert.False(await Db.KeyExistsAsync($"ranked_set_crashed:{Set}"));
+        AssertLeavers(await SentAsync(), P1);
+        Assert.Null(await RatingAsync(P1));
+    }
+
+    [SkippableFact]
     // match_server_crash is written under the game's id: TS read only the set's (game 1), so a crash in game 2 was rated.
     public async Task ACrashInTheCurrentGameDropsTheSetUnratedAndSendsEveryoneBack()
     {

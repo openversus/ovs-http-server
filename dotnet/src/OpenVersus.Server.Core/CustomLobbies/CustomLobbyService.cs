@@ -72,6 +72,19 @@ public sealed class CustomLobbySettings
     [Description("Milliseconds set_game_mode_for_custom_game waits before changing the mode. The TS server waited 1500, for a reason nobody remembers; 0 until something shows it is needed.")]
     [Range(0, 10000)]
     public int GameModeDelayMs { get; set; }
+
+    [Description("The player index a started match gives its spectators: Numbered, 8888, 8889, ... in the lobby's order (as the TS server's start); All8888, 8888 for every one, the index a game sends as a spectator whatever it was given. All8888 needs rollback servers and P2P nodes that tell spectators apart by the order they connect; older ones take every spectator for the first.")]
+    public SpectatorIndexes SpectatorIndexes { get; set; } = SpectatorIndexes.Numbered;
+}
+
+/// <summary>The player index a started match gives its spectators (<see cref="CustomLobbySettings.SpectatorIndexes"/>).</summary>
+public enum SpectatorIndexes
+{
+    /// <summary>8888, 8889, ... in the lobby's order, as the TS server's start.</summary>
+    Numbered,
+
+    /// <summary>8888 for every spectator: the index a game sends as a spectator, whatever it was given.</summary>
+    All8888,
 }
 
 public interface ICustomLobbyService
@@ -807,7 +820,7 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
 
         // Player indexes as the TS server gives them (the rollback server depends on these): within a team, players
         // before bots, index = place in team * 2 + team; the first player (not a bot) of the walk hosts; spectators
-        // 8888, 8889, ... on team -1.
+        // 8888, 8889, ... on team -1 (all 8888 with CustomLobbies:SpectatorIndexes All8888).
         var entries = new List<MatchPlayer>();
         var spectatorEntries = new List<MatchPlayer>();
         int humansSeen = 0;
@@ -817,6 +830,7 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
             if (teamIndex == 4)
             {
                 int next = 0;
+                bool same = settings.CurrentValue.SpectatorIndexes == SpectatorIndexes.All8888;
                 foreach (var (id, player) in Players(team))
                 {
                     if (!IsHuman(player))
@@ -825,7 +839,7 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
                     }
 
                     string ip = playing.TryGetValue(id, out var p) ? p.Ip : watching.TryGetValue(id, out var w) ? w.Ip : "";
-                    spectatorEntries.Add(new MatchPlayer(id, 8888 + next++, -1, false, ip, false, IsSpectator: true));
+                    spectatorEntries.Add(new MatchPlayer(id, same ? 8888 : 8888 + next++, -1, false, ip, false, IsSpectator: true));
                 }
             }
             else if (teamIndex is >= 0 and <= 3)

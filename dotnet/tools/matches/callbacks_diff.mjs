@@ -402,6 +402,18 @@ const EXPECTED = {
       return { ok, ts: strip(ts), cs: strip(cs) };
     },
   },
+  "dodge-custom-game": {
+    why: "a custom game's pregame leave: TS did nothing (the others sat at perk select); C# calls the match off unrated (decided 2026-10-07): the others sent match_cancel, the end claimed (match_end), no flag",
+    check: (ts, cs) => {
+      const cancel = (id) => cs.lists[id]?.length === 1 && cs.lists[id][0].includes('"opponent_dodge"');
+      const ok = empty(ts) && Object.values(ts.lists).every((l) => l.length === 0) && cancel(P1) && !cs.lists[P2]?.length
+        && cs.mongo.eloratings.length === 0 && cs.mongo.playerstats.length === 0
+        && cs.state[`match_end:${MATCH}`]?.value === "called_off" && cs.state[`match_called_off:${MATCH}`]?.value === "rollback_pregame_dodge"
+        && !cs.writes.some((w) => w.includes("ranked_disconnect") || w.includes("player_ranked_set") || w.includes("ranked_set:"));
+      const strip = (run) => ({ ...clone(run), writes: null, published: null, state: null, lists: null });
+      return { ok, ts: strip(ts), cs: strip(cs) };
+    },
+  },
   "dodge-with-a-bot": { why: "a dodge in a match with a bot: TS rated it (the bot too); C# does not (RatedMatches), and does the rest the same", check: unrated },
   "dodge-rift": { why: "a dodge in a password match (rift): TS rated it; C# does not (RatedMatches), and does the rest the same", check: unrated },
   "mvsi-register-no-matchid": {
@@ -437,6 +449,20 @@ function dodgeFlag(name, ts, cs) {
   if (csFlags.length || m[1] in cs.state) return false;
   ts.writes.splice(ts.writes.indexOf(tsFlag), 1);
   delete ts.state[m[1]];
+  return true;
+}
+
+// A pregame dodge calls the match off (C# only, decided 2026-10-07: match_called_off:{match} for 20 minutes, so a later
+// leave of the same match changes nothing): asserted wherever TS processed a dodge (its elo_processed_set write), and its
+// absence everywhere else; then taken out of C#'s run. The custom game's step asserts it in its own expected difference.
+function calledOff(name, ts, cs) {
+  if (name === "dodge-custom-game") return true;
+  const key = `match_called_off:${MATCH}`;
+  const marks = cs.writes.filter((w) => w.startsWith("set match_called_off:"));
+  if (!ts.writes.some((w) => w.startsWith("set elo_processed_set:"))) return marks.length === 0 && !(key in cs.state);
+  if (marks.length !== 1 || !/^set \S+ rollback_pregame_dodge EX 1200$/.test(marks[0]) || cs.state[key]?.value !== "rollback_pregame_dodge") return false;
+  cs.writes.splice(cs.writes.indexOf(marks[0]), 1);
+  delete cs.state[key];
   return true;
 }
 
@@ -488,6 +514,10 @@ function diffRuns(fileA, fileB) {
     if (x && y && !dodgeFlag(name, x, y)) {
       differing++;
       console.log(`${name}: NOT the decided dodge flag (TS "1"; C# the set's id in a rated game, none otherwise): A ${JSON.stringify(x.writes.filter((w) => w.includes("ranked_disconnect")))} B ${JSON.stringify(y.writes.filter((w) => w.includes("ranked_disconnect")))}`);
+    }
+    if (x && y && !calledOff(name, x, y)) {
+      differing++;
+      console.log(`${name}: NOT the decided call-off mark (C#: match_called_off wherever TS processed a dodge, nowhere else): B ${JSON.stringify(y.writes.filter((w) => w.includes("match_called_off")))}`);
     }
     if (x && y && !idleRecords(x, y)) {
       differing++;

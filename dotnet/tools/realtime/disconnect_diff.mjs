@@ -429,9 +429,15 @@ const SPECTATOR = {
     a.eloratings = b.eloratings;
   },
 };
+const CALLED_OFF = {
+  what: "C# marks the dodged match called off (match_called_off for 20 minutes: a later leave of it changes nothing; decided 2026-10-07); TS kept no mark",
+  check: (ts, cs) => !ts.writes.some((w) => w.startsWith("set match_called_off:"))
+    && JSON.stringify(cs.writes.filter((w) => w.startsWith("set match_called_off:"))) === JSON.stringify([`set match_called_off:${MATCH} pregame_dodge EX 1200`]),
+  adjust: (a, b) => { take(b.writes, /^set match_called_off:/); },
+};
 // TS looks for the custom lobby with KEYS on every disconnect and its web custom lobby with a GET: reads, not recorded.
 const EXPECTED = {
-  "match-pregame-dodge": [RANKS, DODGER_FLAG, DODGER_IDLE],
+  "match-pregame-dodge": [RANKS, DODGER_FLAG, DODGER_IDLE, CALLED_OFF],
   "match-mid-game": [FLAG_VALUE],
   "match-after-result": [FLAG_TTL],
   "match-spectator": [SPECTATOR],

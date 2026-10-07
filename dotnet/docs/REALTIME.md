@@ -137,6 +137,28 @@ lobby with its match end and rematch (`MatchEnd`, `Rematches`), the matchmaking 
 `OpenVersus.Server.Matchmaking`), the queue and its tick, the match config (`GameplayConfigs`, kept per player, sent by
 the match flow), and the disconnects (above).
 
+## The edge (`OpenVersus.Server.Edge`, the `edge` service)
+
+The game's websocket in front of the gateway nodes (EDGE_PORT, 3001 by default; behind the TLS-terminating proxy). It
+holds each game's socket and links it to a gateway node (one websocket per game, the link above), forwarding the game's
+frames as they are and taking the node's out of their envelope, so the game gets exactly what a direct connection gets.
+It keeps nothing outside memory: an edge that dies takes its games' sockets with it, and there is nothing to resume.
+
+- Nodes are found in the instance registry: ready `ws` instances with an address. A node advertises
+  `ws://<host>:<port>` once its listener is bound: its public port, on the host `WEBSOCKET_ADVERTISE` names, or its
+  first IPv4 address that is not a loopback (a container's own). The edge passes the game's address on as `X-Real-IP`
+  (the rule every service reads first).
+- Toward the game, websocket keep-alive is off, as on a node; the link to the node has it on (`Edge:KeepAliveMs`,
+  `Edge:KeepAliveTimeoutMs`), so a node that dies without closing anything is noticed in seconds.
+- The game is closed when its node says so (with the node's code), when no node is ready for it (1001 "going away"),
+  or when a node refuses the edge (another `Gateway:EdgeSecret`: 1011, logged as an error). The game's own close is
+  passed to the node with its code (1000 for one without a code), and its socket dropping as 4999.
+- A stopping edge (SIGTERM) stops listening (the proxy sends it no new games) and keeps its games until they leave
+  (`Edge:DrainTimeoutMs`, 0: no limit), showing as not ready in the registry (the `draining` check); its control API
+  stops listening with it. Without `Gateway:EdgeSecret` it is not ready.
+- Moving a game to another node when its node goes is slice 3f's next step (f3b); until then a lost node closes the
+  game "going away", as a node's crash did before.
+
 ## A node restart without disconnecting anyone
 
 State in Redis is necessary but not enough: the socket itself lives in one process, and the game logs out when it

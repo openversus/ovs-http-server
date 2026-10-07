@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Access;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Control;
+using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Hydra;
 using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.Settings;
@@ -28,6 +29,39 @@ public static class GatewayHosting
         return builder;
     }
 
+    // WEBSOCKET_PORT, or when that is 0 the port the server bound for it (its listeners but the control ones).
+    private static int? PublicPort(WebApplication app)
+    {
+        var service = KnownServices.Realtime;
+        int configured = app.Configuration.GetValue<int?>(service.PublicPortKey!) ?? service.DefaultPublicPort;
+        if (configured != 0)
+        {
+            return configured;
+        }
+
+        int? control = app.Services.GetRequiredService<ControlListeners.Bound>().Port;
+        var addresses = app.Services.GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>().Features
+            .Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>()?.Addresses ?? [];
+        return addresses.Select(BindingAddress.Parse).Where(a => !a.IsUnixPipe && a.Port != control).Select(a => (int?)a.Port).FirstOrDefault();
+    }
+
+    // WEBSOCKET_ADVERTISE, else the first IPv4 address of an interface that is up and not a loopback, else 127.0.0.1.
+    internal static string AdvertisedHost(IConfiguration configuration)
+    {
+        if (configuration["WEBSOCKET_ADVERTISE"] is { Length: > 0 } host)
+        {
+            return host;
+        }
+
+        return System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+            .Where(i => i.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up
+                && i.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+            .SelectMany(i => i.GetIPProperties().UnicastAddresses)
+            .Select(a => a.Address)
+            .FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !System.Net.IPAddress.IsLoopback(a))?.ToString()
+            ?? "127.0.0.1";
+    }
+
     /// <summary>
     /// Every websocket upgrade on the public listener, whatever its path (the TS websocket server took any), is a game
     /// connection; any other request there but /health/* is answered as the TS websocket server answered it (200,
@@ -38,6 +72,15 @@ public static class GatewayHosting
     {
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.Zero });
         var node = app.Services.GetRequiredService<GatewayNode>();
+
+        // Where an edge reaches this node (the instance registry carries it): its public port, on the host
+        // WEBSOCKET_ADVERTISE names, or this machine's (container's) first IPv4 address that is not a loopback.
+        var instance = app.Services.GetRequiredService<ServiceInstance>();
+        app.Lifetime.ApplicationStarted.Register(() =>
+        {
+            instance.Address = PublicPort(app) is { } port ? $"ws://{AdvertisedHost(app.Configuration)}:{port}" : null;
+            app.Logger.LogInformation("Edges reach this node at {Address}", instance.Address ?? "(no public listener found)");
+        });
         app.Use(async (context, next) =>
         {
             if (ControlListeners.IsControl(context) || context.Request.Path.StartsWithSegments("/health"))

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# The C# services' images: one image per service (http, access, social, lobbies, web, ws, matchmaking, matchflow), each with only its own executable and
+# The C# services' images: one image per service (http, access, social, lobbies, web, ws, edge, matchmaking, matchflow), each with only its own executable and
 # ovsctl, built from one shared build of the solution. From this directory:
 #   docker build --target matchmaking --build-arg SOURCE_REVISION=$(git rev-parse HEAD) -t ovs-matchmaking .
 # build-images.sh builds them all. The proxy has no image: it exists only for the migration bench.
@@ -21,14 +21,15 @@ COPY src/OpenVersus.Server.Access/OpenVersus.Server.Access.csproj src/OpenVersus
 COPY src/OpenVersus.Server.Social/OpenVersus.Server.Social.csproj src/OpenVersus.Server.Social/
 COPY src/OpenVersus.Server.Lobbies/OpenVersus.Server.Lobbies.csproj src/OpenVersus.Server.Lobbies/
 COPY src/OpenVersus.Server.Realtime/OpenVersus.Server.Realtime.csproj src/OpenVersus.Server.Realtime/
+COPY src/OpenVersus.Server.Edge/OpenVersus.Server.Edge.csproj src/OpenVersus.Server.Edge/
 COPY src/OpenVersus.Server.Matchmaking/OpenVersus.Server.Matchmaking.csproj src/OpenVersus.Server.Matchmaking/
 COPY src/OpenVersus.Server.MatchFlow/OpenVersus.Server.MatchFlow.csproj src/OpenVersus.Server.MatchFlow/
 COPY src/OpenVersus.Server.Cli/OpenVersus.Server.Cli.csproj src/OpenVersus.Server.Cli/
-RUN for project in Http Access Social Lobbies Web Realtime Matchmaking MatchFlow Cli; do \
+RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking MatchFlow Cli; do \
       dotnet restore src/OpenVersus.Server.$project/OpenVersus.Server.$project.csproj || exit 1; \
     done
 COPY src/ src/
-RUN for project in Http Access Social Lobbies Web Realtime Matchmaking MatchFlow Cli; do \
+RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking MatchFlow Cli; do \
       dotnet publish src/OpenVersus.Server.$project/OpenVersus.Server.$project.csproj -c Release --no-restore \
         -p:SourceRevisionId=$SOURCE_REVISION -o /out/$project || exit 1; \
     done
@@ -89,6 +90,15 @@ ENV OVS_SERVICE=ws
 COPY --from=build /out/Realtime .
 EXPOSE 3000
 ENTRYPOINT ["dotnet", "OpenVersus.Server.Realtime.dll"]
+
+# The edge in front of the realtime gateway: the game's websocket (EDGE_PORT, 3001 by default), each game linked to a
+# gateway node found in the instance registry. A stopping edge keeps its games until they leave (Edge:DrainTimeoutMs):
+# give its container a stop timeout to match.
+FROM runtime AS edge
+ENV OVS_SERVICE=edge
+COPY --from=build /out/Edge .
+EXPOSE 3001
+ENTRYPOINT ["dotnet", "OpenVersus.Server.Edge.dll"]
 
 # The matchmaker: no public port.
 FROM runtime AS matchmaking

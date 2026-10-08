@@ -81,8 +81,9 @@ it, so a link moved away and back to the same node is not let go of by its old s
 
 `GatewayPresence` (Core) keeps who is connected where:
 
-- `realtime:conn:{player}`: the player's current connection (id, node, ip, at, the session token's SHA-256), its TTL
-  renewed by the ping's answer.
+- `realtime:conn:{player}`: the player's current connection (id, node, ip, at, the session token's SHA-256, the socket
+  holding it on that node, and the edge it comes through: empty when direct), its TTL renewed by the ping's answer.
+  `ovsctl player show` and `ovsctl online --players` show the node and the edge.
   A second login claims it, and the connection it replaced is closed wherever it is (`ws:disconnect` with `except`;
   the TS websocket left it open). A close that is not the current connection's changes nothing.
 - `online_players`, `player_heartbeats`, `active_ip_accounts:{ip}`: written at the handshake and each answer, and

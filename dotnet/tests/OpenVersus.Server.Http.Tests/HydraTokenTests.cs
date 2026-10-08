@@ -1,6 +1,8 @@
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.DependencyInjection;
+using OpenVersus.Server.Core.Bans;
 using OpenVersus.Server.Http.Shared.Hosting;
 using OpenVersus.Server.Http.Shared.Stubs;
 using HydraCodec = OpenVersus.Server.Core.Hydra.Hydra;
@@ -49,12 +51,37 @@ public sealed class HydraTokenTests(GameAppFactory factory) : IClassFixture<Game
     }
 
     [Fact]
+    public async Task AnIdentifyTokenIsNoSessionToken()
+    {
+        // What /api/identify gives the OpenVersus client is signed with Access:IdentifySecret: never a game session.
+        using var response = await SendAsync("GET", "/commerce/products", GameAppFactory.Token(OpenVersus.Server.TestSupport.ServiceFactory<Program>.IdentifySecret));
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task ATokenFromAnotherSecretOrExpiredIsInvalid()
     {
         using var other = await SendAsync("GET", "/commerce/products", GameAppFactory.Token("another-secret-0123456789abcdef0123456789"));
         Assert.Equal(HttpStatusCode.Unauthorized, other.StatusCode);
         using var expired = await SendAsync("GET", "/commerce/products", GameAppFactory.Token(lifetime: TimeSpan.FromSeconds(-60)));
         Assert.Equal(HttpStatusCode.Unauthorized, expired.StatusCode);
+    }
+
+    [Fact]
+    public async Task ABannedPlayersValidTokenIsRefused()
+    {
+        var banned = factory.Services.GetRequiredService<BannedPlayers>();
+        banned.Remember(GameAppFactory.AccountId);
+        try
+        {
+            using var response = await SendAsync("GET", "/commerce/products", GameAppFactory.Token());
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+            Assert.Equal(HydraCodec.Encode(new JsonObject { ["error"] = "Invalid access token" }), await response.Content.ReadAsByteArrayAsync());
+        }
+        finally
+        {
+            banned.Forget(GameAppFactory.AccountId);
+        }
     }
 
     [Fact]

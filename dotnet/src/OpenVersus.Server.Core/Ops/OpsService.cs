@@ -46,9 +46,12 @@ public sealed record QueuedTicket(string PartyId, string MatchmakingRequestId, l
 /// <summary>One queue: how many parties and players are in it, and who.</summary>
 public sealed record QueueView(string Queue, int Tickets, int Players, IReadOnlyList<QueuedTicket> Entries);
 
-/// <summary>A connected player.</summary>
-/// <summary>A connected player: who, and the handles the player commands take (username, Steam id, the IP connected from).</summary>
-public sealed record OnlinePlayer(string Id, string Name, string? Status, string? Username = null, string? SteamId = null, string? Ip = null);
+/// <summary>
+/// A connected player: who, the handles the player commands take (username, Steam id, the IP connected from), and the
+/// way in: the gateway node holding the connection, and the edge it comes through ("": directly; null: not recorded).
+/// </summary>
+public sealed record OnlinePlayer(string Id, string Name, string? Status, string? Username = null, string? SteamId = null, string? Ip = null,
+    string? Node = null, string? Edge = null);
 
 /// <summary>How many players are connected, and (when asked) who.</summary>
 public sealed record OnlineView(long Count, IReadOnlyList<OnlinePlayer>? Players);
@@ -68,11 +71,27 @@ public sealed record LobbyMember(int Team, string Id, string Name, bool IsBot, i
 /// <summary>A custom lobby: its id, join code, game mode, leader, and members (by team, then in the order they joined).</summary>
 public sealed record LobbyView(string Id, string? Code, string? Mode, string? LeaderId, string? LeaderName, IReadOnlyList<LobbyMember> Members);
 
-/// <summary>A player's record.</summary>
-public sealed record PlayerView(string Id, string Name, string? HydraUsername, string? SteamId, string? PublicId, string? ProfileId, bool Online, string? Status);
+/// <summary>
+/// A player's current connection (realtime:conn): its id, the gateway node holding it, the edge it comes through ("":
+/// directly; null: not recorded, an older node's entry), and since when (ms).
+/// </summary>
+public sealed record ConnectionView(string Id, string? Node, string? Edge, long? SinceMs);
+
+/// <summary>A player's record, and their current connection if they have one.</summary>
+public sealed record PlayerView(string Id, string Name, string? HydraUsername, string? SteamId, string? PublicId, string? ProfileId, bool Online, string? Status,
+    ConnectionView? Connection = null);
 
 /// <summary>A forced disconnect sent: to whom, whether they were online, and how many websocket services heard it.</summary>
 public sealed record DisconnectView(string Id, string Name, bool WasOnline, long Websockets);
+
+/// <summary>A ban made: its record's id, whom, every identifier banned, and whether they were online and cut off.</summary>
+public sealed record BanView(string BanId, string Id, string Name, IReadOnlyList<string> Identifiers, bool WasOnline, bool Disconnected);
+
+/// <summary>A lift made: the ban records lifted, the identifiers no longer banned, and those still banned and why.</summary>
+public sealed record UnbanView(string Id, string Name, IReadOnlyList<string> LiftedBans, IReadOnlyList<string> NoLongerBanned, IReadOnlyList<string> StillBanned);
+
+/// <summary>A lift of single ban values (a ban file's entries): lifted, no longer banned, still banned and why, not found.</summary>
+public sealed record BanLiftView(IReadOnlyList<string> Lifted, IReadOnlyList<string> NoLongerBanned, IReadOnlyList<string> StillBanned, IReadOnlyList<string> NotFound);
 
 /// <summary>
 /// Operations on the live game's state for administrators: queues, connected players, matches in progress, and player
@@ -101,6 +120,18 @@ public interface IOpsService
 
     /// <summary>Closes the player's game websocket, as a heartbeat timeout would (the client logs out).</summary>
     Task<ControlResult<DisconnectView>> DisconnectPlayerAsync(string who);
+
+    /// <summary>Bans the person behind a player through every identifier known for them (source manual), and cuts them off.</summary>
+    Task<ControlResult<BanView>> BanPlayerAsync(string who, string reason);
+
+    /// <summary>Lifts a player's ban records (source manual); a hand-edited file's entry stays and is reported.</summary>
+    Task<ControlResult<UnbanView>> UnbanPlayerAsync(string who, string reason);
+
+    /// <summary>Lifts one single ban value (a ban file's entry, as imported): kind ip, cidr, steam, epic, hardware, install or id.</summary>
+    Task<ControlResult<BanLiftView>> LiftBanValueAsync(string kind, string value, string reason);
+
+    /// <summary>Lifts every single ban value (a ban file's entry) that is one of a player's identifiers.</summary>
+    Task<ControlResult<BanLiftView>> LiftBanValuesOfAsync(string who, string reason);
 }
 
 internal sealed class OpsService : IOpsService
@@ -181,8 +212,9 @@ internal sealed class OpsService : IOpsService
         {
             string id = member.ToString();
             var handles = await redis.HashGetAsync($"connections:{id}", ["hydraUsername", "steamId", "current_ip"]);
+            var way = await redis.HashGetAsync(Realtime.GatewayPresence.ConnectionKey(id), ["node", "edge"]);
             players.Add(new OnlinePlayer(id, await DisplayNameAsync(redis, id), (string?)await redis.HashGetAsync($"player:{id}", "status"),
-                NullIfEmpty(handles[0]), NullIfEmpty(handles[1]), NullIfEmpty(handles[2])));
+                NullIfEmpty(handles[0]), NullIfEmpty(handles[1]), NullIfEmpty(handles[2]), NullIfEmpty(way[0]), (string?)way[1]));
         }
 
         return ControlResult<OnlineView>.Ok(new OnlineView(count, players.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList()));
@@ -398,6 +430,113 @@ internal sealed class OpsService : IOpsService
         return ControlResult<DisconnectView>.Ok(new DisconnectView(view.Id, view.Name, view.Online, heard));
     }
 
+    // A ban is made by the service that owns bans (access): it records it in Mongo and in the auto-ban file it can write.
+    public async Task<ControlResult<BanView>> BanPlayerAsync(string who, string reason)
+    {
+        if (Players is not { } players)
+        {
+            return NoMongo<BanView>();
+        }
+
+        if (_services.GetService<Bans.IPersonBans>() is not { } personBans)
+        {
+            return ControlResult<BanView>.Refused("this service does not make bans; ask the access service (--service access)");
+        }
+
+        var found = await ResolveAsync(players, who);
+        if (found.Error is not null)
+        {
+            return ControlResult<BanView>.Missing(found.Error);
+        }
+
+        string id = found.Value!["_id"].AsObjectId.ToString();
+        var record = await personBans.BanAsync(new Bans.BanRequest(id, reason.Trim().Length > 0 ? reason.Trim() : "banned by an administrator", "manual"));
+        return record is null
+            ? ControlResult<BanView>.Missing($"no player {id}")
+            : ControlResult<BanView>.Ok(new BanView(record.BanId, id, record.NameAtBan, [.. record.Who.Known().Select(k => $"{k.Kind}: {k.Value}")], record.Online, record.Disconnected));
+    }
+
+    public async Task<ControlResult<UnbanView>> UnbanPlayerAsync(string who, string reason)
+    {
+        if (Players is not { } players)
+        {
+            return NoMongo<UnbanView>();
+        }
+
+        if (_services.GetService<Bans.IPersonBans>() is not { } personBans)
+        {
+            return ControlResult<UnbanView>.Refused("this service does not lift bans; ask the access service (--service access)");
+        }
+
+        // A player id names them even when the account is gone.
+        string? id = ObjectId.TryParse(who, out var given) ? given.ToString() : null;
+        if (id is null)
+        {
+            var found = await ResolveAsync(players, who);
+            if (found.Error is not null)
+            {
+                return ControlResult<UnbanView>.Missing(found.Error);
+            }
+
+            id = found.Value!["_id"].AsObjectId.ToString();
+        }
+
+        var lift = await personBans.LiftAsync(id, reason.Trim().Length > 0 ? reason.Trim() : "lifted by an administrator", "manual");
+        return lift is null
+            ? ControlResult<UnbanView>.Refused("no Mongo, where bans are kept")
+            : ControlResult<UnbanView>.Ok(new UnbanView(lift.PlayerId, lift.Name, lift.LiftedBans, lift.NoLongerBanned, lift.StillBanned));
+    }
+
+    public static readonly string[] BanValueKinds = ["ip", "cidr", "steam", "epic", "hardware", "install", "id"];
+
+    public async Task<ControlResult<BanLiftView>> LiftBanValueAsync(string kind, string value, string reason)
+    {
+        string valueKind = kind.Trim().ToLowerInvariant();
+        if (!BanValueKinds.Contains(valueKind))
+        {
+            return ControlResult<BanLiftView>.Refused($"unknown kind '{kind}'; one of: {string.Join(", ", BanValueKinds)}");
+        }
+
+        if (_services.GetService<Bans.IPersonBans>() is not { } personBans)
+        {
+            return ControlResult<BanLiftView>.Refused("this service does not lift bans; ask the access service (--service access)");
+        }
+
+        string canonical = Bans.PersonBans.KindOf(valueKind) is { } k ? Bans.BanService.Canonical(k, value) : value.Trim();
+        var lift = await personBans.LiftValuesAsync([(valueKind, canonical)], Reason(reason), "manual");
+        return lift is null ? NoMongo<BanLiftView>() : ControlResult<BanLiftView>.Ok(new BanLiftView(lift.Lifted, lift.NoLongerBanned, lift.StillBanned, lift.NotFound));
+    }
+
+    public async Task<ControlResult<BanLiftView>> LiftBanValuesOfAsync(string who, string reason)
+    {
+        if (Players is not { } players)
+        {
+            return NoMongo<BanLiftView>();
+        }
+
+        if (_services.GetService<Bans.IPersonBans>() is not { } personBans)
+        {
+            return ControlResult<BanLiftView>.Refused("this service does not lift bans; ask the access service (--service access)");
+        }
+
+        string? id = ObjectId.TryParse(who, out var given) ? given.ToString() : null;
+        if (id is null)
+        {
+            var found = await ResolveAsync(players, who);
+            if (found.Error is not null)
+            {
+                return ControlResult<BanLiftView>.Missing(found.Error);
+            }
+
+            id = found.Value!["_id"].AsObjectId.ToString();
+        }
+
+        var lift = await personBans.LiftValuesOfAsync(id, Reason(reason), "manual");
+        return lift is null ? NoMongo<BanLiftView>() : ControlResult<BanLiftView>.Ok(new BanLiftView(lift.Lifted, lift.NoLongerBanned, lift.StillBanned, lift.NotFound));
+    }
+
+    private static string Reason(string reason) => reason.Trim().Length > 0 ? reason.Trim() : "lifted by an administrator";
+
     private async Task<(BsonDocument? Value, string? Error)> ResolveAsync(IMongoCollection<BsonDocument> players, string who)
     {
         if (ObjectId.TryParse(who, out var id))
@@ -473,14 +612,20 @@ internal sealed class OpsService : IOpsService
         string id = player["_id"].AsObjectId.ToString();
         bool online = false;
         string? status = null;
+        ConnectionView? connection = null;
         if (Redis is { } redis)
         {
             online = await redis.SetContainsAsync("online_players", id);
             status = await redis.HashGetAsync($"player:{id}", "status");
+            var entry = await redis.HashGetAsync(Realtime.GatewayPresence.ConnectionKey(id), ["id", "node", "edge", "at"]);
+            if (!entry[0].IsNullOrEmpty)
+            {
+                connection = new ConnectionView(entry[0].ToString(), NullIfEmpty(entry[1]), (string?)entry[2], (long?)entry[3]);
+            }
         }
 
         return new PlayerView(id, Str(player, "name") ?? "", Str(player, "hydraUsername"), Str(player, "steamId"), Str(player, "public_id"),
-            player.TryGetValue("profile_id", out var profile) && !profile.IsBsonNull ? profile.ToString() : null, online, status);
+            player.TryGetValue("profile_id", out var profile) && !profile.IsBsonNull ? profile.ToString() : null, online, status, connection);
     }
 
     private async Task<MatchView> MatchAsync(IDatabase redis, string setId, string matchId, string? mode, JsonElement players, JsonElement? set)

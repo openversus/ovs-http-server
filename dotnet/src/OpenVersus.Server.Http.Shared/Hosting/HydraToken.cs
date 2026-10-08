@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Access;
+using OpenVersus.Server.Core.Bans;
 
 namespace OpenVersus.Server.Http.Shared.Hosting;
 
@@ -92,7 +93,17 @@ public static class HydraToken
         string token = values.Count == 1 ? values[0]! : string.Join(", ", values.ToArray());
         try
         {
-            context.Features.Set(new HydraSession(token, AccessTokens.Verify(token, secret, DateTimeOffset.UtcNow)));
+            var claims = AccessTokens.Verify(token, secret, DateTimeOffset.UtcNow);
+            if (claims["id"]?.GetValueKind() == System.Text.Json.JsonValueKind.String && context.RequestServices.GetService<BannedPlayers>() is { } banned
+                && banned.Contains(claims["id"]!.GetValue<string>()))
+            {
+                context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(HydraToken))
+                    .LogWarning("Refused {Method} {Path}: player {Player} is banned", context.Request.Method, context.Request.Path, claims["id"]!.GetValue<string>());
+                await RefuseAsync(context, "Invalid access token");
+                return;
+            }
+
+            context.Features.Set(new HydraSession(token, claims));
         }
         catch (AccessTokenException e)
         {

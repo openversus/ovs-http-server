@@ -102,6 +102,38 @@ public sealed class OvsCtlTests : IAsyncLifetime
         Assert.Equal("http", new ConnectionSettings().Service);
     }
 
+    [SkippableFact]
+    // Each command asks the service its data belongs to, unless one is named.
+    public void EachCommandAsksItsOwnServiceUnlessOneIsNamed()
+    {
+        Skip.If(!string.IsNullOrEmpty(Environment.GetEnvironmentVariable(ConnectionSettings.ServiceVariable)), "OVS_SERVICE is set here");
+        Assert.Equal("matchmaking", new QueuesSettings().Service);
+        Assert.Equal("matchflow", new MatchesSettings().Service);
+        Assert.Equal(["access", "access", "access"], new ConnectionSettings[] { new OnlineSettings(), new PlayerOnlineSettings(), new PlayerSettings() }.Select(s => s.Service));
+        Assert.False(new PlayerSettings().ServiceNamed);
+        Assert.True(new PlayerSettings { Service = "ws" }.ServiceNamed);
+        Assert.Equal("ws", new PlayerSettings { Service = "ws" }.Service);
+        Assert.True(new KeySettings { Port = 1 }.ServiceNamed);
+    }
+
+    [Fact]
+    // A setting's command, with no service named, asks the first running service that has the key, and says which.
+    public async Task ASettingIsAskedOfTheFirstRunningServiceThatHasIt()
+    {
+        var console = new TestConsole().Width(200);
+        ControlClient Here(string service) => ControlClient.For(new ConnectionSettings { Port = service == "lobbies" ? _controlPort : FreePort() });
+        var settings = new KeySettings { Key = "Log:Level" };
+
+        var (found, error) = await OvsCtl.ServiceWithAsync(console, settings, Here);
+        Assert.Null(error);
+        Assert.Equal("Information", (await found!.GetAsync("Log:Level")).Value!.Value);
+        Assert.Contains("Asking the lobbies service: it has Log:Level.", console.Output);
+
+        var (none, why) = await OvsCtl.ServiceWithAsync(console, new KeySettings { Key = "Nothing:Here" }, Here);
+        Assert.Null(none);
+        Assert.Equal("no running service has a setting 'Nothing:Here'", why);
+    }
+
     [Theory]
     [InlineData("lobby")]
     [InlineData("lobby", "QX7RT", "--all")]

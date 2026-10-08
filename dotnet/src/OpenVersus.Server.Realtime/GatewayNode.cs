@@ -71,6 +71,8 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
         }
 
         bool edge = edgeConnectionId is not null;
+        // The edge's instance, for the operators (realtime:conn edge); an edge that does not say: "unknown".
+        string edgeInstance = !edge ? "" : context.Request.Headers[GatewayEdge.EdgeInstanceHeader].ToString() is { Length: > 0 and <= 128 } named ? named : "unknown";
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
         var stopping = lifetime.ApplicationStopping;
         if (services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis)
@@ -113,6 +115,10 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
             // A resume's token was checked at the game's handshake; the session may outlive it.
             var claims = AccessTokens.Verify(token, secret, time.GetUtcNow(), checkExpiry: resumeAfter is null);
             playerId = claims["id"] is { } id && id.GetValueKind() == JsonValueKind.String ? (string)id! : throw new AccessTokenException("the token names no player");
+            if (services.GetService<OpenVersus.Server.Core.Bans.BannedPlayers>()?.Contains(playerId) == true)
+            {
+                throw new AccessTokenException($"player {playerId} is banned");
+            }
         }
         catch (Exception e) when (e is FormatException or AccessTokenException)
         {
@@ -130,7 +136,7 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
         }
 
         var info = new GatewayConnectionInfo(edgeConnectionId ?? Guid.NewGuid().ToString("N"), playerId, instance.Id, ip, GatewayPresence.TokenHash(token),
-            Guid.NewGuid().ToString("N"));
+            Guid.NewGuid().ToString("N"), edgeInstance);
         var connection = new GatewayConnection(socket, info, time.GetUtcNow().ToUnixTimeMilliseconds(), edge);
         var writer = connection.WriteAsync(stopping);
         if (resumeAfter is not null)

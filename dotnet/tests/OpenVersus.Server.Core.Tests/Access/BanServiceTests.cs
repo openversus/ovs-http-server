@@ -1,19 +1,17 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Bans;
+using YamlDotNet.RepresentationModel;
 
 namespace OpenVersus.Server.Core.Tests.Access;
 
-/// <summary>Ban files as the TS server reads them, and CIDR matching as it does it.</summary>
+/// <summary>The hand-edited ban files' format (as the import reads it), the auto-ban trail's, and CIDR matching as the TS server does it.</summary>
 public sealed class BanServiceTests : IDisposable
 {
+    private const string Steam = "76561198000000066";
+    private const string Hardware = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+
     private readonly string _dir = Directory.CreateTempSubdirectory("ovs-bans-").FullName;
 
     public void Dispose() => Directory.Delete(_dir, recursive: true);
-
-    private BanService Service(BanSettings settings) =>
-        new(new ServiceCollection().BuildServiceProvider(), new StaticMonitor(settings), NullLogger<BanService>.Instance);
 
     [Theory]
     [InlineData("203.0.113.9", "203.0.113.0/24", true)]
@@ -31,48 +29,84 @@ public sealed class BanServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ReadsTheTsFilesFormat()
+    public void ReadsABanFileWithTheCommentAboveEachEntry()
     {
-        string ips = Path.Combine(_dir, "bans.txt");
-        File.WriteAllText(ips, "# comment\r\n198.51.100.1\r\n\r\n   \n198.51.100.2 \n  # indented comment is an entry\n");
-        var bans = Service(new BanSettings { IpFile = ips, CidrFile = null, IdFile = null });
-        Assert.True(await bans.IsBannedAsync("198.51.100.1"));
-        // Entries are not trimmed, as there.
-        Assert.False(await bans.IsBannedAsync("198.51.100.2"));
-        Assert.True(await bans.IsBannedAsync("198.51.100.2 "));
-        Assert.False(await bans.IsBannedAsync("# comment"));
+        // The TS server's banIP wrote a comment line before each address.
+        const string text = "# a header\r\n\r\n# 2026-01-01T00:00:00Z - Ban ID: x, Reason: y\r\n198.51.100.1\r\n198.51.100.2 \n\n   \n  # indented comment\n198.51.100.3\n";
+        Assert.Equal(
+            [("198.51.100.1", "2026-01-01T00:00:00Z - Ban ID: x, Reason: y"), ("198.51.100.2", ""), ("198.51.100.3", "indented comment")],
+            BanStore.Parse(text, BanKind.Ip));
     }
 
     [Fact]
-    public async Task ChecksTheIpAgainstEveryList()
+    public void KeepsEachKindsCanonicalForm()
     {
-        string cidr = Path.Combine(_dir, "cidr.txt"), ids = Path.Combine(_dir, "ids.txt");
-        File.WriteAllText(cidr, "192.0.2.0/24\n");
-        File.WriteAllText(ids, "76561198000000066\n");
-        var bans = Service(new BanSettings { IpFile = Path.Combine(_dir, "missing.txt"), CidrFile = cidr, IdFile = ids });
-        Assert.True(await bans.IsBannedAsync("192.0.2.77"));
-        Assert.True(await bans.IsBannedAsync("76561198000000066"));
-        Assert.False(await bans.IsBannedAsync("198.51.100.1"));
+        Assert.Equal([(Hardware, "")], BanStore.Parse(Hardware.ToUpperInvariant() + "\n", BanKind.Hardware));
+        Assert.Equal([(Steam, "")], BanStore.Parse($" {Steam}\n", BanKind.Steam));
+        // A block (no kind) as written.
+        Assert.Equal([("192.0.2.0/24", "")], BanStore.Parse("192.0.2.0/24\n", null));
+    }
+
+    private static BanRecord Record(string player, BanIdentifiers who) =>
+        new(Guid.NewGuid().ToString(), new DateTimeOffset(2026, 10, 7, 21, 14, 3, 512, TimeSpan.Zero), "banned name", "namechange", who with { PlayerId = player },
+            NameAtBan: "Old 'name' #1: x", AttemptedName: "new\nname \"quoted\" ünïcode", PlayerCreatedAt: "2026-09-01T00:00:00Z", MatchedList: "banned_names",
+            MatchedTerm: "x$y", RequestIp: who.Ip, UserAgent: "Mozilla/5.0 (X11; Linux x86_64)", Online: true, Disconnected: true);
+
+    private static YamlSequenceNode Trail(string path)
+    {
+        var yaml = new YamlStream();
+        yaml.Load(new StringReader(File.ReadAllText(path)));
+        return (YamlSequenceNode)yaml.Documents[0].RootNode;
     }
 
     [Fact]
-    public async Task RereadsAFileThatChanged()
+    public void TheTrailKeepsEachRecordsTextExactly()
     {
-        string ips = Path.Combine(_dir, "bans.txt");
-        File.WriteAllText(ips, "198.51.100.1\n");
-        var bans = Service(new BanSettings { IpFile = ips, CidrFile = null, IdFile = null });
-        Assert.False(await bans.IsBannedAsync("198.51.100.3"));
-        File.WriteAllText(ips, "198.51.100.3\n");
-        File.SetLastWriteTimeUtc(ips, DateTime.UtcNow.AddMinutes(1));
-        Assert.True(await bans.IsBannedAsync("198.51.100.3"));
+        string path = Path.Combine(_dir, "auto_bans.yaml");
+        File.WriteAllText(path, "# the services' trail\n");
+        var ban = Record("6a0000000000000000000001", new BanIdentifiers(Ip: "198.51.100.7", SteamId: Steam));
+        AutoBans.Append(path, AutoBans.ToYaml(ban));
+        AutoBans.Append(path, AutoBans.LiftToYaml(ban.At.AddDays(1), "a false positive", "manual", "6a0000000000000000000001", "Old 'name' #1: x",
+            [ban.BanId], ["ip 198.51.100.8 (bans.txt)"], ["Steam " + Steam], ["Ip 198.51.100.7 (bans.txt: ovsctl bans lift ip 198.51.100.7)"]));
+
+        var items = Trail(path);
+        Assert.Equal(2, items.Children.Count);
+        var banned = (YamlMappingNode)items[0];
+        var player = (YamlMappingNode)banned["player"];
+        Assert.Equal(("ban", ban.BanId, "2026-10-07T21:14:03.512Z", "true"), (banned["action"].ToString(), banned["ban_id"].ToString(), banned["at"].ToString(), banned["disconnected"].ToString()));
+        Assert.Equal((ban.NameAtBan, ban.AttemptedName), (player["name_at_ban"].ToString(), player["attempted_name"].ToString()));
+        Assert.Equal(Steam, ((YamlMappingNode)banned["identifiers"])["steam_id"].ToString());
+        var lifted = (YamlMappingNode)items[1];
+        Assert.Equal(("lift", "a false positive"), (lifted["action"].ToString(), lifted["reason"].ToString()));
+        Assert.Equal([ban.BanId], ((YamlSequenceNode)lifted["lifted_bans"]).Select(n => n.ToString()));
+        Assert.Equal(["ip 198.51.100.8 (bans.txt)"], ((YamlSequenceNode)lifted["lifted_values"]).Select(n => n.ToString()));
+        Assert.Equal(["Ip 198.51.100.7 (bans.txt: ovsctl bans lift ip 198.51.100.7)"], ((YamlSequenceNode)lifted["still_banned"]).Select(n => n.ToString()));
     }
 
-    private sealed class StaticMonitor(BanSettings value) : IOptionsMonitor<BanSettings>
+    [Fact]
+    public void AppendsAfterALastLineWithoutANewline()
     {
-        public BanSettings CurrentValue => value;
+        string path = Path.Combine(_dir, "auto_bans.yaml");
+        File.WriteAllText(path, "# no newline at the end");
+        AutoBans.Append(path, AutoBans.ToYaml(Record("6a0000000000000000000001", new BanIdentifiers(Ip: "198.51.100.7"))));
+        Assert.Single(Trail(path).Children);
+    }
 
-        public BanSettings Get(string? name) => value;
-
-        public IDisposable? OnChange(Action<BanSettings, string?> listener) => null;
+    [Theory]
+    [InlineData("banned:6a0000000000000000000001", BanEventKind.Banned, "6a0000000000000000000001")]
+    [InlineData("lifted:6a0000000000000000000001", BanEventKind.Lifted, "6a0000000000000000000001")]
+    [InlineData("loaded", BanEventKind.Loaded, "")]
+    // Anything else is a reread, never a ban or a lift.
+    [InlineData("6a0000000000000000000001", BanEventKind.Loaded, "")]
+    [InlineData("banned:", BanEventKind.Loaded, "")]
+    [InlineData("", BanEventKind.Loaded, "")]
+    public void ReadsTheChangeMessage(string message, BanEventKind kind, string player)
+    {
+        var change = BanEvent.Parse(message);
+        Assert.Equal((kind, player), (change.Kind, change.PlayerId));
+        if (kind != BanEventKind.Loaded || message == "loaded")
+        {
+            Assert.Equal(message, change.ToString());
+        }
     }
 }

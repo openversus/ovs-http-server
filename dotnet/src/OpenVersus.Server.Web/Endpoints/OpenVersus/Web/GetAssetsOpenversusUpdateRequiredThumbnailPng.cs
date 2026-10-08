@@ -1,18 +1,18 @@
 using FastEndpoints;
-using OpenVersus.Server.Http.Shared.Stubs;
+using OpenVersus.Server.Web.Site;
 
 namespace OpenVersus.Server.Web.Endpoints.OpenVersus.Web;
 
 /// <summary>
-/// GET /assets/openversus-update-required-thumbnail.png.
-/// Seen in: TS server: GET /assets/openversus-update-required-thumbnail.png.
-/// Server only.
+/// GET /assets/openversus-update-required-thumbnail.png: the update popup's thumbnail (TS server: cached 5 minutes).
 /// </summary>
-public sealed class GetAssetsOpenversusUpdateRequiredThumbnailPng : StubEndpoint
+public sealed class GetAssetsOpenversusUpdateRequiredThumbnailPng : EndpointWithoutRequest
 {
     public override void Configure()
     {
         Verbs(FastEndpoints.Http.GET);
         Routes("/assets/openversus-update-required-thumbnail.png");
     }
+
+    public override Task HandleAsync(CancellationToken ct) => StaticFiles.SendAsync(HttpContext, "openversus-update-required-thumbnail.png", "public, max-age=300");
 }

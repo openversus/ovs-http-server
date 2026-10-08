@@ -108,7 +108,7 @@ public sealed class MatchFlowHostTests : IClassFixture<ServiceFactory<Program>>
         // DelayedMessageSweep sends the match end's delayed websocket messages (realtime:due).
         // MatchLaunchStream tells each launched match's players about it (match:launched).
         // MatchDisconnects acts on a game that closed its websocket mid-match (realtime:connections).
-        Assert.Equal(["ClusterSettingsSync", "DelayedMessageSweep", "InstanceHeartbeat", "MatchDisconnects", "MatchLaunchStream", "MatchResultStream", "NodeKeyCheck", "RankedSetXpSubscriber"], hosted);
+        Assert.Equal(["BannedPlayers", "ClusterSettingsSync", "DelayedMessageSweep", "InstanceHeartbeat", "MatchDisconnects", "MatchLaunchStream", "MatchResultStream", "NodeKeyCheck", "RankedSetXpSubscriber"], hosted);
     }
 
     [Fact]

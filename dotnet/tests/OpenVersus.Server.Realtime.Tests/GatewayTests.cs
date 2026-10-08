@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using OpenVersus.Server.Core.Access;
+using OpenVersus.Server.Core.Bans;
 using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.TestSupport;
 using StackExchange.Redis;
@@ -401,6 +402,39 @@ public sealed class GatewayTests : IAsyncLifetime
     }
 
     [Fact]
+    // A ban reaches the node through bans:player and bans:changed: the banned player's token, still valid, is then
+    // refused at the handshake, and an edge's resume of their connection is refused too.
+    public async Task A_banned_player_s_token_is_refused_at_the_handshake_and_on_a_resume()
+    {
+        if (_factory is null)
+        {
+            return;
+        }
+
+        var linked = await ConnectEdgeAsync("edge-b1");
+        string got = linked.Of(GatewayEdge.Kind.Position)[0].Id.ToString();
+        try
+        {
+            await Redis.SetAddAsync(BannedPlayers.Key, _player);
+            await Redis.PublishAsync(RedisChannel.Literal(BannedPlayers.ChangedChannel), BanEvent.Banned(_player).ToString());
+            await Until(() => _factory.Services.GetRequiredService<BannedPlayers>().Contains(_player));
+
+            var game = await ConnectAsync(sendFirstFrame: false);
+            await game.Socket.SendAsync(FirstFrame(), WebSocketMessageType.Binary, true, CancellationToken.None);
+            await game.Closed.WaitAsync(s_wait);
+            Assert.Empty(game.Frames);
+
+            var resumed = await ResumeEdgeAsync("edge-b1", got, linked.FirstFrame);
+            Assert.Single(resumed.Of(GatewayEdge.Kind.Close));
+            Assert.DoesNotContain("resumed edge-b1", await EventsAsync());
+        }
+        finally
+        {
+            await Redis.SetRemoveAsync(BannedPlayers.Key, _player);
+        }
+    }
+
+    [Fact]
     public async Task A_close_request_for_another_connection_is_ignored_and_one_for_this_connection_is_done()
     {
         if (_factory is null)
@@ -459,6 +493,8 @@ public sealed class GatewayTests : IAsyncLifetime
         Assert.Equal([GatewayProtocol.Ping], first[2].Frame);
         Assert.Equal("edge-conn-1", await CurrentConnectionAsync());
         Assert.False((await Redis.HashGetAsync(GatewayPresence.ConnectionKey(_player), "attach")).IsNullOrEmpty);
+        // An edge that does not name itself is recorded as such.
+        Assert.Equal("unknown", (string?)await Redis.HashGetAsync(GatewayPresence.ConnectionKey(_player), "edge"));
 
         var hello = new JsonObject { ["cmd"] = "hello" };
         byte[] expected = Core.Hydra.HydraEncoder.Encode(hello.DeepClone(), webSocket: true);
@@ -575,6 +611,7 @@ public sealed class GatewayTests : IAsyncLifetime
 
         var game = await ConnectAsync();
         string? id = await CurrentConnectionAsync();
+        Assert.Equal("", (string?)await Redis.HashGetAsync(GatewayPresence.ConnectionKey(_player), "edge"));
         await Redis.HashDeleteAsync(GatewayPresence.ConnectionKey(_player), "attach");
         await game.Socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
 

@@ -11,12 +11,20 @@ using OpenVersus.Server.Core.Settings;
 namespace OpenVersus.Server.Core.Access;
 
 /// <summary>Game session tokens. JWT_SECRET and ACCESS_TOKEN_TTL, the TS server's names, fill these.</summary>
-public sealed class AccessSettings
+public sealed class AccessSettings : IValidatableObject
 {
     [Description("Signs and checks every game session token. Every service that reads tokens (the TS ones too, until they are ported) must share it. At least 32 characters.")]
     [Secret]
     [MinLength(32)]
     public string? JwtSecret { get; set; }
+
+    [Description("Signs and checks the OpenVersus client's identify tokens (/api/identify, /ovs/notifications; the game's login accepts one in place of a session token it does not have yet). A secret of its own, never JwtSecret: an identify token must never pass as a game session token. At least 32 characters.")]
+    [Secret]
+    [MinLength(32)]
+    public string? IdentifySecret { get; set; }
+
+    [Description("The Steam app a session ticket must be for, so a ticket for another game names nobody here (STEAM_APP_ID); 0 accepts any app.")]
+    public uint SteamAppId { get; set; } = 1818750;
 
     [Description("How long a game session token lasts: seconds (86400), or a number with s, m, h or d (24h, 7d). Empty: tokens never expire.")]
     [RegularExpression("^$|^[1-9][0-9]*[smhd]?$")]
@@ -30,6 +38,14 @@ public sealed class AccessSettings
 
     [Description("The Steam avatar URL in the login response's linked Steam account.")]
     public string SteamAvatarUrl { get; set; } = "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb.jpg";
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext context)
+    {
+        if (!string.IsNullOrEmpty(IdentifySecret) && IdentifySecret == JwtSecret)
+        {
+            yield return new ValidationResult("Access:IdentifySecret must differ from Access:JwtSecret: an identify token must never pass as a game session token", [nameof(IdentifySecret)]);
+        }
+    }
 }
 
 /// <summary>Why a token was not accepted.</summary>

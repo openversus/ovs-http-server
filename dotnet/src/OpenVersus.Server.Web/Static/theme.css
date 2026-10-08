@@ -1,0 +1,99 @@
+:root { color-scheme: light dark; }
+
+:root[data-theme="dark"] {
+    --ink: #f3f4f6 !important;
+    --card: rgba(17, 24, 39, 0.96) !important;
+    --card2: rgba(8, 12, 22, 0.94) !important;
+    --mv-blue: #4c8dff !important;
+    --mv-blue-dark: #78a7ff !important;
+    --shadow: rgba(0, 0, 0, 0.58) 0 19px 38px, rgba(0, 0, 0, 0.42) 0 15px 12px !important;
+}
+
+:root[data-theme="dark"] .background::after { background: rgba(3, 6, 14, 0.68) !important; }
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] .account-card,
+:root[data-theme="dark"] .picked-card,
+:root[data-theme="dark"] .player-card,
+:root[data-theme="dark"] .match-card,
+:root[data-theme="dark"] .table-wrap,
+:root[data-theme="dark"] .settings-panel,
+:root[data-theme="dark"] .settings-section,
+:root[data-theme="dark"] .map-checkbox-item,
+:root[data-theme="dark"] .lb-table td,
+:root[data-theme="dark"] .lb-table th {
+    background-color: #141b27 !important;
+    color: #f3f4f6 !important;
+    border-color: #46536a !important;
+  }
+
+:root[data-theme="dark"] .subtitle,
+:root[data-theme="dark"] .muted,
+:root[data-theme="dark"] .hint,
+:root[data-theme="dark"] .acct-meta,
+:root[data-theme="dark"] .empty-state,
+:root[data-theme="dark"] label {
+    color: rgba(243, 244, 246, 0.76) !important;
+  }
+
+/* Page-specific light panels the list above misses (class names differ per page:
+   leaderboard .section, home .link-card, matches .match_card, name change .hud/.chip, ...). */
+:root[data-theme="dark"] .section,
+:root[data-theme="dark"] .hud,
+:root[data-theme="dark"] .chip,
+:root[data-theme="dark"] .acct-card,
+:root[data-theme="dark"] .link-card,
+:root[data-theme="dark"] .match_card,
+:root[data-theme="dark"] .preview,
+:root[data-theme="dark"] .skew-input-wrap,
+:root[data-theme="dark"] .code-input-wrap {
+    background: #141b27 !important;
+    color: #f3f4f6 !important;
+    border-color: #46536a !important;
+  }
+
+/* Leaderboard tabs: the inactive one is #ddd with light text in dark mode. */
+:root[data-theme="dark"] .tab-btn:not(.active) { background: #243044 !important; border-color: #46536a !important; }
+:root[data-theme="dark"] .tab-btn:not(.active) .tab-label { color: #cbd5e1 !important; }
+
+/* Text hardcoded near-black or mid-grey for the light theme. */
+:root[data-theme="dark"] .subline,
+:root[data-theme="dark"] .char-select-label,
+:root[data-theme="dark"] .char_name,
+:root[data-theme="dark"] .empty_state,
+:root[data-theme="dark"] .refresh_note,
+:root[data-theme="dark"] .cancel-link,
+:root[data-theme="dark"] .loading {
+    color: rgba(243, 244, 246, 0.76) !important;
+  }
+
+/* Name change: the current username is #3b3b3b for the light theme. */
+:root[data-theme="dark"] .current_name { color: #f3f4f6 !important; }
+
+/* Character image slots behind a portrait. */
+:root[data-theme="dark"] .char_icon,
+:root[data-theme="dark"] .char-icon { background-color: #1e293b !important; }
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder,
+:root[data-theme="dark"] .skew-input::placeholder,
+:root[data-theme="dark"] .code-input::placeholder { color: #9ca3af !important; }
+:root[data-theme="dark"] .lb-table tr:hover td,
+:root[data-theme="dark"] .map-checkbox-item:hover { background-color: #1e293b !important; }
+
+.theme-toggle {
+  position: fixed;
+  z-index: 10000;
+  right: 14px;
+  top: 14px;
+  width: 44px;
+  height: 44px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, .28);
+  cursor: pointer;
+  font-size: 20px;
+}

@@ -22,8 +22,9 @@ brings it back and the history stays. Each identifier is checked against its own
 login's IP against every file, and read its hash-ban file for the Steam and Epic lists, so no Steam or Epic ban was
 ever in effect.)
 
-The services that ban (the access service) must be able to write the trail: mount its folder read-write for them. A
-service that cannot write it logs an error at startup; its bans are still in Mongo and Redis.
+The services that ban (the access service; the web service, for `/namechange`) must be able to write the trail: mount
+its folder read-write for them. A service that cannot write it logs an error when it bans; its bans are still in Mongo
+and Redis.
 
 ## A ban record
 
@@ -112,4 +113,6 @@ never pattern syntax. A blank term is skipped.
 
 At login, a name that hits the banned list bans the person (source `login`); one that hits the force list is renamed to
 the player's own generated `OpenVersus_` name, or a new one, before the session is written. The website's name change
-(`/namechange`) is not ported yet.
+(`/namechange`, the web service) checks the new name as typed, before it is cut to 24 characters: a banned term bans the
+person (source `namechange`, with the name they had and the one they tried, the request's IP and user agent) and the
+page says so; a force-change term refuses the name; while the lists have not loaded, a name change is refused.

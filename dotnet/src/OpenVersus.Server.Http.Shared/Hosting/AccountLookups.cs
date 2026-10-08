@@ -8,9 +8,11 @@ namespace OpenVersus.Server.Http.Shared.Hosting;
 /// <summary>What the TS server's resolveAccountFromRequest reads from a request (see <see cref="IAccountResolver"/>).</summary>
 public static partial class AccountLookups
 {
-    public static AccountLookup From(HttpContext context)
+    public static AccountLookup From(HttpContext context) => From(context, context.Session()?.Claims);
+
+    /// <summary>As <see cref="From(HttpContext)"/>, with claims verified some other way (a route that checks its token itself).</summary>
+    public static AccountLookup From(HttpContext context, System.Text.Json.Nodes.JsonObject? claims)
     {
-        var claims = context.Session()?.Claims;
         // safeDecodeToken: a token without an id is no token.
         var token = Str(claims, "id") is { Length: > 0 } id
             ? new AccountLookup.TokenFields(id, Str(claims, "steamId"), Str(claims, "epicId"), Str(claims, "installId"), Str(claims, "current_ip"))

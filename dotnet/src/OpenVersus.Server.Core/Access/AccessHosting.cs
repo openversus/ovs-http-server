@@ -15,13 +15,10 @@ public static class AccessHosting
         builder.AddSetting<AccessSettings>("Access");
         builder.AddSetting<RealtimeSettings>("Realtime");
         builder.AddSetting<WbNetworkSettings>("WbNetwork");
-        builder.AddSetting<BanSettings>("Bans");
         // AccessService reads the current season: bound here, so it never falls back to the defaults unseen.
         builder.AddSetting<Seasons.SeasonSettings>("Seasons");
         builder.Services.TryAddSingleton(TimeProvider.System);
-        builder.Services.AddSingleton<IBanService, BanService>();
-        builder.Services.AddSingleton<INameRules, NameRules>();
-        builder.Services.AddSingleton<IPersonBans, PersonBans>();
+        builder.AddBans();
         builder.Services.AddHostedService<BanLoader>();
         builder.Services.AddHostedService<BanSweep>();
         builder.Services.AddSingleton<IAccessService, AccessService>();

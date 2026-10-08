@@ -4,6 +4,15 @@
        image, so a website change never restarts what the game talks to. -->
   <ItemGroup>
     <PackageReference Include="FastEndpoints" Version="8.3.0" />
+    <!-- The pages' templates, as the TS server's handlebars renders them. Reflection-based: a NativeAOT web service would
+         render its few templates (values, if, each) by hand instead. -->
+    <PackageReference Include="Handlebars.Net" Version="2.1.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The website's files (copies of the TS server's src/static: the image is built from dotnet/ alone), served and
+         rendered from the output folder (StaticFiles). -->
+    <Content Include="Static/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

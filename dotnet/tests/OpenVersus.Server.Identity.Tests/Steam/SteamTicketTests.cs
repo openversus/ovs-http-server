@@ -28,6 +28,7 @@ public sealed class SteamTicketTests
 
         Assert.NotNull(ticket);
         Assert.Equal("76561198000000091", ticket.SteamId);
+        Assert.Equal(bytes[..52], ticket.AuthPart.ToArray());
         Assert.Equal(AppId, ticket.AppId);
         Assert.Equal(2u, ticket.Version);
         Assert.Equal(0u, ticket.OwnershipFlags);

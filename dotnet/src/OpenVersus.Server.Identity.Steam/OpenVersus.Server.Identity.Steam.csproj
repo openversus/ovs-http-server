@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The Steam identity service: asks Steam itself about each registered client's session ticket and holds the auth
+       session while the game runs (the online check, and Steam presence). Its own executable and container, outbound to
+       Steam only, no public port: the only service that holds state with Steam. SteamKit2 (LGPL) stays its own assembly
+       next to this one: never merged into a single file. -->
+  <ItemGroup>
+    <PackageReference Include="SteamKit2" Version="3.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenVersus.Server.Identity\OpenVersus.Server.Identity.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenVersus.Server.Identity.Steam.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# The C# services' images: one image per service (http, access, social, lobbies, web, ws, edge, matchmaking, matchflow), each with only its own executable and
+# The C# services' images: one image per service (http, access, social, lobbies, web, ws, edge, matchmaking, matchflow, steam), each with only its own executable and
 # ovsctl, built from one shared build of the solution. From this directory:
 #   docker build --target matchmaking --build-arg SOURCE_REVISION=$(git rev-parse HEAD) -t ovs-matchmaking .
 # build-images.sh builds them all. The proxy has no image: it exists only for the migration bench.
@@ -17,6 +17,7 @@ COPY src/OpenVersus.Server.Core/OpenVersus.Server.Core.csproj src/OpenVersus.Ser
 COPY src/OpenVersus.Server.Http/OpenVersus.Server.Http.csproj src/OpenVersus.Server.Http/
 COPY src/OpenVersus.Server.Http.Shared/OpenVersus.Server.Http.Shared.csproj src/OpenVersus.Server.Http.Shared/
 COPY src/OpenVersus.Server.Identity/OpenVersus.Server.Identity.csproj src/OpenVersus.Server.Identity/
+COPY src/OpenVersus.Server.Identity.Steam/OpenVersus.Server.Identity.Steam.csproj src/OpenVersus.Server.Identity.Steam/
 COPY src/OpenVersus.Server.Web/OpenVersus.Server.Web.csproj src/OpenVersus.Server.Web/
 COPY src/OpenVersus.Server.Access/OpenVersus.Server.Access.csproj src/OpenVersus.Server.Access/
 COPY src/OpenVersus.Server.Social/OpenVersus.Server.Social.csproj src/OpenVersus.Server.Social/
@@ -26,11 +27,11 @@ COPY src/OpenVersus.Server.Edge/OpenVersus.Server.Edge.csproj src/OpenVersus.Ser
 COPY src/OpenVersus.Server.Matchmaking/OpenVersus.Server.Matchmaking.csproj src/OpenVersus.Server.Matchmaking/
 COPY src/OpenVersus.Server.MatchFlow/OpenVersus.Server.MatchFlow.csproj src/OpenVersus.Server.MatchFlow/
 COPY src/OpenVersus.Server.Cli/OpenVersus.Server.Cli.csproj src/OpenVersus.Server.Cli/
-RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking MatchFlow Cli; do \
+RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking MatchFlow Identity.Steam Cli; do \
       dotnet restore src/OpenVersus.Server.$project/OpenVersus.Server.$project.csproj || exit 1; \
     done
 COPY src/ src/
-RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking MatchFlow Cli; do \
+RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking MatchFlow Identity.Steam Cli; do \
       dotnet publish src/OpenVersus.Server.$project/OpenVersus.Server.$project.csproj -c Release --no-restore \
         -p:SourceRevisionId=$SOURCE_REVISION -o /out/$project || exit 1; \
     done
@@ -114,3 +115,10 @@ ENV OVS_SERVICE=matchflow
 COPY --from=build /out/MatchFlow .
 EXPOSE 8005
 ENTRYPOINT ["dotnet", "OpenVersus.Server.MatchFlow.dll"]
+
+# The Steam identity service: asks Steam about each registered client's ticket and holds the auth session while the game
+# runs (docs/IDENTIFY.md "Asking Steam"). No public port; outbound to Steam (TCP 27015-27050 and 443).
+FROM runtime AS steam
+ENV OVS_SERVICE=steam
+COPY --from=build /out/Identity.Steam .
+ENTRYPOINT ["dotnet", "OpenVersus.Server.Identity.Steam.dll"]

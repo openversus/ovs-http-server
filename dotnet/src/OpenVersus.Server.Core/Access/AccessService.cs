@@ -13,6 +13,7 @@ using OpenVersus.Server.Core.Bans;
 using OpenVersus.Server.Core.CustomLobbies;
 using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Core.Seasons;
+using OpenVersus.Server.Core.Steam;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Access;
@@ -116,6 +117,7 @@ internal sealed partial class AccessService(
     IOptionsMonitor<AccessSettings> access,
     IOptionsMonitor<RealtimeSettings> realtime,
     IOptionsMonitor<SeasonSettings> seasons,
+    IOptionsMonitor<SteamSettings> steam,
     IBanService bans,
     INameRules names,
     IPersonBans personBans,
@@ -372,6 +374,17 @@ internal sealed partial class AccessService(
             {
                 identity.SteamTicket = record.GetValueOrDefault(IdentityRecord.TicketField, "");
             }
+        }
+
+        if (identity.SteamVerified && steam.CurrentValue.Enabled
+            && await SteamSessions.RefusedRecentlyAsync(redis, identity.SteamId, TimeSpan.FromMinutes(steam.CurrentValue.RefusalHoldMinutes), now))
+        {
+            // The Steam identity service heard Steam refuse this id's ticket (after the registration answered, or on a
+            // replayed ticket): not an identity until the hold passes; the install id, hardware and IP decide.
+            log.LogWarning("Steam refused the ticket of {Steam} within the last {Hold} min: the Steam id from {Ip} is a claim, not an identity", identity.SteamId, steam.CurrentValue.RefusalHoldMinutes, ip);
+            identity.SteamId = "";
+            identity.SteamVerified = false;
+            identity.SteamTicket = "";
         }
 
         if (identity.Source is "jwt" or "identify")

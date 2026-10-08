@@ -98,6 +98,12 @@ internal sealed class PersonBans(IServiceProvider services, IOptionsMonitor<BanS
                 }
 
                 await redis.PublishAsync(RedisChannel.Literal(BannedPlayers.ChangedChannel), BanEvent.Banned(who.PlayerId).ToString());
+                if (who.SteamId.Length > 0)
+                {
+                    // The Steam identity service lets go of the session it holds for them (presence off, nothing kept).
+                    await Steam.SteamSessions.PublishEndAsync(redis, who.SteamId);
+                }
+
                 online = await redis.SetContainsAsync("online_players", who.PlayerId);
                 disconnected = await PlayerMessages.DisconnectAsync(redis, new JsonObject { ["playerId"] = who.PlayerId }) > 0 && online;
             }

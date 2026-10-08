@@ -17,6 +17,8 @@ public static class AccessHosting
         builder.AddSetting<WbNetworkSettings>("WbNetwork");
         // AccessService reads the current season: bound here, so it never falls back to the defaults unseen.
         builder.AddSetting<Seasons.SeasonSettings>("Seasons");
+        // A Steam id Steam itself refused lately is a claim at the login (SteamSessions.RefusedRecentlyAsync).
+        builder.AddSetting<Steam.SteamSettings>("Steam");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.AddBans();
         builder.Services.AddHostedService<BanLoader>();

@@ -9,6 +9,7 @@ using OpenVersus.Server.Core.Bans;
 using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.Seasons;
+using OpenVersus.Server.Core.Steam;
 using OpenVersus.Server.Identity;
 using OpenVersus.Server.Identity.Steam;
 using OpenVersus.Server.TestSupport;
@@ -38,6 +39,7 @@ public sealed class AccessIdentityTests : IAsyncLifetime
     private ConnectionMultiplexer? _redis;
     private IMongoClient? _mongo;
     private BanSettings _settings = new();
+    private readonly SteamSettings _steam = new();
 
     private static bool Configured => !string.IsNullOrEmpty(s_redis) && !string.IsNullOrEmpty(s_mongo);
 
@@ -109,6 +111,26 @@ public sealed class AccessIdentityTests : IAsyncLifetime
         Assert.Equal(1818750, ticket["app_id"].AsInt64);
         Assert.Equal(Install, saved["installId"].AsString);
         Assert.Equal(account.ToString(), (string?)await Redis.StringGetAsync($"identity:steam:{s_steam}"));
+    }
+
+    [SkippableFact]
+    public async Task ASteamIdSteamRefusedLatelyIsAClaim()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        _steam.Enabled = true;
+        var steamOwner = await SeedAsync("Steam Owner", steam: s_steam, install: "");
+        var installOwner = await SeedAsync("Install Owner", steam: "", install: Install);
+        // The Steam identity service heard Steam refuse this id's ticket a minute ago.
+        await Redis.HashSetAsync(SteamSessions.SessionKey(s_steam), [new HashEntry("state", SteamSessions.Refused), new HashEntry("response", "NoLicenseOrExpired"),
+            new HashEntry("verdict_at", DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeMilliseconds().ToString())]);
+
+        var held = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, IdentifyToken(s_steam, verified: true)));
+        Assert.Equal(installOwner.ToString(), held.PlayerId);
+
+        // The hold has passed.
+        await Redis.HashSetAsync(SteamSessions.SessionKey(s_steam), "verdict_at", DateTimeOffset.UtcNow.AddMinutes(-11).ToUnixTimeMilliseconds().ToString());
+        var past = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, IdentifyToken(s_steam, verified: true)));
+        Assert.Equal(steamOwner.ToString(), past.PlayerId);
     }
 
     [SkippableFact]
@@ -185,7 +207,7 @@ public sealed class AccessIdentityTests : IAsyncLifetime
         var options = new TestOptions<BanSettings>(_settings);
         var services = Stores();
         return new AccessService(services, new TestOptions<AccessSettings>(new AccessSettings { JwtSecret = Secret, IdentifySecret = IdentifySecret }),
-            new TestOptions<RealtimeSettings>(new RealtimeSettings()), new TestOptions<SeasonSettings>(new SeasonSettings()),
+            new TestOptions<RealtimeSettings>(new RealtimeSettings()), new TestOptions<SeasonSettings>(new SeasonSettings()), new TestOptions<SteamSettings>(_steam),
             new BanService(services, NullLogger<BanService>.Instance), new NameRules(options, TimeProvider.System, NullLogger<NameRules>.Instance),
             new PersonBans(services, options, TimeProvider.System, NullLogger<PersonBans>.Instance), TimeProvider.System, NullLogger<AccessService>.Instance);
     }

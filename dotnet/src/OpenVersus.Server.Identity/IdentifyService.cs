@@ -12,6 +12,7 @@ using OpenVersus.Server.Core.Access;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Settings;
+using OpenVersus.Server.Core.Steam;
 using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Identity.Steam;
 using StackExchange.Redis;
@@ -59,17 +60,30 @@ internal sealed class IdentifyService(
     IServiceProvider services,
     IOptionsMonitor<AccessSettings> access,
     IOptionsMonitor<ClientSettings> clients,
+    IOptionsMonitor<SteamSettings> steam,
     ISteamTicketVerifier tickets,
     TimeProvider time,
     ILogger<IdentifyService> log) : IIdentifyService
 {
     private static readonly TimeSpan s_recordLifetime = TimeSpan.FromSeconds(300);
+    private static readonly TimeSpan s_verdictPoll = TimeSpan.FromMilliseconds(100);
 
     /// <summary>What identity:{ip} holds (TS IpIdentity), plus whether the Steam id was proved.</summary>
     /// <param name="SteamTicket">The verified ticket's fields as canonical extended JSON (see <see cref="IdentityRecord.TicketField"/>), or "".</param>
     private sealed record IpIdentity(string SteamId, bool SteamVerified, string SteamTicket, string EpicId, HardwareSignal Hardware, string InstallId, string ClientVersion)
     {
         public bool Any => SteamId.Length > 0 || EpicId.Length > 0 || InstallId.Length > 0;
+
+        /// <summary>Steam itself confirmed the ticket is live for this registration (an auth session is held: the game runs under that account).</summary>
+        public bool SteamOnline { get; init; }
+
+        /// <summary>The verified ticket's session part and SHA-256 (what the Steam identity service is asked with); empty once the record is read back.</summary>
+        public ReadOnlyMemory<byte> AuthPart { get; init; }
+
+        public string TicketHash { get; init; } = "";
+
+        /// <summary>Steam refused this registration's ticket: a stored proof for the same install is dropped too (Merge).</summary>
+        public bool SteamRefused { get; init; }
     }
 
     public async Task<IdentifyResult> RegisterAsync(string ip, JsonObject body, CancellationToken ct = default)
@@ -89,7 +103,7 @@ internal sealed class IdentifyService(
         }
 
         var now = time.GetUtcNow();
-        var incoming = Incoming(body, ip, now);
+        var incoming = await AskSteamAsync(redis, Incoming(body, ip, now), ip, now, ct);
         int nodePort = Core.Matches.P2P.ParseNodePort(body["nodePort"]);
         var identity = Merge(await ReadAsync(redis, ip), incoming);
         bool registered = identity.Any;
@@ -110,7 +124,7 @@ internal sealed class IdentifyService(
         ]);
         await redis.KeyExpireAsync(key, s_recordLifetime);
         log.LogInformation("Identity registered for IP {Ip} - steam:{Steam} epic:{Epic} install:{Install} hardware:{Hardware} version:{Version} identity:{Registered} node:{Node}",
-            ip, identity.SteamId.Length > 0 ? identity.SteamId + " (verified)" : "-", Dash(identity.EpicId), identity.InstallId.Length > 0 ? "yes" : "no",
+            ip, identity.SteamId.Length > 0 ? identity.SteamId + (identity.SteamOnline ? " (verified, live on Steam)" : " (verified)") : "-", Dash(identity.EpicId), identity.InstallId.Length > 0 ? "yes" : "no",
             identity.Hardware.HardwareId.Length > 0 ? $"v{identity.Hardware.HardwareIdVersion}/{identity.Hardware.HardwareIdQuality}" : "none",
             identity.ClientVersion.Length > 0 ? identity.ClientVersion : "legacy", registered ? "registered" : "missing", nodePort > 0 ? nodePort : "none");
 
@@ -153,6 +167,7 @@ internal sealed class IdentifyService(
             ["lobby_id"] = "",
             ["GameplayPreferences"] = 964,
             ["steamVerified"] = identity.SteamVerified ? "1" : "",
+            ["steamOnline"] = identity.SteamOnline ? "1" : "",
         };
         string token = IdentifyTokens.Sign(claims, secret, now);
 
@@ -188,13 +203,16 @@ internal sealed class IdentifyService(
     {
         string claimed = IdentityRules.Normalize(IdentityKind.Steam, body["steamId"]);
         string ticketText = body["steamTicket"]?.GetValueKind() == JsonValueKind.String ? body["steamTicket"]!.GetValue<string>() : "";
-        string steamId = "", ticketJson = "";
+        string steamId = "", ticketJson = "", hash = "";
+        ReadOnlyMemory<byte> authPart = default;
         if (ticketText.Length > 0)
         {
             switch (tickets.Check(ticketText, access.CurrentValue.SteamAppId, now))
             {
                 case SteamTicketCheck.Verified ok:
                     steamId = ok.Ticket.SteamId;
+                    authPart = ok.Ticket.AuthPart;
+                    hash = ok.Hash;
                     ticketJson = TicketFields(ok, ip, now).ToJson(new MongoDB.Bson.IO.JsonWriterSettings { OutputMode = MongoDB.Bson.IO.JsonOutputMode.CanonicalExtendedJson });
                     if (claimed.Length > 0 && claimed != steamId)
                     {
@@ -220,7 +238,74 @@ internal sealed class IdentifyService(
             IdentityRules.Normalize(IdentityKind.Epic, body["epicId"]),
             IdentityRules.NormalizeHardware(StringOnly(body["hardwareId"]), JsString(body["hardwareIdVersion"]), StringOnly(body["hardwareIdQuality"])),
             IdentityRules.Normalize(IdentityKind.Install, body["installId"]),
-            version.Length > 32 ? version[..32] : version);
+            version.Length > 32 ? version[..32] : version)
+        {
+            AuthPart = authPart,
+            TicketHash = hash,
+        };
+    }
+
+    // Steam itself, when it can be asked (Steam:Enabled, and a Steam identity service connected): the ticket's session
+    // part is queued for an auth session and the verdict waited for, up to Steam:IdentifyWaitMs. OK proves the ticket is
+    // live for this launch (and is presence); refused drops the Steam id as a bad signature would; no verdict in time,
+    // or Steam unavailable, leaves the offline verdict standing (a refusal landing later disconnects the player from the
+    // service's side, and the login holds the id as a claim).
+    private async Task<IpIdentity> AskSteamAsync(IDatabase redis, IpIdentity incoming, string ip, DateTimeOffset now, CancellationToken ct)
+    {
+        var options = steam.CurrentValue;
+        if (!incoming.SteamVerified || !options.Enabled || incoming.AuthPart.Length == 0)
+        {
+            return incoming;
+        }
+
+        if (!await SteamSessions.ConnectedAsync(redis))
+        {
+            log.LogInformation("Steam is not asked about the ticket of {Steam} from {Ip}: no Steam identity service is connected (the offline check stands)", incoming.SteamId, ip);
+            return incoming;
+        }
+
+        // The account the Steam id is indexed to, when there is one (a first launch has none yet; the service looks again at the verdict).
+        string playerId = (await redis.StringGetAsync($"identity:steam:{incoming.SteamId}")).ToString();
+        await SteamSessions.QueueOpenAsync(redis, new SteamSessions.OpenRequest(incoming.SteamId, playerId, ip, Convert.ToHexStringLower(incoming.AuthPart.Span), incoming.TicketHash, now.ToUnixTimeMilliseconds()));
+        var deadline = now + TimeSpan.FromMilliseconds(options.IdentifyWaitMs);
+        SteamSessions.SessionView? session;
+        while (true)
+        {
+            session = await SteamSessions.ReadAsync(redis, incoming.SteamId);
+            if (session is not null && session.TicketHash != incoming.TicketHash)
+            {
+                session = null;
+            }
+
+            if (session is { State: not SteamSessions.Pending })
+            {
+                break;
+            }
+
+            var left = deadline - time.GetUtcNow();
+            if (left <= TimeSpan.Zero)
+            {
+                break;
+            }
+
+            await Task.Delay(left < s_verdictPoll ? left : s_verdictPoll, time, ct);
+        }
+
+        switch (session?.State)
+        {
+            case SteamSessions.Ok:
+                log.LogInformation("Steam confirmed the ticket of {Steam} from {Ip} after {Wait} ms", incoming.SteamId, ip, (time.GetUtcNow() - now).TotalMilliseconds);
+                return incoming with { SteamOnline = true };
+            case SteamSessions.Refused:
+                log.LogWarning("Steam REFUSED the ticket of {Steam} from {Ip} ({Response}): the Steam id is not used as an identity", incoming.SteamId, ip, session.Response);
+                return incoming with { SteamId = "", SteamVerified = false, SteamTicket = "", AuthPart = default, TicketHash = "", SteamRefused = true };
+            case SteamSessions.Unavailable:
+                log.LogInformation("Steam could not be asked about the ticket of {Steam} from {Ip} ({Response}): the offline check stands", incoming.SteamId, ip, session.Response);
+                return incoming;
+            default:
+                log.LogInformation("No verdict from Steam on the ticket of {Steam} from {Ip} within {Wait} ms: the offline check stands", incoming.SteamId, ip, options.IdentifyWaitMs);
+                return incoming;
+        }
     }
 
     private static async Task<IpIdentity?> ReadAsync(IDatabase redis, string ip)
@@ -248,7 +333,8 @@ internal sealed class IdentifyService(
             return incoming;
         }
 
-        var steam = incoming.SteamId.Length > 0 ? incoming : stored;
+        // A refused ticket takes the stored proof with it: the record must not say verified when Steam just said no.
+        var steam = incoming.SteamId.Length > 0 || incoming.SteamRefused ? incoming : stored;
         return new IpIdentity(
             steam.SteamId,
             steam.SteamId.Length > 0 && steam.SteamVerified,
@@ -256,7 +342,10 @@ internal sealed class IdentifyService(
             incoming.EpicId.Length > 0 ? incoming.EpicId : stored.EpicId,
             incoming.Hardware.HardwareId.Length > 0 ? incoming.Hardware : stored.Hardware,
             incoming.InstallId,
-            incoming.ClientVersion.Length > 0 ? incoming.ClientVersion : stored.ClientVersion);
+            incoming.ClientVersion.Length > 0 ? incoming.ClientVersion : stored.ClientVersion)
+        {
+            SteamOnline = steam.SteamId.Length > 0 && steam.SteamOnline,
+        };
     }
 
     /// <summary>
@@ -332,6 +421,7 @@ public static class IdentifyHosting
     public static WebApplicationBuilder AddIdentify(this WebApplicationBuilder builder)
     {
         builder.AddSetting<ClientSettings>("Clients");
+        builder.AddSetting<SteamSettings>("Steam");
         builder.AddSteamTickets();
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.TryAddSingleton<IIdentifyService, IdentifyService>();

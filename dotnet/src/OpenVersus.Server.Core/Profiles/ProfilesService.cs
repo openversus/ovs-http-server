@@ -5,6 +5,8 @@ using Microsoft.Extensions.Logging;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Access;
+using Microsoft.Extensions.Options;
+using OpenVersus.Server.Core.Steam;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Profiles;
@@ -47,7 +49,7 @@ public interface IProfilesService
     Task<JsonObject> SearchAsync(string? username, bool hydra, CancellationToken ct = default);
 }
 
-internal sealed class ProfilesService(IServiceProvider services, TimeProvider time, ILogger<ProfilesService> log) : IProfilesService
+internal sealed class ProfilesService(IServiceProvider services, IOptionsMonitor<SteamSettings> steam, TimeProvider time, ILogger<ProfilesService> log) : IProfilesService
 {
     public const string DefaultProfileIcon = "profile_icon_default";
     private const string IdentityAvatar = "https://s3.amazonaws.com/wb-agora-hydra-ugc-dokken/identicons/identicon.584.png";
@@ -294,8 +296,35 @@ internal sealed class ProfilesService(IServiceProvider services, TimeProvider ti
             .Find(new BsonDocument("_id", new BsonDocument("$in", objectIds))).ToListAsync(ct);
     }
 
-    private static async Task<bool[]> OnlineAsync(IDatabase redis, List<BsonDocument> players) =>
-        players.Count == 0 ? [] : await redis.SetContainsAsync("online_players", players.Select(p => (RedisValue)p["_id"].AsObjectId.ToString()).ToArray());
+    // online_players (the websocket), unless Steam has a say (SteamSessions.PresenceAsync, with Steam:Enabled): a game
+    // running under the account is online whether or not its websocket is up yet, and a game Steam saw close is offline
+    // before the reaper notices; Steam's silence (no session, pending, unavailable) leaves the websocket's answer.
+    private async Task<bool[]> OnlineAsync(IDatabase redis, List<BsonDocument> players)
+    {
+        if (players.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = players.Select(p => p["_id"].AsObjectId.ToString()).ToList();
+        var connected = await redis.SetContainsAsync("online_players", ids.Select(id => (RedisValue)id).ToArray());
+        var options = steam.CurrentValue;
+        if (!options.Enabled)
+        {
+            return connected;
+        }
+
+        var presence = await SteamSessions.PresenceAsync(redis, ids.Select((id, i) => (id, SteamIdOf(players[i]))).ToList(),
+            TimeSpan.FromMinutes(options.PresenceOverrideMinutes), time.GetUtcNow());
+        for (int i = 0; i < connected.Length; i++)
+        {
+            connected[i] = presence[i] ?? connected[i];
+        }
+
+        return connected;
+    }
+
+    private static string SteamIdOf(BsonDocument p) => p.GetValue("steamId", BsonNull.Value) is { IsString: true } s ? s.AsString : "";
 
     // p.name || p.hydraUsername || "Unknown"
     private static string Username(BsonDocument p) =>

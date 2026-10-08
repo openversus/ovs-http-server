@@ -46,6 +46,11 @@ public static class OvsCtl
                 player.AddCommand<PlayerBanCommand>("ban").WithDescription("Ban the person behind a player for good: their IP, Steam, Epic, hardware and install ids and the player id; recorded in Mongo and the auto-ban file, and their connection is closed.");
                 player.AddCommand<PlayerUnbanCommand>("unban").WithDescription("Lift a player's bans: their ban records are marked lifted (kept), and each identifier no other ban holds is let through; one still held is listed with what holds it (a ban file's entry is lifted with `bans lift`).");
             });
+            config.AddBranch("steam", steam =>
+            {
+                steam.SetDescription("The Steam identity service: the connection to Steam and the auth sessions it holds.");
+                steam.AddCommand<SteamStatusCommand>("status").WithDescription("Whether the service is connected to Steam, the sessions it holds by state, the verdict counts, and each held session.");
+            });
             config.AddBranch("bans", bans =>
             {
                 bans.SetDescription("Single ban values: the ban files' entries, as imported into Mongo (a person's bans are `player ban` and `player unban`). Asks the access service by default.");

@@ -127,7 +127,7 @@ public sealed class PersonBansTests : IAsyncLifetime
         var options = new TestOptions<BanSettings>(_settings);
         var services = Stores();
         return new AccessService(services, new TestOptions<AccessSettings>(new AccessSettings { JwtSecret = Secret }), new TestOptions<RealtimeSettings>(new RealtimeSettings()),
-            new TestOptions<SeasonSettings>(new SeasonSettings()), new BanService(services, NullLogger<BanService>.Instance),
+            new TestOptions<SeasonSettings>(new SeasonSettings()), new TestOptions<Steam.SteamSettings>(new Steam.SteamSettings()), new BanService(services, NullLogger<BanService>.Instance),
             new NameRules(options, TimeProvider.System, NullLogger<NameRules>.Instance), Bans(), TimeProvider.System, NullLogger<AccessService>.Instance);
     }
 

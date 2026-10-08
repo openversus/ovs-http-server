@@ -79,7 +79,7 @@ public sealed record ConnectionView(string Id, string? Node, string? Edge, long?
 
 /// <summary>A player's record, and their current connection if they have one.</summary>
 public sealed record PlayerView(string Id, string Name, string? HydraUsername, string? SteamId, string? PublicId, string? ProfileId, bool Online, string? Status,
-    ConnectionView? Connection = null);
+    ConnectionView? Connection = null, Steam.SteamSessions.SessionView? Steam = null);
 
 /// <summary>A forced disconnect sent: to whom, whether they were online, and how many websocket services heard it.</summary>
 public sealed record DisconnectView(string Id, string Name, bool WasOnline, long Websockets);
@@ -613,9 +613,15 @@ internal sealed class OpsService : IOpsService
         bool online = false;
         string? status = null;
         ConnectionView? connection = null;
+        Steam.SteamSessions.SessionView? steam = null;
         if (Redis is { } redis)
         {
             online = await redis.SetContainsAsync("online_players", id);
+            if (Str(player, "steamId") is { Length: > 0 } steamId)
+            {
+                steam = await Steam.SteamSessions.ReadAsync(redis, steamId);
+            }
+
             status = await redis.HashGetAsync($"player:{id}", "status");
             var entry = await redis.HashGetAsync(Realtime.GatewayPresence.ConnectionKey(id), ["id", "node", "edge", "at"]);
             if (!entry[0].IsNullOrEmpty)
@@ -625,7 +631,7 @@ internal sealed class OpsService : IOpsService
         }
 
         return new PlayerView(id, Str(player, "name") ?? "", Str(player, "hydraUsername"), Str(player, "steamId"), Str(player, "public_id"),
-            player.TryGetValue("profile_id", out var profile) && !profile.IsBsonNull ? profile.ToString() : null, online, status, connection);
+            player.TryGetValue("profile_id", out var profile) && !profile.IsBsonNull ? profile.ToString() : null, online, status, connection, steam);
     }
 
     private async Task<MatchView> MatchAsync(IDatabase redis, string setId, string matchId, string? mode, JsonElement players, JsonElement? set)

@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace OpenVersus.Server.Core.Steam;
+namespace OpenVersus.Server.Identity.Steam;
 
 /// <summary>What a ticket check found.</summary>
 public abstract record SteamTicketCheck

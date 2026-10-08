@@ -16,6 +16,7 @@ COPY docs/routes.json docs/
 COPY src/OpenVersus.Server.Core/OpenVersus.Server.Core.csproj src/OpenVersus.Server.Core/
 COPY src/OpenVersus.Server.Http/OpenVersus.Server.Http.csproj src/OpenVersus.Server.Http/
 COPY src/OpenVersus.Server.Http.Shared/OpenVersus.Server.Http.Shared.csproj src/OpenVersus.Server.Http.Shared/
+COPY src/OpenVersus.Server.Identity/OpenVersus.Server.Identity.csproj src/OpenVersus.Server.Identity/
 COPY src/OpenVersus.Server.Web/OpenVersus.Server.Web.csproj src/OpenVersus.Server.Web/
 COPY src/OpenVersus.Server.Access/OpenVersus.Server.Access.csproj src/OpenVersus.Server.Access/
 COPY src/OpenVersus.Server.Social/OpenVersus.Server.Social.csproj src/OpenVersus.Server.Social/

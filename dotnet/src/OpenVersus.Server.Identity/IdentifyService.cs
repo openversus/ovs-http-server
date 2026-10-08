@@ -12,10 +12,11 @@ using OpenVersus.Server.Core.Access;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Settings;
-using OpenVersus.Server.Core.Steam;
+using OpenVersus.Server.Core.Identity;
+using OpenVersus.Server.Identity.Steam;
 using StackExchange.Redis;
 
-namespace OpenVersus.Server.Core.Identity;
+namespace OpenVersus.Server.Identity;
 
 // POST /api/identify, ported from the TS server's handler (server.ts, branch infinity-war): the OpenVersus client
 // registers who is at this IP before the game logs in, and gets the token it sends on its own calls. One difference,
@@ -62,13 +63,10 @@ internal sealed class IdentifyService(
     TimeProvider time,
     ILogger<IdentifyService> log) : IIdentifyService
 {
-    /// <summary>The account field holding the verified ticket's decoded fields and hash, and the identity:{ip} field carrying them to the login.</summary>
-    public const string TicketField = "steamTicket";
-
     private static readonly TimeSpan s_recordLifetime = TimeSpan.FromSeconds(300);
 
     /// <summary>What identity:{ip} holds (TS IpIdentity), plus whether the Steam id was proved.</summary>
-    /// <param name="SteamTicket">The verified ticket's fields as canonical extended JSON (see <see cref="TicketField"/>), or "".</param>
+    /// <param name="SteamTicket">The verified ticket's fields as canonical extended JSON (see <see cref="IdentityRecord.TicketField"/>), or "".</param>
     private sealed record IpIdentity(string SteamId, bool SteamVerified, string SteamTicket, string EpicId, HardwareSignal Hardware, string InstallId, string ClientVersion)
     {
         public bool Any => SteamId.Length > 0 || EpicId.Length > 0 || InstallId.Length > 0;
@@ -92,7 +90,7 @@ internal sealed class IdentifyService(
 
         var now = time.GetUtcNow();
         var incoming = Incoming(body, ip, now);
-        int nodePort = Matches.P2P.ParseNodePort(body["nodePort"]);
+        int nodePort = Core.Matches.P2P.ParseNodePort(body["nodePort"]);
         var identity = Merge(await ReadAsync(redis, ip), incoming);
         bool registered = identity.Any;
         string key = $"identity:{ip}";
@@ -108,7 +106,7 @@ internal sealed class IdentifyService(
             new HashEntry("identityRegistered", registered ? "1" : ""),
             new HashEntry("nodePort", nodePort.ToString(CultureInfo.InvariantCulture)),
             new HashEntry("steamVerified", identity.SteamVerified ? "1" : ""),
-            new HashEntry(TicketField, identity.SteamTicket),
+            new HashEntry(IdentityRecord.TicketField, identity.SteamTicket),
         ]);
         await redis.KeyExpireAsync(key, s_recordLifetime);
         log.LogInformation("Identity registered for IP {Ip} - steam:{Steam} epic:{Epic} install:{Install} hardware:{Hardware} version:{Version} identity:{Registered} node:{Node}",
@@ -237,7 +235,7 @@ internal sealed class IdentifyService(
         // A record from before tickets (no steamVerified field) never proved its Steam id: the id is dropped here, so a
         // later call from the same install cannot inherit it. A Steam id in a record is always a proved one.
         bool verified = Field("steamVerified") == "1";
-        return new IpIdentity(verified ? Field("steamId") : "", verified, verified ? Field(TicketField) : "", Field("epicId"),
+        return new IpIdentity(verified ? Field("steamId") : "", verified, verified ? Field(IdentityRecord.TicketField) : "", Field("epicId"),
             new HardwareSignal(Field("hardwareId"), Field("hardwareIdVersion"), Field("hardwareIdQuality")), Field("installId"), Field("clientVersion"));
     }
 
@@ -307,7 +305,7 @@ internal sealed class IdentifyService(
         try
         {
             await mongo.GetCollection<BsonDocument>(PlayerRecord.Collection).UpdateOneAsync(new BsonDocument("_id", id),
-                new BsonDocument("$set", new BsonDocument(TicketField, BsonDocument.Parse(identity.SteamTicket))), cancellationToken: ct);
+                new BsonDocument("$set", new BsonDocument(IdentityRecord.TicketField, BsonDocument.Parse(identity.SteamTicket))), cancellationToken: ct);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {

@@ -2,6 +2,7 @@ using OpenVersus.Server.Core.Bans;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Identity;
+using OpenVersus.Server.Identity;
 using OpenVersus.Server.Http.Shared;
 
 // The website, the OpenVersus client's API and the admin pages (routes owned by "web" in docs/routes.json). The public

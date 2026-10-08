@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\OpenVersus.Server.Core\OpenVersus.Server.Core.csproj" />
     <ProjectReference Include="..\OpenVersus.Server.Http.Shared\OpenVersus.Server.Http.Shared.csproj" />
+    <ProjectReference Include="..\OpenVersus.Server.Identity\OpenVersus.Server.Identity.csproj" />
   </ItemGroup>
 
 </Project>

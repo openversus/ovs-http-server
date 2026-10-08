@@ -9,7 +9,7 @@ the game's `JWT_SECRET`, so anyone could register any Steam id and be that playe
 
 The client sends `steamTicket` (hex) with its registration: a Steam session ticket from the game's own Steam API
 (`ISteamUser::GetAuthSessionTicket`). Inside it is the app ownership ticket, which Steam signs (RSA-SHA1 with its system
-key, embedded in `Core/Steam/SteamTicketVerifier.cs`): the SteamID64, the app, the licenses, when it was made and when
+key, embedded in `OpenVersus.Server.Identity/Steam/SteamTicketVerifier.cs`): the SteamID64, the app, the licenses, when it was made and when
 it expires. `SteamTicket.Parse` reads the layout (SteamKit's steam3_appticket.hsl); the verifier checks the signature,
 the expiry and the app (`Access:SteamAppId`, `STEAM_APP_ID`, 1818750; 0 accepts any app). A ticket with no signature
 is refused, always.

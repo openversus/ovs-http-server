@@ -12,7 +12,8 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Access;
 using OpenVersus.Server.Core.Identity;
-using OpenVersus.Server.Core.Steam;
+using OpenVersus.Server.Identity;
+using OpenVersus.Server.Identity.Steam;
 using OpenVersus.Server.TestSupport;
 using StackExchange.Redis;
 

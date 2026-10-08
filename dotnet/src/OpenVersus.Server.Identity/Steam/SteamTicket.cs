@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace OpenVersus.Server.Core.Steam;
+namespace OpenVersus.Server.Identity.Steam;
 
 /// <summary>
 /// A Steam session ticket (ISteamUser::GetAuthSessionTicket) or the bare app ownership ticket inside one, laid out as

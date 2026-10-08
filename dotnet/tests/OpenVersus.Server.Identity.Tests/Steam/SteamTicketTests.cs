@@ -1,8 +1,8 @@
 using System.Security.Cryptography;
-using OpenVersus.Server.Core.Steam;
+using OpenVersus.Server.Identity.Steam;
 using OpenVersus.Server.TestSupport;
 
-namespace OpenVersus.Server.Core.Tests.Steam;
+namespace OpenVersus.Server.Identity.Tests.Steam;
 
 /// <summary>
 /// Tickets built here and signed with a key of this test's own, laid out as SteamKit's steam3_appticket.hsl; Steam's

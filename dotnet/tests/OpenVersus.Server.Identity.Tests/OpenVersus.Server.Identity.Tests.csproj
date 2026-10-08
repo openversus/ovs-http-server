@@ -20,14 +20,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="Hydra\encoder-fixtures.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="Access\jwt-fixtures.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="Access\sessions-auth-token.captured.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="Rifts\joker-node-win-counters.json" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\OpenVersus.Server.Core\OpenVersus.Server.Core.csproj" />
     <ProjectReference Include="..\..\src\OpenVersus.Server.Identity\OpenVersus.Server.Identity.csproj" />
     <ProjectReference Include="..\OpenVersus.Server.TestSupport\OpenVersus.Server.TestSupport.csproj" />
   </ItemGroup>

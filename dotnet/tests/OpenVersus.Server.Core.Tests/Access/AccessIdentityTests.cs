@@ -9,7 +9,8 @@ using OpenVersus.Server.Core.Bans;
 using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.Seasons;
-using OpenVersus.Server.Core.Steam;
+using OpenVersus.Server.Identity;
+using OpenVersus.Server.Identity.Steam;
 using OpenVersus.Server.TestSupport;
 using StackExchange.Redis;
 

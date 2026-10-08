@@ -135,7 +135,7 @@ internal sealed partial class AccessService(
         // The Steam id was proved by the client's session ticket (an identify token or record says so); the game's own
         // session token carries the account's stored id, which this login bound before.
         public bool SteamVerified;
-        // The verified ticket's decoded fields (IdentifyService.TicketFields, extended JSON), to keep on the account; or "".
+        // The verified ticket's decoded fields (the identify service's TicketFields, extended JSON), to keep on the account; or "".
         public string SteamTicket = "";
         // The UDP port of the client's P2P node (Matches/P2P.cs); 0 when it reported none.
         public int NodePort;
@@ -231,9 +231,9 @@ internal sealed partial class AccessService(
             try
             {
                 var ticket = BsonDocument.Parse(identity.SteamTicket);
-                if (player.Get(IdentifyService.TicketField) is not BsonDocument kept || kept.GetValue("ticket_hash", "") != ticket.GetValue("ticket_hash", ""))
+                if (player.Get(IdentityRecord.TicketField) is not BsonDocument kept || kept.GetValue("ticket_hash", "") != ticket.GetValue("ticket_hash", ""))
                 {
-                    player.Set(IdentifyService.TicketField, ticket);
+                    player.Set(IdentityRecord.TicketField, ticket);
                 }
             }
             catch (FormatException e)
@@ -370,7 +370,7 @@ internal sealed partial class AccessService(
             var record = (await redis.HashGetAllAsync($"identity:{ip}")).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
             if (record.GetValueOrDefault("steamId", "") == identity.SteamId && record.GetValueOrDefault("steamVerified", "") == "1")
             {
-                identity.SteamTicket = record.GetValueOrDefault(IdentifyService.TicketField, "");
+                identity.SteamTicket = record.GetValueOrDefault(IdentityRecord.TicketField, "");
             }
         }
 
@@ -424,7 +424,7 @@ internal sealed partial class AccessService(
 
         identity.SteamId = steamId;
         identity.SteamVerified = steamId.Length > 0;
-        identity.SteamTicket = steamId.Length > 0 ? Field(IdentifyService.TicketField) : "";
+        identity.SteamTicket = steamId.Length > 0 ? Field(IdentityRecord.TicketField) : "";
         identity.EpicId = IdentityRules.Normalize(IdentityKind.Epic, Field("epicId"));
         identity.Hardware = IdentityRules.NormalizeHardware(Field("hardwareId"), Field("hardwareIdVersion"), Field("hardwareIdQuality"));
         identity.InstallId = IdentityRules.Normalize(IdentityKind.Install, Field("installId"));

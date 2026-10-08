@@ -48,6 +48,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="OpenVersus.Server.Core.Tests" />
+    <!-- The identify service (the OpenVersus client's registration, Steam tickets) lives next to Core. -->
+    <InternalsVisibleTo Include="OpenVersus.Server.Identity" />
   </ItemGroup>
 
 </Project>

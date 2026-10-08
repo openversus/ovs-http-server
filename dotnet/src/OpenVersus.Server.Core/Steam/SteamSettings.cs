@@ -10,8 +10,8 @@ namespace OpenVersus.Server.Core.Steam;
 /// </summary>
 public sealed class SteamSettings
 {
-    [Description("Ask Steam about each verified ticket (the Steam identity service must run): identify waits for the verdict, a refused ticket's Steam id is dropped, and Steam's presence outranks the websocket's. Off: the offline signature check alone, as before.")]
-    public bool Enabled { get; set; }
+    [Description("Ask Steam about each verified ticket (the Steam identity service must run): identify waits for the verdict, a refused ticket's Steam id is dropped, and Steam's presence outranks the websocket's. Off: the offline signature check alone. Without the service or Steam, on behaves as off.")]
+    public bool Enabled { get; set; } = true;
 
     [Description("How long /api/identify waits for Steam's verdict before answering from the offline check alone (the client gives up at 5000).")]
     [Range(0, 4500)]

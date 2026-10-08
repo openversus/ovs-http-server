@@ -34,7 +34,8 @@ list, and Steam answers with a verdict on it (`ClientTicketAuthComplete`). Steam
 long as the game runs under that account: the moment the game closes, Steam says so (`AuthTicketCanceled`). A ticket
 is single-use per session, and the service's list is the whole set of tickets it holds.
 
-With `Steam:Enabled` (a cluster setting, off by default; the service idles disconnected while it is off):
+With `Steam:Enabled` (a cluster setting, on by default; off, the service idles disconnected and the offline check alone
+decides; without the service running, on behaves as off):
 
 - `/api/identify` queues the verified ticket for the service (`steam:auth:open`, a Redis list: a request outlives a
   service restart) and waits up to `Steam:IdentifyWaitMs` (2500) for the verdict. OK: the token also says

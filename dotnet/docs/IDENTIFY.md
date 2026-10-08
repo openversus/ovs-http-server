@@ -38,10 +38,11 @@ With `Steam:Enabled` (a cluster setting, on by default; off, the service idles d
 decides; without the service running, on behaves as off):
 
 - `/api/identify` queues the verified ticket for the service (`steam:auth:open`, a Redis list: a request outlives a
-  service restart) and waits up to `Steam:IdentifyWaitMs` (2500) for the verdict. OK: the token also says
+  service restart, and one queued while no service is connected is taken the moment one is) and, when a service is
+  connected (`steam:status`), waits up to `Steam:IdentifyWaitMs` (2500) for the verdict. OK: the token also says
   `steamOnline: "1"`. Refused: the Steam id is dropped as a bad signature's would be, before the identity record is
-  written. No verdict in time, or no service connected (`steam:status`): the offline verdict stands, and a verdict that
-  lands later is acted on by the service.
+  written. No verdict in time, or no service connected: the offline verdict stands, and a verdict that lands later is
+  acted on by the service.
 - The first verdict on a session decides. Refused (no license, VAC or publisher ban, invalid, someone else's session):
   the player is disconnected, as a ban does, and the login treats that Steam id as a claim for
   `Steam:RefusalHoldMinutes` (10). `AuthTicketInvalidAlreadyUsed` on a ticket this connection itself opened is a lost

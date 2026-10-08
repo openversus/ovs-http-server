@@ -245,11 +245,12 @@ internal sealed class IdentifyService(
         };
     }
 
-    // Steam itself, when it can be asked (Steam:Enabled, and a Steam identity service connected): the ticket's session
-    // part is queued for an auth session and the verdict waited for, up to Steam:IdentifyWaitMs. OK proves the ticket is
-    // live for this launch (and is presence); refused drops the Steam id as a bad signature would; no verdict in time,
-    // or Steam unavailable, leaves the offline verdict standing (a refusal landing later disconnects the player from the
-    // service's side, and the login holds the id as a claim).
+    // Steam itself (Steam:Enabled): the ticket's session part is queued for an auth session (a durable list: a service
+    // that is restarting, or not yet connected, takes it when it is), and the verdict waited for, up to
+    // Steam:IdentifyWaitMs, when a Steam identity service is connected now. OK proves the ticket is live for this launch
+    // (and is presence); refused drops the Steam id as a bad signature would; no verdict in time, or no service to ask,
+    // leaves the offline verdict standing (a verdict landing later is acted on from the service's side: presence, or a
+    // disconnect and the login holding the id as a claim).
     private async Task<IpIdentity> AskSteamAsync(IDatabase redis, IpIdentity incoming, string ip, DateTimeOffset now, CancellationToken ct)
     {
         var options = steam.CurrentValue;
@@ -258,15 +259,15 @@ internal sealed class IdentifyService(
             return incoming;
         }
 
-        if (!await SteamSessions.ConnectedAsync(redis))
-        {
-            log.LogInformation("Steam is not asked about the ticket of {Steam} from {Ip}: no Steam identity service is connected (the offline check stands)", incoming.SteamId, ip);
-            return incoming;
-        }
-
         // The account the Steam id is indexed to, when there is one (a first launch has none yet; the service looks again at the verdict).
         string playerId = (await redis.StringGetAsync($"identity:steam:{incoming.SteamId}")).ToString();
         await SteamSessions.QueueOpenAsync(redis, new SteamSessions.OpenRequest(incoming.SteamId, playerId, ip, Convert.ToHexStringLower(incoming.AuthPart.Span), incoming.TicketHash, now.ToUnixTimeMilliseconds()));
+        if (!await SteamSessions.ConnectedAsync(redis))
+        {
+            log.LogInformation("The ticket of {Steam} from {Ip} is queued for the Steam identity service, which is not connected now: the offline check stands for this registration", incoming.SteamId, ip);
+            return incoming;
+        }
+
         var deadline = now + TimeSpan.FromMilliseconds(options.IdentifyWaitMs);
         SteamSessions.SessionView? session;
         while (true)

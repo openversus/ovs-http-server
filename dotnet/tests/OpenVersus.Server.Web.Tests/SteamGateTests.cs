@@ -118,15 +118,18 @@ public sealed class SteamGateTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    public async Task WithoutAConnectedServiceTheOfflineVerdictStandsAtOnce()
+    public async Task WithoutAConnectedServiceTheOfflineVerdictStandsAtOnceAndTheTicketWaitsInTheQueue()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS to run");
         await using var factory = new Factory();
 
+        var started = DateTimeOffset.UtcNow;
         var claims = await IdentifyAsync(factory);
 
         Assert.Equal((s_steam, "1", ""), ((string?)claims["steamId"], (string?)claims["steamVerified"], (string?)claims["steamOnline"]));
-        Assert.Equal(0, await Redis.ListLengthAsync(SteamSessions.OpenQueue));
+        Assert.InRange(DateTimeOffset.UtcNow - started, TimeSpan.Zero, TimeSpan.FromSeconds(2));
+        // A service that comes up (or back) takes it from here: no reidentify needed for a short restart.
+        Assert.Equal(1, await Redis.ListLengthAsync(SteamSessions.OpenQueue));
     }
 
     [SkippableFact]

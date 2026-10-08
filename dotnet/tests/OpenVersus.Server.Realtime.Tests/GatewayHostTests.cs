@@ -39,7 +39,7 @@ public sealed class GatewayHostTests : IClassFixture<ServiceFactory<Program>>
             .Order()
             .ToList();
 
-        Assert.Equal(["ClusterSettingsSync", "GatewayPings", "GatewayReaper", "GatewaySubscriber", "GatewayTicks", "InstanceHeartbeat"], hosted);
+        Assert.Equal(["BannedPlayers", "ClusterSettingsSync", "GatewayPings", "GatewayReaper", "GatewaySubscriber", "GatewayTicks", "InstanceHeartbeat"], hosted);
     }
 
     [Fact]

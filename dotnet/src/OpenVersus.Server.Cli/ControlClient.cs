@@ -182,6 +182,9 @@ public sealed class ControlClient : IDisposable
     public Task<ControlReply<DisconnectView>> DisconnectAsync(string who) =>
         SendAsync<DisconnectView>(HttpMethod.Post, $"/control/ops/players/{Uri.EscapeDataString(who)}/disconnect");
 
+    public Task<ControlReply<BanView>> BanAsync(string who, string reason) =>
+        SendAsync<BanView>(HttpMethod.Post, $"/control/ops/players/{Uri.EscapeDataString(who)}/ban", new StringContent(reason));
+
     private async Task<ControlReply<T>> SendAsync<T>(HttpMethod method, string path, HttpContent? body = null)
     {
         HttpResponseMessage response;

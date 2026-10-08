@@ -37,7 +37,7 @@ public sealed class LobbiesServiceTests : IClassFixture<ServiceFactory<Program>>
 
         // RematchSweep starts a rematch whose vote is still open when its timer runs out (rematch:due); LobbyDisconnects
         // takes a player whose game is gone out of their lobbies (realtime:connections).
-        Assert.Equal(["ClusterSettingsSync", "InstanceHeartbeat", "LobbyDisconnects", "RematchSweep"], hosted);
+        Assert.Equal(["BannedPlayers", "ClusterSettingsSync", "InstanceHeartbeat", "LobbyDisconnects", "RematchSweep"], hosted);
     }
 
     [Fact]

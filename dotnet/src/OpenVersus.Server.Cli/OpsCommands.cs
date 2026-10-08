@@ -240,6 +240,13 @@ public class PlayerSettings : ConnectionSettings
     public string Who { get; set; } = "";
 }
 
+public sealed class PlayerBanSettings : PlayerSettings
+{
+    [CommandOption("--reason <REASON>")]
+    [Description("Why, kept in the ban's record.")]
+    public string Reason { get; set; } = "";
+}
+
 public sealed class RenameSettings : PlayerSettings
 {
     [CommandArgument(1, "<NAME>")]
@@ -317,6 +324,32 @@ public sealed class PlayerDisconnectCommand : AsyncCommand<PlayerSettings>
             {
                 _console.MarkupLineInterpolated($"Disconnect sent for [bold]{d.Name}[/] ({d.Id}) to {d.Websockets} websocket service(s); [yellow]they were not online[/].");
             }
+        });
+    }
+}
+
+public sealed class PlayerBanCommand : AsyncCommand<PlayerBanSettings>
+{
+    private readonly IAnsiConsole _console;
+
+    public PlayerBanCommand(IAnsiConsole console)
+    {
+        _console = console;
+    }
+
+    protected override async Task<int> ExecuteAsync(CommandContext context, PlayerBanSettings settings, CancellationToken cancellation)
+    {
+        using var client = ControlClient.For(settings);
+        // Markup only in the format string: what is interpolated is escaped, markup included.
+        return OvsCtl.Report(_console, settings, await client.BanAsync(settings.Who, settings.Reason), b =>
+        {
+            _console.MarkupLineInterpolated($"[red]Banned[/] [bold]{b.Name}[/] ({b.Id}), ban {b.BanId}:");
+            foreach (string identifier in b.Identifiers)
+            {
+                _console.MarkupLineInterpolated($"  {identifier}");
+            }
+
+            _console.MarkupLineInterpolated($"Online: {b.WasOnline}; disconnected: {b.Disconnected}.");
         });
     }
 }

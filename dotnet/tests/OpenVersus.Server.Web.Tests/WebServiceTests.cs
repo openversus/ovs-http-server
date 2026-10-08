@@ -47,7 +47,7 @@ public sealed class WebServiceTests : IClassFixture<ServiceFactory<Program>>
         var hosted = _factory.Services.GetServices<IHostedService>().Select(s => s.GetType())
             .Where(t => t.Namespace?.StartsWith("OpenVersus.", StringComparison.Ordinal) == true).Select(t => t.Name).Order().ToList();
 
-        Assert.Equal(["ClusterSettingsSync", "InstanceHeartbeat"], hosted);
+        Assert.Equal(["BannedPlayers", "ClusterSettingsSync", "InstanceHeartbeat"], hosted);
     }
 
     [Fact]

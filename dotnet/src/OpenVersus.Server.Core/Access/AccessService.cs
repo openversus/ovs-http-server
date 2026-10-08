@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -109,12 +110,14 @@ public interface IAccessService
     Task LogoutAsync(string ip, CancellationToken ct = default);
 }
 
-internal sealed class AccessService(
+internal sealed partial class AccessService(
     IServiceProvider services,
     IOptionsMonitor<AccessSettings> access,
     IOptionsMonitor<RealtimeSettings> realtime,
     IOptionsMonitor<SeasonSettings> seasons,
     IBanService bans,
+    INameRules names,
+    IPersonBans personBans,
     TimeProvider time,
     ILogger<AccessService> log) : IAccessService
 {
@@ -156,9 +159,25 @@ internal sealed class AccessService(
         var now = time.GetUtcNow();
         string randomName = NewName();
         var identity = await ResolveIdentityAsync(redis, ip, accessToken, secret, now, ct);
+        // Before an account is found or made: a banned person gets no new account under another identifier.
+        if (await bans.FindAsync(new BanIdentifiers(SteamId: identity.SteamId, EpicId: identity.EpicId, HardwareId: identity.Hardware.HardwareId, InstallId: identity.InstallId)) is { } identified)
+        {
+            log.LogWarning("A login from {Ip} was denied: its {Kind} {Value} is banned ({Source}).", ip, identified.Kind, identified.Value, identified.Source);
+            return new AccessResult.Banned();
+        }
+
         var players = mongo.GetCollection<BsonDocument>(PlayerRecord.Collection);
         var (player, isNew) = await FindOrCreatePlayerAsync(players, redis, ip, identity, randomName, now.UtcDateTime, ct);
         string id = player.IdHex;
+        // The account's own identifiers, which this login may not have sent, and the player id.
+        if (await bans.FindAsync(new BanIdentifiers(
+                SteamId: IdentityRules.Normalize(IdentityKind.Steam, player.Str("steamId")), EpicId: IdentityRules.Normalize(IdentityKind.Epic, player.Str("epicId")),
+                HardwareId: IdentityRules.NormalizeHardware(player.Str("hardwareId"), player.Str("hardwareIdVersion"), player.Str("hardwareIdQuality")).HardwareId,
+                InstallId: IdentityRules.Normalize(IdentityKind.Install, player.Str("installId")), PlayerId: id)) is { } stored)
+        {
+            log.LogWarning("A login from {Ip} as player {Player} was denied: its {Kind} {Value} is banned ({Source}).", ip, id, stored.Kind, stored.Value, stored.Source);
+            return new AccessResult.Banned();
+        }
 
         if (identity.Any && ip.Length > 0)
         {
@@ -174,6 +193,22 @@ internal sealed class AccessService(
         if (string.IsNullOrEmpty(player.Str("hydraUsername")))
         {
             player.Set("hydraUsername", randomName);
+        }
+
+        // A name set before a term was added to a list: banned bans the person, force-change renames them to their own
+        // random name (or a new one). Before the account token and the session are written, so both carry the new name.
+        string name = player.Str("name") ?? "";
+        switch (names.Check(name).Hit)
+        {
+            case { List: NameList.Banned } banned:
+                await personBans.BanAsync(new BanRequest(id, "banned name", "login", MatchedList: banned.ListName, MatchedTerm: banned.Term, RequestIp: ip), ct);
+                return new AccessResult.Banned();
+            case { List: NameList.ForceChange } force:
+                string own = player.Str("hydraUsername") ?? "";
+                string renamed = RandomName().IsMatch(own) ? own : randomName;
+                player.Set("name", renamed);
+                log.LogWarning("Forced a name change for player {Player}: \"{Old}\" contains the force-change term \"{Term}\"; renamed to {New}.", id, name, force.Term, renamed);
+                break;
         }
 
         // A ranked set left over from before a restart.
@@ -632,6 +667,10 @@ internal sealed class AccessService(
             log.LogError(e, "Error bumping admin:ip_changed_at:{Ip}", ip);
         }
     }
+
+    // A name NewName gave (or the TS NameGenerator did).
+    [GeneratedRegex("^OpenVersus_[0-9]+$")]
+    private static partial Regex RandomName();
 
     // NameGenerator.NewName: OpenVersus_ and a 13-digit number.
     private static string NewName() => $"OpenVersus_{Random.Shared.NextInt64(1_000_000_000_000, 9_999_999_999_999)}";

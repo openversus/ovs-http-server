@@ -1,6 +1,8 @@
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.DependencyInjection;
+using OpenVersus.Server.Core.Bans;
 using OpenVersus.Server.Http.Shared.Hosting;
 using OpenVersus.Server.Http.Shared.Stubs;
 using HydraCodec = OpenVersus.Server.Core.Hydra.Hydra;
@@ -55,6 +57,23 @@ public sealed class HydraTokenTests(GameAppFactory factory) : IClassFixture<Game
         Assert.Equal(HttpStatusCode.Unauthorized, other.StatusCode);
         using var expired = await SendAsync("GET", "/commerce/products", GameAppFactory.Token(lifetime: TimeSpan.FromSeconds(-60)));
         Assert.Equal(HttpStatusCode.Unauthorized, expired.StatusCode);
+    }
+
+    [Fact]
+    public async Task ABannedPlayersValidTokenIsRefused()
+    {
+        var banned = factory.Services.GetRequiredService<BannedPlayers>();
+        banned.Remember(GameAppFactory.AccountId);
+        try
+        {
+            using var response = await SendAsync("GET", "/commerce/products", GameAppFactory.Token());
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+            Assert.Equal(HydraCodec.Encode(new JsonObject { ["error"] = "Invalid access token" }), await response.Content.ReadAsByteArrayAsync());
+        }
+        finally
+        {
+            banned.Forget(GameAppFactory.AccountId);
+        }
     }
 
     [Fact]

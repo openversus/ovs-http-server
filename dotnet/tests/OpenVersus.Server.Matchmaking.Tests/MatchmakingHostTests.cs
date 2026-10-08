@@ -39,7 +39,7 @@ public sealed class MatchmakingHostTests : IClassFixture<ServiceFactory<Program>
             .Order()
             .ToList();
 
-        Assert.Equal(["ClusterSettingsSync", "InstanceHeartbeat", "MatchmakingWorker"], hosted);
+        Assert.Equal(["BannedPlayers", "ClusterSettingsSync", "InstanceHeartbeat", "MatchmakingWorker"], hosted);
     }
 
     [Fact]

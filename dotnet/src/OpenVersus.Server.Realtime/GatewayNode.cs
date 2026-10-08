@@ -115,6 +115,10 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
             // A resume's token was checked at the game's handshake; the session may outlive it.
             var claims = AccessTokens.Verify(token, secret, time.GetUtcNow(), checkExpiry: resumeAfter is null);
             playerId = claims["id"] is { } id && id.GetValueKind() == JsonValueKind.String ? (string)id! : throw new AccessTokenException("the token names no player");
+            if (services.GetService<OpenVersus.Server.Core.Bans.BannedPlayers>()?.Contains(playerId) == true)
+            {
+                throw new AccessTokenException($"player {playerId} is banned");
+            }
         }
         catch (Exception e) when (e is FormatException or AccessTokenException)
         {

@@ -150,6 +150,9 @@ public static class OpenVersusHost
         AddRedis(builder, service, health);
         AddMongo(builder, service, health);
         builder.Services.AddSingleton<Ops.IOpsService, Ops.OpsService>();
+        // Every service refuses a banned player's session token (HydraToken, the realtime gateway).
+        builder.Services.AddSingleton<Bans.BannedPlayers>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<Bans.BannedPlayers>());
 
         var bound = new ControlListeners.Bound();
         builder.Services.AddSingleton(bound);

@@ -21,7 +21,7 @@ public static class TsEnvironment
         ("SECURE_WEBSOCKET_PORT", "Realtime:SecurePort"),
         ("IP_BANS_FILE", "Bans:IpFile"),
         ("CIDR_BANS_FILE", "Bans:CidrFile"),
-        ("HASHBANS_FILE", "Bans:IdFile"),
+        ("HASHBANS_FILE", "Bans:HardwareFile"),
         ("MIN_CLIENT_VERSION", "Clients:MinimumVersion"),
         ("CLIENT_VERSION_CHECK", "Clients:VersionCheck"),
         ("GAME_VERSION", "Lobbies:GameVersion"),

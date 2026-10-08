@@ -84,6 +84,9 @@ public sealed record PlayerView(string Id, string Name, string? HydraUsername, s
 /// <summary>A forced disconnect sent: to whom, whether they were online, and how many websocket services heard it.</summary>
 public sealed record DisconnectView(string Id, string Name, bool WasOnline, long Websockets);
 
+/// <summary>A ban made: its record's id, whom, every identifier banned, and whether they were online and cut off.</summary>
+public sealed record BanView(string BanId, string Id, string Name, IReadOnlyList<string> Identifiers, bool WasOnline, bool Disconnected);
+
 /// <summary>
 /// Operations on the live game's state for administrators: queues, connected players, matches in progress, and player
 /// records. Behind the control API and its access policy, like the settings.
@@ -111,6 +114,9 @@ public interface IOpsService
 
     /// <summary>Closes the player's game websocket, as a heartbeat timeout would (the client logs out).</summary>
     Task<ControlResult<DisconnectView>> DisconnectPlayerAsync(string who);
+
+    /// <summary>Bans the person behind a player through every identifier known for them (source manual), and cuts them off.</summary>
+    Task<ControlResult<BanView>> BanPlayerAsync(string who, string reason);
 }
 
 internal sealed class OpsService : IOpsService
@@ -407,6 +413,32 @@ internal sealed class OpsService : IOpsService
 
         _log.LogInformation("Asked {Heard} websocket service(s) to disconnect player {Id} (\"{Name}\", online: {Online})", heard, view.Id, view.Name, view.Online);
         return ControlResult<DisconnectView>.Ok(new DisconnectView(view.Id, view.Name, view.Online, heard));
+    }
+
+    // A ban is made by the service that owns bans (access): it records it in Mongo and in the auto-ban file it can write.
+    public async Task<ControlResult<BanView>> BanPlayerAsync(string who, string reason)
+    {
+        if (Players is not { } players)
+        {
+            return NoMongo<BanView>();
+        }
+
+        if (_services.GetService<Bans.IPersonBans>() is not { } personBans)
+        {
+            return ControlResult<BanView>.Refused("this service does not make bans; ask the access service (--service access)");
+        }
+
+        var found = await ResolveAsync(players, who);
+        if (found.Error is not null)
+        {
+            return ControlResult<BanView>.Missing(found.Error);
+        }
+
+        string id = found.Value!["_id"].AsObjectId.ToString();
+        var record = await personBans.BanAsync(new Bans.BanRequest(id, reason.Trim().Length > 0 ? reason.Trim() : "banned by an administrator", "manual"));
+        return record is null
+            ? ControlResult<BanView>.Missing($"no player {id}")
+            : ControlResult<BanView>.Ok(new BanView(record.BanId, id, record.NameAtBan, [.. record.Who.Known().Select(k => $"{k.Kind}: {k.Value}")], record.Online, record.Disconnected));
     }
 
     private async Task<(BsonDocument? Value, string? Error)> ResolveAsync(IMongoCollection<BsonDocument> players, string who)

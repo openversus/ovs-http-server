@@ -9,7 +9,7 @@ namespace OpenVersus.Server.Core.Access;
 
 public static class AccessHosting
 {
-    /// <summary>The game's login: its settings (Access, Realtime, WbNetwork, Bans, Seasons), the ban sources and the login service.</summary>
+    /// <summary>The game's login: its settings (Access, Realtime, WbNetwork, Bans, Seasons), the ban sources, name rules, person bans and the login service.</summary>
     public static WebApplicationBuilder AddAccess(this WebApplicationBuilder builder)
     {
         builder.AddSetting<AccessSettings>("Access");
@@ -20,7 +20,10 @@ public static class AccessHosting
         builder.AddSetting<Seasons.SeasonSettings>("Seasons");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IBanService, BanService>();
+        builder.Services.AddSingleton<INameRules, NameRules>();
+        builder.Services.AddSingleton<IPersonBans, PersonBans>();
         builder.Services.AddHostedService<BanLoader>();
+        builder.Services.AddHostedService<BanSweep>();
         builder.Services.AddSingleton<IAccessService, AccessService>();
         builder.Services.AddFrozenAccountData("POST /access",
             "most of one captured account's profile (inventory, seasonal data, match history, level, perk preferences) and parts of its account (linked platforms, timestamps)");

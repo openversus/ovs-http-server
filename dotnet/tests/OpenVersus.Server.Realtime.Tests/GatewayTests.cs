@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using OpenVersus.Server.Core.Access;
+using OpenVersus.Server.Core.Bans;
 using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.TestSupport;
 using StackExchange.Redis;
@@ -398,6 +399,39 @@ public sealed class GatewayTests : IAsyncLifetime
         await game.Closed.WaitAsync(s_wait);
         Assert.Empty(game.Frames);
         Assert.Empty(await EventsAsync());
+    }
+
+    [Fact]
+    // A ban reaches the node through bans:player and bans:changed: the banned player's token, still valid, is then
+    // refused at the handshake, and an edge's resume of their connection is refused too.
+    public async Task A_banned_player_s_token_is_refused_at_the_handshake_and_on_a_resume()
+    {
+        if (_factory is null)
+        {
+            return;
+        }
+
+        var linked = await ConnectEdgeAsync("edge-b1");
+        string got = linked.Of(GatewayEdge.Kind.Position)[0].Id.ToString();
+        try
+        {
+            await Redis.SetAddAsync(BannedPlayers.Key, _player);
+            await Redis.PublishAsync(RedisChannel.Literal(BannedPlayers.ChangedChannel), _player);
+            await Until(() => _factory.Services.GetRequiredService<BannedPlayers>().Contains(_player));
+
+            var game = await ConnectAsync(sendFirstFrame: false);
+            await game.Socket.SendAsync(FirstFrame(), WebSocketMessageType.Binary, true, CancellationToken.None);
+            await game.Closed.WaitAsync(s_wait);
+            Assert.Empty(game.Frames);
+
+            var resumed = await ResumeEdgeAsync("edge-b1", got, linked.FirstFrame);
+            Assert.Single(resumed.Of(GatewayEdge.Kind.Close));
+            Assert.DoesNotContain("resumed edge-b1", await EventsAsync());
+        }
+        finally
+        {
+            await Redis.SetRemoveAsync(BannedPlayers.Key, _player);
+        }
     }
 
     [Fact]

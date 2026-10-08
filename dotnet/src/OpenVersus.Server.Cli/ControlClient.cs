@@ -185,6 +185,9 @@ public sealed class ControlClient : IDisposable
     public Task<ControlReply<BanView>> BanAsync(string who, string reason) =>
         SendAsync<BanView>(HttpMethod.Post, $"/control/ops/players/{Uri.EscapeDataString(who)}/ban", new StringContent(reason));
 
+    public Task<ControlReply<UnbanView>> UnbanAsync(string who, string reason) =>
+        SendAsync<UnbanView>(HttpMethod.Post, $"/control/ops/players/{Uri.EscapeDataString(who)}/unban", new StringContent(reason));
+
     private async Task<ControlReply<T>> SendAsync<T>(HttpMethod method, string path, HttpContent? body = null)
     {
         HttpResponseMessage response;

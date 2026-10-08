@@ -15,7 +15,7 @@ public sealed class BannedPlayers(IServiceProvider services, ILogger<BannedPlaye
 {
     public const string Key = "bans:player";
 
-    /// <summary>Published with the player id whenever a ban is made: the caches add them, the sweep looks for the person's other connections.</summary>
+    /// <summary>A <see cref="BanEvent"/> whenever bans change: the caches reread, the sweep looks for whoever a new ban covers.</summary>
     public const string ChangedChannel = "bans:changed";
     public static readonly TimeSpan Refresh = TimeSpan.FromSeconds(60);
 
@@ -27,7 +27,7 @@ public sealed class BannedPlayers(IServiceProvider services, ILogger<BannedPlaye
     /// <summary>Adds a player at once (a ban's message), before the next full read.</summary>
     public void Remember(string playerId) => _ids = new HashSet<string>(_ids) { playerId };
 
-    /// <summary>Drops a player until the next full read (which brings them back if they are still in Redis). For tests.</summary>
+    /// <summary>Drops a player (a lift's message) until the next full read, which brings them back if they are still in Redis.</summary>
     public void Forget(string playerId) => _ids = [.. _ids.Where(id => id != playerId)];
 
     protected override async Task ExecuteAsync(CancellationToken stop)
@@ -44,11 +44,16 @@ public sealed class BannedPlayers(IServiceProvider services, ILogger<BannedPlaye
             {
                 if (!subscribed)
                 {
-                    await redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(ChangedChannel), (_, player) =>
+                    await redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(ChangedChannel), (_, message) =>
                     {
-                        if (player.HasValue && player.ToString() is { Length: > 0 } id)
+                        var change = BanEvent.Parse(message);
+                        if (change.Kind == BanEventKind.Banned)
                         {
-                            Remember(id);
+                            Remember(change.PlayerId);
+                        }
+                        else if (change.Kind == BanEventKind.Lifted)
+                        {
+                            Forget(change.PlayerId);
                         }
 
                         _changed.Release();
@@ -73,5 +78,53 @@ public sealed class BannedPlayers(IServiceProvider services, ILogger<BannedPlaye
                 return;
             }
         }
+    }
+}
+
+public enum BanEventKind
+{
+    /// <summary>A person was banned (the player id): add them at once.</summary>
+    Banned,
+
+    /// <summary>A ban was lifted (the player id): drop them at once.</summary>
+    Lifted,
+
+    /// <summary>Values were added to the sets (an import, a load after a flush): reread.</summary>
+    Loaded,
+}
+
+/// <summary>
+/// The message on <see cref="BannedPlayers.ChangedChannel"/>, read by every subscriber through <see cref="Parse"/>:
+/// "banned:{player}", "lifted:{player}", "loaded". Anything else is read as loaded (a reread is always safe; reading an
+/// unknown message as a ban or a lift is not).
+/// </summary>
+public readonly record struct BanEvent(BanEventKind Kind, string PlayerId)
+{
+    public static BanEvent Banned(string playerId) => new(BanEventKind.Banned, playerId);
+
+    public static BanEvent Lifted(string playerId) => new(BanEventKind.Lifted, playerId);
+
+    public static readonly BanEvent Loaded = new(BanEventKind.Loaded, "");
+
+    public override string ToString() => Kind switch
+    {
+        BanEventKind.Banned => $"banned:{PlayerId}",
+        BanEventKind.Lifted => $"lifted:{PlayerId}",
+        _ => "loaded",
+    };
+
+    public static BanEvent Parse(string? message)
+    {
+        if (message is null)
+        {
+            return Loaded;
+        }
+
+        if (message.StartsWith("banned:", StringComparison.Ordinal) && message.Length > "banned:".Length)
+        {
+            return Banned(message["banned:".Length..]);
+        }
+
+        return message.StartsWith("lifted:", StringComparison.Ordinal) && message.Length > "lifted:".Length ? Lifted(message["lifted:".Length..]) : Loaded;
     }
 }

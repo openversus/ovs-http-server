@@ -44,6 +44,7 @@ public static class OvsCtl
                 player.AddCommand<PlayerRenameCommand>("rename").WithDescription("Rename a player (an administrator's rename: no censoring).");
                 player.AddCommand<PlayerDisconnectCommand>("disconnect").WithDescription("Close a player's game connection, as a heartbeat timeout would (the game logs out).");
                 player.AddCommand<PlayerBanCommand>("ban").WithDescription("Ban the person behind a player for good: their IP, Steam, Epic, hardware and install ids and the player id; recorded in Mongo and the auto-ban file, and their connection is closed.");
+                player.AddCommand<PlayerUnbanCommand>("unban").WithDescription("Lift a player's bans: their ban records are marked lifted (kept), and each identifier no other ban holds is let through; an entry in a ban file stays and is listed (remove it there).");
             });
             config.AddBranch("settings", settings =>
             {

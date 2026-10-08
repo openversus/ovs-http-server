@@ -5,29 +5,31 @@ The identifiers are the IP, the Steam id, the Epic id, the hardware hash (only a
 be shared by many machines), the install id, and the player id. The player id is what refuses a session token that is
 still valid; the others refuse a login, including one that would make a new account.
 
-## Where bans come from
+## Where bans are
 
-All of these are merged; any one of them alone is enough to keep a ban in effect.
+Mongo is the source of truth; Redis holds what is in effect; the files are an import and a trail.
 
-| Source | What | Written by |
-|---|---|---|
-| Ban files, one per kind (`Bans:IpFile`, `CidrFile`, `SteamIdFile`, `EpicIdFile`, `HardwareFile`, `InstallIdFile`) | One entry per line; a line starting with `#` is a comment; entries trimmed; hex ids in any case. Reread when changed. | Hand |
-| `Bans:AutoBansFile` (`auto_bans.yaml`) | One record per ban the services made (below). Also read as a ban source. | The services, appended |
-| Mongo `player_bans` | The same records. | The services |
-| Mongo `bans` | `{kind: "ip" \| "cidr" \| "id", value}`: single values. | Hand |
-| Redis sets `bans:ip`, `bans:cidr`, `bans:steam`, `bans:epic`, `bans:hardware`, `bans:install`, `bans:player`; `bans:id` (any identifier but the IP) | What every replica checks at once. Filled at the access service's start from Mongo and the auto-ban file, so either one alone restores every ban. Only added to. | The services |
+| Where | What |
+|---|---|
+| Mongo `player_bans` | One record per ban the services made: every identifier of the person, and the evidence (below). |
+| Mongo `bans` | Single values `{kind, value}` (`ip`, `cidr`, `steam`, `epic`, `hardware`, `install`, and the older `id`: any identifier but the IP), imported from the ban files. |
+| Redis sets `bans:ip`, `bans:cidr`, `bans:steam`, `bans:epic`, `bans:hardware`, `bans:install`, `bans:player`, `bans:id` | The active values, which every check reads. Loaded from Mongo at the access service's start, after each import, and every minute (so a Redis emptied while running fills again); only added to: a lift removes its own. |
+| Ban files, one per kind (`Bans:IpFile`, `CidrFile`, `SteamIdFile`, `EpicIdFile`, `HardwareFile`, `InstallIdFile`) | Edited by hand: one entry per line, `#` starts a comment line (the comment just above an entry is kept with it as its note). Imported into `bans` at the access service's start and when a file changes (once it has been still for 2 s): an entry only when Mongo has no record of that value, active or lifted. Never written. |
+| `Bans:AutoBansFile` (`auto_bans.yaml`) | The trail: every ban and lift the services made, appended. Never read. |
 
-Each identifier is checked against its own lists only. (The TS server checked the login's IP against every file, and
-read its hash-ban file for the Steam and Epic lists, so no Steam or Epic ban was ever in effect.)
+A ban or a lift is never deleted: a lifted one gets `lifted_at`, `lifted_reason` and `lifted_source`, so the import never
+brings it back and the history stays. Each identifier is checked against its own kind only. (The TS server checked the
+login's IP against every file, and read its hash-ban file for the Steam and Epic lists, so no Steam or Epic ban was
+ever in effect.)
 
-The services that ban (the access service) must be able to write the auto-ban file: mount its folder read-write for
-them. A service that cannot write it logs an error at startup and keeps its bans in
-Mongo and Redis only.
+The services that ban (the access service) must be able to write the trail: mount its folder read-write for them. A
+service that cannot write it logs an error at startup; its bans are still in Mongo and Redis.
 
 ## A ban record
 
 ```yaml
-- ban_id: '9f1c...'
+- action: 'ban'
+  ban_id: '9f1c...'
   at: '2026-10-07T21:14:03.512Z'
   reason: 'banned name'
   source: 'namechange'        # namechange, login, sweep or manual
@@ -50,6 +52,14 @@ Mongo and Redis only.
     user_agent: '...'
   online: true
   disconnected: true
+- action: 'lift'
+  at: '2026-10-08T09:00:00.000Z'
+  reason: 'why'
+  source: 'manual'
+  player: { id: '6a5d...', name: '...' }
+  lifted_bans: ['9f1c...']
+  no_longer_banned: ['Steam 7656...', 'Player 6a5d...']
+  still_banned: ['Ip 203.0.113.9 (bans.txt: remove it there)']
 ```
 
 ## Where a ban is enforced
@@ -64,17 +74,16 @@ Mongo and Redis only.
   them across an edge's move to another node).
 - **The sweep** (access service; one replica at a time): at start, when a ban file changes (once it has been still for
   2 s), when a ban is made, and every 60 s, it checks every online player through every identifier of their account. One
-  who matches is cut off and their player id banned, recorded with source `sweep` and the identifier that matched; their
-  other identifiers are not added (the matched one is banned already).
+  who matches is banned as a person, every identifier of theirs, recorded with source `sweep` and the identifier that
+  matched, and cut off.
 
 ## Making and lifting a ban
 
 `ovsctl player ban <who> --reason "..."` bans the person behind a player (source `manual`) and prints what was banned.
-`<who>` is anything `player show` takes.
-
-A ban is lifted by removing it everywhere it is: the ban files, the record in `auto_bans.yaml`, the record in Mongo
-`player_bans` (and any `bans` entry), and each identifier from its Redis set, `bans:player` included. One left behind
-keeps the person banned.
+`ovsctl player unban <who> --reason "..."` lifts the player's ban records: each of their identifiers that no other
+active ban holds is let through at once; one still held is listed with what holds it (another person's ban, or a ban
+file, from which it is removed by hand: the import will not bring it back once it is lifted, and a line left in the
+file keeps it banned until then). `<who>` is anything `player show` takes, or a player id.
 
 ## Names
 

@@ -11,11 +11,13 @@ using StackExchange.Redis;
 namespace OpenVersus.Server.Core.Bans;
 
 /// <summary>
-/// Finds banned people who are online: at start, when a ban file changes (read once it has settled), when a ban is made
-/// (bans:changed: the person's other accounts on a shared identifier), and every <see cref="Backstop"/>. Each online
-/// player is checked through every identifier their account has; one who matches is cut off and their player id banned
-/// (source sweep, with the identifier that matched). Their other identifiers are left alone: the matched one is banned
-/// already. One replica sweeps at a time (a Redis lock); the access service runs it.
+/// Keeps the bans current and finds banned people who are online. A ban file that changed is imported into Mongo once it
+/// has settled; every round loads the active bans into Redis (a Redis flushed while running is filled again). Rounds run
+/// at start, on a file change, when a ban is made or values are loaded (bans:changed; not a lift), and every
+/// <see cref="Backstop"/>. Each online
+/// player is checked through every identifier their account has; one who matches is banned as a person, every identifier
+/// of theirs (source sweep, with the identifier that matched), and cut off. One replica sweeps at a time (a Redis lock);
+/// the access service runs it.
 /// </summary>
 internal sealed class BanSweep(IServiceProvider services, IOptionsMonitor<BanSettings> settings, IBanService bans, IPersonBans personBans,
     ServiceInstance instance, TimeProvider time, ILogger<BanSweep> log) : BackgroundService
@@ -43,7 +45,13 @@ internal sealed class BanSweep(IServiceProvider services, IOptionsMonitor<BanSet
             {
                 if (!subscribed)
                 {
-                    await multiplexer.GetSubscriber().SubscribeAsync(RedisChannel.Literal(BannedPlayers.ChangedChannel), (_, _) => _changed.Release());
+                    await multiplexer.GetSubscriber().SubscribeAsync(RedisChannel.Literal(BannedPlayers.ChangedChannel), (_, message) =>
+                    {
+                        if (BanEvent.Parse(message).Kind != BanEventKind.Lifted)
+                        {
+                            _changed.Release();
+                        }
+                    });
                     subscribed = true;
                 }
 
@@ -58,13 +66,22 @@ internal sealed class BanSweep(IServiceProvider services, IOptionsMonitor<BanSet
                         await _changed.WaitAsync(stop);
                     }
 
-                    if (filesChanged && swept is not null)
+                    var redis = multiplexer.GetDatabase();
+                    if (services.GetService<IMongoDatabase>() is { } mongo)
                     {
-                        // The auto-ban file may have gained records another service wrote: into the sets every service reads.
-                        await BanLoader.LoadAsync(services.GetService<IMongoDatabase>(), multiplexer.GetDatabase(), settings.CurrentValue, log, stop);
+                        // The first round's files were imported by BanLoader at start.
+                        if (filesChanged && settled && swept is not null)
+                        {
+                            await BanStore.ImportAsync(mongo, settings.CurrentValue, now.UtcDateTime, log, stop);
+                        }
+
+                        if (await BanStore.LoadAsync(mongo, redis, log, stop) > 0)
+                        {
+                            await redis.PublishAsync(RedisChannel.Literal(BannedPlayers.ChangedChannel), BanEvent.Loaded.ToString());
+                        }
                     }
 
-                    await SweepAsync(multiplexer.GetDatabase(), stop);
+                    await SweepAsync(redis, stop);
                     lastSweep = now;
                     if (settled)
                     {
@@ -95,7 +112,7 @@ internal sealed class BanSweep(IServiceProvider services, IOptionsMonitor<BanSet
     /// <summary>Each ban file's write time, and whether none changed within the settle time (a file still being written).</summary>
     private static (string Stamps, bool Settled) Stamps(BanSettings current, DateTime now)
     {
-        var times = BanService.Files(current).Select(f => string.IsNullOrWhiteSpace(f) || !File.Exists(f) ? DateTime.MinValue : File.GetLastWriteTimeUtc(f)).ToList();
+        var times = BanStore.Files(current).Select(f => f.Path).Select(f => string.IsNullOrWhiteSpace(f) || !File.Exists(f) ? DateTime.MinValue : File.GetLastWriteTimeUtc(f)).ToList();
         return (string.Join(",", times.Select(t => t.Ticks)), times.All(t => now - t >= NameRules.SettleTime));
     }
 
@@ -136,7 +153,7 @@ internal sealed class BanSweep(IServiceProvider services, IOptionsMonitor<BanSet
                 {
                     caught++;
                     await personBans.BanAsync(new BanRequest(id, $"banned {match.Kind.ToString().ToLowerInvariant()}", "sweep",
-                        MatchedList: match.Source, MatchedTerm: match.Value, WholePerson: false), ct);
+                        MatchedList: match.Source, MatchedTerm: match.Value), ct);
                 }
             }
         }

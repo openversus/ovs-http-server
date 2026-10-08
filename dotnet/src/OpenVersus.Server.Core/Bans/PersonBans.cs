@@ -10,10 +10,7 @@ using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Bans;
 
-/// <summary>
-/// A ban to make: whose, why, how it was found, and the request that did it (when one did). <see cref="WholePerson"/>
-/// false bans only the player id (the player was found through an identifier that is banned already).
-/// </summary>
+/// <summary>A ban to make: whose, why, how it was found, and the request that did it (when one did).</summary>
 public sealed record BanRequest(
     string PlayerId,
     string Reason,
@@ -22,8 +19,10 @@ public sealed record BanRequest(
     string MatchedList = "",
     string MatchedTerm = "",
     string RequestIp = "",
-    string UserAgent = "",
-    bool WholePerson = true);
+    string UserAgent = "");
+
+/// <summary>A lift made: the ban records lifted, the identifiers no longer banned, and those still banned and why.</summary>
+public sealed record LiftResult(string PlayerId, string Name, IReadOnlyList<string> LiftedBans, IReadOnlyList<string> NoLongerBanned, IReadOnlyList<string> StillBanned);
 
 public interface IPersonBans
 {
@@ -32,6 +31,13 @@ public interface IPersonBans
     /// null when there is no such player.
     /// </summary>
     Task<BanRecord?> BanAsync(BanRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lifts the player's ban records (they stay, marked lifted); takes out of effect each of their identifiers that no
+    /// other active ban holds, and reports the ones still held (a hand-edited file's entry is never lifted here: it is
+    /// removed from its file). Null when Mongo, the source of truth, is not configured.
+    /// </summary>
+    Task<LiftResult?> LiftAsync(string playerId, string reason, string source, CancellationToken ct = default);
 }
 
 // A ban takes effect first and is recorded after: the Redis sets (every replica's check, and the player id that refuses
@@ -60,7 +66,7 @@ internal sealed class PersonBans(IServiceProvider services, IOptionsMonitor<BanS
 
         // The request's IP is the one in use now (the account's may be older).
         var who = new BanIdentifiers(PlayerId: id.ToString());
-        if (request.WholePerson && player is not null)
+        if (player is not null)
         {
             who = BanIdentifiers.OfPlayer(player);
             if (request.RequestIp.Length > 0)
@@ -79,7 +85,7 @@ internal sealed class PersonBans(IServiceProvider services, IOptionsMonitor<BanS
                     await redis.SetAddAsync(BanService.Key(kind), BanService.Canonical(kind, value));
                 }
 
-                await redis.PublishAsync(RedisChannel.Literal(BannedPlayers.ChangedChannel), who.PlayerId);
+                await redis.PublishAsync(RedisChannel.Literal(BannedPlayers.ChangedChannel), BanEvent.Banned(who.PlayerId).ToString());
                 online = await redis.SetContainsAsync("online_players", who.PlayerId);
                 disconnected = await PlayerMessages.DisconnectAsync(redis, new JsonObject { ["playerId"] = who.PlayerId }) > 0 && online;
             }
@@ -115,7 +121,7 @@ internal sealed class PersonBans(IServiceProvider services, IOptionsMonitor<BanS
         {
             try
             {
-                AutoBans.Append(file, record);
+                AutoBans.Append(file, AutoBans.ToYaml(record));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
@@ -129,7 +135,92 @@ internal sealed class PersonBans(IServiceProvider services, IOptionsMonitor<BanS
         return record;
     }
 
-    /// <summary>A record's banned identifiers, as BanLoader reads them back.</summary>
+    public async Task<LiftResult?> LiftAsync(string playerId, string reason, string source, CancellationToken ct = default)
+    {
+        if (services.GetService<IMongoDatabase>() is not { } mongo || !ObjectId.TryParse(playerId, out var id))
+        {
+            return null;
+        }
+
+        var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase();
+        var records = mongo.GetCollection<BsonDocument>(Collection);
+        var values = mongo.GetCollection<BsonDocument>(BanStore.Values);
+        string player = id.ToString();
+        var account = await mongo.GetCollection<BsonDocument>(PlayerRecord.Collection).Find(new BsonDocument("_id", id)).FirstOrDefaultAsync(ct);
+        var lifted = await records.Find(BanStore.Active & Builders<BsonDocument>.Filter.Eq("player.id", player)).ToListAsync(ct);
+        var now = time.GetUtcNow();
+        if (lifted.Count > 0)
+        {
+            await records.UpdateManyAsync(Builders<BsonDocument>.Filter.In("_id", lifted.Select(r => r["_id"])),
+                Builders<BsonDocument>.Update.Set("lifted_at", now.UtcDateTime).Set("lifted_reason", reason).Set("lifted_source", source), cancellationToken: ct);
+        }
+
+        // Their identifiers: what the lifted records banned, and what the account has now.
+        var identifiers = lifted.SelectMany(r => IdentifiersOf(r).Known())
+            .Concat(account is null ? [(BanKind.Player, player)] : BanIdentifiers.OfPlayer(account).Known())
+            .Select(k => (k.Kind, Value: BanService.Canonical(k.Kind, k.Value))).Distinct().ToList();
+        var blocks = (await values.Find(BanStore.Active & Builders<BsonDocument>.Filter.Eq("kind", "cidr")).ToListAsync(ct))
+            .Select(b => (Block: b.GetValue("value", "").AsString, File: b.GetValue("file", BanStore.Values).AsString)).ToList();
+        var noLonger = new List<string>();
+        var still = new List<string>();
+        foreach (var (kind, value) in identifiers)
+        {
+            string label = $"{kind} {value}";
+            string[] valueKinds = kind is BanKind.Ip or BanKind.Player ? [BanStore.ValueKind(kind)] : [BanStore.ValueKind(kind), "id"];
+            var single = await values.Find(BanStore.Active & Builders<BsonDocument>.Filter.In("kind", valueKinds) & Builders<BsonDocument>.Filter.Eq("value", value)).FirstOrDefaultAsync(ct);
+            var other = await records.Find(BanStore.Active & Builders<BsonDocument>.Filter.Eq(BanStore.RecordField(kind), value)).FirstOrDefaultAsync(ct);
+            var block = kind == BanKind.Ip ? blocks.FirstOrDefault(b => BanService.InCidr(value, b.Block)) : default;
+            if (single is not null)
+            {
+                still.Add($"{label} ({single.GetValue("file", BanStore.Values).AsString}: remove it there)");
+            }
+            else if (other is not null)
+            {
+                still.Add($"{label} (ban {other.GetValue("ban_id", "").AsString} of player {other["player"]["id"].AsString})");
+            }
+            else if (block.Block is { Length: > 0 })
+            {
+                still.Add($"{label} ({block.File} {block.Block}: remove it there)");
+            }
+            else
+            {
+                noLonger.Add(label);
+                if (redis is not null)
+                {
+                    await redis.SetRemoveAsync(BanService.Key(kind), value);
+                    if (kind is not (BanKind.Ip or BanKind.Player))
+                    {
+                        await redis.SetRemoveAsync(BanService.IdKey, value);
+                    }
+                }
+            }
+        }
+
+        if (redis is not null)
+        {
+            await redis.PublishAsync(RedisChannel.Literal(BannedPlayers.ChangedChannel), BanEvent.Lifted(player).ToString());
+        }
+
+        string name = account?.GetValue("name", "").AsString ?? "";
+        var banIds = lifted.Select(r => r.GetValue("ban_id", "").AsString).ToList();
+        if (settings.CurrentValue.AutoBansFile is { Length: > 0 } file)
+        {
+            try
+            {
+                AutoBans.Append(file, AutoBans.LiftToYaml(now, reason, source, player, name, banIds, noLonger, still));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                log.LogError(e, "The lift for player {Player} could not be appended to {Path}", player, Path.GetFullPath(file));
+            }
+        }
+
+        log.LogWarning("LIFTED ban(s) [{Bans}] of player {Player} (\"{Name}\") [{Source}: {Reason}]; no longer banned: {NoLonger}; still banned: {Still}",
+            string.Join(", ", banIds), player, name, source, reason, string.Join(", ", noLonger), still.Count == 0 ? "nothing" : string.Join(", ", still));
+        return new LiftResult(player, name, banIds, noLonger, still);
+    }
+
+    /// <summary>A record's banned identifiers, as BanStore loads them.</summary>
     internal static BanIdentifiers IdentifiersOf(BsonDocument record)
     {
         var ids = record.GetValue("identifiers", BsonNull.Value) as BsonDocument;

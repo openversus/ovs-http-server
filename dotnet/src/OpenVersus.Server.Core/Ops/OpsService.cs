@@ -87,6 +87,9 @@ public sealed record DisconnectView(string Id, string Name, bool WasOnline, long
 /// <summary>A ban made: its record's id, whom, every identifier banned, and whether they were online and cut off.</summary>
 public sealed record BanView(string BanId, string Id, string Name, IReadOnlyList<string> Identifiers, bool WasOnline, bool Disconnected);
 
+/// <summary>A lift made: the ban records lifted, the identifiers no longer banned, and those still banned and why.</summary>
+public sealed record UnbanView(string Id, string Name, IReadOnlyList<string> LiftedBans, IReadOnlyList<string> NoLongerBanned, IReadOnlyList<string> StillBanned);
+
 /// <summary>
 /// Operations on the live game's state for administrators: queues, connected players, matches in progress, and player
 /// records. Behind the control API and its access policy, like the settings.
@@ -117,6 +120,9 @@ public interface IOpsService
 
     /// <summary>Bans the person behind a player through every identifier known for them (source manual), and cuts them off.</summary>
     Task<ControlResult<BanView>> BanPlayerAsync(string who, string reason);
+
+    /// <summary>Lifts a player's ban records (source manual); a hand-edited file's entry stays and is reported.</summary>
+    Task<ControlResult<UnbanView>> UnbanPlayerAsync(string who, string reason);
 }
 
 internal sealed class OpsService : IOpsService
@@ -439,6 +445,37 @@ internal sealed class OpsService : IOpsService
         return record is null
             ? ControlResult<BanView>.Missing($"no player {id}")
             : ControlResult<BanView>.Ok(new BanView(record.BanId, id, record.NameAtBan, [.. record.Who.Known().Select(k => $"{k.Kind}: {k.Value}")], record.Online, record.Disconnected));
+    }
+
+    public async Task<ControlResult<UnbanView>> UnbanPlayerAsync(string who, string reason)
+    {
+        if (Players is not { } players)
+        {
+            return NoMongo<UnbanView>();
+        }
+
+        if (_services.GetService<Bans.IPersonBans>() is not { } personBans)
+        {
+            return ControlResult<UnbanView>.Refused("this service does not lift bans; ask the access service (--service access)");
+        }
+
+        // A player id names them even when the account is gone.
+        string? id = ObjectId.TryParse(who, out var given) ? given.ToString() : null;
+        if (id is null)
+        {
+            var found = await ResolveAsync(players, who);
+            if (found.Error is not null)
+            {
+                return ControlResult<UnbanView>.Missing(found.Error);
+            }
+
+            id = found.Value!["_id"].AsObjectId.ToString();
+        }
+
+        var lift = await personBans.LiftAsync(id, reason.Trim().Length > 0 ? reason.Trim() : "lifted by an administrator", "manual");
+        return lift is null
+            ? ControlResult<UnbanView>.Refused("no Mongo, where bans are kept")
+            : ControlResult<UnbanView>.Ok(new UnbanView(lift.PlayerId, lift.Name, lift.LiftedBans, lift.NoLongerBanned, lift.StillBanned));
     }
 
     private async Task<(BsonDocument? Value, string? Error)> ResolveAsync(IMongoCollection<BsonDocument> players, string who)

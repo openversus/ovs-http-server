@@ -416,7 +416,7 @@ public sealed class GatewayTests : IAsyncLifetime
         try
         {
             await Redis.SetAddAsync(BannedPlayers.Key, _player);
-            await Redis.PublishAsync(RedisChannel.Literal(BannedPlayers.ChangedChannel), _player);
+            await Redis.PublishAsync(RedisChannel.Literal(BannedPlayers.ChangedChannel), BanEvent.Banned(_player).ToString());
             await Until(() => _factory.Services.GetRequiredService<BannedPlayers>().Contains(_player));
 
             var game = await ConnectAsync(sendFirstFrame: false);

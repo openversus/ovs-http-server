@@ -243,7 +243,7 @@ public class PlayerSettings : ConnectionSettings
 public sealed class PlayerBanSettings : PlayerSettings
 {
     [CommandOption("--reason <REASON>")]
-    [Description("Why, kept in the ban's record.")]
+    [Description("Why, kept in the record (of the ban, or of the lift).")]
     public string Reason { get; set; } = "";
 }
 
@@ -350,6 +350,35 @@ public sealed class PlayerBanCommand : AsyncCommand<PlayerBanSettings>
             }
 
             _console.MarkupLineInterpolated($"Online: {b.WasOnline}; disconnected: {b.Disconnected}.");
+        });
+    }
+}
+
+public sealed class PlayerUnbanCommand : AsyncCommand<PlayerBanSettings>
+{
+    private readonly IAnsiConsole _console;
+
+    public PlayerUnbanCommand(IAnsiConsole console)
+    {
+        _console = console;
+    }
+
+    protected override async Task<int> ExecuteAsync(CommandContext context, PlayerBanSettings settings, CancellationToken cancellation)
+    {
+        using var client = ControlClient.For(settings);
+        // Markup only in the format string: what is interpolated is escaped, markup included.
+        return OvsCtl.Report(_console, settings, await client.UnbanAsync(settings.Who, settings.Reason), u =>
+        {
+            _console.MarkupLineInterpolated($"[bold]{u.Name}[/] ({u.Id}): {u.LiftedBans.Count} ban record(s) lifted.");
+            foreach (string identifier in u.NoLongerBanned)
+            {
+                _console.MarkupLineInterpolated($"  [green]no longer banned[/] {identifier}");
+            }
+
+            foreach (string identifier in u.StillBanned)
+            {
+                _console.MarkupLineInterpolated($"  [red]still banned[/] {identifier}");
+            }
         });
     }
 }

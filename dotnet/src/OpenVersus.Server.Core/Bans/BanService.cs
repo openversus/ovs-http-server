@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Net;
 using System.Net.Sockets;
@@ -15,18 +14,20 @@ namespace OpenVersus.Server.Core.Bans;
 
 // A ban is on a PERSON, through every identifier known for them: the IP, the Steam id, the Epic id, the hardware hash,
 // the install id, and the player id (which is what refuses a session token that is still valid). Each identifier is
-// checked against its own lists only. The TS server checked the /access IP against every file, and read its
-// HASHBANS_FILE for the Steam and Epic lists too, so no Steam or Epic ban was ever in effect.
-// Where bans come from, all merged:
-//   files   one text file per kind, edited by hand (BanSettings: IP and CIDR, Steam, Epic, hardware, install). One entry
-//           per line, # starts a comment line; entries are trimmed, hex ids compared in lower case. Reread when changed.
-//   auto    AutoBansFile: the record of every ban the services made (AutoBans.cs), appended to, never rewritten.
-//   Mongo   player_bans: the same records (PersonBans), and bans: {kind, value} single values.
-//   Redis   one set per kind (bans:ip, bans:cidr, bans:steam, ...) shared by every replica at once; bans:id is any
-//           identifier but the IP. BanLoader fills the sets from Mongo and the auto file at startup, so either one alone
-//           restores every ban.
+// checked against its own kind only. (The TS server checked the /access IP against every file, and read its
+// HASHBANS_FILE for the Steam and Epic lists too, so no Steam or Epic ban was ever in effect.)
+// Where bans are:
+//   Mongo   the source of truth. player_bans: one record per ban the services made (PersonBans), every identifier of
+//           the person. bans: single values {kind, value} imported from the hand-edited files (BanStore.ImportAsync)
+//           and older entries. Active = no lifted_at: a lifted ban stays, so nothing brings it back.
+//   Redis   one set per kind (bans:ip, bans:cidr, bans:steam, bans:epic, bans:hardware, bans:install, bans:player;
+//           bans:id is any identifier but the IP): the active values, which every check reads. Filled from Mongo at the
+//           access service's start, after each import, and every minute (only added to: a lift removes its own).
+//   files   one text file per kind (BanSettings), edited by hand: imported into Mongo at start and when one changes,
+//           an entry only when Mongo has no record of that value (active or lifted). The files are never written.
+//   the auto-ban file: every ban and lift the services made, appended as evidence (AutoBans.cs). Never read.
 
-/// <summary>Ban sources. File paths relative to the working directory; the TS server's variable names fill some.</summary>
+/// <summary>Ban files, imported into Mongo (and the auto-ban trail). Paths relative to the working directory; the TS server's variable names fill some.</summary>
 public sealed class BanSettings
 {
     [Description("IP bans, one address per line (IP_BANS_FILE).")]
@@ -47,7 +48,7 @@ public sealed class BanSettings
     [Description("Install id bans, one id per line.")]
     public string? InstallIdFile { get; set; } = "../data/installid_bans.txt";
 
-    [Description("The record of every ban the services make (YAML, appended to). Read as a ban source too; the services that ban must be able to write it.")]
+    [Description("The trail of every ban and lift the services make (YAML, appended to, never read). The services that ban must be able to write it.")]
     public string? AutoBansFile { get; set; } = "../data/auto_bans.yaml";
 
     [Description("Banned name terms (YAML `terms:` list): a name containing one anywhere bans the person.")]
@@ -93,7 +94,7 @@ public sealed record BanIdentifiers(string Ip = "", string SteamId = "", string 
     }
 }
 
-/// <summary>The identifier a ban matched, and where the ban is (a file's name, or redis).</summary>
+/// <summary>The identifier a ban matched, and where the ban came from (the file it was imported from, a ban record's id).</summary>
 public sealed record BanMatch(BanKind Kind, string Value, string Source);
 
 public interface IBanService
@@ -105,7 +106,7 @@ public interface IBanService
     Task<BanMatch?> FindAsync(BanIdentifiers who);
 }
 
-internal sealed class BanService(IServiceProvider services, IOptionsMonitor<BanSettings> settings, TimeProvider time, ILogger<BanService> log) : IBanService
+internal sealed class BanService(IServiceProvider services, ILogger<BanService> log) : IBanService
 {
     public const string IpKey = "bans:ip";
     public const string CidrKey = "bans:cidr";
@@ -122,77 +123,39 @@ internal sealed class BanService(IServiceProvider services, IOptionsMonitor<BanS
         _ => BannedPlayers.Key,
     };
 
-    /// <summary>An identifier as the lists keep it: trimmed; hex ids and player ids in lower case.</summary>
+    /// <summary>An identifier as the stores keep it: trimmed; hex ids and player ids in lower case.</summary>
     public static string Canonical(BanKind kind, string value)
     {
         string trimmed = Js.Trim(value);
         return kind is BanKind.Ip or BanKind.Steam ? trimmed : trimmed.ToLowerInvariant();
     }
 
-    private readonly ConcurrentDictionary<(string, BanKind), BanFile> _files = new();
-    private readonly AutoBans.Reader _auto = new();
-
     public async Task<bool> IsBannedAsync(string ip) => await FindAsync(new BanIdentifiers(Ip: ip)) is not null;
 
     public async Task<BanMatch?> FindAsync(BanIdentifiers who)
     {
-        var current = settings.CurrentValue;
-        var known = who.Known().Select(k => (k.Kind, Value: Canonical(k.Kind, k.Value))).Where(k => k.Value.Length > 0).ToList();
-        foreach (var (kind, value) in known)
-        {
-            if (FileFor(current, kind) is { } file && Read(file, kind).Contains(value))
-            {
-                return new BanMatch(kind, value, Path.GetFileName(file));
-            }
-
-            if (kind == BanKind.Ip && Read(current.CidrFile, kind).FirstOrDefault(block => InCidr(value, block)) is { } block)
-            {
-                return new BanMatch(kind, value, $"{Path.GetFileName(current.CidrFile)} {block}");
-            }
-        }
-
-        var auto = _auto.Get(current.AutoBansFile, time.GetUtcNow().UtcDateTime, log);
-        foreach (var (kind, value) in known)
-        {
-            if (auto.Contains(kind, value))
-            {
-                return new BanMatch(kind, value, Path.GetFileName(current.AutoBansFile)!);
-            }
-        }
-
         if (services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis)
         {
+            log.LogError("Checking bans with no Redis (REDIS): nothing is banned here");
             return null;
         }
 
-        foreach (var (kind, value) in known)
+        var mongo = services.GetService<IMongoDatabase>();
+        foreach (var (kind, value) in who.Known().Select(k => (k.Kind, Value: Canonical(k.Kind, k.Value))).Where(k => k.Value.Length > 0))
         {
             if (await redis.SetContainsAsync(Key(kind), value) || (kind is not (BanKind.Ip or BanKind.Player) && await redis.SetContainsAsync(IdKey, value)))
             {
-                return new BanMatch(kind, value, "redis");
+                return new BanMatch(kind, value, await BanStore.OriginAsync(mongo, kind, value));
             }
 
             if (kind == BanKind.Ip && (await redis.SetMembersAsync(CidrKey)).Select(c => c.ToString()).FirstOrDefault(block => InCidr(value, block)) is { } block)
             {
-                return new BanMatch(kind, value, $"redis {block}");
+                return new BanMatch(kind, value, $"{await BanStore.OriginAsync(mongo, null, block)} {block}");
             }
         }
 
         return null;
     }
-
-    /// <summary>Every hand-edited ban file, for the sweep's change check.</summary>
-    internal static IEnumerable<string?> Files(BanSettings s) => [s.IpFile, s.CidrFile, s.SteamIdFile, s.EpicIdFile, s.HardwareFile, s.InstallIdFile, s.AutoBansFile];
-
-    private static string? FileFor(BanSettings s, BanKind kind) => kind switch
-    {
-        BanKind.Ip => s.IpFile,
-        BanKind.Steam => s.SteamIdFile,
-        BanKind.Epic => s.EpicIdFile,
-        BanKind.Hardware => s.HardwareFile,
-        BanKind.Install => s.InstallIdFile,
-        _ => null,
-    };
 
     /// <summary>
     /// Whether <paramref name="ip"/> is in <paramref name="block"/>. IPv4 only, as in the TS server; a block without a
@@ -228,126 +191,181 @@ internal sealed class BanService(IServiceProvider services, IOptionsMonitor<BanS
         value = (uint)(bytes[0] << 24 | bytes[1] << 16 | bytes[2] << 8 | bytes[3]);
         return true;
     }
-
-    private IReadOnlyCollection<string> Read(string? path, BanKind kind)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return [];
-        }
-
-        var file = _files.GetOrAdd((Path.GetFullPath(path), kind), key => new BanFile(key.Item1, key.Item2));
-        return file.Entries(log);
-    }
-
-    private sealed class BanFile(string path, BanKind kind)
-    {
-        private readonly Lock _lock = new();
-        private DateTime _stamp = DateTime.MinValue;
-        private bool _missingLogged;
-        private HashSet<string> _entries = [];
-
-        public IReadOnlyCollection<string> Entries(ILogger log)
-        {
-            lock (_lock)
-            {
-                var info = new FileInfo(path);
-                if (!info.Exists)
-                {
-                    if (!_missingLogged)
-                    {
-                        log.LogInformation("Ban file {Path} does not exist; no bans from it", path);
-                        _missingLogged = true;
-                    }
-
-                    _entries = [];
-                    _stamp = DateTime.MinValue;
-                    return _entries;
-                }
-
-                _missingLogged = false;
-                if (info.LastWriteTimeUtc != _stamp)
-                {
-                    try
-                    {
-                        _entries = [.. File.ReadAllText(path).Split('\n')
-                            .Where(line => !Js.Trim(line).StartsWith('#'))
-                            .Select(line => Canonical(kind, line))
-                            .Where(line => line.Length > 0)];
-                        _stamp = info.LastWriteTimeUtc;
-                        log.LogInformation("Ban file {Path}: {Count} entries", path, _entries.Count);
-                    }
-                    catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-                    {
-                        // The last entries read stay; tried again on the next check.
-                        log.LogError(e, "Ban file {Path} could not be read: keeping its last {Count} entries", path, _entries.Count);
-                    }
-                }
-
-                return _entries;
-            }
-        }
-    }
 }
 
-/// <summary>At startup, adds the bans stored in Mongo and in the auto-ban file to the Redis sets every replica reads.</summary>
-internal sealed class BanLoader(IServiceProvider services, IOptionsMonitor<BanSettings> settings, ILogger<BanLoader> log) : IHostedService
+/// <summary>The bans in Mongo: importing the hand-edited files, loading the active values into Redis, where one came from.</summary>
+internal static class BanStore
 {
-    public const string Collection = "bans";
+    /// <summary>Single values: the hand-edited files' entries, imported, and older entries ({kind, value}).</summary>
+    public const string Values = "bans";
 
-    public async Task StartAsync(CancellationToken ct)
+    /// <summary>Not lifted.</summary>
+    public static readonly FilterDefinition<BsonDocument> Active = Builders<BsonDocument>.Filter.Exists("lifted_at", false);
+
+    /// <summary>A kind's name in the bans collection; null for a block (cidr).</summary>
+    public static string ValueKind(BanKind? kind) => kind switch
     {
-        AutoBans.CheckWritable(settings.CurrentValue.AutoBansFile, log);
-        if (services.GetService<IConnectionMultiplexer>() is not { } multiplexer)
+        null => "cidr",
+        BanKind.Ip => "ip",
+        BanKind.Steam => "steam",
+        BanKind.Epic => "epic",
+        BanKind.Hardware => "hardware",
+        BanKind.Install => "install",
+        _ => "player",
+    };
+
+    /// <summary>Where a person record keeps an identifier of <paramref name="kind"/>.</summary>
+    public static string RecordField(BanKind kind) => kind switch
+    {
+        BanKind.Ip => "identifiers.ip",
+        BanKind.Steam => "identifiers.steam_id",
+        BanKind.Epic => "identifiers.epic_id",
+        BanKind.Hardware => "identifiers.hardware_id",
+        BanKind.Install => "identifiers.install_id",
+        _ => "player.id",
+    };
+
+    private static string? KeyOf(string valueKind) => valueKind switch
+    {
+        "ip" => BanService.IpKey,
+        "cidr" => BanService.CidrKey,
+        "steam" => BanService.Key(BanKind.Steam),
+        "epic" => BanService.Key(BanKind.Epic),
+        "hardware" => BanService.Key(BanKind.Hardware),
+        "install" => BanService.Key(BanKind.Install),
+        "id" => BanService.IdKey,
+        _ => null,
+    };
+
+    /// <summary>The hand-edited files and the kind each holds (null: IP blocks).</summary>
+    public static IEnumerable<(BanKind? Kind, string? Path)> Files(BanSettings s) =>
+        [(BanKind.Ip, s.IpFile), (null, s.CidrFile), (BanKind.Steam, s.SteamIdFile), (BanKind.Epic, s.EpicIdFile), (BanKind.Hardware, s.HardwareFile), (BanKind.Install, s.InstallIdFile)];
+
+    /// <summary>
+    /// A ban file's entries: one per line, trimmed (hex ids in lower case); a line starting with # is a comment, and the
+    /// comment line just above an entry is kept with it (the TS server wrote one per ban: when, the player, the reason).
+    /// </summary>
+    internal static List<(string Value, string Note)> Parse(string text, BanKind? kind)
+    {
+        var entries = new List<(string, string)>();
+        string note = "";
+        foreach (string raw in text.Split('\n'))
         {
-            return;
+            string line = Js.Trim(raw);
+            if (line.StartsWith('#'))
+            {
+                note = Js.Trim(line[1..]);
+                continue;
+            }
+
+            if (line.Length > 0)
+            {
+                entries.Add((kind is { } k ? BanService.Canonical(k, line) : line, note));
+            }
+
+            note = "";
         }
 
+        return entries;
+    }
+
+    /// <summary>Creates the bans collection's unique (kind, value) index, so two replicas importing at once cannot both insert a value.</summary>
+    public static async Task EnsureIndexAsync(IMongoDatabase mongo, ILogger log, CancellationToken ct)
+    {
         try
         {
-            await LoadAsync(services.GetService<IMongoDatabase>(), multiplexer.GetDatabase(), settings.CurrentValue, log, ct);
+            await mongo.GetCollection<BsonDocument>(Values).Indexes.CreateOneAsync(
+                new CreateIndexModel<BsonDocument>(new BsonDocument { { "kind", 1 }, { "value", 1 } }, new CreateIndexOptions { Unique = true, Name = "kind_value" }),
+                cancellationToken: ct);
         }
-        catch (Exception e) when (e is MongoException or RedisException or TimeoutException)
+        catch (MongoCommandException e)
         {
-            // A replica that cannot load them still serves: the other replicas loaded them, and the sets persist.
-            log.LogError(e, "Loading bans into Redis failed");
+            log.LogError(e, "The bans collection's unique (kind, value) index could not be made: an import on two replicas at once may store a value twice");
         }
     }
 
-    public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
+    /// <summary>Imports every ban file's entries that Mongo has no record of (active or lifted). The number inserted.</summary>
+    public static async Task<int> ImportAsync(IMongoDatabase mongo, BanSettings current, DateTime now, ILogger log, CancellationToken ct)
+    {
+        var values = mongo.GetCollection<BsonDocument>(Values);
+        int inserted = 0;
+        foreach (var (kind, path) in Files(current))
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                continue;
+            }
 
-    /// <summary>Adds every ban in Mongo (bans, player_bans) and in the auto-ban file to the Redis sets. Only adds.</summary>
-    internal static async Task LoadAsync(IMongoDatabase? mongo, IDatabase redis, BanSettings current, ILogger log, CancellationToken ct)
+            List<(string Value, string Note)> entries;
+            try
+            {
+                entries = Parse(await File.ReadAllTextAsync(path, ct), kind);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                log.LogError(e, "Ban file {Path} could not be read: not imported", Path.GetFullPath(path));
+                continue;
+            }
+
+            string name = Path.GetFileName(path);
+            string valueKind = ValueKind(kind);
+            int fromFile = 0;
+            foreach (var (value, note) in entries)
+            {
+                try
+                {
+                    var result = await values.UpdateOneAsync(
+                        new BsonDocument { { "kind", valueKind }, { "value", value } },
+                        Builders<BsonDocument>.Update.SetOnInsert("source", "file").SetOnInsert("file", name).SetOnInsert("note", note).SetOnInsert("created_at", now),
+                        new UpdateOptions { IsUpsert = true }, ct);
+                    if (result.UpsertedId is not null)
+                    {
+                        fromFile++;
+                    }
+                }
+                catch (MongoWriteException e) when (e.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+                {
+                    // Another replica imported it a moment ago.
+                }
+            }
+
+            if (fromFile > 0)
+            {
+                log.LogWarning("Imported {Count} new ban(s) from {Path} ({Total} entries)", fromFile, Path.GetFullPath(path), entries.Count);
+            }
+
+            inserted += fromFile;
+        }
+
+        return inserted;
+    }
+
+    /// <summary>Adds every active value (bans, and every identifier of each active person record) to the Redis sets. Only adds; the number added.</summary>
+    public static async Task<long> LoadAsync(IMongoDatabase mongo, IDatabase redis, ILogger log, CancellationToken ct)
     {
         var byKey = new Dictionary<string, HashSet<RedisValue>>();
-        void Add(string key, string value)
+        void Add(string? key, string value)
         {
-            if (value.Length > 0)
+            if (key is not null && value.Length > 0)
             {
                 (byKey.TryGetValue(key, out var set) ? set : byKey[key] = []).Add(value);
             }
         }
 
-        if (mongo is not null)
+        using (var cursor = await mongo.GetCollection<BsonDocument>(Values).FindAsync(Active, cancellationToken: ct))
         {
-            using var cursor = await mongo.GetCollection<BsonDocument>(Collection).FindAsync(FilterDefinition<BsonDocument>.Empty, cancellationToken: ct);
             await cursor.ForEachAsync(ban =>
             {
-                string? key = ban.GetValue("kind", BsonNull.Value).ToString() switch
+                if (ban.GetValue("kind", BsonNull.Value) is { IsString: true } kind && ban.GetValue("value", BsonNull.Value) is { IsString: true } value)
                 {
-                    "ip" => BanService.IpKey,
-                    "cidr" => BanService.CidrKey,
-                    "id" => BanService.IdKey,
-                    _ => null,
-                };
-                if (key is not null && ban.GetValue("value", BsonNull.Value) is { IsString: true } value)
-                {
-                    Add(key, value.AsString);
+                    Add(KeyOf(kind.AsString), value.AsString);
                 }
             }, ct);
+        }
 
-            using var records = await mongo.GetCollection<BsonDocument>(PersonBans.Collection).FindAsync(FilterDefinition<BsonDocument>.Empty, cancellationToken: ct);
-            await records.ForEachAsync(record =>
+        using (var cursor = await mongo.GetCollection<BsonDocument>(PersonBans.Collection).FindAsync(Active, cancellationToken: ct))
+        {
+            await cursor.ForEachAsync(record =>
             {
                 foreach (var (kind, value) in PersonBans.IdentifiersOf(record).Known())
                 {
@@ -356,29 +374,80 @@ internal sealed class BanLoader(IServiceProvider services, IOptionsMonitor<BanSe
             }, ct);
         }
 
-        if (!string.IsNullOrWhiteSpace(current.AutoBansFile) && File.Exists(current.AutoBansFile))
-        {
-            try
-            {
-                foreach (var who in AutoBans.Parse(File.ReadAllText(current.AutoBansFile)))
-                {
-                    foreach (var (kind, value) in who.Known())
-                    {
-                        Add(BanService.Key(kind), BanService.Canonical(kind, value));
-                    }
-                }
-            }
-            catch (Exception e) when (e is FormatException or YamlDotNet.Core.YamlException or IOException or UnauthorizedAccessException)
-            {
-                log.LogError(e, "The auto-ban file {Path} could not be read: its bans are not loaded into Redis", current.AutoBansFile);
-            }
-        }
-
+        long added = 0;
         foreach (var (key, values) in byKey)
         {
-            await redis.SetAddAsync(key, [.. values]);
+            added += await redis.SetAddAsync(key, [.. values]);
         }
 
-        log.LogInformation("Loaded bans into Redis: {Counts}", byKey.Count == 0 ? "none" : string.Join(", ", byKey.Select(c => $"{c.Key} {c.Value.Count}")));
+        if (added > 0)
+        {
+            log.LogInformation("Loaded bans into Redis: {Added} added ({Counts})", added, string.Join(", ", byKey.Select(c => $"{c.Key} {c.Value.Count}")));
+        }
+
+        return added;
     }
+
+    /// <summary>Where an active ban of a value came from: the file it was imported from, or the ban record's id.</summary>
+    public static async Task<string> OriginAsync(IMongoDatabase? mongo, BanKind? kind, string value)
+    {
+        if (mongo is null)
+        {
+            return "redis";
+        }
+
+        try
+        {
+            var single = await mongo.GetCollection<BsonDocument>(Values)
+                .Find(Active & Builders<BsonDocument>.Filter.In("kind", kind is BanKind.Ip or null ? new[] { ValueKind(kind) } : new[] { ValueKind(kind), "id" }) & Builders<BsonDocument>.Filter.Eq("value", value))
+                .FirstOrDefaultAsync();
+            if (single is not null)
+            {
+                return single.GetValue("file", BsonNull.Value) is { IsString: true, AsString.Length: > 0 } file ? file.AsString : Values;
+            }
+
+            if (kind is { } k && await mongo.GetCollection<BsonDocument>(PersonBans.Collection)
+                .Find(Active & Builders<BsonDocument>.Filter.Eq(RecordField(k), value)).FirstOrDefaultAsync() is { } record)
+            {
+                return $"ban {record.GetValue("ban_id", "").AsString}";
+            }
+        }
+        catch (Exception e) when (e is MongoException or TimeoutException)
+        {
+            // Only the label: the ban stands either way.
+        }
+
+        return "redis";
+    }
+}
+
+/// <summary>At the access service's start: imports the ban files into Mongo and loads the active bans into Redis.</summary>
+internal sealed class BanLoader(IServiceProvider services, IOptionsMonitor<BanSettings> settings, TimeProvider time, ILogger<BanLoader> log) : IHostedService
+{
+    public async Task StartAsync(CancellationToken ct)
+    {
+        AutoBans.CheckWritable(settings.CurrentValue.AutoBansFile, log);
+        if (services.GetService<IMongoDatabase>() is not { } mongo || services.GetService<IConnectionMultiplexer>() is not { } multiplexer)
+        {
+            return;
+        }
+
+        try
+        {
+            await BanStore.EnsureIndexAsync(mongo, log, ct);
+            await BanStore.ImportAsync(mongo, settings.CurrentValue, time.GetUtcNow().UtcDateTime, log, ct);
+            if (await BanStore.LoadAsync(mongo, multiplexer.GetDatabase(), log, ct) > 0)
+            {
+                // The other services' caches reread now, not at their next minute (after a Redis flush, say).
+                await multiplexer.GetDatabase().PublishAsync(RedisChannel.Literal(BannedPlayers.ChangedChannel), BanEvent.Loaded.ToString());
+            }
+        }
+        catch (Exception e) when (e is MongoException or RedisException or TimeoutException)
+        {
+            // The sweep loads again every minute.
+            log.LogError(e, "Importing and loading the bans failed; the sweep tries again");
+        }
+    }
+
+    public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
 }

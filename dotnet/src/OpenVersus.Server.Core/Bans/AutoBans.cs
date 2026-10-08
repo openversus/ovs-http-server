@@ -24,9 +24,10 @@ public sealed record BanRecord(
     bool Online = false,
     bool Disconnected = false);
 
-// The auto-ban file: a YAML sequence of records, appended to (one record per write, under an exclusive lock: several
-// services ban), never rewritten. Comments and an empty file are fine; a record's identifiers are what is banned.
-//   - ban_id: '...'
+// The auto-ban file: the trail of every ban and lift the services made, a YAML sequence appended to (one item per write,
+// under an exclusive lock: several services ban) and never rewritten or read back: Mongo holds the bans. Comments are fine.
+//   - action: 'ban'
+//     ban_id: '...'
 //     at: '2026-10-07T21:14:03.512Z'
 //     reason: '...'
 //     source: 'namechange'          (namechange, login, sweep, manual)
@@ -36,40 +37,10 @@ public sealed record BanRecord(
 //     request: {ip, user_agent}
 //     online: true
 //     disconnected: true
+//   - action: 'lift'
+//     at, reason, source, player: {id, name}, lifted_bans: [ban ids], no_longer_banned: [...], still_banned: [...]
 internal static class AutoBans
 {
-    /// <summary>The identifiers of every record (with the player id), in file order. Throws when the file is not a list of records.</summary>
-    public static List<BanIdentifiers> Parse(string yaml)
-    {
-        var stream = new YamlStream();
-        stream.Load(new StringReader(yaml));
-        if (stream.Documents.Count == 0 || stream.Documents[0].RootNode is YamlScalarNode { Value: null or "" })
-        {
-            return [];
-        }
-
-        if (stream.Documents.Count != 1 || stream.Documents[0].RootNode is not YamlSequenceNode records)
-        {
-            throw new FormatException("expected one YAML document holding a list of ban records");
-        }
-
-        var all = new List<BanIdentifiers>(records.Children.Count);
-        foreach (var node in records)
-        {
-            if (node is not YamlMappingNode record)
-            {
-                throw new FormatException($"line {node.Start.Line}: a ban record must be a mapping");
-            }
-
-            var ids = Child(record, "identifiers") as YamlMappingNode;
-            all.Add(new BanIdentifiers(
-                Text(ids, "ip"), Text(ids, "steam_id"), Text(ids, "epic_id"), Text(ids, "hardware_id"), Text(ids, "install_id"),
-                Text(Child(record, "player") as YamlMappingNode, "id")));
-        }
-
-        return all;
-    }
-
     /// <summary>The record as one item of the file's list, ending in a newline.</summary>
     public static string ToYaml(BanRecord r)
     {
@@ -77,6 +48,7 @@ internal static class AutoBans
         static YamlScalarNode B(bool value) => new(value ? "true" : "false") { Style = ScalarStyle.Plain };
         var record = new YamlMappingNode
         {
+            { "action", S("ban") },
             { "ban_id", S(r.BanId) },
             { "at", S(r.At.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'")) },
             { "reason", S(r.Reason) },
@@ -95,18 +67,42 @@ internal static class AutoBans
             { "disconnected", B(r.Disconnected) },
         };
 
+        return Item(record);
+    }
+
+    /// <summary>A lift as one item of the file's list, ending in a newline.</summary>
+    public static string LiftToYaml(DateTimeOffset at, string reason, string source, string playerId, string name,
+        IEnumerable<string> liftedBans, IEnumerable<string> noLongerBanned, IEnumerable<string> stillBanned)
+    {
+        static YamlScalarNode S(string value) => new(value) { Style = ScalarStyle.SingleQuoted };
+        static YamlSequenceNode L(IEnumerable<string> values) => new(values.Select(v => (YamlNode)S(v))) { Style = YamlDotNet.Core.Events.SequenceStyle.Block };
+        return Item(new YamlMappingNode
+        {
+            { "action", S("lift") },
+            { "at", S(at.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'")) },
+            { "reason", S(reason) },
+            { "source", S(source) },
+            { "player", new YamlMappingNode { { "id", S(playerId) }, { "name", S(name) } } },
+            { "lifted_bans", L(liftedBans) },
+            { "no_longer_banned", L(noLongerBanned) },
+            { "still_banned", L(stillBanned) },
+        });
+    }
+
+    private static string Item(YamlMappingNode item)
+    {
         var writer = new StringWriter { NewLine = "\n" };
-        new YamlStream(new YamlDocument(new YamlSequenceNode(record))).Save(writer, assignAnchors: false);
+        new YamlStream(new YamlDocument(new YamlSequenceNode(item))).Save(writer, assignAnchors: false);
         string text = writer.ToString();
         // Save ends the document with "...": an appended item must not.
         int end = text.LastIndexOf("...", StringComparison.Ordinal);
         return (end >= 0 && text[end..].Trim() == "..." ? text[..end] : text).TrimEnd() + "\n";
     }
 
-    /// <summary>Appends the record to the file (created when missing) under an exclusive lock, retried while another service holds it.</summary>
-    public static void Append(string path, BanRecord record)
+    /// <summary>Appends an item to the file (created when missing) under an exclusive lock, retried while another service holds it.</summary>
+    public static void Append(string path, string yaml)
     {
-        byte[] item = System.Text.Encoding.UTF8.GetBytes(ToYaml(record));
+        byte[] item = System.Text.Encoding.UTF8.GetBytes(yaml);
         for (int attempt = 1; ; attempt++)
         {
             try
@@ -152,78 +148,6 @@ internal static class AutoBans
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             log.LogError(e, "The auto-ban file {Path} cannot be written: bans this service makes are kept in Mongo and Redis only", Path.GetFullPath(path));
-        }
-    }
-
-    private static YamlNode? Child(YamlMappingNode? map, string key) =>
-        map is not null && map.Children.TryGetValue(new YamlScalarNode(key), out var node) ? node : null;
-
-    private static string Text(YamlMappingNode? map, string key) => Child(map, key) is YamlScalarNode { Value: { } value } ? value : "";
-
-    /// <summary>The auto-ban file's identifiers by kind, reread when the file changes (after it has settled).</summary>
-    internal sealed class Reader
-    {
-        private readonly Lock _lock = new();
-        private string? _path;
-        private DateTime _stamp = DateTime.MinValue;
-        private Dictionary<BanKind, HashSet<string>> _byKind = [];
-        private bool _loaded;
-
-        public Reader Get(string? configured, DateTime now, ILogger log)
-        {
-            lock (_lock)
-            {
-                string? path = string.IsNullOrWhiteSpace(configured) ? null : Path.GetFullPath(configured);
-                if (path != _path)
-                {
-                    (_path, _stamp, _byKind, _loaded) = (path, DateTime.MinValue, [], false);
-                }
-
-                if (path is null || !File.Exists(path))
-                {
-                    return this;
-                }
-
-                var stamp = File.GetLastWriteTimeUtc(path);
-                if (stamp == _stamp || (_loaded && (now - stamp).Duration() < NameRules.SettleTime))
-                {
-                    return this;
-                }
-
-                try
-                {
-                    var byKind = new Dictionary<BanKind, HashSet<string>>();
-                    var records = Parse(File.ReadAllText(path));
-                    foreach (var (kind, value) in records.SelectMany(r => r.Known()))
-                    {
-                        (byKind.TryGetValue(kind, out var set) ? set : byKind[kind] = []).Add(BanService.Canonical(kind, value));
-                    }
-
-                    (_byKind, _stamp, _loaded) = (byKind, stamp, true);
-                    log.LogInformation("Auto-ban file {Path}: {Count} records", path, records.Count);
-                }
-                catch (Exception e) when (e is FormatException or YamlException or IOException or UnauthorizedAccessException)
-                {
-                    // The last good records stay; bad content is not read again until the file changes, but with nothing
-                    // loaded yet (a mount not readable yet) every check tries again.
-                    if (_loaded)
-                    {
-                        _stamp = stamp;
-                    }
-
-                    log.LogError(e, "The auto-ban file {Path} could not be read: keeping its last good records", path);
-                }
-
-                return this;
-            }
-        }
-
-        public bool Contains(BanKind kind, string value)
-        {
-            lock (_lock)
-            {
-                return _byKind.TryGetValue(kind, out var set) && set.Contains(value);
-            }
         }
     }
 }

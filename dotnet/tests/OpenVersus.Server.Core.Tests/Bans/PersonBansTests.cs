@@ -12,10 +12,10 @@ using StackExchange.Redis;
 namespace OpenVersus.Server.Core.Tests.Bans;
 
 /// <summary>
-/// A person ban against a real Redis (database 15, OVS_TEST_REDIS) and Mongo (a database of its own, dropped:
-/// OVS_TEST_MONGO): every identifier banned, in effect at once, recorded in Mongo and the auto-ban file, the
-/// connection cut; and the login's order: no account for a banned identifier, a banned name bans, a force-change name
-/// is renamed before the session is written.
+/// Bans against a real Redis (database 15, OVS_TEST_REDIS) and Mongo (a database of its own, dropped: OVS_TEST_MONGO):
+/// a person ban (every identifier, in effect at once, recorded in Mongo and the trail, the connection cut); the ban
+/// files' import (once, never a lifted value); a lift (only what no other ban holds); the sweep; and the login's order
+/// (no account for a banned identifier, a banned name bans, a force-change name is renamed before the session is written).
 /// </summary>
 [Collection(RedisTestDatabase.Name)]
 public sealed class PersonBansTests : IAsyncLifetime
@@ -106,12 +106,28 @@ public sealed class PersonBansTests : IAsyncLifetime
 
     private PersonBans Bans() => new(Stores(), new TestOptions<BanSettings>(_settings), TimeProvider.System, NullLogger<PersonBans>.Instance);
 
+    // A ban file, imported and loaded as the access service does at start and when the file changes.
+    private async Task<int> ImportAsync(string steamFile)
+    {
+        File.WriteAllText(_settings.SteamIdFile!, steamFile);
+        int inserted = await BanStore.ImportAsync(Mongo, _settings, DateTime.UtcNow, NullLogger.Instance, default);
+        await BanStore.LoadAsync(Mongo, Redis, NullLogger.Instance, default);
+        return inserted;
+    }
+
+    private YamlDotNet.RepresentationModel.YamlSequenceNode Trail()
+    {
+        var yaml = new YamlDotNet.RepresentationModel.YamlStream();
+        yaml.Load(new StringReader(File.ReadAllText(_settings.AutoBansFile!)));
+        return (YamlDotNet.RepresentationModel.YamlSequenceNode)yaml.Documents[0].RootNode;
+    }
+
     private AccessService Access()
     {
         var options = new TestOptions<BanSettings>(_settings);
         var services = Stores();
         return new AccessService(services, new TestOptions<AccessSettings>(new AccessSettings { JwtSecret = Secret }), new TestOptions<RealtimeSettings>(new RealtimeSettings()),
-            new TestOptions<SeasonSettings>(new SeasonSettings()), new BanService(services, options, TimeProvider.System, NullLogger<BanService>.Instance),
+            new TestOptions<SeasonSettings>(new SeasonSettings()), new BanService(services, NullLogger<BanService>.Instance),
             new NameRules(options, TimeProvider.System, NullLogger<NameRules>.Instance), Bans(), TimeProvider.System, NullLogger<AccessService>.Instance);
     }
 
@@ -155,7 +171,7 @@ public sealed class PersonBansTests : IAsyncLifetime
             Assert.True(await Redis.SetContainsAsync(BanService.Key(kind), value), $"{kind} {value}");
         }
 
-        Assert.Equal(player, await heard.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(BanEvent.Banned(player), BanEvent.Parse(await heard.Task.WaitAsync(TimeSpan.FromSeconds(5))));
         var logged = await Redis.StreamRangeAsync(PlayerMessages.LogKey(player));
         Assert.Contains(logged, e => e.Values.Any(v => v.Name == "disconnect"));
 
@@ -163,25 +179,101 @@ public sealed class PersonBansTests : IAsyncLifetime
         Assert.Equal(expected, PersonBans.IdentifiersOf(stored));
         Assert.Equal(("namechange", "zorb", "zorb", "test agent"), (stored["source"].AsString, stored["player"]["attempted_name"].AsString,
             stored["matched"]["term"].AsString, stored["request"]["user_agent"].AsString));
-        Assert.Equal([expected], AutoBans.Parse(File.ReadAllText(_settings.AutoBansFile!)));
+        var trail = (YamlDotNet.RepresentationModel.YamlMappingNode)Assert.Single(Trail().Children);
+        Assert.Equal((record.BanId, Steam), (trail["ban_id"].ToString(), ((YamlDotNet.RepresentationModel.YamlMappingNode)trail["identifiers"])["steam_id"].ToString()));
     }
 
     [SkippableFact]
-    public async Task EitherRecordAloneRestoresTheBansInRedis()
+    public async Task MongoRestoresTheBansInRedisAndTheTrailIsNeverRead()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         string player = (await SeedAsync("Someone")).ToString();
         await Bans().BanAsync(new BanRequest(player, "banned by an administrator", "manual"));
 
         await ClearRedisAsync();
-        await BanLoader.LoadAsync(Mongo, Redis, new BanSettings { AutoBansFile = null }, NullLogger.Instance, default);
+        Assert.True(await BanStore.LoadAsync(Mongo, Redis, NullLogger.Instance, default) > 0);
         Assert.True(await Redis.SetContainsAsync(BannedPlayers.Key, player));
         Assert.True(await Redis.SetContainsAsync("bans:steam", Steam));
 
+        // The trail alone bans nobody: Mongo holds the bans.
+        await Mongo.DropCollectionAsync(PersonBans.Collection);
         await ClearRedisAsync();
-        await BanLoader.LoadAsync(null, Redis, _settings, NullLogger.Instance, default);
+        Assert.Equal(0, await BanStore.LoadAsync(Mongo, Redis, NullLogger.Instance, default));
+        Assert.NotEmpty(Trail().Children);
+    }
+
+    [SkippableFact]
+    public async Task ImportsAFilesEntriesOnceAndNeverALiftedOne()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await BanStore.EnsureIndexAsync(Mongo, NullLogger.Instance, default);
+        Assert.Equal(2, await ImportAsync($"# 2026-01-01 - why\n{Steam}\n76561198000000088\n"));
+        var values = Mongo.GetCollection<BsonDocument>(BanStore.Values);
+        var first = await values.Find(new BsonDocument { { "kind", "steam" }, { "value", Steam } }).SingleAsync();
+        Assert.Equal(("file", "steamid_bans.txt", "2026-01-01 - why"), (first["source"].AsString, first["file"].AsString, first["note"].AsString));
+        Assert.True(await Redis.SetContainsAsync("bans:steam", "76561198000000088"));
+
+        // Unchanged: nothing new. Lifted: not brought back, though the line stays.
+        Assert.Equal(0, await ImportAsync($"{Steam}\n76561198000000088\n"));
+        await values.UpdateOneAsync(new BsonDocument("value", "76561198000000088"), new BsonDocument("$set", new BsonDocument("lifted_at", DateTime.UtcNow)));
+        await ClearRedisAsync();
+        Assert.Equal(1, await ImportAsync($"{Steam}\n76561198000000088\n76561198000000099\n"));
+        Assert.False(await Redis.SetContainsAsync("bans:steam", "76561198000000088"));
+        Assert.True(await Redis.SetContainsAsync("bans:steam", "76561198000000099"));
+        Assert.Equal(3, await values.CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty));
+    }
+
+    [SkippableFact]
+    public async Task ALiftLetsThroughOnlyWhatNoOtherBanHolds()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        // Two people behind one IP, both banned; the first one's Steam id is also in a ban file.
+        string first = (await SeedAsync("First")).ToString();
+        var second = ObjectId.GenerateNewId();
+        await Players.InsertOneAsync(new BsonDocument { { "_id", second }, { "name", "Second" }, { "steamId", "76561198000000079" }, { "account", new BsonDocument("current_ip", "198.51.100.41") } });
+        await ImportAsync(Steam + "\n");
+        var ban = await Bans().BanAsync(new BanRequest(first, "banned by an administrator", "manual"));
+        await Bans().BanAsync(new BanRequest(second.ToString(), "banned by an administrator", "manual"));
+        var heard = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await _redis!.GetSubscriber().SubscribeAsync(RedisChannel.Literal(BannedPlayers.ChangedChannel), (_, v) => heard.TrySetResult(v.ToString()));
+
+        var lift = await Bans().LiftAsync(first, "a false positive", "manual");
+
+        Assert.NotNull(lift);
+        Assert.Equal([ban!.BanId], lift.LiftedBans);
+        Assert.Equal(["Epic " + Epic.ToLowerInvariant(), "Hardware " + Hardware, "Install " + Install, "Player " + first], lift.NoLongerBanned.Order());
+        Assert.Equal(2, lift.StillBanned.Count);
+        Assert.Contains(lift.StillBanned, s => s.StartsWith("Ip 198.51.100.41 (ban ", StringComparison.Ordinal) && s.EndsWith($"of player {second})", StringComparison.Ordinal));
+        Assert.Contains($"Steam {Steam} (steamid_bans.txt: remove it there)", lift.StillBanned);
+        Assert.False(await Redis.SetContainsAsync(BannedPlayers.Key, first));
+        Assert.False(await Redis.SetContainsAsync("bans:install", Install));
+        Assert.True(await Redis.SetContainsAsync(BanService.IpKey, "198.51.100.41"));
+        Assert.True(await Redis.SetContainsAsync("bans:steam", Steam));
+        Assert.True(await Redis.SetContainsAsync(BannedPlayers.Key, second.ToString()));
+        Assert.Equal(BanEvent.Lifted(first), BanEvent.Parse(await heard.Task.WaitAsync(TimeSpan.FromSeconds(5))));
+        var record = await Mongo.GetCollection<BsonDocument>(PersonBans.Collection).Find(new BsonDocument("ban_id", ban.BanId)).SingleAsync();
+        Assert.Equal("a false positive", record["lifted_reason"].AsString);
+        Assert.Equal("lift", ((YamlDotNet.RepresentationModel.YamlMappingNode)Trail().Children[^1])["action"].ToString());
+
+        // A load after the lift does not bring it back.
+        await BanStore.LoadAsync(Mongo, Redis, NullLogger.Instance, default);
+        Assert.False(await Redis.SetContainsAsync(BannedPlayers.Key, first));
+    }
+
+    [SkippableFact]
+    public async Task ABanAfterALiftHolds()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        string player = (await SeedAsync("Someone")).ToString();
+        await Bans().BanAsync(new BanRequest(player, "banned by an administrator", "manual"));
+        await Bans().LiftAsync(player, "a false positive", "manual");
+        Assert.False(await Redis.SetContainsAsync("bans:steam", Steam));
+
+        await Bans().BanAsync(new BanRequest(player, "banned again", "manual"));
+        await ClearRedisAsync();
+        await BanStore.LoadAsync(Mongo, Redis, NullLogger.Instance, default);
+        Assert.True(await Redis.SetContainsAsync("bans:steam", Steam));
         Assert.True(await Redis.SetContainsAsync(BannedPlayers.Key, player));
-        Assert.True(await Redis.SetContainsAsync("bans:hardware", Hardware));
     }
 
     [SkippableFact]
@@ -208,7 +300,7 @@ public sealed class PersonBansTests : IAsyncLifetime
     {
         var options = new TestOptions<BanSettings>(_settings);
         var services = Stores();
-        return new BanSweep(services, options, new BanService(services, options, TimeProvider.System, NullLogger<BanService>.Instance), Bans(),
+        return new BanSweep(services, options, new BanService(services, NullLogger<BanService>.Instance), Bans(),
             new OpenVersus.Server.Core.Hosting.ServiceInstance(), TimeProvider.System, NullLogger<BanSweep>.Instance);
     }
 
@@ -222,14 +314,16 @@ public sealed class PersonBansTests : IAsyncLifetime
         await Players.InsertManyAsync([new BsonDocument { { "_id", already }, { "name", "Banned before" } }, new BsonDocument { { "_id", clean }, { "name", "Nobody" } }]);
         await Redis.SetAddAsync("online_players", [matched.ToString(), already.ToString(), clean.ToString()]);
         await Redis.SetAddAsync(BannedPlayers.Key, already.ToString());
-        File.WriteAllText(_settings.SteamIdFile!, Steam + "\n");
+        await ImportAsync(Steam + "\n");
 
         Assert.Equal(1, await Sweep().SweepAsync(Redis, default));
 
+        // The person: every identifier of theirs, not only the one that matched.
         Assert.True(await Redis.SetContainsAsync(BannedPlayers.Key, matched.ToString()));
-        // Only the player id: their other identifiers are not banned through this match.
-        Assert.Equal(0, await Redis.SetLengthAsync("bans:epic"));
-        Assert.Equal(0, await Redis.SetLengthAsync("bans:hardware"));
+        Assert.True(await Redis.SetContainsAsync("bans:epic", Epic.ToLowerInvariant()));
+        Assert.True(await Redis.SetContainsAsync("bans:hardware", Hardware));
+        Assert.True(await Redis.SetContainsAsync("bans:install", Install));
+        Assert.True(await Redis.SetContainsAsync(BanService.IpKey, "198.51.100.41"));
         var stored = await Mongo.GetCollection<BsonDocument>(PersonBans.Collection).Find(FilterDefinition<BsonDocument>.Empty).SingleAsync();
         Assert.Equal((matched.ToString(), "sweep", "steamid_bans.txt", Steam), (stored["player"]["id"].AsString, stored["source"].AsString,
             stored["matched"]["list"].AsString, stored["matched"]["term"].AsString));
@@ -245,7 +339,7 @@ public sealed class PersonBansTests : IAsyncLifetime
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         var matched = await SeedAsync("Shares a banned Steam id");
         await Redis.SetAddAsync("online_players", matched.ToString());
-        File.WriteAllText(_settings.SteamIdFile!, Steam + "\n");
+        await ImportAsync(Steam + "\n");
         await Redis.StringSetAsync("bans:sweep:lock", "another replica");
 
         Assert.Equal(0, await Sweep().SweepAsync(Redis, default));
@@ -257,7 +351,7 @@ public sealed class PersonBansTests : IAsyncLifetime
     public async Task ALoginWithABannedIdentifierMakesNoAccount()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
-        File.WriteAllText(_settings.SteamIdFile!, Steam + "\n");
+        await ImportAsync(Steam + "\n");
         // Another account holds the install id under its own Steam id: looking an account up for this login would take
         // the install id from it, so the banned identifier is refused before the lookup.
         var other = ObjectId.GenerateNewId();

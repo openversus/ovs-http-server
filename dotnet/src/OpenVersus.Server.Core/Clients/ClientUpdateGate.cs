@@ -39,6 +39,9 @@ public sealed class ClientSettings
 
     [Description("What an outdated player is told.")]
     public string UpdateMessage { get; set; } = "A required OpenVersus update is available. Download and install it before playing online.";
+
+    [Description("The GitHub \"owner/repo\" whose latest release the client's update check offers (CLIENT_RELEASE_REPO); anything else means the default, openversus/ovs-client.")]
+    public string ReleaseRepo { get; set; } = "openversus/ovs-client";
 }
 
 /// <summary>A player's client, as the gate sees it.</summary>

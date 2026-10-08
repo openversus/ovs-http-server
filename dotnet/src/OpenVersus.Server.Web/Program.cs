@@ -1,4 +1,5 @@
 using OpenVersus.Server.Core.Bans;
+using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Http.Shared;
@@ -12,6 +13,8 @@ builder.AddGameHttp(typeof(Program).Assembly);
 builder.AddBans();
 builder.AddAccountResolver();
 builder.AddIdentify();
+// /ovs/client-version offers the latest client release.
+builder.AddClientReleases();
 
 var app = builder.Build();
 app.UseGameHttp();

@@ -25,6 +25,7 @@ public static class TsEnvironment
         ("HASHBANS_FILE", "Bans:HardwareFile"),
         ("MIN_CLIENT_VERSION", "Clients:MinimumVersion"),
         ("CLIENT_VERSION_CHECK", "Clients:VersionCheck"),
+        ("CLIENT_RELEASE_REPO", "Clients:ReleaseRepo"),
         ("GAME_VERSION", "Lobbies:GameVersion"),
         ("LOCAL_PUBLIC_IP", "Lobbies:LocalPublicIp"),
         ("DEFAULT_ELO", "Ranked:DefaultElo"),

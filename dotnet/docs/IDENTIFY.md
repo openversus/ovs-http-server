@@ -17,8 +17,8 @@ is refused, always.
 - Verified: the ticket's SteamID64 is the client's Steam id, and the identity record and the token say so
   (`steamVerified: "1"`).
 - Refused, or no ticket at all: the claimed `steamId` is logged and dropped. The client is identified by its install id,
-  its hardware fingerprint and its IP, as a client without Steam always was (Goldberg and the Internet Archive build
-  included). An Epic id is still taken as claimed: there is no ticket for it (yet).
+  its hardware fingerprint and its IP, as any non-Steam client always was. An Epic id is still taken as claimed: there
+  is no ticket for it (yet).
 
 The check is offline. What it proves: Steam signed this ownership ticket for this SteamID64 and this app, and it has
 not expired. What it does not: that the ticket is fresh. Only the ownership ticket is signed and Steam reuses it for
@@ -47,3 +47,17 @@ a household behind one IP picks its web account again once.
   ticket; every reader treats them so.
 - Logins find an account by Steam id only through a verified one. Accounts that share a Steam id (made from claimed ids
   before tickets) are found in natural order, as the TS server found them, and logged.
+
+## The client's other calls
+
+- `GET /ovs/client-version?v=<running version>`: the update check. The latest GitHub release of `Clients:ReleaseRepo`
+  (`CLIENT_RELEASE_REPO`, default openversus/ovs-client; anything that is not "owner/repo" means the default) is fetched
+  with no credentials and cached for five minutes. The answer lists the files the in-game updater may install, both as
+  `files` and flattened (`file_count`, `file_0_name`, ...): the one plugin (`OpenVersus.asi` or
+  `OpenVersus_<version>.asi`, which must carry the release's version) and complete pak groups, only from that repo's
+  release downloads and only with GitHub's sha256 digest; ZIPs and sidecars are never offered. `is_latest` compares the
+  asking client with the release (a newer test build is "latest"); `update_required` is the gate's verdict
+  (`Clients:VersionCheck`, `Clients:MinimumVersion`). A release that cannot be offered, or GitHub not answering, gives
+  the TS fallback: no version, `is_latest` true, so a client is never sent backwards or into a broken release.
+- `GET /ovs/all-players`: the first 200 accounts as `accountId` and `username`, for older clients' startup
+  pre-registration; an empty list on any error.

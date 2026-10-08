@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using OpenVersus.Server.Core.Ops;
+using OpenVersus.Server.Core.Steam;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -265,6 +266,24 @@ internal static class PlayerRender
         grid.AddRow("[grey]Steam id[/]", Markup.Escape(p.SteamId is { Length: > 0 } s ? s : "-"));
         grid.AddRow("[grey]Public id[/]", Markup.Escape(p.PublicId ?? "-"));
         grid.AddRow("[grey]Connected[/]", p.Online ? $"[green]yes[/] ({Markup.Escape(p.Status ?? "?")})" : "no");
+        if (p.Steam is { } steam)
+        {
+            string state = steam.State switch
+            {
+                "ok" => "[green]ok[/]",
+                "refused" => "[red]refused[/]",
+                "pending" => "[yellow]pending[/]",
+                _ => $"[grey]{Markup.Escape(steam.State)}[/]",
+            };
+            long ms = steam.VerdictAtMs ?? steam.OpenedAtMs ?? 0;
+            string at = ms > 0 ? $" at {DateTimeOffset.FromUnixTimeMilliseconds(ms).ToLocalTime():yyyy-MM-dd HH:mm:ss}" : "";
+            grid.AddRow("[grey]Steam session[/]", $"{state}{Markup.Escape(steam.Response.Length > 0 ? $" ({steam.Response})" : "")}{Markup.Escape(at)}");
+            if (steam.OwnerSteamId.Length > 0 && steam.OwnerSteamId != p.SteamId)
+            {
+                grid.AddRow("[grey]Steam licence owner[/]", Markup.Escape(steam.OwnerSteamId));
+            }
+        }
+
         if (p.Connection is { } connection)
         {
             grid.AddRow("[grey]Gateway node[/]", Markup.Escape(connection.Node ?? "-"));
@@ -467,5 +486,58 @@ public sealed class PlayerRenameCommand : AsyncCommand<RenameSettings>
     {
         using var client = ControlClient.For(settings);
         return OvsCtl.Report(_console, settings, await client.RenameAsync(settings.Who, settings.Name), p => PlayerRender.Show(_console, p));
+    }
+}
+
+/// <summary>ovsctl steam status: the Steam identity service by default (the sessions are its).</summary>
+public sealed class SteamCommandSettings : ConnectionSettings
+{
+    protected override string DefaultService => "steam";
+}
+
+public sealed class SteamStatusCommand : AsyncCommand<SteamCommandSettings>
+{
+    private readonly IAnsiConsole _console;
+
+    public SteamStatusCommand(IAnsiConsole console)
+    {
+        _console = console;
+    }
+
+    protected override async Task<int> ExecuteAsync(CommandContext context, SteamCommandSettings settings, CancellationToken cancellation)
+    {
+        using var client = ControlClient.For(settings);
+        return OvsCtl.Report(_console, settings, await client.SteamStatusAsync(), status =>
+        {
+            var grid = new Grid().AddColumn().AddColumn();
+            grid.AddRow("[grey]Steam:Enabled[/]", status.Enabled ? "[green]on[/]" : "[yellow]off: nothing is asked of Steam[/]");
+            string since = status.ConnectedSinceMs is { } ms ? $" since {DateTimeOffset.FromUnixTimeMilliseconds(ms).ToLocalTime():yyyy-MM-dd HH:mm:ss}" : "";
+            grid.AddRow("[grey]Connected to Steam[/]", status.Connected ? $"[green]yes[/]{Markup.Escape(since)}" : "[red]no[/]");
+            grid.AddRow("[grey]Instance[/]", Markup.Escape(status.Instance));
+            grid.AddRow("[grey]Open requests queued[/]", status.Queued < 0 ? "[grey]?[/]" : status.Queued.ToString());
+            grid.AddRow("[grey]Held sessions[/]", status.Sessions.Count == 0 ? "none" : Markup.Escape(string.Join(", ", status.Sessions.OrderBy(s => s.Key).Select(s => $"{s.Value} {s.Key}"))));
+            grid.AddRow("[grey]Verdicts since start[/]", Markup.Escape(string.Join(", ", status.Verdicts.OrderBy(v => v.Key).Select(v => $"{v.Value} {v.Key}"))));
+            if (status.LastError is { Length: > 0 } error)
+            {
+                grid.AddRow("[grey]Last error[/]", $"[red]{Markup.Escape(error)}[/]");
+            }
+
+            grid.AddRow("[grey]Via[/]", Markup.Escape(client.Where));
+            _console.Write(grid);
+            if (status.Held.Count == 0)
+            {
+                return;
+            }
+
+            var table = new Table().Border(TableBorder.Rounded).AddColumn("Steam id").AddColumn("Player").AddColumn("State").AddColumn("Response").AddColumn("Owner").AddColumn("Opened");
+            foreach (var held in status.Held)
+            {
+                table.AddRow(Markup.Escape(held.SteamId), Markup.Escape(held.PlayerId.Length > 0 ? held.PlayerId : "-"), Markup.Escape(held.State), Markup.Escape(held.Response),
+                    Markup.Escape(held.OwnerSteamId.Length > 0 && held.OwnerSteamId != held.SteamId ? held.OwnerSteamId : "-"),
+                    DateTimeOffset.FromUnixTimeMilliseconds(held.OpenedAtMs).ToLocalTime().ToString("HH:mm:ss"));
+            }
+
+            _console.Write(table);
+        });
     }
 }

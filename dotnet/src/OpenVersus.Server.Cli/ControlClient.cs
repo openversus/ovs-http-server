@@ -7,6 +7,7 @@ using OpenVersus.Server.Core.Control;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Ops;
 using OpenVersus.Server.Core.Settings;
+using OpenVersus.Server.Core.Steam;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -25,7 +26,7 @@ public class ConnectionSettings : CommandSettings
     protected virtual string DefaultService => "http";
 
     [CommandOption("-s|--service <SERVICE>")]
-    [Description("The service: http, access, social, lobbies, web, ws, edge, matchmaking, matchflow or proxy (default: OVS_SERVICE, else the one the command is about). Picks the default socket and port.")]
+    [Description("The service: http, access, social, lobbies, web, ws, edge, matchmaking, matchflow, steam or proxy (default: OVS_SERVICE, else the one the command is about). Picks the default socket and port.")]
     public string Service
     {
         get => _service ?? (Environment.GetEnvironmentVariable(ServiceVariable) is { Length: > 0 } service ? service : DefaultService);
@@ -173,6 +174,8 @@ public sealed class ControlClient : IDisposable
     public Task<ControlReply<LobbyView[]>> LobbiesAsync() => SendAsync<LobbyView[]>(HttpMethod.Get, "/control/ops/lobbies");
 
     public Task<ControlReply<LobbyView>> LobbyAsync(string code) => SendAsync<LobbyView>(HttpMethod.Get, $"/control/ops/lobbies/{Uri.EscapeDataString(code)}");
+
+    public Task<ControlReply<SteamAuthStatus>> SteamStatusAsync() => SendAsync<SteamAuthStatus>(HttpMethod.Get, "/control/steam/status");
 
     public Task<ControlReply<PlayerView>> PlayerAsync(string who) => SendAsync<PlayerView>(HttpMethod.Get, $"/control/ops/players/{Uri.EscapeDataString(who)}");
 

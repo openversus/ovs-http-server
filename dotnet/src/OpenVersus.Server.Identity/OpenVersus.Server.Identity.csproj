@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The OpenVersus client's identity: /api/identify (IdentifyService) and the Steam session ticket it proves a Steam
+       id with (Steam/). A library the web service runs in-process (the offline ticket check is the floor when Steam is
+       unreachable, so it never sits behind a call to another service); the Steam identity service, which asks Steam
+       itself, is its own executable on top of it. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenVersus.Server.Core\OpenVersus.Server.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenVersus.Server.Identity.Tests" />
+    <!-- The login's identity tests build the ticket fields the identify service writes. -->
+    <InternalsVisibleTo Include="OpenVersus.Server.Core.Tests" />
+  </ItemGroup>
+
+</Project>

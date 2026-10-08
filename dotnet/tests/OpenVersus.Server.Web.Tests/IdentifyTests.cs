@@ -12,7 +12,8 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Access;
 using OpenVersus.Server.Core.Identity;
-using OpenVersus.Server.Core.Steam;
+using OpenVersus.Server.Identity;
+using OpenVersus.Server.Identity.Steam;
 using OpenVersus.Server.TestSupport;
 using StackExchange.Redis;
 
@@ -135,7 +136,7 @@ public sealed class IdentifyTests : IAsyncLifetime
         string token = (string)body["token"]!;
         var claims = IdentifyTokens.Verify(token, ServiceFactory<Program>.IdentifySecret, DateTimeOffset.UtcNow);
         Assert.NotNull(claims);
-        Assert.Equal(["id", "steamId", "epicId", "hardwareId", "hardwareIdVersion", "hardwareIdQuality", "installId", "clientVersion", "identityRegistered", "nodePort", "current_ip", "profile_id", "public_id", "wb_network_id", "username", "hydraUsername", "lobby_id", "GameplayPreferences", "steamVerified", "iat", "exp"],
+        Assert.Equal(["id", "steamId", "epicId", "hardwareId", "hardwareIdVersion", "hardwareIdQuality", "installId", "clientVersion", "identityRegistered", "nodePort", "current_ip", "profile_id", "public_id", "wb_network_id", "username", "hydraUsername", "lobby_id", "GameplayPreferences", "steamVerified", "steamOnline", "iat", "exp"],
             claims.Select(c => c.Key));
         Assert.Equal((Install, "2026.10.08.1", "1", "7777", Ip, "", new string('a', 64), "2"), ((string?)claims["installId"], (string?)claims["clientVersion"], (string?)claims["identityRegistered"], (string?)claims["nodePort"], (string?)claims["current_ip"], (string?)claims["steamVerified"], (string?)claims["hardwareId"], (string?)claims["hardwareIdVersion"]));
         Assert.Equal(964, (int?)claims["GameplayPreferences"]);

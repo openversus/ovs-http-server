@@ -97,10 +97,17 @@ public static class ControlListeners
 /// </summary>
 public static class ControlApi
 {
+    /// <summary>
+    /// A group under /control open to whoever the <see cref="IControlAccessPolicy"/> allows (everyone else gets 404): what a
+    /// service maps its own control endpoints in (the Steam identity service's status), next to the shared ones.
+    /// </summary>
+    public static RouteGroupBuilder MapControlGroup(this IEndpointRouteBuilder routes, string prefix = "") =>
+        routes.MapGroup("/control" + prefix).AddEndpointFilter(async (context, next) =>
+            context.HttpContext.RequestServices.GetRequiredService<IControlAccessPolicy>().Allows(context.HttpContext) ? await next(context) : Results.NotFound());
+
     public static IEndpointRouteBuilder MapOpenVersusControl(this IEndpointRouteBuilder routes)
     {
-        var control = routes.MapGroup("/control").AddEndpointFilter(async (context, next) =>
-            context.HttpContext.RequestServices.GetRequiredService<IControlAccessPolicy>().Allows(context.HttpContext) ? await next(context) : Results.NotFound());
+        var control = routes.MapControlGroup();
 
         control.MapGet("/status", (IControlService service) => Results.Ok(service.Status()));
         control.MapGet("/settings", (IControlService service) => Results.Ok(service.ListSettings()));

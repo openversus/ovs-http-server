@@ -9,7 +9,7 @@ the game's `JWT_SECRET`, so anyone could register any Steam id and be that playe
 
 The client sends `steamTicket` (hex) with its registration: a Steam session ticket from the game's own Steam API
 (`ISteamUser::GetAuthSessionTicket`). Inside it is the app ownership ticket, which Steam signs (RSA-SHA1 with its system
-key, embedded in `Core/Steam/SteamTicketVerifier.cs`): the SteamID64, the app, the licenses, when it was made and when
+key, embedded in `OpenVersus.Server.Identity/Steam/SteamTicketVerifier.cs`): the SteamID64, the app, the licenses, when it was made and when
 it expires. `SteamTicket.Parse` reads the layout (SteamKit's steam3_appticket.hsl); the verifier checks the signature,
 the expiry and the app (`Access:SteamAppId`, `STEAM_APP_ID`, 1818750; 0 accepts any app). A ticket with no signature
 is refused, always.
@@ -22,8 +22,54 @@ is refused, always.
 
 The check is offline. What it proves: Steam signed this ownership ticket for this SteamID64 and this app, and it has
 not expired. What it does not: that the ticket is fresh. Only the ownership ticket is signed and Steam reuses it for
-about three weeks, so a copied ticket stands until it expires. Steam's online check (`BeginAuthSession` from a game
-server) would close that; it is the next experiment.
+about three weeks, so a copied ticket stands until it expires. Asking Steam itself closes that (below); the offline
+check stays the floor: when Steam cannot be asked, it alone decides, and a login is never blocked by Steam being down.
+
+## Asking Steam
+
+The Steam identity service (`src/OpenVersus.Server.Identity.Steam`, the `steam` service: no public port, outbound to
+Steam only, its own container) logs on to Steam as an anonymous game server for the app and does the game server side
+of `BeginAuthSession` for each registered client's ticket: the ticket's session part goes to Steam in the server's auth
+list, and Steam answers with a verdict on it (`ClientTicketAuthComplete`). Steam then holds that auth session for as
+long as the game runs under that account: the moment the game closes, Steam says so (`AuthTicketCanceled`). A ticket
+is single-use per session, and the service's list is the whole set of tickets it holds.
+
+With `Steam:Enabled` (a cluster setting, on by default; off, the service idles disconnected and the offline check alone
+decides; without the service running, on behaves as off):
+
+- `/api/identify` queues the verified ticket for the service (`steam:auth:open`, a Redis list: a request outlives a
+  service restart, and one queued while no service is connected is taken the moment one is) and, when a service is
+  connected (`steam:status`), waits up to `Steam:IdentifyWaitMs` (2500) for the verdict. OK: the token also says
+  `steamOnline: "1"`. Refused: the Steam id is dropped as a bad signature's would be, before the identity record is
+  written. No verdict in time, or no service connected: the offline verdict stands, and a verdict that lands later is
+  acted on by the service.
+- The first verdict on a session decides. Refused (no license, VAC or publisher ban, invalid, someone else's session):
+  the player is disconnected, as a ban does, and the login treats that Steam id as a claim for
+  `Steam:RefusalHoldMinutes` (10). `AuthTicketInvalidAlreadyUsed` on a ticket this connection itself opened is a lost
+  reply, not a refusal. No verdict within `Steam:VerdictTimeoutMs` (20000): unavailable, the offline verdict stands.
+- Steam judges every entry again each time the list is re-sent (another player's open or end) and answers OK again
+  for a held ticket: not a change. A verdict after OK that is not OK (the game closed, logged in elsewhere) ends the
+  session's presence and nothing more. Family
+  Sharing: the ticket's own Steam id is the player; the license owner (`owner_steam_id`) is recorded and never a
+  ban's concern, in either direction.
+- A drop of the connection to Steam loses every held session (tickets cannot be reopened): each becomes unavailable
+  and, once Steam is back, its client is sent a `reidentify` notification (`GET /ovs/notifications`) to mint a new
+  ticket and register again. A service restart does the same for what the earlier process held. A ban ends the held
+  session (`steam:auth:end`).
+
+What the service writes (`Core/Steam/SteamSessions.cs` has the keys): `steam:session:{steamId}` (24 h: `state` pending,
+ok, refused, canceled or unavailable; `response`, Steam's word; `owner_steam_id`; `player_id`; `ticket_hash`; when),
+`steam:online` (Steam id -> player id while ok), `steam:presence` (a message on every change) and `steam:status`
+(10 s, refreshed while the service runs: without it nothing above is trusted). `ovsctl steam status` shows the
+connection, the held sessions and the verdict counts; `ovsctl player show` adds the player's session.
+
+Presence: a session that is ok means the game is running under that Steam account (the title screen included), which
+is not "connected to our server" (the websocket's `online_players`). The profile lookups that paint an online indicator
+(`/accounts/wb_network/bulk`, the player search) take Steam's word first where it has one: ok is online whether or not
+the websocket is up yet; a game Steam saw close (or refused) within `Steam:PresenceOverrideMinutes` (5) is offline before
+the reaper notices; everything else (no session, pending, unavailable, an older verdict, a session under a Steam id that
+belongs to another player, no service running) leaves the websocket's answer. Match logic keeps reading
+`online_players`: a game that lost its socket is still gone from the match.
 
 ## The token has its own secret
 

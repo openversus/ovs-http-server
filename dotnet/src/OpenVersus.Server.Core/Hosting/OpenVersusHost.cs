@@ -89,7 +89,14 @@ public static class KnownServices
     public static readonly ServiceDefinition Edge = new("edge", "EDGE_PORT", DefaultPublicPort: 3001, DefaultControlPort: 17810,
         ServiceStores.Redis);
 
-    public static IReadOnlyList<ServiceDefinition> All { get; } = [Http, Access, Social, Lobbies, Web, Realtime, Edge, Matchmaking, MatchFlow, Proxy];
+    /// <summary>
+    /// The Steam identity service (docs/IDENTIFY.md "Asking Steam"): asks Steam about each registered client's ticket and
+    /// holds the auth session while the game runs. No public port: Redis in, Steam out.
+    /// </summary>
+    public static readonly ServiceDefinition Steam = new("steam", PublicPortKey: null, DefaultPublicPort: 0, DefaultControlPort: 17811,
+        ServiceStores.Redis);
+
+    public static IReadOnlyList<ServiceDefinition> All { get; } = [Http, Access, Social, Lobbies, Web, Realtime, Edge, Matchmaking, MatchFlow, Steam, Proxy];
 
     public static ServiceDefinition? Find(string name) => All.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
 }

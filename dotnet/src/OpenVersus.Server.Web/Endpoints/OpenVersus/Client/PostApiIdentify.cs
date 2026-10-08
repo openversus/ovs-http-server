@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FastEndpoints;
 using OpenVersus.Server.Core.Compat;
-using OpenVersus.Server.Core.Identity;
+using OpenVersus.Server.Identity;
 using OpenVersus.Server.Web.Site;
 
 namespace OpenVersus.Server.Web.Endpoints.OpenVersus.Client;

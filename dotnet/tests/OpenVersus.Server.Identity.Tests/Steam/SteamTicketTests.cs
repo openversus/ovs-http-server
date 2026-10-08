@@ -1,8 +1,8 @@
 using System.Security.Cryptography;
-using OpenVersus.Server.Core.Steam;
+using OpenVersus.Server.Identity.Steam;
 using OpenVersus.Server.TestSupport;
 
-namespace OpenVersus.Server.Core.Tests.Steam;
+namespace OpenVersus.Server.Identity.Tests.Steam;
 
 /// <summary>
 /// Tickets built here and signed with a key of this test's own, laid out as SteamKit's steam3_appticket.hsl; Steam's
@@ -28,6 +28,7 @@ public sealed class SteamTicketTests
 
         Assert.NotNull(ticket);
         Assert.Equal("76561198000000091", ticket.SteamId);
+        Assert.Equal(bytes[..52], ticket.AuthPart.ToArray());
         Assert.Equal(AppId, ticket.AppId);
         Assert.Equal(2u, ticket.Version);
         Assert.Equal(0u, ticket.OwnershipFlags);

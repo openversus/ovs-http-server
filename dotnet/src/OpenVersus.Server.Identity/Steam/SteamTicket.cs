@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace OpenVersus.Server.Core.Steam;
+namespace OpenVersus.Server.Identity.Steam;
 
 /// <summary>
 /// A Steam session ticket (ISteamUser::GetAuthSessionTicket) or the bare app ownership ticket inside one, laid out as
@@ -35,6 +35,12 @@ public sealed record SteamTicket(
 
     /// <summary>The 128-byte signature, or empty for an unsigned ticket.</summary>
     public required ReadOnlyMemory<byte> Signature { get; init; }
+
+    /// <summary>
+    /// A full ticket's first 52 bytes (the session part, before the ownership ticket): what a game server hands Steam to
+    /// check the ticket online (the auth session). Empty for a bare ownership ticket, which has no session to check.
+    /// </summary>
+    public ReadOnlyMemory<byte> AuthPart { get; init; }
 
     public bool HasSignature => Signature.Length > 0;
 
@@ -155,6 +161,8 @@ public sealed record SteamTicket(
         {
             SignedBytes = ticket.Slice(ownershipOffset, (int)ownershipLength),
             Signature = signature,
+            // The 52 bytes before the u32 that sizes the rest: what the game server side of BeginAuthSession receives.
+            AuthPart = session is null ? ReadOnlyMemory<byte>.Empty : ticket[..(ownershipOffset - 4)],
         };
     }
 

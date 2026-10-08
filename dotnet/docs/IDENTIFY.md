@@ -45,7 +45,9 @@ With `Steam:Enabled` (a cluster setting, off by default; the service idles disco
   the player is disconnected, as a ban does, and the login treats that Steam id as a claim for
   `Steam:RefusalHoldMinutes` (10). `AuthTicketInvalidAlreadyUsed` on a ticket this connection itself opened is a lost
   reply, not a refusal. No verdict within `Steam:VerdictTimeoutMs` (20000): unavailable, the offline verdict stands.
-- A verdict after OK (the game closed, logged in elsewhere) ends the session's presence and nothing more. Family
+- Steam judges every entry again each time the list is re-sent (another player's open or end) and answers OK again
+  for a held ticket: not a change. A verdict after OK that is not OK (the game closed, logged in elsewhere) ends the
+  session's presence and nothing more. Family
   Sharing: the ticket's own Steam id is the player; the license owner (`owner_steam_id`) is recorded and never a
   ban's concern, in either direction.
 - A drop of the connection to Steam loses every held session (tickets cannot be reopened): each becomes unavailable

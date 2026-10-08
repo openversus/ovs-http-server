@@ -156,6 +156,23 @@ public sealed class SteamAuthSessionsTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    public async Task ARepeatedOkKeepsTheSessionHeld()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS to run");
+        await Sessions.OpenAsync(Request("h1"));
+        await Sessions.VerdictAsync(_steam.Ok(SteamIdValue));
+
+        // Another player's open re-sends the list; Steam judges this entry again.
+        await Sessions.VerdictAsync(_steam.Ok(SteamIdValue));
+
+        var session = await SteamSessions.ReadAsync(Redis, SteamId);
+        Assert.Equal(SteamSessions.Ok, session!.State);
+        Assert.Equal(Player, (string?)await Redis.HashGetAsync(SteamSessions.OnlineKey, SteamId));
+        Assert.Equal([SteamIdValue], _steam.Held.Keys);
+        Assert.Equal((1, 1L), ((await Sessions.StatusAsync()).Sessions[SteamSessions.Ok], (await Sessions.StatusAsync()).Verdicts["ok"]));
+    }
+
+    [SkippableFact]
     public async Task AVerdictAfterOkEndsPresenceAndNothingMore()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS to run");

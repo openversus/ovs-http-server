@@ -328,6 +328,14 @@ public sealed class SteamAuthSessions(IServiceProvider services, ISteamAuthClien
 
             if (session.State == SteamSessions.Ok)
             {
+                if (verdict.Ok)
+                {
+                    // Steam judges every entry again each time the list is re-sent (another player's open or end) and
+                    // answers OK again for a held one: not a change. Measured on the bench, 2026-10-08.
+                    log.LogDebug("Steam confirmed the held ticket of {Steam} again", session.SteamIdText);
+                    return;
+                }
+
                 // The game closed (AuthTicketCanceled), or Steam ended it for another reason: presence off, nothing more.
                 session.State = SteamSessions.Canceled;
                 _verdicts["canceled"]++;

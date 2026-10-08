@@ -124,7 +124,9 @@ internal sealed class SteamKitAuthClient : ISteamAuthClient, IDisposable
         }
     }
 
-    // Under the lock: the complete list of held tickets, as the Steam client sends it on every change.
+    // Under the lock: the complete list of held tickets, as the Steam client sends it on every change. Steam answers every
+    // entry again each time (OK again for a held one, its own refusal for a bad one, each by its crc): the state machine
+    // reads a repeated OK as no change.
     private void SendList()
     {
         if (!_connected)

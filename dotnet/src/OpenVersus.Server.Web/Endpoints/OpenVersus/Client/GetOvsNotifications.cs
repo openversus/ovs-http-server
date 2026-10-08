@@ -74,22 +74,8 @@ public sealed class GetOvsNotifications : EndpointWithoutRequest
         await Send.StringAsync(Js.Stringify(delivered), contentType: "application/json; charset=utf-8", cancellation: ct);
     }
 
-    // The client's token, when it sent one this server signed and it has not expired; else none.
-    private JsonObject? ClientClaims()
-    {
-        string token = HttpContext.Request.Headers[HydraToken.Header].ToString();
-        if (token.Length == 0 || Resolve<IOptionsMonitor<AccessSettings>>().CurrentValue.JwtSecret is not { Length: > 0 } secret)
-        {
-            return null;
-        }
-
-        try
-        {
-            return AccessTokens.Verify(token, secret, DateTimeOffset.UtcNow);
-        }
-        catch (AccessTokenException)
-        {
-            return null;
-        }
-    }
+    // The client's identify token, when it sent one /api/identify signed and it has not expired; else none. A game
+    // session token is not one (another secret): the game's own routes have the player's session, this route does not.
+    private JsonObject? ClientClaims() =>
+        IdentifyTokens.Verify(HttpContext.Request.Headers[HydraToken.Header].ToString(), Resolve<IOptionsMonitor<AccessSettings>>().CurrentValue.IdentifySecret, DateTimeOffset.UtcNow);
 }

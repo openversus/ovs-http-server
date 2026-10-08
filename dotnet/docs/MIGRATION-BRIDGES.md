@@ -148,12 +148,13 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   starts when it runs. Both write `p2p` into the match config with the same rule (`Matches/P2P.cs`,
   `src/services/nodePort.ts` hasP2PHost: every match with a human who plays). The match flow serves the nodes
   (`RollbackCallbacks`, `NodeConfig`) and sends each game to its node (`MatchLaunches`: 127.0.0.1 and the port its client
-  reported, `Rollback:P2PNodePort` when none). That port comes from `/api/identify`, still the TS server's.
+  reported, `Rollback:P2PNodePort` when none). That port comes from `/api/identify` (the web service's since the
+  identity port, docs/IDENTIFY.md; the TS one wrote the same record while it answered the route).
   `Rollback:P2P` takes `P2P_ROLLBACK` when it is not set itself, but a cluster setting changed through the control API is
   not seen by TS.
 - **Until then:** do not run the TS matchmaker beside the C# one; change both together if it runs. Each executable that
   starts matches logs the C# value once it has started (the cluster settings are loaded by then).
-- **Delete when:** `/api/identify` is ported and the TS matchmaker is retired.
+- **Delete when:** the TS matchmaker is retired.
 
 Retired with slice 3e (the realtime gateway in the TS websocket's place; numbers are not reused): 4 (rift and mission
 progress reached the game through the TS websocket), 5 (`ovsctl player disconnect` through the TS websocket), 7 (the TS

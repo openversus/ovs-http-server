@@ -11,6 +11,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Bans;
 using OpenVersus.Server.Core.CustomLobbies;
+using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Core.Seasons;
 using StackExchange.Redis;
 
@@ -131,6 +132,11 @@ internal sealed partial class AccessService(
         public string SteamId = "", EpicId = "", InstallId = "", ClientVersion = "";
         public HardwareSignal Hardware = HardwareSignal.None;
         public bool Registered;
+        // The Steam id was proved by the client's session ticket (an identify token or record says so); the game's own
+        // session token carries the account's stored id, which this login bound before.
+        public bool SteamVerified;
+        // The verified ticket's decoded fields (IdentifyService.TicketFields, extended JSON), to keep on the account; or "".
+        public string SteamTicket = "";
         // The UDP port of the client's P2P node (Matches/P2P.cs); 0 when it reported none.
         public int NodePort;
         public string Source = "none";
@@ -218,6 +224,25 @@ internal sealed partial class AccessService(
             await redis.KeyDeleteAsync([new RedisKey($"player_ranked_set:{id}"), new RedisKey($"ranked_disconnect:{id}")]);
         }
 
+        // The verified Steam ticket's fields stay with the account the Steam id names (a first launch brings them here
+        // through identity:{ip}; later ones put them on the account from /api/identify directly).
+        if (identity.SteamVerified && identity.SteamTicket.Length > 0 && identity.SteamId == IdentityRules.Normalize(IdentityKind.Steam, player.Str("steamId")))
+        {
+            try
+            {
+                var ticket = BsonDocument.Parse(identity.SteamTicket);
+                if (player.Get(IdentifyService.TicketField) is not BsonDocument kept || kept.GetValue("ticket_hash", "") != ticket.GetValue("ticket_hash", ""))
+                {
+                    player.Set(IdentifyService.TicketField, ticket);
+                }
+            }
+            catch (FormatException e)
+            {
+                // Not what /api/identify writes: the login goes on without it.
+                log.LogWarning(e, "The Steam ticket record for {Ip} is not readable; player {Player} logs in without it", ip, id);
+            }
+        }
+
         var account = AccountToken(player, ip);
         player.Set("token", ToBson(account));
         player.Set("account", ToBson(account));
@@ -283,9 +308,11 @@ internal sealed partial class AccessService(
         log.LogInformation("Player {Player} with name {Name} and IP {Ip} is disconnecting.", player["_id"].ToString(), player.GetValue("name", "").ToString(), ip);
     }
 
-    // Identity, in this order: a valid token's claims (per client, so it cannot race another player at the same IP),
-    // else the IP record /api/identify wrote, else that record if it lands within 3 s (the client registers on a
-    // background thread and can be a moment behind the login).
+    // Identity, in this order: a valid token's claims (per client, so it cannot race another player at the same IP):
+    // the game's own session token from its last login, else the identify token the OpenVersus client puts on the login
+    // when the game has none yet (the Steam id in it only when a ticket proved it); else the IP record /api/identify
+    // wrote, else that record if it lands within 3 s (the client registers on a background thread and can be a moment
+    // behind the login).
     private async Task<Identity> ResolveIdentityAsync(IDatabase redis, string ip, string? accessToken, string secret, DateTimeOffset now, CancellationToken ct)
     {
         var identity = new Identity();
@@ -296,19 +323,29 @@ internal sealed partial class AccessService(
                 var claims = AccessTokens.Verify(accessToken, secret, now);
                 if (Truthy(claims["steamId"]) || Truthy(claims["epicId"]) || Truthy(claims["installId"]))
                 {
-                    identity.SteamId = IdentityRules.Normalize(IdentityKind.Steam, claims["steamId"]);
-                    identity.EpicId = IdentityRules.Normalize(IdentityKind.Epic, claims["epicId"]);
-                    identity.Hardware = IdentityRules.NormalizeHardware(StringOnly(claims["hardwareId"]), JsString(claims["hardwareIdVersion"]), StringOnly(claims["hardwareIdQuality"]));
-                    identity.InstallId = IdentityRules.Normalize(IdentityKind.Install, claims["installId"]);
-                    identity.ClientVersion = Truthy(claims["clientVersion"]) ? JsString(claims["clientVersion"]) : "";
-                    identity.Registered = StringOnly(claims["identityRegistered"]) == "1";
-                    identity.NodePort = Matches.P2P.ParseNodePort(claims["nodePort"]);
+                    Fill(identity, claims, steamId: IdentityRules.Normalize(IdentityKind.Steam, claims["steamId"]));
                     identity.Source = "jwt";
                 }
             }
             catch (AccessTokenException)
             {
-                // Not a token of ours, or expired: the IP record decides.
+                // Not a game session token of ours, or expired: an identify token, else the IP record decides.
+                if (IdentifyTokens.Verify(accessToken, access.CurrentValue.IdentifySecret, now) is { } identify)
+                {
+                    bool verified = IdentifyTokens.SteamVerified(identify);
+                    string steamId = verified ? IdentityRules.Normalize(IdentityKind.Steam, identify["steamId"]) : "";
+                    if (!verified && Truthy(identify["steamId"]))
+                    {
+                        log.LogInformation("The identify token from {Ip} names Steam id {Steam} without a ticket's proof: ignored", ip, JsString(identify["steamId"]));
+                    }
+
+                    if (steamId.Length > 0 || Truthy(identify["epicId"]) || Truthy(identify["installId"]))
+                    {
+                        Fill(identity, identify, steamId);
+                        identity.SteamVerified = steamId.Length > 0;
+                        identity.Source = "identify";
+                    }
+                }
             }
         }
 
@@ -327,9 +364,19 @@ internal sealed partial class AccessService(
             }
         }
 
-        if (identity.Source == "jwt")
+        if (identity.SteamVerified && identity.SteamTicket.Length == 0)
         {
-            log.LogInformation("Identity from JWT claims (preferred over Redis): steam={Steam} epic={Epic} hw={Hardware}", Dash(identity.SteamId), Dash(identity.EpicId), Short(identity.Hardware.HardwareId));
+            // The ticket's fields travel in identity:{ip} (an identify token carries only the proof).
+            var record = (await redis.HashGetAllAsync($"identity:{ip}")).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
+            if (record.GetValueOrDefault("steamId", "") == identity.SteamId && record.GetValueOrDefault("steamVerified", "") == "1")
+            {
+                identity.SteamTicket = record.GetValueOrDefault(IdentifyService.TicketField, "");
+            }
+        }
+
+        if (identity.Source is "jwt" or "identify")
+        {
+            log.LogInformation("Identity from {Source} claims (preferred over Redis): steam={Steam} epic={Epic} hw={Hardware}", identity.Source == "jwt" ? "JWT" : "identify token", Dash(identity.SteamId), Dash(identity.EpicId), Short(identity.Hardware.HardwareId));
         }
         else if (identity.Source == "redis")
         {
@@ -344,16 +391,40 @@ internal sealed partial class AccessService(
         return identity;
     }
 
-    private static async Task<bool> ReadIpIdentityAsync(IDatabase redis, string ip, Identity identity)
+    // A token's identity fields; the Steam id as the caller decided it (the game's token: the account's own; an identify
+    // token: only a proved one).
+    private static void Fill(Identity identity, JsonObject claims, string steamId)
+    {
+        identity.SteamId = steamId;
+        identity.EpicId = IdentityRules.Normalize(IdentityKind.Epic, claims["epicId"]);
+        identity.Hardware = IdentityRules.NormalizeHardware(StringOnly(claims["hardwareId"]), JsString(claims["hardwareIdVersion"]), StringOnly(claims["hardwareIdQuality"]));
+        identity.InstallId = IdentityRules.Normalize(IdentityKind.Install, claims["installId"]);
+        identity.ClientVersion = Truthy(claims["clientVersion"]) ? JsString(claims["clientVersion"]) : "";
+        identity.Registered = StringOnly(claims["identityRegistered"]) == "1";
+        identity.NodePort = Matches.P2P.ParseNodePort(claims["nodePort"]);
+    }
+
+    private async Task<bool> ReadIpIdentityAsync(IDatabase redis, string ip, Identity identity)
     {
         var fields = (await redis.HashGetAllAsync($"identity:{ip}")).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
         string Field(string name) => fields.GetValueOrDefault(name, "");
-        if (!(Field("steamId").Length > 0 || Field("epicId").Length > 0 || Field("installId").Length > 0))
+        // A Steam id in the record counts only when the client's session ticket proved it (/api/identify, steamVerified);
+        // a record from before tickets, or from a client whose ticket was refused, claims one and that is all it does.
+        bool steamVerified = Field("steamVerified") == "1";
+        if (!steamVerified && Field("steamId").Length > 0)
+        {
+            log.LogInformation("The identity record of {Ip} names Steam id {Steam} without a ticket's proof: ignored", ip, Field("steamId"));
+        }
+
+        string steamId = steamVerified ? IdentityRules.Normalize(IdentityKind.Steam, Field("steamId")) : "";
+        if (!(steamId.Length > 0 || Field("epicId").Length > 0 || Field("installId").Length > 0))
         {
             return false;
         }
 
-        identity.SteamId = IdentityRules.Normalize(IdentityKind.Steam, Field("steamId"));
+        identity.SteamId = steamId;
+        identity.SteamVerified = steamId.Length > 0;
+        identity.SteamTicket = steamId.Length > 0 ? Field(IdentifyService.TicketField) : "";
         identity.EpicId = IdentityRules.Normalize(IdentityKind.Epic, Field("epicId"));
         identity.Hardware = IdentityRules.NormalizeHardware(Field("hardwareId"), Field("hardwareIdVersion"), Field("hardwareIdQuality"));
         identity.InstallId = IdentityRules.Normalize(IdentityKind.Install, Field("installId"));
@@ -378,6 +449,11 @@ internal sealed partial class AccessService(
         if (identity.SteamId.Length > 0)
         {
             found = await FindOne(new BsonDocument("steamId", identity.SteamId));
+            if (found is not null && await players.CountDocumentsAsync(new BsonDocument("steamId", identity.SteamId), new CountOptions { Limit = 2 }, ct) > 1)
+            {
+                // Accounts made from claimed ids, before tickets: the first one found logs in, as the TS server did.
+                log.LogWarning("More than one account carries Steam id {Steam}; the first found, {Player}, logs in", identity.SteamId, found["_id"].ToString());
+            }
         }
 
         if (found is null && identity.EpicId.Length > 0)

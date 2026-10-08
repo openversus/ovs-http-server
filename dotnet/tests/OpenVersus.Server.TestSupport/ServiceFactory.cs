@@ -15,6 +15,7 @@ namespace OpenVersus.Server.TestSupport;
 public class ServiceFactory<TProgram> : WebApplicationFactory<TProgram> where TProgram : class
 {
     public const string Secret = "test-secret-0123456789abcdef0123456789abcdef";
+    public const string IdentifySecret = "test-identify-0123456789abcdef0123456789abcdef";
     public const string AccountId = "0000000000000000000a0001";
 
     /// <summary>The service's registrations as its program made them, for <see cref="Registrations.UnboundOptions"/>.</summary>
@@ -34,6 +35,7 @@ public class ServiceFactory<TProgram> : WebApplicationFactory<TProgram> where TP
         builder.ConfigureServices(services => _registered = services);
         builder.UseEnvironment(Environments.Development);
         builder.UseSetting("Access:JwtSecret", Secret);
+        builder.UseSetting("Access:IdentifySecret", IdentifySecret);
         builder.UseSetting("Batch:EdgeUrl", "http://127.0.0.1:1");
         builder.UseSetting("Batch:TsUrl", "http://127.0.0.1:1");
     }

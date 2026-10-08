@@ -14,6 +14,7 @@ public static class TsEnvironment
     [
         ("JWT_SECRET", "Access:JwtSecret"),
         ("ACCESS_TOKEN_TTL", "Access:TokenTtl"),
+        ("STEAM_APP_ID", "Access:SteamAppId"),
         ("WB_DOMAIN", "Realtime:Domain"),
         ("GAME_DOMAIN", "Assets:Domain"),
         ("WEBSOCKET_PORT", "Realtime:Port"),

@@ -7,9 +7,11 @@ using OpenVersus.Server.Http.Shared;
 // port is WEB_PORT; the router sends these routes here.
 var builder = OpenVersusHost.CreateBuilder(KnownServices.Web, args);
 builder.AddGameHttp(typeof(Program).Assembly);
-// /namechange checks names and bans; /ovs/notifications finds its player as the game routes do.
+// /namechange checks names and bans; /ovs/notifications finds its player as the game routes do; /api/identify registers
+// the client (Steam tickets, the client gate's settings).
 builder.AddBans();
 builder.AddAccountResolver();
+builder.AddIdentify();
 
 var app = builder.Build();
 app.UseGameHttp();

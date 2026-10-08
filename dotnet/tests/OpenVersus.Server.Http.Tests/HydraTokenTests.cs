@@ -51,6 +51,14 @@ public sealed class HydraTokenTests(GameAppFactory factory) : IClassFixture<Game
     }
 
     [Fact]
+    public async Task AnIdentifyTokenIsNoSessionToken()
+    {
+        // What /api/identify gives the OpenVersus client is signed with Access:IdentifySecret: never a game session.
+        using var response = await SendAsync("GET", "/commerce/products", GameAppFactory.Token(OpenVersus.Server.TestSupport.ServiceFactory<Program>.IdentifySecret));
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task ATokenFromAnotherSecretOrExpiredIsInvalid()
     {
         using var other = await SendAsync("GET", "/commerce/products", GameAppFactory.Token("another-secret-0123456789abcdef0123456789"));

@@ -377,10 +377,11 @@ public sealed class WebPagesTests : IAsyncLifetime
         var id = ObjectId.GenerateNewId().ToString();
         await Redis.HashSetAsync($"connections:{id}", [new HashEntry("id", id), new HashEntry("identityRegistered", "")]);
         await Redis.ListRightPushAsync($"dll_notifications:{id}", ["""{"type":"party_invite","title":"t","message":"m","data":{},"timestamp":1}""", """{"type":"toast","title":"t2","message":"m2","data":{"a":1},"timestamp":2}"""]);
+        // The identify token (its own secret); the Steam id in it was proved by a ticket.
         string token = AccessTokens.Sign(new JsonObject
         {
-            ["id"] = id, ["steamId"] = "76561198000000092", ["clientVersion"] = "2026.10.01.01", ["identityRegistered"] = "1",
-        }, ServiceFactory<Program>.Secret, TimeSpan.FromHours(1), DateTimeOffset.UtcNow);
+            ["id"] = id, ["steamId"] = "76561198000000092", ["clientVersion"] = "2026.10.01.01", ["identityRegistered"] = "1", ["steamVerified"] = "1",
+        }, ServiceFactory<Program>.IdentifySecret, TimeSpan.FromHours(1), DateTimeOffset.UtcNow);
 
         var client = Browser();
         var (_, none) = await GetAsync(client, "/ovs/notifications");

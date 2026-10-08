@@ -7,7 +7,7 @@ using StackExchange.Redis;
 namespace OpenVersus.Server.Core.Identity;
 
 /// <summary>
-/// Keeps identity:{ip} alive while a registered OpenVersus client runs, from the token /api/identify signed, as the TS
+/// Keeps identity:{ip} alive while a registered OpenVersus client runs, from the identify token (<see cref="IdentifyTokens"/>), as the TS
 /// server's refreshIpIdentityFromToken (services/identityService.ts) does on every /ovs/notifications poll. /api/identify
 /// writes the record at launch for 5 minutes; without it a reconnect or a server restart would count an up-to-date
 /// player as an unregistered client. Written only when absent, and only while no other account is active at the IP
@@ -43,11 +43,14 @@ public static class IpIdentityRefresh
         }
 
         var hardware = IdentityRules.NormalizeHardware(Text(claims["hardwareId"]), Text(claims["hardwareIdVersion"]), Text(claims["hardwareIdQuality"]));
+        // The Steam id only as a ticket proved it (the identify token says so); an identify never signs one otherwise.
+        bool steamVerified = IdentifyTokens.SteamVerified(claims);
         // TS redisSaveIdentityIfAbsent: a pending hash renamed into place only if the record is still absent.
         string pending = $"{key}:pending:{ObjectId.GenerateNewId()}";
         await redis.HashSetAsync(pending,
         [
-            new HashEntry("steamId", IdentityRules.Normalize(IdentityKind.Steam, claims["steamId"])),
+            new HashEntry("steamId", steamVerified ? IdentityRules.Normalize(IdentityKind.Steam, claims["steamId"]) : ""),
+            new HashEntry("steamVerified", steamVerified ? "1" : ""),
             new HashEntry("epicId", IdentityRules.Normalize(IdentityKind.Epic, claims["epicId"])),
             new HashEntry("hardwareId", hardware.HardwareId),
             new HashEntry("hardwareIdVersion", hardware.HardwareIdVersion),

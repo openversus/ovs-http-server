@@ -44,7 +44,13 @@ public static class OvsCtl
                 player.AddCommand<PlayerRenameCommand>("rename").WithDescription("Rename a player (an administrator's rename: no censoring).");
                 player.AddCommand<PlayerDisconnectCommand>("disconnect").WithDescription("Close a player's game connection, as a heartbeat timeout would (the game logs out).");
                 player.AddCommand<PlayerBanCommand>("ban").WithDescription("Ban the person behind a player for good: their IP, Steam, Epic, hardware and install ids and the player id; recorded in Mongo and the auto-ban file, and their connection is closed.");
-                player.AddCommand<PlayerUnbanCommand>("unban").WithDescription("Lift a player's bans: their ban records are marked lifted (kept), and each identifier no other ban holds is let through; an entry in a ban file stays and is listed (remove it there).");
+                player.AddCommand<PlayerUnbanCommand>("unban").WithDescription("Lift a player's bans: their ban records are marked lifted (kept), and each identifier no other ban holds is let through; one still held is listed with what holds it (a ban file's entry is lifted with `bans lift`).");
+            });
+            config.AddBranch("bans", bans =>
+            {
+                bans.SetDescription("Single ban values: the ban files' entries, as imported into Mongo (a person's bans are `player ban` and `player unban`). Asks the access service by default.");
+                bans.AddCommand<BansLiftCommand>("lift").WithDescription("Lift one value (ip, cidr, steam, epic, hardware, install or id), or with --all every value that is one of a player's identifiers. The entry is kept, marked lifted: the import does not bring it back, and its line can stay in the file.")
+                    .WithExample("bans", "lift", "steam", "76561198000000000", "--reason", "a false positive").WithExample("bans", "lift", "--all", "SomePlayer");
             });
             config.AddBranch("settings", settings =>
             {

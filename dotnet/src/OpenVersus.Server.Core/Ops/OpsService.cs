@@ -90,6 +90,9 @@ public sealed record BanView(string BanId, string Id, string Name, IReadOnlyList
 /// <summary>A lift made: the ban records lifted, the identifiers no longer banned, and those still banned and why.</summary>
 public sealed record UnbanView(string Id, string Name, IReadOnlyList<string> LiftedBans, IReadOnlyList<string> NoLongerBanned, IReadOnlyList<string> StillBanned);
 
+/// <summary>A lift of single ban values (a ban file's entries): lifted, no longer banned, still banned and why, not found.</summary>
+public sealed record BanLiftView(IReadOnlyList<string> Lifted, IReadOnlyList<string> NoLongerBanned, IReadOnlyList<string> StillBanned, IReadOnlyList<string> NotFound);
+
 /// <summary>
 /// Operations on the live game's state for administrators: queues, connected players, matches in progress, and player
 /// records. Behind the control API and its access policy, like the settings.
@@ -123,6 +126,12 @@ public interface IOpsService
 
     /// <summary>Lifts a player's ban records (source manual); a hand-edited file's entry stays and is reported.</summary>
     Task<ControlResult<UnbanView>> UnbanPlayerAsync(string who, string reason);
+
+    /// <summary>Lifts one single ban value (a ban file's entry, as imported): kind ip, cidr, steam, epic, hardware, install or id.</summary>
+    Task<ControlResult<BanLiftView>> LiftBanValueAsync(string kind, string value, string reason);
+
+    /// <summary>Lifts every single ban value (a ban file's entry) that is one of a player's identifiers.</summary>
+    Task<ControlResult<BanLiftView>> LiftBanValuesOfAsync(string who, string reason);
 }
 
 internal sealed class OpsService : IOpsService
@@ -477,6 +486,56 @@ internal sealed class OpsService : IOpsService
             ? ControlResult<UnbanView>.Refused("no Mongo, where bans are kept")
             : ControlResult<UnbanView>.Ok(new UnbanView(lift.PlayerId, lift.Name, lift.LiftedBans, lift.NoLongerBanned, lift.StillBanned));
     }
+
+    public static readonly string[] BanValueKinds = ["ip", "cidr", "steam", "epic", "hardware", "install", "id"];
+
+    public async Task<ControlResult<BanLiftView>> LiftBanValueAsync(string kind, string value, string reason)
+    {
+        string valueKind = kind.Trim().ToLowerInvariant();
+        if (!BanValueKinds.Contains(valueKind))
+        {
+            return ControlResult<BanLiftView>.Refused($"unknown kind '{kind}'; one of: {string.Join(", ", BanValueKinds)}");
+        }
+
+        if (_services.GetService<Bans.IPersonBans>() is not { } personBans)
+        {
+            return ControlResult<BanLiftView>.Refused("this service does not lift bans; ask the access service (--service access)");
+        }
+
+        string canonical = Bans.PersonBans.KindOf(valueKind) is { } k ? Bans.BanService.Canonical(k, value) : value.Trim();
+        var lift = await personBans.LiftValuesAsync([(valueKind, canonical)], Reason(reason), "manual");
+        return lift is null ? NoMongo<BanLiftView>() : ControlResult<BanLiftView>.Ok(new BanLiftView(lift.Lifted, lift.NoLongerBanned, lift.StillBanned, lift.NotFound));
+    }
+
+    public async Task<ControlResult<BanLiftView>> LiftBanValuesOfAsync(string who, string reason)
+    {
+        if (Players is not { } players)
+        {
+            return NoMongo<BanLiftView>();
+        }
+
+        if (_services.GetService<Bans.IPersonBans>() is not { } personBans)
+        {
+            return ControlResult<BanLiftView>.Refused("this service does not lift bans; ask the access service (--service access)");
+        }
+
+        string? id = ObjectId.TryParse(who, out var given) ? given.ToString() : null;
+        if (id is null)
+        {
+            var found = await ResolveAsync(players, who);
+            if (found.Error is not null)
+            {
+                return ControlResult<BanLiftView>.Missing(found.Error);
+            }
+
+            id = found.Value!["_id"].AsObjectId.ToString();
+        }
+
+        var lift = await personBans.LiftValuesOfAsync(id, Reason(reason), "manual");
+        return lift is null ? NoMongo<BanLiftView>() : ControlResult<BanLiftView>.Ok(new BanLiftView(lift.Lifted, lift.NoLongerBanned, lift.StillBanned, lift.NotFound));
+    }
+
+    private static string Reason(string reason) => reason.Trim().Length > 0 ? reason.Trim() : "lifted by an administrator";
 
     private async Task<(BsonDocument? Value, string? Error)> ResolveAsync(IMongoCollection<BsonDocument> players, string who)
     {

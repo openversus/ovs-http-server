@@ -244,7 +244,7 @@ public sealed class PersonBansTests : IAsyncLifetime
         Assert.Equal(["Epic " + Epic.ToLowerInvariant(), "Hardware " + Hardware, "Install " + Install, "Player " + first], lift.NoLongerBanned.Order());
         Assert.Equal(2, lift.StillBanned.Count);
         Assert.Contains(lift.StillBanned, s => s.StartsWith("Ip 198.51.100.41 (ban ", StringComparison.Ordinal) && s.EndsWith($"of player {second})", StringComparison.Ordinal));
-        Assert.Contains($"Steam {Steam} (steamid_bans.txt: remove it there)", lift.StillBanned);
+        Assert.Contains($"Steam {Steam} (steamid_bans.txt: ovsctl bans lift steam {Steam})", lift.StillBanned);
         Assert.False(await Redis.SetContainsAsync(BannedPlayers.Key, first));
         Assert.False(await Redis.SetContainsAsync("bans:install", Install));
         Assert.True(await Redis.SetContainsAsync(BanService.IpKey, "198.51.100.41"));
@@ -258,6 +258,51 @@ public sealed class PersonBansTests : IAsyncLifetime
         // A load after the lift does not bring it back.
         await BanStore.LoadAsync(Mongo, Redis, NullLogger.Instance, default);
         Assert.False(await Redis.SetContainsAsync(BannedPlayers.Key, first));
+    }
+
+    [SkippableFact]
+    public async Task ALiftOfAFileEntryLetsItThroughUnlessAnotherBanHoldsIt()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        File.WriteAllText(_settings.IpFile = Path.Combine(_dir, "bans.txt"), "198.51.100.41\n198.51.100.42\n");
+        File.WriteAllText(_settings.CidrFile = Path.Combine(_dir, "cidr_bans.txt"), "198.51.100.40/31\n");
+        await ImportAsync($"{Steam}\n");
+
+        var lift = await Bans().LiftValuesAsync([("steam", Steam), ("ip", "198.51.100.41"), ("ip", "198.51.100.42"), ("epic", "nothing-here")], "a false positive", "manual");
+
+        Assert.NotNull(lift);
+        Assert.Equal([$"steam {Steam} (steamid_bans.txt)", "ip 198.51.100.41 (bans.txt)", "ip 198.51.100.42 (bans.txt)"], lift.Lifted);
+        Assert.Equal([$"steam {Steam}", "ip 198.51.100.42"], lift.NoLongerBanned);
+        // Inside a block that is still banned.
+        Assert.Equal(["ip 198.51.100.41 (cidr_bans.txt 198.51.100.40/31: ovsctl bans lift cidr 198.51.100.40/31)"], lift.StillBanned);
+        Assert.Equal(["epic nothing-here"], lift.NotFound);
+        Assert.False(await Redis.SetContainsAsync("bans:steam", Steam));
+        Assert.False(await Redis.SetContainsAsync(BanService.IpKey, "198.51.100.42"));
+        Assert.True(await Redis.SetContainsAsync(BanService.CidrKey, "198.51.100.40/31"));
+        // The lines stay in the files; the import does not bring them back.
+        Assert.Equal(0, await ImportAsync($"{Steam}\n"));
+        Assert.False(await Redis.SetContainsAsync("bans:steam", Steam));
+        Assert.Equal("lift", ((YamlDotNet.RepresentationModel.YamlMappingNode)Trail().Children[^1])["action"].ToString());
+    }
+
+    [SkippableFact]
+    public async Task AllOfAPlayersFileEntriesAreLiftedAtOnceButNotABlock()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        string player = (await SeedAsync("Someone")).ToString();
+        File.WriteAllText(_settings.InstallIdFile = Path.Combine(_dir, "installid_bans.txt"), Install + "\n");
+        File.WriteAllText(_settings.CidrFile = Path.Combine(_dir, "cidr_bans.txt"), "198.51.100.0/24\n");
+        await ImportAsync($"{Steam}\n76561198000000088\n");
+
+        var lift = await Bans().LiftValuesOfAsync(player, "a false positive", "manual");
+
+        Assert.NotNull(lift);
+        Assert.Equal([$"install {Install}", $"steam {Steam}"], lift.NoLongerBanned.Order());
+        Assert.Equal(["ip 198.51.100.41 (cidr_bans.txt 198.51.100.0/24: ovsctl bans lift cidr 198.51.100.0/24)"], lift.StillBanned);
+        // Another player's entry and the block stay.
+        Assert.True(await Redis.SetContainsAsync("bans:steam", "76561198000000088"));
+        Assert.True(await Redis.SetContainsAsync(BanService.CidrKey, "198.51.100.0/24"));
+        Assert.False(await Redis.SetContainsAsync("bans:install", Install));
     }
 
     [SkippableFact]

@@ -38,7 +38,8 @@ public sealed record BanRecord(
 //     online: true
 //     disconnected: true
 //   - action: 'lift'
-//     at, reason, source, player: {id, name}, lifted_bans: [ban ids], no_longer_banned: [...], still_banned: [...]
+//     at, reason, source, player: {id, name}, lifted_bans: [ban ids], lifted_values: [a ban file's entries],
+//     no_longer_banned: [...], still_banned: [...]
 internal static class AutoBans
 {
     /// <summary>The record as one item of the file's list, ending in a newline.</summary>
@@ -72,7 +73,7 @@ internal static class AutoBans
 
     /// <summary>A lift as one item of the file's list, ending in a newline.</summary>
     public static string LiftToYaml(DateTimeOffset at, string reason, string source, string playerId, string name,
-        IEnumerable<string> liftedBans, IEnumerable<string> noLongerBanned, IEnumerable<string> stillBanned)
+        IEnumerable<string> liftedBans, IEnumerable<string> liftedValues, IEnumerable<string> noLongerBanned, IEnumerable<string> stillBanned)
     {
         static YamlScalarNode S(string value) => new(value) { Style = ScalarStyle.SingleQuoted };
         static YamlSequenceNode L(IEnumerable<string> values) => new(values.Select(v => (YamlNode)S(v))) { Style = YamlDotNet.Core.Events.SequenceStyle.Block };
@@ -84,6 +85,7 @@ internal static class AutoBans
             { "source", S(source) },
             { "player", new YamlMappingNode { { "id", S(playerId) }, { "name", S(name) } } },
             { "lifted_bans", L(liftedBans) },
+            { "lifted_values", L(liftedValues) },
             { "no_longer_banned", L(noLongerBanned) },
             { "still_banned", L(stillBanned) },
         });

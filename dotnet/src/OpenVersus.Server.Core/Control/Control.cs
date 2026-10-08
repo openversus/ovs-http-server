@@ -136,6 +136,11 @@ public static class ControlApi
             ToResult(await ops.BanPlayerAsync(who, await new StreamReader(request.Body).ReadToEndAsync())));
         control.MapPost("/ops/players/{who}/unban", async (string who, HttpRequest request, IOpsService ops) =>
             ToResult(await ops.UnbanPlayerAsync(who, await new StreamReader(request.Body).ReadToEndAsync())));
+        // In the query: a block's value holds a slash.
+        control.MapPost("/ops/bans/lift", async (string kind, string value, HttpRequest request, IOpsService ops) =>
+            ToResult(await ops.LiftBanValueAsync(kind, value, await new StreamReader(request.Body).ReadToEndAsync())));
+        control.MapPost("/ops/bans/lift-all/{who}", async (string who, HttpRequest request, IOpsService ops) =>
+            ToResult(await ops.LiftBanValuesOfAsync(who, await new StreamReader(request.Body).ReadToEndAsync())));
 
         // Any other path under /control is said to be one, with the service and its version (a CLI newer than the service
         // asks for endpoints it does not have): the game's fallback would answer it, asking for a game token.

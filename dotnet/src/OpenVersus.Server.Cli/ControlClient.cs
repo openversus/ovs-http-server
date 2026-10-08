@@ -185,6 +185,12 @@ public sealed class ControlClient : IDisposable
     public Task<ControlReply<BanView>> BanAsync(string who, string reason) =>
         SendAsync<BanView>(HttpMethod.Post, $"/control/ops/players/{Uri.EscapeDataString(who)}/ban", new StringContent(reason));
 
+    public Task<ControlReply<BanLiftView>> LiftBanAsync(string kind, string value, string reason) =>
+        SendAsync<BanLiftView>(HttpMethod.Post, $"/control/ops/bans/lift?kind={Uri.EscapeDataString(kind)}&value={Uri.EscapeDataString(value)}", new StringContent(reason));
+
+    public Task<ControlReply<BanLiftView>> LiftBansOfAsync(string who, string reason) =>
+        SendAsync<BanLiftView>(HttpMethod.Post, $"/control/ops/bans/lift-all/{Uri.EscapeDataString(who)}", new StringContent(reason));
+
     public Task<ControlReply<UnbanView>> UnbanAsync(string who, string reason) =>
         SendAsync<UnbanView>(HttpMethod.Post, $"/control/ops/players/{Uri.EscapeDataString(who)}/unban", new StringContent(reason));
 

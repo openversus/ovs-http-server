@@ -24,6 +24,9 @@ public sealed record BanRequest(
 /// <summary>A lift made: the ban records lifted, the identifiers no longer banned, and those still banned and why.</summary>
 public sealed record LiftResult(string PlayerId, string Name, IReadOnlyList<string> LiftedBans, IReadOnlyList<string> NoLongerBanned, IReadOnlyList<string> StillBanned);
 
+/// <summary>A lift of single values: those lifted (with the file each came from), those no longer banned, those still banned and why, and those that had no active entry.</summary>
+public sealed record ValueLiftResult(IReadOnlyList<string> Lifted, IReadOnlyList<string> NoLongerBanned, IReadOnlyList<string> StillBanned, IReadOnlyList<string> NotFound);
+
 public interface IPersonBans
 {
     /// <summary>
@@ -38,6 +41,15 @@ public interface IPersonBans
     /// removed from its file). Null when Mongo, the source of truth, is not configured.
     /// </summary>
     Task<LiftResult?> LiftAsync(string playerId, string reason, string source, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lifts single values ({kind, value} in the bans collection: a ban file's entries); each is let through unless another
+    /// active ban holds it. Null when Mongo is not configured.
+    /// </summary>
+    Task<ValueLiftResult?> LiftValuesAsync(IReadOnlyList<(string Kind, string Value)> values, string reason, string source, CancellationToken ct = default);
+
+    /// <summary>Lifts every single value (a ban file's entry) that is one of the player's identifiers, past or present. IP blocks are left: they cover others.</summary>
+    Task<ValueLiftResult?> LiftValuesOfAsync(string playerId, string reason, string source, CancellationToken ct = default);
 }
 
 // A ban takes effect first and is recorded after: the Redis sets (every replica's check, and the player id that refuses
@@ -144,7 +156,6 @@ internal sealed class PersonBans(IServiceProvider services, IOptionsMonitor<BanS
 
         var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase();
         var records = mongo.GetCollection<BsonDocument>(Collection);
-        var values = mongo.GetCollection<BsonDocument>(BanStore.Values);
         string player = id.ToString();
         var account = await mongo.GetCollection<BsonDocument>(PlayerRecord.Collection).Find(new BsonDocument("_id", id)).FirstOrDefaultAsync(ct);
         var lifted = await records.Find(BanStore.Active & Builders<BsonDocument>.Filter.Eq("player.id", player)).ToListAsync(ct);
@@ -159,40 +170,19 @@ internal sealed class PersonBans(IServiceProvider services, IOptionsMonitor<BanS
         var identifiers = lifted.SelectMany(r => IdentifiersOf(r).Known())
             .Concat(account is null ? [(BanKind.Player, player)] : BanIdentifiers.OfPlayer(account).Known())
             .Select(k => (k.Kind, Value: BanService.Canonical(k.Kind, k.Value))).Distinct().ToList();
-        var blocks = (await values.Find(BanStore.Active & Builders<BsonDocument>.Filter.Eq("kind", "cidr")).ToListAsync(ct))
-            .Select(b => (Block: b.GetValue("value", "").AsString, File: b.GetValue("file", BanStore.Values).AsString)).ToList();
         var noLonger = new List<string>();
         var still = new List<string>();
         foreach (var (kind, value) in identifiers)
         {
             string label = $"{kind} {value}";
-            string[] valueKinds = kind is BanKind.Ip or BanKind.Player ? [BanStore.ValueKind(kind)] : [BanStore.ValueKind(kind), "id"];
-            var single = await values.Find(BanStore.Active & Builders<BsonDocument>.Filter.In("kind", valueKinds) & Builders<BsonDocument>.Filter.Eq("value", value)).FirstOrDefaultAsync(ct);
-            var other = await records.Find(BanStore.Active & Builders<BsonDocument>.Filter.Eq(BanStore.RecordField(kind), value)).FirstOrDefaultAsync(ct);
-            var block = kind == BanKind.Ip ? blocks.FirstOrDefault(b => BanService.InCidr(value, b.Block)) : default;
-            if (single is not null)
+            if (await HolderAsync(mongo, kind, value, ct) is { } holder)
             {
-                still.Add($"{label} ({single.GetValue("file", BanStore.Values).AsString}: remove it there)");
-            }
-            else if (other is not null)
-            {
-                still.Add($"{label} (ban {other.GetValue("ban_id", "").AsString} of player {other["player"]["id"].AsString})");
-            }
-            else if (block.Block is { Length: > 0 })
-            {
-                still.Add($"{label} ({block.File} {block.Block}: remove it there)");
+                still.Add($"{label} ({holder})");
             }
             else
             {
                 noLonger.Add(label);
-                if (redis is not null)
-                {
-                    await redis.SetRemoveAsync(BanService.Key(kind), value);
-                    if (kind is not (BanKind.Ip or BanKind.Player))
-                    {
-                        await redis.SetRemoveAsync(BanService.IdKey, value);
-                    }
-                }
+                await LetThroughAsync(redis, BanService.Key(kind), kind is not (BanKind.Ip or BanKind.Player), value);
             }
         }
 
@@ -207,7 +197,7 @@ internal sealed class PersonBans(IServiceProvider services, IOptionsMonitor<BanS
         {
             try
             {
-                AutoBans.Append(file, AutoBans.LiftToYaml(now, reason, source, player, name, banIds, noLonger, still));
+                AutoBans.Append(file, AutoBans.LiftToYaml(now, reason, source, player, name, banIds, [], noLonger, still));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
@@ -219,6 +209,165 @@ internal sealed class PersonBans(IServiceProvider services, IOptionsMonitor<BanS
             string.Join(", ", banIds), player, name, source, reason, string.Join(", ", noLonger), still.Count == 0 ? "nothing" : string.Join(", ", still));
         return new LiftResult(player, name, banIds, noLonger, still);
     }
+
+    public async Task<ValueLiftResult?> LiftValuesOfAsync(string playerId, string reason, string source, CancellationToken ct = default)
+    {
+        if (services.GetService<IMongoDatabase>() is not { } mongo || !ObjectId.TryParse(playerId, out var id))
+        {
+            return null;
+        }
+
+        // Their identifiers, from every ban record of theirs (lifted too) and their account.
+        var records = await mongo.GetCollection<BsonDocument>(Collection).Find(Builders<BsonDocument>.Filter.Eq("player.id", id.ToString())).ToListAsync(ct);
+        var account = await mongo.GetCollection<BsonDocument>(PlayerRecord.Collection).Find(new BsonDocument("_id", id)).FirstOrDefaultAsync(ct);
+        var identifiers = records.SelectMany(r => IdentifiersOf(r).Known()).Concat(account is null ? [] : BanIdentifiers.OfPlayer(account).Known())
+            .Where(k => k.Kind != BanKind.Player).Select(k => (k.Kind, Value: BanService.Canonical(k.Kind, k.Value))).Distinct().ToList();
+        var entries = new List<(string Kind, string Value)>();
+        foreach (var (kind, value) in identifiers)
+        {
+            if (await mongo.GetCollection<BsonDocument>(BanStore.Values).Find(BanStore.Active & Builders<BsonDocument>.Filter.In("kind", ValueKinds(kind))
+                    & Builders<BsonDocument>.Filter.Eq("value", value)).FirstOrDefaultAsync(ct) is not null)
+            {
+                entries.Add((BanStore.ValueKind(kind), value));
+            }
+        }
+
+        var lift = await LiftValuesAsync(entries, reason, source, ct);
+        // An IP of theirs inside a block: the block stays (it covers others), and the IP with it.
+        var blocked = new List<string>();
+        foreach (var (_, ip) in identifiers.Where(k => k.Kind == BanKind.Ip))
+        {
+            if (!lift!.StillBanned.Any(s => s.StartsWith($"ip {ip} ", StringComparison.Ordinal)) && await HolderAsync(mongo, BanKind.Ip, ip, ct) is { } holder)
+            {
+                blocked.Add($"ip {ip} ({holder})");
+            }
+        }
+
+        return lift! with { StillBanned = [.. lift.StillBanned, .. blocked] };
+    }
+
+    public async Task<ValueLiftResult?> LiftValuesAsync(IReadOnlyList<(string Kind, string Value)> entries, string reason, string source, CancellationToken ct = default)
+    {
+        if (services.GetService<IMongoDatabase>() is not { } mongo)
+        {
+            return null;
+        }
+
+        var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase();
+        var values = mongo.GetCollection<BsonDocument>(BanStore.Values);
+        var now = time.GetUtcNow();
+        var lifted = new List<string>();
+        var noLonger = new List<string>();
+        var still = new List<string>();
+        var notFound = new List<string>();
+        foreach (var (valueKind, value) in entries.Distinct())
+        {
+            BanKind? kind = KindOf(valueKind);
+            // A Steam, Epic, hardware or install id is lifted from the older any-identifier entries too.
+            string[] kinds = kind is { } k ? ValueKinds(k) : [valueKind];
+            var filter = BanStore.Active & Builders<BsonDocument>.Filter.In("kind", kinds) & Builders<BsonDocument>.Filter.Eq("value", value);
+            var docs = await values.Find(filter).ToListAsync(ct);
+            if (docs.Count == 0)
+            {
+                notFound.Add($"{valueKind} {value}");
+                continue;
+            }
+
+            await values.UpdateManyAsync(filter, Builders<BsonDocument>.Update.Set("lifted_at", now.UtcDateTime).Set("lifted_reason", reason).Set("lifted_source", source), cancellationToken: ct);
+            string label = $"{valueKind} {value}";
+            lifted.Add($"{label} ({string.Join(", ", docs.Select(d => d.GetValue("file", BanStore.Values).AsString).Distinct())})");
+            if (await HolderAsync(mongo, kind, value, ct) is { } holder)
+            {
+                still.Add($"{label} ({holder})");
+            }
+            else
+            {
+                noLonger.Add(label);
+                await LetThroughAsync(redis, kind is { } key ? BanService.Key(key) : valueKind == "cidr" ? BanService.CidrKey : BanService.IdKey,
+                    kind is not (null or BanKind.Ip), value);
+            }
+        }
+
+        if (lifted.Count > 0 && settings.CurrentValue.AutoBansFile is { Length: > 0 } file)
+        {
+            try
+            {
+                AutoBans.Append(file, AutoBans.LiftToYaml(now, reason, source, "", "", [], lifted, noLonger, still));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                log.LogError(e, "A lift of single values could not be appended to {Path}", Path.GetFullPath(file));
+            }
+        }
+
+        if (lifted.Count > 0)
+        {
+            log.LogWarning("LIFTED single ban value(s) [{Source}: {Reason}]: {Lifted}; no longer banned: {NoLonger}; still banned: {Still}",
+                source, reason, string.Join(", ", lifted), string.Join(", ", noLonger), still.Count == 0 ? "nothing" : string.Join(", ", still));
+        }
+
+        return new ValueLiftResult(lifted, noLonger, still, notFound);
+    }
+
+    // What still bans a value after a lift: an active single value (a file's entry), another person's active record, or
+    // (an IP) an active block containing it. Null when nothing does.
+    private static async Task<string?> HolderAsync(IMongoDatabase mongo, BanKind? kind, string value, CancellationToken ct)
+    {
+        var values = mongo.GetCollection<BsonDocument>(BanStore.Values);
+        string[] kinds = kind is { } k ? ValueKinds(k) : ["cidr"];
+        if (await values.Find(BanStore.Active & Builders<BsonDocument>.Filter.In("kind", kinds) & Builders<BsonDocument>.Filter.Eq("value", value)).FirstOrDefaultAsync(ct) is { } single)
+        {
+            return $"{single.GetValue("file", BanStore.Values).AsString}: ovsctl bans lift {single["kind"].AsString} {value}";
+        }
+
+        if (kind is { } recordKind && await mongo.GetCollection<BsonDocument>(Collection)
+                .Find(BanStore.Active & Builders<BsonDocument>.Filter.Eq(BanStore.RecordField(recordKind), value)).FirstOrDefaultAsync(ct) is { } other)
+        {
+            return $"ban {other.GetValue("ban_id", "").AsString} of player {other["player"]["id"].AsString}";
+        }
+
+        if (kind == BanKind.Ip)
+        {
+            foreach (var block in await values.Find(BanStore.Active & Builders<BsonDocument>.Filter.Eq("kind", "cidr")).ToListAsync(ct))
+            {
+                string cidr = block.GetValue("value", "").AsString;
+                if (BanService.InCidr(value, cidr))
+                {
+                    return $"{block.GetValue("file", BanStore.Values).AsString} {cidr}: ovsctl bans lift cidr {cidr}";
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static async Task LetThroughAsync(IDatabase? redis, string key, bool anyIdentifier, string value)
+    {
+        if (redis is null)
+        {
+            return;
+        }
+
+        await redis.SetRemoveAsync(key, value);
+        if (anyIdentifier)
+        {
+            await redis.SetRemoveAsync(BanService.IdKey, value);
+        }
+    }
+
+    // The single-value kinds that ban an identifier of this kind: its own, and the older any-identifier "id" but for an IP.
+    private static string[] ValueKinds(BanKind kind) => kind is BanKind.Ip or BanKind.Player ? [BanStore.ValueKind(kind)] : [BanStore.ValueKind(kind), "id"];
+
+    /// <summary>The identifier kind of a single value's kind; null for an IP block or an any-identifier entry.</summary>
+    internal static BanKind? KindOf(string valueKind) => valueKind switch
+    {
+        "ip" => BanKind.Ip,
+        "steam" => BanKind.Steam,
+        "epic" => BanKind.Epic,
+        "hardware" => BanKind.Hardware,
+        "install" => BanKind.Install,
+        _ => null,
+    };
 
     /// <summary>A record's banned identifiers, as BanStore loads them.</summary>
     internal static BanIdentifiers IdentifiersOf(BsonDocument record)

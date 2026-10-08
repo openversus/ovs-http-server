@@ -354,6 +354,72 @@ public sealed class PlayerBanCommand : AsyncCommand<PlayerBanSettings>
     }
 }
 
+public sealed class BansLiftSettings : ConnectionSettings
+{
+    protected override string DefaultService => "access";
+
+    [CommandArgument(0, "<KIND|WHO>")]
+    [Description("The value's kind (ip, cidr, steam, epic, hardware, install, id); with --all, the player (anything `player show` takes, or a player id).")]
+    public string Target { get; set; } = "";
+
+    [CommandArgument(1, "[VALUE]")]
+    [Description("The value, as in its ban file (without --all).")]
+    public string? Value { get; set; }
+
+    [CommandOption("--all")]
+    [Description("Every value that is one of the player's identifiers (IP blocks excepted: they cover others).")]
+    public bool All { get; set; }
+
+    [CommandOption("--reason <REASON>")]
+    [Description("Why, kept in the record of the lift.")]
+    public string Reason { get; set; } = "";
+
+    public override ValidationResult Validate() =>
+        base.Validate() is { Successful: false } connection ? connection
+        : All == (Value is not null) ? ValidationResult.Error("give a kind and a value, or --all and a player (not both)")
+        : ValidationResult.Success();
+}
+
+public sealed class BansLiftCommand : AsyncCommand<BansLiftSettings>
+{
+    private readonly IAnsiConsole _console;
+
+    public BansLiftCommand(IAnsiConsole console)
+    {
+        _console = console;
+    }
+
+    protected override async Task<int> ExecuteAsync(CommandContext context, BansLiftSettings settings, CancellationToken cancellation)
+    {
+        using var client = ControlClient.For(settings);
+        var reply = settings.All ? await client.LiftBansOfAsync(settings.Target, settings.Reason) : await client.LiftBanAsync(settings.Target, settings.Value!, settings.Reason);
+        // Markup only in the format string: what is interpolated is escaped, markup included.
+        return OvsCtl.Report(_console, settings, reply, l =>
+        {
+            _console.MarkupLineInterpolated($"{l.Lifted.Count} value(s) lifted.");
+            foreach (string value in l.Lifted)
+            {
+                _console.MarkupLineInterpolated($"  lifted {value}");
+            }
+
+            foreach (string value in l.NoLongerBanned)
+            {
+                _console.MarkupLineInterpolated($"  [green]no longer banned[/] {value}");
+            }
+
+            foreach (string value in l.StillBanned)
+            {
+                _console.MarkupLineInterpolated($"  [red]still banned[/] {value}");
+            }
+
+            foreach (string value in l.NotFound)
+            {
+                _console.MarkupLineInterpolated($"  [yellow]no active entry[/] {value}");
+            }
+        });
+    }
+}
+
 public sealed class PlayerUnbanCommand : AsyncCommand<PlayerBanSettings>
 {
     private readonly IAnsiConsole _console;
@@ -378,6 +444,11 @@ public sealed class PlayerUnbanCommand : AsyncCommand<PlayerBanSettings>
             foreach (string identifier in u.StillBanned)
             {
                 _console.MarkupLineInterpolated($"  [red]still banned[/] {identifier}");
+            }
+
+            if (u.StillBanned.Any(s => s.Contains("ovsctl bans lift", StringComparison.Ordinal)))
+            {
+                _console.MarkupLineInterpolated($"Their ban file entries: one at a time as shown, or all at once with [bold]ovsctl bans lift --all {u.Id}[/].");
             }
         });
     }

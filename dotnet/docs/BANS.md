@@ -59,7 +59,8 @@ service that cannot write it logs an error at startup; its bans are still in Mon
   player: { id: '6a5d...', name: '...' }
   lifted_bans: ['9f1c...']
   no_longer_banned: ['Steam 7656...', 'Player 6a5d...']
-  still_banned: ['Ip 203.0.113.9 (bans.txt: remove it there)']
+  lifted_values: []
+  still_banned: ['Ip 203.0.113.9 (bans.txt: ovsctl bans lift ip 203.0.113.9)']
 ```
 
 ## Where a ban is enforced
@@ -79,11 +80,16 @@ service that cannot write it logs an error at startup; its bans are still in Mon
 
 ## Making and lifting a ban
 
-`ovsctl player ban <who> --reason "..."` bans the person behind a player (source `manual`) and prints what was banned.
-`ovsctl player unban <who> --reason "..."` lifts the player's ban records: each of their identifiers that no other
-active ban holds is let through at once; one still held is listed with what holds it (another person's ban, or a ban
-file, from which it is removed by hand: the import will not bring it back once it is lifted, and a line left in the
-file keeps it banned until then). `<who>` is anything `player show` takes, or a player id.
+- `ovsctl player ban <who> --reason "..."` bans the person behind a player (source `manual`) and prints what was banned.
+- `ovsctl player unban <who> --reason "..."` lifts the player's ban records. Each of their identifiers that no other
+  active ban holds is let through at once; one still held is listed with what holds it: another person's ban, or a ban
+  file's entry (with the command that lifts it).
+- `ovsctl bans lift <kind> <value> --reason "..."` lifts one ban file entry (`ip`, `cidr`, `steam`, `epic`, `hardware`,
+  `install`, `id`); `ovsctl bans lift --all <who>` lifts every entry that is one of the player's identifiers, past or
+  present (IP blocks excepted: they cover others; an IP of theirs inside one is listed as still banned). A lifted entry
+  is kept, marked lifted, so the import does not bring it back and its line can stay in the file.
+
+`<who>` is anything `player show` takes, or a player id. Every lift is recorded in the trail.
 
 ## Names
 

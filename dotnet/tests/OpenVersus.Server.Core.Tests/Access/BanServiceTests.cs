@@ -67,7 +67,7 @@ public sealed class BanServiceTests : IDisposable
         var ban = Record("6a0000000000000000000001", new BanIdentifiers(Ip: "198.51.100.7", SteamId: Steam));
         AutoBans.Append(path, AutoBans.ToYaml(ban));
         AutoBans.Append(path, AutoBans.LiftToYaml(ban.At.AddDays(1), "a false positive", "manual", "6a0000000000000000000001", "Old 'name' #1: x",
-            [ban.BanId], ["Steam " + Steam], ["Ip 198.51.100.7 (bans.txt: remove it there)"]));
+            [ban.BanId], ["ip 198.51.100.8 (bans.txt)"], ["Steam " + Steam], ["Ip 198.51.100.7 (bans.txt: ovsctl bans lift ip 198.51.100.7)"]));
 
         var items = Trail(path);
         Assert.Equal(2, items.Children.Count);
@@ -79,7 +79,8 @@ public sealed class BanServiceTests : IDisposable
         var lifted = (YamlMappingNode)items[1];
         Assert.Equal(("lift", "a false positive"), (lifted["action"].ToString(), lifted["reason"].ToString()));
         Assert.Equal([ban.BanId], ((YamlSequenceNode)lifted["lifted_bans"]).Select(n => n.ToString()));
-        Assert.Equal(["Ip 198.51.100.7 (bans.txt: remove it there)"], ((YamlSequenceNode)lifted["still_banned"]).Select(n => n.ToString()));
+        Assert.Equal(["ip 198.51.100.8 (bans.txt)"], ((YamlSequenceNode)lifted["lifted_values"]).Select(n => n.ToString()));
+        Assert.Equal(["Ip 198.51.100.7 (bans.txt: ovsctl bans lift ip 198.51.100.7)"], ((YamlSequenceNode)lifted["still_banned"]).Select(n => n.ToString()));
     }
 
     [Fact]

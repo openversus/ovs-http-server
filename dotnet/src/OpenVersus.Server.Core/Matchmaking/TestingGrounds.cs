@@ -7,7 +7,8 @@ namespace OpenVersus.Server.Core.Matchmaking;
 
 // 1v1 Testing Grounds, the game's own event queue (evtq_1v1testinggrounds, matchmaking criteria EVT_2_Player_1, solo
 // only), as OpenVersus runs it: unranked 1v1s with the Beta Speed mutator (the whole match at 1.2x), open whenever the
-// FFA queue is not, so the menu's event slot is Testing Grounds on weekdays and Free For All on the weekend (FfaSchedule).
+// FFA queue is not, so the menu's event slot is Testing Grounds on weekdays and Free For All on the weekend (FfaSchedule);
+// closed while Twosday is on (its window, Tuesday evenings: every 1v1 goes to 2v2 then).
 // The hiss shows the open one only (its feature toggles) and its Crc differs between the two, so a client takes the
 // other catalog at its next login; a request outside the queue's window is refused, and its queued tickets are
 // cancelled when it closes, as FFA's are.
@@ -18,7 +19,7 @@ public sealed class TestingGroundsSettings
     [Description("1v1 Testing Grounds (unranked 1v1s with the Beta Speed mutator) is open whenever the FFA queue is closed: weekdays while Ffa:WeekendOnly is on, never while it is off. Off: never open, and the menu shows FFA all week as before.")]
     public bool Enabled { get; set; } = true;
 
-    [Description("Open every day, FFA's weekend included (the menu then shows Testing Grounds, not FFA): for testing, or an event. Off: weekdays only.")]
+    [Description("Open every day, FFA's weekend and Twosday included (the menu then shows Testing Grounds, not FFA): for testing, or an event. Off: weekdays outside Twosday only.")]
     public bool AlwaysOpen { get; set; }
 }
 
@@ -39,18 +40,26 @@ public static class TestingGrounds
     /// <summary>The mutator its matches have: Beta Speed (Matches.GameplayConfigs.BetaSpeedMutator).</summary>
     public const string Mutator = "ovs_beta_speed";
 
-    public const string ScheduleText = "1v1 Testing Grounds (Beta Speed) is open Monday to Thursday; Free For All takes its place on the weekend.";
+    public const string ScheduleText = "1v1 Testing Grounds (Beta Speed) is open Monday to Thursday, except during Twosday; Free For All takes its place on the weekend.";
 
-    /// <summary>Whether the queue takes players at <paramref name="now"/>: enabled, and the FFA queue closed (or always open).</summary>
-    public static bool IsOpen(DateTimeOffset now, bool enabled, bool ffaWeekendOnly, bool alwaysOpen = false) =>
-        enabled && (alwaysOpen || !FfaSchedule.IsOpen(now, ffaWeekendOnly));
+    /// <summary>
+    /// Whether the queue takes players at <paramref name="now"/>: enabled, and neither the FFA queue nor Twosday on (or
+    /// always open).
+    /// </summary>
+    public static bool IsOpen(DateTimeOffset now, bool enabled, bool ffaWeekendOnly, bool alwaysOpen = false, bool twosday = false) =>
+        enabled && (alwaysOpen || (!FfaSchedule.IsOpen(now, ffaWeekendOnly) && !twosday));
 
-    /// <summary><see cref="IsOpen(DateTimeOffset, bool, bool, bool)"/> with the service's settings (defaults when it has none).</summary>
-    public static bool IsOpen(IServiceProvider services, DateTimeOffset now)
+    /// <summary><see cref="IsOpen(DateTimeOffset, bool, bool, bool, bool)"/> with the service's settings and Twosday's switch (Redis).</summary>
+    public static async Task<bool> IsOpenAsync(IServiceProvider services, DateTimeOffset now)
     {
         var settings = services.GetService<IOptionsMonitor<TestingGroundsSettings>>()?.CurrentValue ?? new TestingGroundsSettings();
-        return IsOpen(now, settings.Enabled, services.GetService<IOptionsMonitor<FfaSettings>>()?.CurrentValue.WeekendOnly ?? new FfaSettings().WeekendOnly,
-            settings.AlwaysOpen);
+        bool ffaWeekendOnly = services.GetService<IOptionsMonitor<FfaSettings>>()?.CurrentValue.WeekendOnly ?? new FfaSettings().WeekendOnly;
+        if (!settings.Enabled || settings.AlwaysOpen || FfaSchedule.IsOpen(now, ffaWeekendOnly))
+        {
+            return IsOpen(now, settings.Enabled, ffaWeekendOnly, settings.AlwaysOpen);
+        }
+
+        return IsOpen(now, settings.Enabled, ffaWeekendOnly, settings.AlwaysOpen, await Twosday.IsActiveAsync(services, now));
     }
 
     /// <summary>Its match's notification fields beside the unranked ones: the mutator (the rollback registry's tick_rate reads it).</summary>

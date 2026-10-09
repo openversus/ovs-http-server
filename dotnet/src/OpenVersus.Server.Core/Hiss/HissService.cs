@@ -110,7 +110,7 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         int matchmakingCrc = MatchmakingCrcOf(services);
         var fighterPass = FighterPass.Current;
         string fighterPassKey = FighterPass.Key(fighterPass);
-        bool testingGrounds = Matchmaking.TestingGrounds.IsOpen(services, (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
+        bool testingGrounds = await Matchmaking.TestingGrounds.IsOpenAsync(services, (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
         Task<HissAnswer> build;
         lock (_gate)
         {
@@ -165,7 +165,7 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
     {
         var mongo = services.GetService<IMongoDatabase>();
         double crc = mongo is null ? DefaultCrc : await CrcAsync(mongo, ct);
-        bool testingGrounds = Matchmaking.TestingGrounds.IsOpen(services, (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
+        bool testingGrounds = await Matchmaking.TestingGrounds.IsOpenAsync(services, (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
         return crc + (services.GetService<IOptionsMonitor<HissSettings>>()?.CurrentValue.ContentRevision ?? new HissSettings().ContentRevision)
             + (testingGrounds ? TestingGroundsCrcOffset : 0);
     }

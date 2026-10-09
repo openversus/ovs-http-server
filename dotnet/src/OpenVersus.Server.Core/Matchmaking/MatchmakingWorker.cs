@@ -290,7 +290,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
     // 1v1 Testing Grounds: paired as Casual 1v1 (no skill range) while open; closed, its tickets are cancelled as FFA's are.
     private async Task<bool> TestingGroundsAsync(IDatabase redis)
     {
-        if (!TestingGrounds.IsOpen(services, time.GetUtcNow()))
+        if (!await TestingGrounds.IsOpenAsync(services, time.GetUtcNow()))
         {
             var tickets = await TicketsAsync(redis, TestingGrounds.List);
             if (tickets.Count > 0)
@@ -301,7 +301,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
                     await CancelAsync(redis, ticket);
                 }
 
-                log.LogInformation("Testing Grounds queue closed (FFA's weekend); cancelled {Count} queued ticket(s)", tickets.Count);
+                log.LogInformation("Testing Grounds queue closed (FFA's weekend or Twosday); cancelled {Count} queued ticket(s)", tickets.Count);
             }
 
             return false;

@@ -156,9 +156,9 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             return new MatchmakingAnswer(200, Matchmaking.FfaSchedule.ClosedFailure());
         }
 
-        if (queue.IsTestingGrounds && !Matchmaking.TestingGrounds.IsOpen(services, time.GetUtcNow()))
+        if (queue.IsTestingGrounds && !await Matchmaking.TestingGrounds.IsOpenAsync(services, time.GetUtcNow()))
         {
-            log.LogInformation("Rejected Testing Grounds matchmaking for {Player}: the queue is closed (FFA's weekend, or TestingGrounds:Enabled off)", me);
+            log.LogInformation("Rejected Testing Grounds matchmaking for {Player}: the queue is closed (FFA's weekend, Twosday, or TestingGrounds:Enabled off)", me);
             return new MatchmakingAnswer(200, Matchmaking.TestingGrounds.ClosedFailure());
         }
 

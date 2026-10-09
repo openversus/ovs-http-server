@@ -46,7 +46,7 @@ RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking Matc
 # that needs Redis while Redis is down, which fixes nothing. There, the container check should be liveness instead
 # (open question).
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET} AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends curl wget file vim tmux telnet && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends curl wget file vim tmux telnet && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/Cli /opt/ovsctl
 RUN ln -s /opt/ovsctl/ovsctl /usr/local/bin/ovsctl
 # The services choose their own listeners (HTTP_PORT and the like); the base image's default of 8080 would only mislead.

@@ -32,6 +32,8 @@ public sealed class MatchDisconnectsTests : IAsyncLifetime
             return Task.CompletedTask;
         }
 
+        public Task LeftAsync(string matchId, string playerId) => throw new NotSupportedException();
+
         public Task<(int Status, JsonObject Answer)> HandleAsync(string? matchUpdateKey, JsonNode? body, string? from) => throw new NotSupportedException();
     }
 

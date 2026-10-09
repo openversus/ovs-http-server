@@ -61,6 +61,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
             b.UseSetting("Batch:TsUrl", tsUrl);
             // The fake answers the routed sub-requests too.
             b.UseSetting("Batch:EdgeUrl", tsUrl);
+            b.UseSetting("Batch:ForwardRoutes", $"GET {Unported}");
             foreach (var (key, value) in settings)
             {
                 b.UseSetting(key, value);
@@ -81,11 +82,9 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
 
     private static JsonNode Static(string name) => JsonNode.Parse(StaticResponses.Json(name))!;
 
-    // The unported sub-request these tests send on: a route the TS server answers (a gleamium store purchase, sent as
-    // POST) that this service still stubs. Move it to another stub when that one is ported; when none is left, this bridge goes.
-    private const string Unported = "/virtual_commerce/purchases/someone/toasts_gleamium";
-
-    private static JsonObject Post(string url) => new() { ["verb"] = "POST", ["url"] = url, ["headers"] = new JsonObject(), ["body"] = new JsonObject() };
+    // The sub-request these tests send on to the TS server: this service has no stub left, so Client() lists it in
+    // Batch:ForwardRoutes, the bridge's other way to the TS server. When the bridge goes, so do these tests.
+    private const string Unported = "/ssc/invoke/no_such_function";
 
     // What the TS server's catch-all answers (the default CRC: no Mongo here), and so every route it never handled.
     private static JsonNode CatchAll => JsonNode.Parse("""{"body":{"Crc":1267552971,"MatchmakingCrc":2},"metadata":null,"return_code":200}""")!;
@@ -101,7 +100,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
         // service's own, for the TS server.
         using var response = await PutAsync(client, Batch(
             Get("/friends/me?page=2", new JsonObject { ["x-hydra-http-method"] = "GET", ["x-custom"] = "kept" }),
-            Post(Unported),
+            Get(Unported),
             Get("/accounts/abc/relationships/followers"),
             new JsonObject { ["verb"] = "PUT", ["url"] = "/ssc/invoke/create_custom_game_lobby", ["body"] = new JsonObject { ["Mode"] = "1v1" } },
             Get("/friends/me/invitations/incoming?teapot=1")),
@@ -139,7 +138,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
         await using var ts = await FakeTs.StartAsync();
         // Nothing listens on port 1.
         var client = Client(ts.Url, ("Batch:EdgeUrl", "http://127.0.0.1:1"));
-        using var response = await PutAsync(client, Batch(Get("/friends/me"), Post(Unported)));
+        using var response = await PutAsync(client, Batch(Get("/friends/me"), Get(Unported)));
 
         var responses = HydraDecoder.Decode(await response.Content.ReadAsByteArrayAsync())!["responses"]!.AsArray();
         Assert.Equal(502, Status(responses[0]));
@@ -153,7 +152,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
         var client = Client(ts.Url);
         using var response = await PutAsync(client, Batch(
             Get("/commerce/products"),
-            Post(Unported),
+            Get(Unported),
             Get("/commerce/purchases/someone"),
             new JsonObject { ["verb"] = "PUT", ["url"] = "/commerce/purchases/me?count=25", ["headers"] = new JsonObject { ["x-hydra-http-method"] = "GET" } }),
             r =>
@@ -192,8 +191,8 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
     public async Task AnItemTheTsServerNeverHandledIsAnsweredHereAsItsCatchAllAndNotForwarded()
     {
         await using var ts = await FakeTs.StartAsync();
-        // An SSC name the route map lacks (SscUnlisted) and one it has but the TS server never handled.
-        using var response = await PutAsync(Client(ts.Url), Batch(Get("/ssc/invoke/no_such_function"), Get("/ssc/invoke/get_preferred_currency")));
+        // An SSC name the route map lacks (SscUnlisted; not the one Client() lists for forwarding) and one it has but the TS server never handled.
+        using var response = await PutAsync(Client(ts.Url), Batch(Get("/ssc/invoke/some_other_name"), Get("/ssc/invoke/get_preferred_currency")));
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var responses = HydraDecoder.Decode(await response.Content.ReadAsByteArrayAsync())!["responses"]!.AsArray();
         Assert.Equal(2, responses.Count);
@@ -243,7 +242,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
     [Fact]
     public async Task WithTheTsServerDownOnlyItsPartAnswers502()
     {
-        using var response = await PutAsync(Client("http://127.0.0.1:9"), Batch(Post(Unported), Get("/commerce/purchases/me")));
+        using var response = await PutAsync(Client("http://127.0.0.1:9"), Batch(Get(Unported), Get("/commerce/purchases/me")));
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var responses = HydraDecoder.Decode(await response.Content.ReadAsByteArrayAsync())!["responses"]!.AsArray();
         Assert.Equal(502, Status(responses[0]));
@@ -255,7 +254,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
     {
         await using var ts = await FakeTs.StartAsync(delay: TimeSpan.FromSeconds(20));
         var watch = Stopwatch.StartNew();
-        using var response = await PutAsync(Client(ts.Url, ("Batch:ForwardTimeoutSeconds", "1")), Batch(Post(Unported), Get("/commerce/purchases/me")));
+        using var response = await PutAsync(Client(ts.Url, ("Batch:ForwardTimeoutSeconds", "1")), Batch(Get(Unported), Get("/commerce/purchases/me")));
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"took {watch.Elapsed}");
         var responses = HydraDecoder.Decode(await response.Content.ReadAsByteArrayAsync())!["responses"]!.AsArray();
         Assert.Equal(504, Status(responses[0]));
@@ -290,13 +289,13 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
     {
         await using var ts = await FakeTs.StartAsync();
         var client = Client(ts.Url);
-        using (var forwarding = await PutAsync(client, Batch(Post(Unported))))
+        using (var forwarding = await PutAsync(client, Batch(Get(Unported))))
         {
             Assert.Equal("1", Assert.Single(ts.Requests).Headers[BatchRunner.ForwardedHeader]);
         }
 
         // Batch:TsUrl pointing back at this service (or the proxy): the forwarded batch arrives here marked.
-        using var loop = await PutAsync(client, Batch(Post(Unported)), r => r.Headers.Add(BatchRunner.ForwardedHeader, "1"));
+        using var loop = await PutAsync(client, Batch(Get(Unported)), r => r.Headers.Add(BatchRunner.ForwardedHeader, "1"));
         Assert.Equal(HttpStatusCode.LoopDetected, loop.StatusCode);
         Assert.Single(ts.Requests);
     }

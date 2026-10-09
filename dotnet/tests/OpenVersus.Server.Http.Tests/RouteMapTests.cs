@@ -147,14 +147,14 @@ public sealed class RouteMapTests : IClassFixture<GameAppFactory>
     {
         // The game sends both of these as PUT to the same path; only the header differs.
         Assert.Equal("GetProfilesByIdInventory", (await SendAsync("PUT", "/profiles/abc/inventory", overrideMethod: "GET")).Endpoint);
-        Assert.Equal("PutProfilesByIdInventory", (await SendAsync("PUT", "/profiles/abc/inventory")).Stub);
+        Assert.Equal("PutProfilesByIdInventory", (await SendAsync("PUT", "/profiles/abc/inventory")).Endpoint);
         Assert.Equal("GetProfilesBulk", (await SendAsync("PUT", "/profiles/bulk", overrideMethod: "GET")).Endpoint);
     }
 
     [Fact]
     public async Task AnOverrideThatIsNotAMethodIsIgnored()
     {
-        Assert.Equal("PutProfilesByIdInventory", (await SendAsync("PUT", "/profiles/abc/inventory", overrideMethod: "BOGUS")).Stub);
+        Assert.Equal("PutProfilesByIdInventory", (await SendAsync("PUT", "/profiles/abc/inventory", overrideMethod: "BOGUS")).Endpoint);
     }
 
     [Fact]

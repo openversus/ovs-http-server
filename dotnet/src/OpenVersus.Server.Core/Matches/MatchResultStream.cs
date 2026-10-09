@@ -14,6 +14,7 @@ namespace OpenVersus.Server.Core.Matches;
 
 // The match flow's side of submit_end_of_match_stats (MatchResults appends each report's result to the stream
 // match:results): any number of replicas read it as one consumer group ("matchflow"), so each result is handled once, and
+// a "leave" record (MatchLeaves: the game said over HTTP its player left) is settled as the game's websocket close is;
 // one appended while no replica runs (a restart, a deploy) waits for the next instead of being lost. Per result:
 //   match XP and missions for the reporter (IMissionService; missions with Missions:Enabled), rift progress for the match
 //   (IRiftProgressService), each once per match and player (their own SET NX keys), so handling one again is harmless.
@@ -26,7 +27,7 @@ namespace OpenVersus.Server.Core.Matches;
 // acknowledged. The stream keeps about the last 10,000 results (XADD MAXLEN ~).
 
 internal sealed class MatchResultStream(IServiceProvider services, IMissionService missions, IOptionsMonitor<MissionSettings> missionSettings,
-    IRiftProgressService rifts, IGameStats gameStats, TimeProvider time, ILogger<MatchResultStream> log) : BackgroundService
+    IRiftProgressService rifts, IGameStats gameStats, IMatchStatusEvents statusEvents, TimeProvider time, ILogger<MatchResultStream> log) : BackgroundService
 {
     public const string Group = "matchflow";
     private const int MaxDeliveries = 5;
@@ -127,7 +128,7 @@ internal sealed class MatchResultStream(IServiceProvider services, IMissionServi
             var pending = await redis.StreamPendingMessagesAsync(MatchResults.Stream, Group, 1, _consumer, entry.Id, entry.Id);
             if (pending.Length > 0 && pending[0].DeliveryCount > MaxDeliveries)
             {
-                log.LogError("Match result {Id} failed {Count} times; dropped: {Result}", entry.Id, pending[0].DeliveryCount, (string?)entry["result"]);
+                log.LogError("Match result {Id} failed {Count} times; dropped: {Result}", entry.Id, pending[0].DeliveryCount, (string?)entry["result"] ?? (string?)entry[MatchLeaves.Field]);
                 await redis.StreamAcknowledgeAsync(MatchResults.Stream, Group, entry.Id);
                 continue;
             }
@@ -142,6 +143,13 @@ internal sealed class MatchResultStream(IServiceProvider services, IMissionServi
     {
         try
         {
+            // A leave said over HTTP (MatchLeaves): settled like the game's websocket close, once per match.
+            if (Js.Parse((string?)entry[MatchLeaves.Field] ?? "null") is JsonObject leave
+                && Text(leave["matchId"]) is { Length: > 0 } leftMatch && Text(leave["playerId"]) is { Length: > 0 } leaver)
+            {
+                await statusEvents.LeftAsync(leftMatch, leaver);
+            }
+
             if (Js.Parse((string?)entry["result"] ?? "null") is JsonObject result && Text(result["matchId"]) is { Length: > 0 } matchId)
             {
                 int? winning = MatchWinner.Number(result["winningTeamIndex"]) is { } n ? (int)n : null;

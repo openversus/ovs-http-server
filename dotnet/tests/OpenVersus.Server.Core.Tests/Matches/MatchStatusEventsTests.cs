@@ -246,6 +246,56 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
         Assert.Equal("Opponent left the match", Assert.Single(await NotificationsAsync(P1))["message"]!.GetValue<string>());
     }
 
+    [SkippableTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    // The game says the leave over HTTP and its websocket closes, in either order: the dodge is rated once.
+    public async Task ALeaveSaidOverHttpAndTheCloseSettleThePregameDodgeOnce(bool leaveFirst)
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        await SeedSetAsync();
+        await SentConfigAsync(P2);
+        await Db.SetAddAsync("online_players", [P1, P2]);
+        var events = Events();
+
+        if (leaveFirst)
+        {
+            await events.LeftAsync(Match, P2);
+            await events.GameClosedAsync(P2);
+            await events.LeftAsync(Match, P2);
+        }
+        else
+        {
+            await events.GameClosedAsync(P2);
+            await events.LeftAsync(Match, P2);
+        }
+
+        Assert.Equal("pregame_dodge", (string?)await Db.StringGetAsync($"elo_processed_set:{Set}"));
+        var ratings = Mongo.GetCollection<BsonDocument>("eloratings");
+        var p1 = await ratings.Find(new BsonDocument("account_id", P1)).FirstAsync();
+        // Rated once: a second rating would be a second win.
+        Assert.Equal(1, p1["wins_1v1"].ToInt32());
+        Assert.Equal("Opponent left the match", Assert.Single(await NotificationsAsync(P1))["message"]!.GetValue<string>());
+    }
+
+    [SkippableFact]
+    // Mid-game, said over HTTP: the same flag as the close, and no rating until the set's check-in.
+    public async Task ALeaveSaidOverHttpMidGameFlagsItsSet()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        await SeedSetAsync();
+        await SentConfigAsync(P2);
+        await Db.StringSetAsync($"match_started:{Match}", "1");
+
+        await Events().LeftAsync(Match, P2);
+        await Events().GameClosedAsync(P2);
+
+        Assert.Equal(Set, (string?)await Db.StringGetAsync($"ranked_disconnect:{P2}"));
+        Assert.Equal(0, await RatingsAsync());
+    }
+
     [SkippableFact]
     // The dodger's own disconnect cleans up their keys too, in another service, before or after the dodge: being set idle
     // must not make them a record holding a status alone.

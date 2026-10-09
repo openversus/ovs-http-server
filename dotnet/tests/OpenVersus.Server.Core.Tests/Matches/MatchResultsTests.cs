@@ -164,8 +164,16 @@ public sealed class MatchResultsTests : IAsyncLifetime
             NullLogger<MatchResults>.Instance);
     }
 
-    private MatchResultStream Stream(Missions missions, Rifts rifts, Stats stats) =>
-        new(Services(), missions, new TestOptions<MissionSettings>(new MissionSettings { Enabled = true }), rifts, stats, TimeProvider.System, NullLogger<MatchResultStream>.Instance);
+    private sealed class StatusEvents : IMatchStatusEvents
+    {
+        public List<(string Match, string Player)> Left { get; } = [];
+        public Task<(int Status, JsonObject Answer)> HandleAsync(string? matchUpdateKey, JsonNode? body, string? from) => throw new NotSupportedException();
+        public Task GameClosedAsync(string playerId, bool nodeGone = false) => throw new NotSupportedException();
+        public Task LeftAsync(string matchId, string playerId) { Left.Add((matchId, playerId)); return Task.CompletedTask; }
+    }
+
+    private MatchResultStream Stream(Missions missions, Rifts rifts, Stats stats, StatusEvents? events = null) =>
+        new(Services(), missions, new TestOptions<MissionSettings>(new MissionSettings { Enabled = true }), rifts, stats, events ?? new StatusEvents(), TimeProvider.System, NullLogger<MatchResultStream>.Instance);
 
     // A 1v1 (or a custom game with a spectator) as the matchmaker or lobby left it, with P1 and P2 in ranked set Set.
     private async Task SeedAsync(bool custom = false, bool spectator = false, bool set = true)
@@ -317,6 +325,22 @@ public sealed class MatchResultsTests : IAsyncLifetime
         Assert.Equal(0, answer["RpDelta"]!.GetValue<double>());
         Assert.Equal("2v2", answer["Mode"]!.GetValue<string>());
         Assert.Equal(4, answer["TotalGamesPlayedForMode"]!.GetValue<double>());
+    }
+
+    [SkippableFact]
+    // A leave said over HTTP rides the same stream and reaches the match's settlement; a result entry is not a leave.
+    public async Task ALeaveOnTheStreamReachesTheSettlementOnce()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        var events = new StatusEvents();
+        var stream = Stream(new Missions(), new Rifts(), new Stats(), events);
+        await stream.EnsureGroupAsync(Db);
+        await MatchLeaves.AppendAsync(Db, Match, P2);
+        await Results().SubmitAsync(P1, Report(0), default);
+        Assert.Equal(2, await stream.ReadAsync(Db, default));
+        Assert.Equal([(Match, P2)], events.Left);
+        Assert.Empty((await Db.StreamPendingAsync(MatchResults.Stream, MatchResultStream.Group)).Consumers ?? []);
     }
 
     [SkippableFact]

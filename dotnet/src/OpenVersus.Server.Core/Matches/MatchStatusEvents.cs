@@ -109,6 +109,13 @@ public interface IMatchStatusEvents
     /// the gateway node holding it died and another closed it (GatewayReaper), the server's failure.
     /// </summary>
     Task GameClosedAsync(string playerId, bool nodeGone = false);
+
+    /// <summary>
+    /// The game said over HTTP that <paramref name="playerId"/> is leaving <paramref name="matchId"/> (PUT
+    /// /matches/{id}/leave, through the match:results stream): settled as its websocket close would be, once; a
+    /// close or a rollback PlayerDisconnect for the same leave changes nothing more (every effect is keyed per match).
+    /// </summary>
+    Task LeftAsync(string matchId, string playerId);
 }
 
 internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings ratings, EloRatings eloRatings, IOptionsMonitor<RollbackSettings> settings,
@@ -251,11 +258,22 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
         }
     }
 
-    // A player left a match: a PlayerDisconnect from its rollback server, or their game closed its websocket (or the gateway
-    // node holding it died: nodeGone).
-    private async Task LeftAsync(IDatabase redis, string matchId, string playerId, List<string> eventPlayerIds, bool fromRollback, bool nodeGone = false)
+    public async Task LeftAsync(string matchId, string playerId)
     {
-        string what = fromRollback ? "PlayerDisconnect" : nodeGone ? "Websocket loss (gateway node gone)" : "Websocket close";
+        if (services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis)
+        {
+            log.LogError("Leave of {Player} from {Match} not handled: this service has no Redis (REDIS)", playerId, matchId);
+            return;
+        }
+
+        await LeftAsync(redis, matchId, playerId, [], fromRollback: false, what: "Leave (said over HTTP)");
+    }
+
+    // A player left a match: a PlayerDisconnect from its rollback server, their game closed its websocket (or the gateway
+    // node holding it died: nodeGone), or the game said so over HTTP (what).
+    private async Task LeftAsync(IDatabase redis, string matchId, string playerId, List<string> eventPlayerIds, bool fromRollback, bool nodeGone = false, string? what = null)
+    {
+        what ??= fromRollback ? "PlayerDisconnect" : nodeGone ? "Websocket loss (gateway node gone)" : "Websocket close";
         try
         {
             if (await redis.KeyExistsAsync($"match_ended:{matchId}"))

@@ -98,16 +98,6 @@ public sealed class HydraBodiesTests : IAsyncLifetime, IClassFixture<GameAppFact
         Assert.Equal(type, response.Content.Headers.ContentType?.MediaType);
     }
 
-    [Fact]
-    public async Task TheRealServersStubsAnswerHydraRequestsUnchanged()
-    {
-        // A stub the gameplay gate does not cover (the matchmaking requests are gated; see ClientGameplayGateTests): a
-        // route the TS server answers that is not ported yet. Move it when it is.
-        var response = await _server.CreateGameClient().PostAsync("/virtual_commerce/purchases/x/toasts_gleamium", Hydra("""{ "a": 1 }"""));
-        Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
-        Assert.Equal("PostVirtualCommercePurchasesByIdByItem", response.Headers.GetValues("X-OVS-Stub").Single());
-    }
-
     // A route the TS server never handled answers what its catch-all did, in the request's form: Hydra for a Hydra
     // request, JSON otherwise (the TS server installed its Hydra encoder only on a Hydra request).
     [Fact]
@@ -159,6 +149,10 @@ public sealed class HydraBodiesTests : IAsyncLifetime, IClassFixture<GameAppFact
     [InlineData("GET", "/accounts/me/notifications/bulk/x", "AnyAccountsMeNotificationsBulkById", CatchAll)]
     [InlineData("GET", "/global_configuration_types/other/global_configurations/x", "GetGlobalConfigurationTypesByTypeGlobalConfigurationsById", CatchAll)]
     [InlineData("GET", "/accounts/epic/abc", "GetAccountsByIdBySub", CatchAll)]
+    // The TS purchase route: toasts_gleamium for a 24-character id answers {}; anything else is its catch-all.
+    [InlineData("POST", "/virtual_commerce/purchases/697fa194ce48c5be8a71abf4/toasts_gleamium", "PostVirtualCommercePurchasesByIdByItem", "{}")]
+    [InlineData("POST", "/virtual_commerce/purchases/short/toasts_gleamium", "PostVirtualCommercePurchasesByIdByItem", CatchAll)]
+    [InlineData("POST", "/virtual_commerce/purchases/697fa194ce48c5be8a71abf4/taz_gleamium", "PostVirtualCommercePurchasesByIdByItem", CatchAll)]
     public async Task SmallRoutesAnswerAsTheTsServerDoes(string method, string path, string endpoint, string body)
     {
         using var request = new HttpRequestMessage(new HttpMethod(method), path);

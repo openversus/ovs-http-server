@@ -23,14 +23,16 @@ public sealed class InventoryEndpointTests(GameAppFactory factory) : IClassFixtu
     }
 
     [Fact]
-    public async Task TheLookupReachesTheInventoryAndAPlainPutDoesNot()
+    public async Task TheLookupAndThePlainPutBothReachTheInventory()
     {
         using var lookup = await factory.CreateGameClient().SendAsync(Request("GET"));
         Assert.Equal("GetProfilesByIdInventory", lookup.Headers.GetValues(Stub.EndpointHeader).Single());
         // This host has no Mongo.
         Assert.Equal(HttpStatusCode.ServiceUnavailable, lookup.StatusCode);
+        // The plain PUT (modifications) is the same TS handler: the inventory, nothing applied.
         using var put = await factory.CreateGameClient().SendAsync(Request(null));
-        Assert.True(put.Headers.Contains(Stub.Header));
+        Assert.Equal("PutProfilesByIdInventory", put.Headers.GetValues(Stub.EndpointHeader).Single());
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, put.StatusCode);
     }
 
     [Fact]

@@ -132,19 +132,6 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   forwarding code, `Batch:TsUrl`, `Batch:ForwardRoutes`, `Batch:ForwardTimeoutSeconds`, the startup warning and this
   entry go; `/batch` keeps running its sub-requests in C#.
 
-### 6. Ratings (ELO): a player leaving a match is still rated by the TS server, which asks "does this match count" its own way
-
-- **What:** every rating path that ran in the TS websocket is C#'s now (`RankedSets`, `MatchEnd`, `MatchStatusEvents`,
-  `MatchDisconnects`; `SetRatings`, the TS `processSetResult` and `recordSetStats` value for value), and each asks
-  `RatedMatches`: the regular 1v1/2v2 queues, no bot, not a password match, not a custom game. One TS path is left: a
-  player leaving a match (`PUT /matches/:id/leave`, `processMatchLeave` then `processMatchResult`), which skips only a
-  match whose `match:{id}` has `isPasswordMatch` and leaves bots in. Every match C# starts (`MatchLauncher`: rift nodes,
-  custom lobbies, the Casual queue's) has `isPasswordMatch`, so none of them is rated there.
-- **Rule (for the port):** ratings count for the regular 1v1/2v2 queues only (ranked sets included); never rifts, custom
-  lobbies or Casual (Casual may get a rating of its own, kept apart). Every C# rating path asks `RatedMatches`
-  (`Core/Leaderboards`), and it never rates a bot.
-- **Delete when:** the match leave is ported and asks `RatedMatches`.
-
 ### 8. P2P is switched in two places, and a P2P node's port is still the TS server's
 
 - **What:** whether eligible matches run P2P (on the players' own nodes) is `Rollback:P2P` for every match C# starts
@@ -160,6 +147,10 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 - **Until then:** do not run the TS matchmaker beside the C# one; change both together if it runs. Each executable that
   starts matches logs the C# value once it has started (the cluster settings are loaded by then).
 - **Delete when:** the TS matchmaker is retired.
+
+Retired with the port tail: 6 (ratings: the TS `PUT /matches/:id/leave` rated a leaver its own way; the route is C#'s
+now and puts the leave on the match flow's `match:results` stream (`MatchLeaves`), where it is settled as the game's
+websocket close is, once per match, under `RatedMatches`; no TS rating path is left).
 
 Retired with slice 3e (the realtime gateway in the TS websocket's place; numbers are not reused): 4 (rift and mission
 progress reached the game through the TS websocket), 5 (`ovsctl player disconnect` through the TS websocket), 7 (the TS

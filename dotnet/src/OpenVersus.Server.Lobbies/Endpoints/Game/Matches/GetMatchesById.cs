@@ -1,16 +1,14 @@
 using FastEndpoints;
-using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.CustomLobbies;
 using OpenVersus.Server.Http.Shared.Endpoints;
 using OpenVersus.Server.Http.Shared.Hosting;
-using OpenVersus.Server.Http.Shared.Stubs;
 
 namespace OpenVersus.Server.Lobbies.Endpoints.Game.Matches;
 
 /// <summary>
 /// GET /matches/{id}: a custom lobby code (10 characters or fewer, any case; PUT /ssc/invoke/lobby_code) answers the
-/// lobby's match document (<see cref="ICustomLobbyService.ByCodeAsync"/>). Anything else is not ported: it answers as a
-/// stub does (the TS server had no route for it either, and answered its catch-all).
+/// lobby's match document (<see cref="ICustomLobbyService.ByCodeAsync"/>). Anything else falls through in the TS server
+/// (next(): no route, its catch-all), and so here.
 /// Seen in: binary 0x144fda970; TS server: GET /matches/{id}.
 /// </summary>
 public sealed class GetMatchesById : JsonBodyEndpoint
@@ -31,8 +29,6 @@ public sealed class GetMatchesById : JsonBodyEndpoint
             return;
         }
 
-        Logger.LogWarning("Not ported: GET /matches/{Id} (not a lobby code)", id);
-        HttpContext.Response.Headers[Stub.Header] = nameof(GetMatchesById);
-        await Send.ResultAsync(Results.StatusCode(Resolve<IOptionsMonitor<StubSettings>>().CurrentValue.StatusCode));
+        await SendTsCatchAllAsync(ct);
     }
 }

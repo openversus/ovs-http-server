@@ -1,14 +1,14 @@
 using FastEndpoints;
-using OpenVersus.Server.Http.Shared.Stubs;
 
 namespace OpenVersus.Server.Http.Endpoints.Game.Profiles;
 
 /// <summary>
-/// PUT /profiles/{id}/inventory.
+/// PUT /profiles/{id}/inventory, body: modifications (<see cref="InventoryEndpoint"/>: the TS handler reads none and
+/// answers the inventory, as for the GET). Same wire request as GET /profiles/{id}/inventory (a PUT with
+/// x-hydra-http-method: GET); only that header tells them apart.
 /// Seen in: binary 0x14505dd70; captured 11x; TS server: PUT /profiles/{id}/inventory.
-/// Body: modifications. Same wire request as GET /profiles/{id}/inventory (a PUT with x-hydra-http-method: GET); only that header tells them apart.
 /// </summary>
-public sealed class PutProfilesByIdInventory : StubEndpoint
+public sealed class PutProfilesByIdInventory : InventoryEndpoint
 {
     public override void Configure()
     {

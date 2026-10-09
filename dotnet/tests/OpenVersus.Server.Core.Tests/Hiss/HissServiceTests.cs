@@ -129,17 +129,26 @@ public sealed class HissServiceTests : IAsyncLifetime
     }
 
     [Theory]
-    [InlineData("2026.10.1", "2026.10.1", true)]
-    [InlineData("2026.10.2", "2026.10.1", true)]
-    [InlineData("2026.11.1", "2026.10.30", true)]
-    [InlineData("2026.9.30", "2026.10.1", false)]
-    [InlineData("2026.10.1", "", false)]
-    [InlineData("2026.10.1", "not a version", false)]
-    [InlineData("", "2026.10.1", false)]
-    [InlineData("legacy", "2026.10.1", false)]
-    public void ZstdGoesToClientsFromTheMinimumOn(string client, string minimum, bool zstd)
+    [InlineData("2026.10.1", "2026.10.1", null, true)]
+    [InlineData("2026.10.2", "2026.10.1", null, true)]
+    [InlineData("2026.11.1", "2026.10.30", null, false)]
+    [InlineData("2026.9.30", "2026.10.1", null, false)]
+    [InlineData("2026.10.1", "", null, false)]
+    [InlineData("2026.10.1", "not a version", null, false)]
+    [InlineData("", "2026.10.1", null, false)]
+    [InlineData("legacy", "2026.10.1", null, false)]
+    // From 2026.10.08.14 on the client's own word decides: its hook took ("1") or not (the Epic Games Store build).
+    [InlineData("2026.10.08.14", "2026.10.1", "1", true)]
+    [InlineData("2026.10.08.14", "2026.10.1", null, false)]
+    [InlineData("2026.11.1", "2026.10.30", "1", true)]
+    [InlineData("2026.11.1", "2026.10.30", "0", false)]
+    [InlineData("2026.11.1", "", "1", false)]
+    // Before it, the version alone, header or not.
+    [InlineData("2026.10.08.13", "2026.10.1", null, true)]
+    [InlineData("2026.10.08.13", "2026.10.1", "1", true)]
+    public void ZstdGoesToClientsThatReadIt(string client, string minimum, string? header, bool zstd)
     {
-        Assert.Equal(zstd, HissService.ReadsZstd(client, minimum));
+        Assert.Equal(zstd, HissService.ReadsZstd(client, minimum, header));
     }
 
     // The contract with the client's decoder (HissZstd): one frame, the magic, the content size (so the window is the

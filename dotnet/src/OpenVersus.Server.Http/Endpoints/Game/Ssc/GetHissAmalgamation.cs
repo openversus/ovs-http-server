@@ -65,7 +65,7 @@ public abstract class HissAmalgamationEndpoint : EndpointWithoutRequest
         try
         {
             var state = await Resolve<IClientUpdateGate>().ForRequestAsync(AccountLookups.From(HttpContext), HttpContext.Session()?.Claims);
-            return hiss.ReadsZstd(state.ClientVersion);
+            return hiss.ReadsZstd(state.ClientVersion, HttpContext.Request.Headers[HissZstd.Header].FirstOrDefault());
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {

@@ -42,7 +42,7 @@ namespace OpenVersus.Server.Core.Hiss;
 /// <summary>The hiss settings.</summary>
 public sealed class HissSettings
 {
-    [Description("The oldest OpenVersus client version that reads zstd sections (its HydraZstd hook), such as 2026.10.01.1; those clients get the smaller zstd answer. Empty: every client gets zlib.")]
+    [Description("The oldest OpenVersus client version that reads zstd sections (its HydraZstd hook), such as 2026.10.01.1; those clients get the smaller zstd answer. From 2026.10.08.14 on a client says itself whether its hook took (the X-OVS-Zstd header), and only that decides: a build the hook misses (the Epic Games Store one, 2026-10-08) gets zlib. Empty: every client gets zlib.")]
     public string ZstdMinimumVersion { get; set; } = "";
 }
 
@@ -55,7 +55,8 @@ public interface IHissService
     bool ZstdEnabled { get; }
 
     /// <summary>Whether a client of <paramref name="clientVersion"/> reads zstd sections: at least Hiss:ZstdMinimumVersion.</summary>
-    bool ReadsZstd(string clientVersion);
+    /// <summary>Whether this client gets zstd sections: its version and, from 2026.10.08.14 on, its X-OVS-Zstd header.</summary>
+    bool ReadsZstd(string clientVersion, string? zstdHeader);
 }
 
 /// <summary>
@@ -114,17 +115,28 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
 
     public bool ZstdEnabled => ClientVersions.Parts(Js.Trim(settings.CurrentValue.ZstdMinimumVersion)) is not null;
 
-    public bool ReadsZstd(string clientVersion) => ReadsZstd(clientVersion, settings.CurrentValue.ZstdMinimumVersion);
+    public bool ReadsZstd(string clientVersion, string? zstdHeader) => ReadsZstd(clientVersion, settings.CurrentValue.ZstdMinimumVersion, zstdHeader);
 
     /// <summary>
-    /// At least <paramref name="minimum"/>, compared as versions (2026.10.1 is above 2026.9.30). No minimum, or a
-    /// client that states no version: no.
+    /// With a minimum configured (else never): a client from <see cref="ZstdHeaderSince"/> on reads zstd exactly when it
+    /// says so (<paramref name="zstdHeader"/> "1": its hook took on this build); an older one when its version is at
+    /// least <paramref name="minimum"/>, compared as versions (2026.10.1 is above 2026.9.30). A client that states no
+    /// version: no.
     /// </summary>
-    internal static bool ReadsZstd(string clientVersion, string minimum)
+    internal static bool ReadsZstd(string clientVersion, string minimum, string? zstdHeader)
     {
         string configured = Js.Trim(minimum);
-        return ClientVersions.Parts(configured) is not null && ClientVersions.Parts(clientVersion) is not null
-            && ClientVersions.Compare(clientVersion, configured) >= 0;
+        if (ClientVersions.Parts(configured) is null || ClientVersions.Parts(clientVersion) is null)
+        {
+            return false;
+        }
+
+        if (ClientVersions.Compare(clientVersion, HissZstd.HeaderSince) >= 0)
+        {
+            return Js.Trim(zstdHeader ?? "") == "1";
+        }
+
+        return ClientVersions.Compare(clientVersion, configured) >= 0;
     }
 
     // LoadConfig: the first document's CRC.

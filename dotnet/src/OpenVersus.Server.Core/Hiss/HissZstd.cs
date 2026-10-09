@@ -16,6 +16,12 @@ namespace OpenVersus.Server.Core.Hiss;
 /// </summary>
 public static class HissZstd
 {
+    /// <summary>The request header a client sends when its HydraZstd hook took ("1"); from <see cref="HeaderSince"/> on, its absence means zlib.</summary>
+    public const string Header = "X-OVS-Zstd";
+
+    /// <summary>The first client version that sends <see cref="Header"/>: from it on the header decides, not the version.</summary>
+    public const string HeaderSince = "2026.10.08.14";
+
     /// <summary>zstd's highest level.</summary>
     public const int Level = 22;
 

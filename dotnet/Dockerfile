@@ -27,11 +27,12 @@ COPY src/OpenVersus.Server.Edge/OpenVersus.Server.Edge.csproj src/OpenVersus.Ser
 COPY src/OpenVersus.Server.Matchmaking/OpenVersus.Server.Matchmaking.csproj src/OpenVersus.Server.Matchmaking/
 COPY src/OpenVersus.Server.MatchFlow/OpenVersus.Server.MatchFlow.csproj src/OpenVersus.Server.MatchFlow/
 COPY src/OpenVersus.Server.Cli/OpenVersus.Server.Cli.csproj src/OpenVersus.Server.Cli/
-RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking MatchFlow Identity.Steam Cli; do \
+COPY src/OpenVersus.Server.Proxy/OpenVersus.Server.Proxy.csproj src/OpenVersus.Server.Proxy/
+RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking MatchFlow Identity.Steam Cli Proxy; do \
       dotnet restore src/OpenVersus.Server.$project/OpenVersus.Server.$project.csproj || exit 1; \
     done
 COPY src/ src/
-RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking MatchFlow Identity.Steam Cli; do \
+RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking MatchFlow Identity.Steam Cli Proxy; do \
       dotnet publish src/OpenVersus.Server.$project/OpenVersus.Server.$project.csproj -c Release --no-restore \
         -p:SourceRevisionId=$SOURCE_REVISION -o /out/$project || exit 1; \
     done
@@ -125,3 +126,11 @@ FROM runtime AS steam
 ENV OVS_SERVICE=steam
 COPY --from=build /out/Identity.Steam .
 ENTRYPOINT ["dotnet", "OpenVersus.Server.Identity.Steam.dll"]
+
+# The migration's reverse proxy (PROXY_PORT, 8080 by default): the game talks to it while routes are still being
+# ported; ported ones go to the router, the rest to the TS server. Bench only; it never ships (docs/MIGRATION-BRIDGES.md).
+FROM runtime AS proxy
+ENV OVS_SERVICE=proxy
+COPY --from=build /out/Proxy .
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "OpenVersus.Server.Proxy.dll"]

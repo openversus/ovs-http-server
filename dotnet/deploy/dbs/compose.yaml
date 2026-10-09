@@ -12,7 +12,9 @@ name: openversus-dbs
 
 services:
   mongo:
-    image: mongo:8
+    # Pinned to the minor version the dump comes from: mongorestore refuses nothing across minors but calls the result
+    # unsupported, and a data directory never moves back down a minor.
+    image: mongo:8.2
     env_file: ${OVS_ENV_DIR:?set OVS_ENV_DIR to the directory holding mongo.env and redis.conf}/mongo.env
     networks:
       ovs:

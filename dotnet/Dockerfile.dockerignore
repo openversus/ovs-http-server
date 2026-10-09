@@ -7,4 +7,3 @@
 !src
 src/**/bin
 src/**/obj
-src/OpenVersus.Server.Proxy

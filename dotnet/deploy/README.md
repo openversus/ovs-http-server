@@ -35,6 +35,18 @@ The game's HTTP API is on `OVS_GAME_PORT` (8000) through the router; its websock
 the edge; the relay on UDP `OVS_RELAY_PORT` (41234) and the rendezvous on UDP `OVS_RENDEZVOUS_PORT` (41235), both on
 the host's own network. Everything else stays on `ovs`.
 
+## Moving onto an existing host
+
+The dbs project is not needed where MongoDB and Redis already run: attach the services project to that network
+(`networks.ovs.name`) and point `MONGODB_URI` and `REDIS*` at them. The TS server kept its data in the database named
+`test`; `MONGODB_URI`'s path must say so, or the services start from an empty database.
+
+## A bench
+
+A development bench adds an override file of its own outside the repository: the game-facing ports on localhost, and,
+while the port is unfinished, the migration's YARP proxy as the game's entry with a TS index container behind it for
+unported routes. Neither is part of a deployment.
+
 ## Updating
 
 Images are tagged (`OVS_TAG`). A new build goes out as `docker compose -f services/compose.yaml pull && docker compose

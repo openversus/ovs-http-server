@@ -3,14 +3,19 @@ import type { InvetoryKeysDefs } from "./inventoryDefs";
 
 // OpenVersus announcer packs, cooked into OVS_P under /OVS/Rewards/AnnouncerPacks. Their voice
 // lines are Wwise banks shipped in a separate raw pak (see docs/ANNOUNCER_PACKS.md).
+// Cyffer21's pack (2026-10-08) replaced the one-line test pack: ten lines he recorded, his own art.
 export const OVS_ANNOUNCERS = [
-  { slug: "announcer_pack_ovs_test", displayName: "OVS Test Announcer" },
+  {
+    slug: "announcer_pack_ovs_cyffer21",
+    displayName: "Cyffer21",
+    thumbnail: "/OVS/Rewards/AnnouncerPacks/T_OVS_Cyffer21_Announcer.T_OVS_Cyffer21_Announcer",
+  },
 ] as const;
 
 export const OVS_ANNOUNCER_SLUGS = OVS_ANNOUNCERS.map((pack) => pack.slug);
 
 export const OVS_ANNOUNCER_INVENTORY: InvetoryKeysDefs = Object.fromEntries(
-  OVS_ANNOUNCERS.map(({ slug, displayName }) => [slug, {
+  OVS_ANNOUNCERS.map(({ slug, displayName, thumbnail }) => [slug, {
     name: slug,
     slug,
     type_class: "unlockable",
@@ -22,15 +27,14 @@ export const OVS_ANNOUNCER_INVENTORY: InvetoryKeysDefs = Object.fromEntries(
       EnabledForShipping: true,
       AssociatedCharacter: "Base",
       DisplayName: displayName,
-      Rarity: "Rare",
-      // No art of its own yet: the default announcer's thumbnail.
-      RewardThumbnail: "/Game/Panda_Main/UI/Thumbnails/AnnouncerPacks/thumb_announcer_default.thumb_announcer_default",
+      Rarity: "Epic",
+      RewardThumbnail: thumbnail,
       RewardThumbnailMaterial: "",
     },
     private_data: null,
     description: "",
     log_item_transactions: true,
-    tags: ["rarity_rare", "announcer_pack", "unlockable"],
+    tags: ["rarity_epic", "announcer_pack", "unlockable"],
     type_options: {},
     seed: { override_none: false, data: {}, server_data: {}, private_data: {} },
     propagate_to_owner: false,

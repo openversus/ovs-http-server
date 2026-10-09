@@ -222,6 +222,18 @@
     "character_slug": "character_C027"
   },
   {
+    "slug": "skin_ovs_lebron_50cent",
+    "assetType": "SkinData",
+    "assetPath": "/OVS/Rewards/Skins/LeBron50Cent/Catalog/skin_ovs_lebron_50cent.skin_ovs_lebron_50cent",
+    "character_slug": "character_c16"
+  },
+  {
+    "slug": "skin_ovs_lime_superman",
+    "assetType": "SkinData",
+    "assetPath": "/OVS/Rewards/Skins/Lime/Superman/Catalog/skin_ovs_lime_superman.skin_ovs_lime_superman",
+    "character_slug": "character_superman"
+  },
+  {
     "slug": "skin_ovs_omniman_superman",
     "assetType": "SkinData",
     "assetPath": "/OVS/Rewards/Skins/Superman/OmniMan/Catalog/skin_ovs_omniman_superman.skin_ovs_omniman_superman",
@@ -498,12 +510,6 @@
     "character_slug": "character_c038"
   },
   {
-    "slug": "skin_ovs_goth_morty",
-    "assetType": "SkinData",
-    "assetPath": "/OVS/Rewards/Skins/GothMorty/Catalog/skin_ovs_goth_morty.skin_ovs_goth_morty",
-    "character_slug": "character_c019"
-  },
-  {
     "slug": "announcer_pack_ovs_test",
     "assetType": "AnnouncerPackData",
     "assetPath": "/OVS/Rewards/AnnouncerPacks/announcer_pack_ovs_test.announcer_pack_ovs_test",
@@ -520,5 +526,11 @@
     "assetType": "TauntData",
     "assetPath": "/OVS/Rewards/Taunts/OneToughBanana/taunt_bananaguard_onetoughbanana.taunt_bananaguard_onetoughbanana",
     "character_slug": "character_BananaGuard"
+  },
+  {
+    "slug": "taunt_morty_twerkitout",
+    "assetType": "TauntData",
+    "assetPath": "/OVS/Rewards/Taunts/TwerkItOut/taunt_morty_twerkitout.taunt_morty_twerkitout",
+    "character_slug": "character_c019"
   }
 ]

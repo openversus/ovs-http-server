@@ -1,7 +1,8 @@
 import { CHROMIUM_SHAGGY_SLUG, CHROMIUM_BANANAGUARD_SLUG, CHROMIUM_SUPERMAN_SLUG, CHROMIUM_BATMAN_SLUG, CHROMIUM_PILOT, CHROMIUM_BATCH5, CHROMIUM_BATCH6, CHROMIUM_BATCH7, CHROMIUM_BATCH8, CHROMIUM_JOKER_TBWL_SLUG } from "./chromiumSkins";
-import { GOTH_MORTY_SLUG } from "./gothMortySkin";
 import { SHIRTLESS_TATTOO_SHAGGY_SLUG } from "./ovsBattlepassInventory";
 import { PINK_MOUNTAINEER_JASON_SLUG } from "./pinkMountaineerJason";
+import { LIME_SUPERMAN_SLUG } from "./limeSuperman";
+import { LEBRON_50CENT_SLUG } from "./lebron50Cent";
 
 const CHROMIUM_WONDER_WOMAN_SLUG = CHROMIUM_PILOT[0].slug;
 const CHROMIUM_HARLEY_QUINN_SLUG = CHROMIUM_PILOT[1].slug;
@@ -90,6 +91,7 @@ export const ENABLED_SKINS = {
     Slugs: [
       "skin_superman_default",
       CHROMIUM_SUPERMAN_SLUG,
+      LIME_SUPERMAN_SLUG,
       "skin_ovs_omniman_superman",
       "skin_c003_s01",
       "skin_c003_s02",
@@ -390,7 +392,6 @@ export const ENABLED_SKINS = {
     Slugs: [
       "skin_c019_default",
       CHROMIUM_MORTY,
-      GOTH_MORTY_SLUG,
       "skin_c019_s01",
       "skin_c019_s02",
       "skin_c019_s014",
@@ -451,6 +452,7 @@ export const ENABLED_SKINS = {
     Slugs: [
       "skin_c016_default",
       CHROMIUM_LEBRON,
+      LEBRON_50CENT_SLUG,
       "skin_c016_s01",
       "skin_c016_s02",
       "skin_c016_s04",

@@ -1,3 +1,4 @@
+import { TWERK_IT_OUT_SLUG } from "../src/data/twerkItOutTaunt";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -39,7 +40,9 @@ test("seasonal rewards form one diversified pass without Fighter Pass Chromium",
   for (const slug of [...community, ...featuredSkins, ...RECOVERED_EMOTE_SLUGS, ...unreleased]) assert.ok(OVS_BATTLEPASS_REWARD_SLUGS.includes(slug), slug);
   assert.ok(!OVS_BATTLEPASS_REWARD_SLUGS.includes("skin_ovs_knights_must_fall_bugs"));
   assert.deepEqual(tiers.map(t => t.ScoreThreshold), tiers.map((_, i) => i * OVS_BATTLEPASS_XP_PER_TIER));
-  assert.equal(OVS_BATTLEPASS_REWARD_SLUGS.length, 49);
+  assert.equal(OVS_BATTLEPASS_REWARD_SLUGS.length, 51);
+  assert.equal(OVS_BATTLEPASS_REWARD_SLUGS[0], "profileicon_ovs_multiversus_tattoo");
+  assert.equal(OVS_BATTLEPASS_REWARD_SLUGS.at(-1), TWERK_IT_OUT_SLUG);
   // The last tier is a claimable reward, not the game's recurring infinite tier.
   assert.equal((MILESTONE_REWARDS as any).mrt_battlepass_season_five.data.bDoesLastTierRecurInfinitely, false);
   assert.ok(OVS_BATTLEPASS_REWARD_SLUGS.every(slug => !CHROMIUM_SKIN_SLUG_SET.has(slug)));

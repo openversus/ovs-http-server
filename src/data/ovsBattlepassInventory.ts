@@ -149,7 +149,7 @@ export const OVS_BATTLEPASS_INVENTORY: InvetoryKeysDefs = {
     "data": {
       "EnabledForShipping": true,
       "AssetPath": "/OVS/Rewards/ProfileIcons/DuckSeason/profileicon_ovs_duck_season.profileicon_ovs_duck_season",
-      "DisplayName": "Duck Season",
+      "DisplayName": "Time is Ticking",
       "Rarity": "Rare",
       "TextureRef": "/OVS/Rewards/ProfileIcons/DuckSeason/T_OVS_DuckSeason_Icon.T_OVS_DuckSeason_Icon",
       "RewardThumbnail": "/OVS/Rewards/ProfileIcons/DuckSeason/T_OVS_DuckSeason_Icon.T_OVS_DuckSeason_Icon"
@@ -310,7 +310,7 @@ export const OVS_BATTLEPASS_INVENTORY: InvetoryKeysDefs = {
     "data": {
       "EnabledForShipping": true,
       "AssetPath": "/OVS/Rewards/ProfileIcons/MultiVersusTattoo/profileicon_ovs_multiversus_tattoo.profileicon_ovs_multiversus_tattoo",
-      "DisplayName": "MultiVersus Ink",
+      "DisplayName": "No Regrets",
       "Rarity": "Rare",
       "TextureRef": "/OVS/Rewards/ProfileIcons/MultiVersusTattoo/T_OVS_MultiVersusTattoo_Icon.T_OVS_MultiVersusTattoo_Icon",
       "RewardThumbnail": "/OVS/Rewards/ProfileIcons/MultiVersusTattoo/T_OVS_MultiVersusTattoo_Icon.T_OVS_MultiVersusTattoo_Icon"
@@ -391,7 +391,7 @@ export const OVS_BATTLEPASS_INVENTORY: InvetoryKeysDefs = {
       "EnabledForShipping": true,
       "AssetPath": SHIRTLESS_TATTOO_SHAGGY_PATH,
       "AssociatedCharacter": "Shaggy",
-      "DisplayName": "Shirtless Tattoo Shaggy",
+      "DisplayName": "Laughing Shaggy",
       "DisplayNameLocalizationKey": "",
       "DisplayNameLocalizationNamespace": "",
       "Rarity": "Epic"

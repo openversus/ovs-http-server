@@ -134,7 +134,7 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    // End Game: a public FFA match is evtq_ffa, unranked, ModeString FFA; a custom game with friendly fire has
+    // End Game: a public FFA match is evtq_ffa, unranked, ModeString FFA, FFA's countdown; a custom game with friendly fire has
     // bModeGrantsProgress false (the OVS client's marker); a ranked 1v1 is neither.
     public async Task AnFfaMatchIsUnrankedEvtqFfaAndFriendlyFireMarksACustomGame()
     {
@@ -149,6 +149,8 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
         ffaNotification["mode"] = "FFA";
         var ffa = Config(await Configs().BuildAsync(ffaNotification, default));
         Assert.Equal(("evtq_ffa", false, true, "FFA"), ((string?)ffa["EventQueueSlug"], (bool)ffa["bIsRanked"]!, (bool)ffa["bModeGrantsProgress"]!, (string?)ffa["ModeString"]));
+        // The intro countdown: FFA's own, not "X v Y" (which read "1 v 1").
+        Assert.Equal(("CountdownTypes:XvY", "CountdownTypes:FFA"), ((string?)ranked["CountdownDisplay"], (string?)ffa["CountdownDisplay"]));
 
         var custom = Notification(Match);
         custom["isCustomGame"] = true;

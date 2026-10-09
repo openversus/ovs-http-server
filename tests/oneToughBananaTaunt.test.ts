@@ -14,10 +14,10 @@ test("One Tough Banana is a Banana Guard taunt in the catalog", () => {
   assert.equal(def.data.DisplayName, "One Tough Banana");
 });
 
-test("One Tough Banana is battle pass tier 3, under Banana Guard's slug as the game spells it, owned once claimed", () => {
+test("One Tough Banana is battle pass tier 6, under Banana Guard's slug as the game spells it, owned once claimed", () => {
   assert.equal(ONE_TOUGH_BANANA_CHARACTER, "character_BananaGuard");
   assert.ok(getTauntsByChar("character_BananaGuard").includes(ONE_TOUGH_BANANA_SLUG));
-  assert.equal(OVS_BATTLEPASS_REWARD_SLUGS.indexOf(ONE_TOUGH_BANANA_SLUG), 2);
+  assert.equal(OVS_BATTLEPASS_REWARD_SLUGS.indexOf(ONE_TOUGH_BANANA_SLUG), 5);
   assert.ok(!OVS_BATTLEPASS_REWARD_SLUGS.includes("emote_jack_o_lantern"));
   assert.ok(!filterOwnedByDefaultSlugs([ONE_TOUGH_BANANA_SLUG]).includes(ONE_TOUGH_BANANA_SLUG));
 });

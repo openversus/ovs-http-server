@@ -4689,7 +4689,7 @@
                     "RequiredTeamPlayerBuffs": []
                   }
                 ],
-                "MapRotation": "PlaytestCustomFFA",
+                "MapRotation": "CustomFFA",
                 "MatchDuration": 240,
                 "MaximumLocalPlayPlayers": 1,
                 "RequiredWorldBuffs": [],
@@ -88884,9 +88884,9 @@
                     {
                       "Constraints": [],
                       "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "banner_pve_unknown_rare",
+                      "InventoryHsda": "profileicon_ovs_multiversus_tattoo",
                       "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "8D34CDE6AD9F295391A78540844F713D"
+                      "RewardGuid": "A0F1880D11975272AEDA437BBD66A8A8"
                     }
                   ],
                   "ScoreThreshold": 0,
@@ -88912,9 +88912,9 @@
                     {
                       "Constraints": [],
                       "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "taunt_bananaguard_onetoughbanana",
+                      "InventoryHsda": "emote_ovs_toastie_beaten",
                       "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "286082FE531A11D796B4EF65DFD61F88"
+                      "RewardGuid": "61406C016946EABEBAC007518F4B2D21"
                     }
                   ],
                   "ScoreThreshold": 4000,
@@ -88926,9 +88926,9 @@
                     {
                       "Constraints": [],
                       "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "profileicon_ovs_duck_season",
+                      "InventoryHsda": "skin_C027_s14",
                       "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "1CBAA7DC5D3C2F324D4202E60FA2CD4B"
+                      "RewardGuid": "6B7A2C5EC14470B41EC0776C5C8997D4"
                     }
                   ],
                   "ScoreThreshold": 6000,
@@ -88940,9 +88940,9 @@
                     {
                       "Constraints": [],
                       "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_toastie_beaten",
+                      "InventoryHsda": "emote_ovs_wut",
                       "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "61406C016946EABEBAC007518F4B2D21"
+                      "RewardGuid": "1593CDDF4720A6140D6AFC1453A884E1"
                     }
                   ],
                   "ScoreThreshold": 8000,
@@ -88954,27 +88954,13 @@
                     {
                       "Constraints": [],
                       "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_bugs_cry",
+                      "InventoryHsda": "taunt_bananaguard_onetoughbanana",
                       "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "3242643D5F575F8E08E91CC42513D94D"
+                      "RewardGuid": "286082FE531A11D796B4EF65DFD61F88"
                     }
                   ],
                   "ScoreThreshold": 10000,
                   "TierGuid": "4A47137F80E44C109A971DA30B72F20B"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "ring_out_vfx_pfg_arrival",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "78F86E6A973BED37256A4587EBC20898"
-                    }
-                  ],
-                  "ScoreThreshold": 12000,
-                  "TierGuid": "23138F794CFDE49130C51DAEF9BD9FB3"
                 },
                 {
                   "DisplayType": 0,
@@ -88987,123 +88973,11 @@
                       "RewardGuid": "089037398E003A8C52D041DB2F0FEB27"
                     }
                   ],
-                  "ScoreThreshold": 14000,
-                  "TierGuid": "9BD0F6B0413C86AA52DB87B4D9CD5A8D"
+                  "ScoreThreshold": 12000,
+                  "TierGuid": "23138F794CFDE49130C51DAEF9BD9FB3"
                 },
                 {
                   "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_wut",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "1593CDDF4720A6140D6AFC1453A884E1"
-                    }
-                  ],
-                  "ScoreThreshold": 16000,
-                  "TierGuid": "A0EED02540F43926E5CAC691D9D5587C"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "profileicon_ovs_icy_glare",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "9D9E15428323E8BC814180CB68E3A538"
-                    }
-                  ],
-                  "ScoreThreshold": 18000,
-                  "TierGuid": "9BA9508D4830652D9E9B1991D0BA41A3"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_toastie_cute",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "489BD280F85FE05EDBADD9F14E5BDA90"
-                    }
-                  ],
-                  "ScoreThreshold": 20000,
-                  "TierGuid": "B57676D6453B23309DA440A999ECA79B"
-                },
-                {
-                  "DisplayType": 1,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "taunt_c023b_cackle",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "00FD4DB9B0AFE42A043A31A51E4B20CD"
-                    }
-                  ],
-                  "ScoreThreshold": 22000,
-                  "TierGuid": "5473FCAC4DB38EBEA65730A31BF2A090"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "skin_ovs_pink_abdominal_mountaineer_jason",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "DF9921F47FBB88A530764F3A8D4EF14C"
-                    }
-                  ],
-                  "ScoreThreshold": 24000,
-                  "TierGuid": "69FF2FA44BEDD7E2C200CE97533D12E8"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_mistletoe",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "E1F6F4F60F92B2DB303E8D6745611A01"
-                    }
-                  ],
-                  "ScoreThreshold": 26000,
-                  "TierGuid": "316AB33A48FBC8097D98AEB67F75B469"
-                },
-                {
-                  "DisplayType": 1,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_taz_tongue",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "01142F5A246997489F35B3B2FD19B536"
-                    }
-                  ],
-                  "ScoreThreshold": 28000,
-                  "TierGuid": "74974CB44EC155B74EB4B7BD969C4709"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_arya_laugh",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "83C3FD01C2FC7B987E154C092528E8AE"
-                    }
-                  ],
-                  "ScoreThreshold": 30000,
-                  "TierGuid": "9C993E274AB0B313F3ECCA9D86AFA907"
-                },
-                {
-                  "DisplayType": 1,
                   "Rewards": [
                     {
                       "Constraints": [],
@@ -89113,8 +88987,8 @@
                       "RewardGuid": "E0ACD8A4D26ED02DEB1661568E7C052C"
                     }
                   ],
-                  "ScoreThreshold": 32000,
-                  "TierGuid": "B387DEC7403F49B923BD0DBF567A0FA9"
+                  "ScoreThreshold": 14000,
+                  "TierGuid": "9BD0F6B0413C86AA52DB87B4D9CD5A8D"
                 },
                 {
                   "DisplayType": 0,
@@ -89127,8 +89001,8 @@
                       "RewardGuid": "CFF1BB0C3425B7B1C76F7AD110C9AAFA"
                     }
                   ],
-                  "ScoreThreshold": 34000,
-                  "TierGuid": "B6391B1A4A88376575DD66AA21ED9548"
+                  "ScoreThreshold": 16000,
+                  "TierGuid": "A0EED02540F43926E5CAC691D9D5587C"
                 },
                 {
                   "DisplayType": 0,
@@ -89136,44 +89010,16 @@
                     {
                       "Constraints": [],
                       "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "taunt_finn_dance2",
+                      "InventoryHsda": "profileicon_ovs_duck_season",
                       "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "0D93714D1C10137654AE5843F57580D4"
+                      "RewardGuid": "1CBAA7DC5D3C2F324D4202E60FA2CD4B"
                     }
                   ],
-                  "ScoreThreshold": 36000,
-                  "TierGuid": "AC475E3C427D15E77918639CDF8B8623"
+                  "ScoreThreshold": 18000,
+                  "TierGuid": "9BA9508D4830652D9E9B1991D0BA41A3"
                 },
                 {
                   "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_dizzy",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "9059027828B3D38A0DB1C5646A0F107B"
-                    }
-                  ],
-                  "ScoreThreshold": 38000,
-                  "TierGuid": "3A2B472B45169A897239A481C13C3868"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_toastie_sick",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "ADEC5C47E570144974BBA65A249C9E29"
-                    }
-                  ],
-                  "ScoreThreshold": 40000,
-                  "TierGuid": "B5C342D24328CB7304B27A9D0D4AF790"
-                },
-                {
-                  "DisplayType": 1,
                   "Rewards": [
                     {
                       "Constraints": [],
@@ -89183,288 +89029,8 @@
                       "RewardGuid": "F53298EB59DB7C2515A187F6F30C26D2"
                     }
                   ],
-                  "ScoreThreshold": 42000,
-                  "TierGuid": "5E15D89B4CD61DBE1BF7A99417FA7429"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_c016_mind",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "D2B8A7F653458D7442154254A83B55A4"
-                    }
-                  ],
-                  "ScoreThreshold": 44000,
-                  "TierGuid": "F9FF5EAD44AE7CA078DB30BB91A008BF"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "profileicon_ovs_batmobile",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "F04F4B0F64CFF915B49BC96C1B482BDD"
-                    }
-                  ],
-                  "ScoreThreshold": 46000,
-                  "TierGuid": "73B31B3C42429102FC1948BE38108FF9"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_toastie_lol",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "28B08825455EE930C4D036B981C2DDC9"
-                    }
-                  ],
-                  "ScoreThreshold": 48000,
-                  "TierGuid": "CB5EB50847C5AA9ACE7062B65F4D75BF"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_taz_get_in",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "62D9423DF3A8A688F37F6DE05D70BC00"
-                    }
-                  ],
-                  "ScoreThreshold": 50000,
-                  "TierGuid": "7DABED634D401929E305D29C4AFBCA00"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "profileicon_ovs_jason",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "1B4B7D63D303381C59D020C5DBFB1338"
-                    }
-                  ],
-                  "ScoreThreshold": 52000,
-                  "TierGuid": "A5AFDFC84A4B8A192A2FE4BEA10C51FC"
-                },
-                {
-                  "DisplayType": 1,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_halo",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "7D4253DCECEDE48D7424CC254608F7DE"
-                    }
-                  ],
-                  "ScoreThreshold": 54000,
-                  "TierGuid": "EE68AE13460DEABE1A9578A8DCF558B7"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_rickflick",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "7CD562C12E15D66E63C8D568B3801BB1"
-                    }
-                  ],
-                  "ScoreThreshold": 56000,
-                  "TierGuid": "D018100B4B6D64036BB5448EC3A2C9E6"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "skin_ovs_shirtless_tattoo_shaggy",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "B8A229A3295192E9ACCCEE6EB1FB7B55"
-                    }
-                  ],
-                  "ScoreThreshold": 58000,
-                  "TierGuid": "9C7557E541AF846BD2B006826B4A98DB"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_green_light_go",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "E5F7C29B620125318EFE9CD1E0B0A9B4"
-                    }
-                  ],
-                  "ScoreThreshold": 60000,
-                  "TierGuid": "9C1AEA824185659C8C974D843136FC80"
-                },
-                {
-                  "DisplayType": 1,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_cozy_tea",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "2D1C7B3847B9BD8457F6E6CD196947B2"
-                    }
-                  ],
-                  "ScoreThreshold": 62000,
-                  "TierGuid": "37327B5C4A4EBEF4BB2CE1A59766A5C7"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_popcorn",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "B69034A55359CC1BDFFA10DC51C59297"
-                    }
-                  ],
-                  "ScoreThreshold": 64000,
-                  "TierGuid": "287430FC4FD40F67BAC0ED8B4A1299CB"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "HB_SD_ProfileIcon_IntoTheMysteryMachineGang",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "D2C00B2540B5F27747D2EA2E06F5E431"
-                    }
-                  ],
-                  "ScoreThreshold": 66000,
-                  "TierGuid": "5118D9AE41E982CD526A209DC48BCE62"
-                },
-                {
-                  "DisplayType": 1,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "Taunt_C028_CardSpring",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "F4948113D50FA57E4300C56215C3E427"
-                    }
-                  ],
-                  "ScoreThreshold": 68000,
-                  "TierGuid": "A49812D94010E0B1FB2399B138C906FD"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_reindog_hearts",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "FC4D80838E6B5930B4EE3D1C5262B15A"
-                    }
-                  ],
-                  "ScoreThreshold": 70000,
-                  "TierGuid": "480B953B4516FB0E452A418A71AA986A"
-                },
-                {
-                  "DisplayType": 1,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_gizmo_smith",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "A5843E28B54629006D4F1D828F9ACD1F"
-                    }
-                  ],
-                  "ScoreThreshold": 72000,
-                  "TierGuid": "24F552004DBCF399C857C889E63B3C98"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "skin_C027_s14",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "6B7A2C5EC14470B41EC0776C5C8997D4"
-                    }
-                  ],
-                  "ScoreThreshold": 74000,
-                  "TierGuid": "C08A79884756EF5D04F80FB44B17167E"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "skin_ovs_omniman_superman",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "2F11EAA4BDFDCD039FC35AC8853E8CCF"
-                    }
-                  ],
-                  "ScoreThreshold": 76000,
-                  "TierGuid": "EDC6E2AF44FFF0D3D2432FAD17887A2C"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_toastie_starstruck",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "5778E4A63673D5F6048854D236E659B3"
-                    }
-                  ],
-                  "ScoreThreshold": 78000,
-                  "TierGuid": "DEFAC11C4829DB6C0DF212BAAB3F0606"
-                },
-                {
-                  "DisplayType": 0,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_67_hands",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "ED33D118C178D4BF19B30F168C584E22"
-                    }
-                  ],
-                  "ScoreThreshold": 80000,
-                  "TierGuid": "C490FF334E665A6D6A670EACBE309AA0"
-                },
-                {
-                  "DisplayType": 1,
-                  "Rewards": [
-                    {
-                      "Constraints": [],
-                      "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_gingerbread_man",
-                      "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "69560D6C9DB8124A0F0E4DA39B0FA9C2"
-                    }
-                  ],
-                  "ScoreThreshold": 82000,
-                  "TierGuid": "3B938A3942B400E45ED7699B9B915353"
+                  "ScoreThreshold": 20000,
+                  "TierGuid": "B57676D6453B23309DA440A999ECA79B"
                 },
                 {
                   "DisplayType": 1,
@@ -89477,6 +89043,440 @@
                       "RewardGuid": "14AE17E1C3041054522485041002C0D7"
                     }
                   ],
+                  "ScoreThreshold": 22000,
+                  "TierGuid": "5473FCAC4DB38EBEA65730A31BF2A090"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_taz_tongue",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "01142F5A246997489F35B3B2FD19B536"
+                    }
+                  ],
+                  "ScoreThreshold": 24000,
+                  "TierGuid": "69FF2FA44BEDD7E2C200CE97533D12E8"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "banner_pve_unknown_rare",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "8D34CDE6AD9F295391A78540844F713D"
+                    }
+                  ],
+                  "ScoreThreshold": 26000,
+                  "TierGuid": "316AB33A48FBC8097D98AEB67F75B469"
+                },
+                {
+                  "DisplayType": 1,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_toastie_sick",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "ADEC5C47E570144974BBA65A249C9E29"
+                    }
+                  ],
+                  "ScoreThreshold": 28000,
+                  "TierGuid": "74974CB44EC155B74EB4B7BD969C4709"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_mistletoe",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "E1F6F4F60F92B2DB303E8D6745611A01"
+                    }
+                  ],
+                  "ScoreThreshold": 30000,
+                  "TierGuid": "9C993E274AB0B313F3ECCA9D86AFA907"
+                },
+                {
+                  "DisplayType": 1,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "profileicon_ovs_icy_glare",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "9D9E15428323E8BC814180CB68E3A538"
+                    }
+                  ],
+                  "ScoreThreshold": 32000,
+                  "TierGuid": "B387DEC7403F49B923BD0DBF567A0FA9"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_arya_laugh",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "83C3FD01C2FC7B987E154C092528E8AE"
+                    }
+                  ],
+                  "ScoreThreshold": 34000,
+                  "TierGuid": "B6391B1A4A88376575DD66AA21ED9548"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_dizzy",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "9059027828B3D38A0DB1C5646A0F107B"
+                    }
+                  ],
+                  "ScoreThreshold": 36000,
+                  "TierGuid": "AC475E3C427D15E77918639CDF8B8623"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "skin_ovs_pink_abdominal_mountaineer_jason",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "DF9921F47FBB88A530764F3A8D4EF14C"
+                    }
+                  ],
+                  "ScoreThreshold": 38000,
+                  "TierGuid": "3A2B472B45169A897239A481C13C3868"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_toastie_shocked",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "BF52590457431C0EDB5A109C4FF701D2"
+                    }
+                  ],
+                  "ScoreThreshold": 40000,
+                  "TierGuid": "B5C342D24328CB7304B27A9D0D4AF790"
+                },
+                {
+                  "DisplayType": 1,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_green_light_go",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "E5F7C29B620125318EFE9CD1E0B0A9B4"
+                    }
+                  ],
+                  "ScoreThreshold": 42000,
+                  "TierGuid": "5E15D89B4CD61DBE1BF7A99417FA7429"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "taunt_c023b_cackle",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "00FD4DB9B0AFE42A043A31A51E4B20CD"
+                    }
+                  ],
+                  "ScoreThreshold": 44000,
+                  "TierGuid": "F9FF5EAD44AE7CA078DB30BB91A008BF"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_c016_mind",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "D2B8A7F653458D7442154254A83B55A4"
+                    }
+                  ],
+                  "ScoreThreshold": 46000,
+                  "TierGuid": "73B31B3C42429102FC1948BE38108FF9"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_bugs_cry",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "3242643D5F575F8E08E91CC42513D94D"
+                    }
+                  ],
+                  "ScoreThreshold": 48000,
+                  "TierGuid": "CB5EB50847C5AA9ACE7062B65F4D75BF"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_toastie_cute",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "489BD280F85FE05EDBADD9F14E5BDA90"
+                    }
+                  ],
+                  "ScoreThreshold": 50000,
+                  "TierGuid": "7DABED634D401929E305D29C4AFBCA00"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "skin_ovs_painter_beetlejuice",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "B1C78E53BFDEC023A0039D5D6082E6F3"
+                    }
+                  ],
+                  "ScoreThreshold": 52000,
+                  "TierGuid": "A5AFDFC84A4B8A192A2FE4BEA10C51FC"
+                },
+                {
+                  "DisplayType": 1,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_gizmo_smith",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "A5843E28B54629006D4F1D828F9ACD1F"
+                    }
+                  ],
+                  "ScoreThreshold": 54000,
+                  "TierGuid": "EE68AE13460DEABE1A9578A8DCF558B7"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "profileicon_ovs_jason",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "1B4B7D63D303381C59D020C5DBFB1338"
+                    }
+                  ],
+                  "ScoreThreshold": 56000,
+                  "TierGuid": "D018100B4B6D64036BB5448EC3A2C9E6"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_popcorn",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "B69034A55359CC1BDFFA10DC51C59297"
+                    }
+                  ],
+                  "ScoreThreshold": 58000,
+                  "TierGuid": "9C7557E541AF846BD2B006826B4A98DB"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "Taunt_C028_CardSpring",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "F4948113D50FA57E4300C56215C3E427"
+                    }
+                  ],
+                  "ScoreThreshold": 60000,
+                  "TierGuid": "9C1AEA824185659C8C974D843136FC80"
+                },
+                {
+                  "DisplayType": 1,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_toastie_lol",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "28B08825455EE930C4D036B981C2DDC9"
+                    }
+                  ],
+                  "ScoreThreshold": 62000,
+                  "TierGuid": "37327B5C4A4EBEF4BB2CE1A59766A5C7"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_halo",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "7D4253DCECEDE48D7424CC254608F7DE"
+                    }
+                  ],
+                  "ScoreThreshold": 64000,
+                  "TierGuid": "287430FC4FD40F67BAC0ED8B4A1299CB"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "skin_ovs_omniman_superman",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "2F11EAA4BDFDCD039FC35AC8853E8CCF"
+                    }
+                  ],
+                  "ScoreThreshold": 66000,
+                  "TierGuid": "5118D9AE41E982CD526A209DC48BCE62"
+                },
+                {
+                  "DisplayType": 1,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_taz_get_in",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "62D9423DF3A8A688F37F6DE05D70BC00"
+                    }
+                  ],
+                  "ScoreThreshold": 68000,
+                  "TierGuid": "A49812D94010E0B1FB2399B138C906FD"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "HB_SD_ProfileIcon_IntoTheMysteryMachineGang",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "D2C00B2540B5F27747D2EA2E06F5E431"
+                    }
+                  ],
+                  "ScoreThreshold": 70000,
+                  "TierGuid": "480B953B4516FB0E452A418A71AA986A"
+                },
+                {
+                  "DisplayType": 1,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_toastie_starstruck",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "5778E4A63673D5F6048854D236E659B3"
+                    }
+                  ],
+                  "ScoreThreshold": 72000,
+                  "TierGuid": "24F552004DBCF399C857C889E63B3C98"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "taunt_finn_dance2",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "0D93714D1C10137654AE5843F57580D4"
+                    }
+                  ],
+                  "ScoreThreshold": 74000,
+                  "TierGuid": "C08A79884756EF5D04F80FB44B17167E"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_67_hands",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "ED33D118C178D4BF19B30F168C584E22"
+                    }
+                  ],
+                  "ScoreThreshold": 76000,
+                  "TierGuid": "EDC6E2AF44FFF0D3D2432FAD17887A2C"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "ring_out_vfx_pfg_arrival",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "78F86E6A973BED37256A4587EBC20898"
+                    }
+                  ],
+                  "ScoreThreshold": 78000,
+                  "TierGuid": "DEFAC11C4829DB6C0DF212BAAB3F0606"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_cozy_tea",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "2D1C7B3847B9BD8457F6E6CD196947B2"
+                    }
+                  ],
+                  "ScoreThreshold": 80000,
+                  "TierGuid": "C490FF334E665A6D6A670EACBE309AA0"
+                },
+                {
+                  "DisplayType": 1,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "skin_ovs_shirtless_tattoo_shaggy",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "B8A229A3295192E9ACCCEE6EB1FB7B55"
+                    }
+                  ],
+                  "ScoreThreshold": 82000,
+                  "TierGuid": "3B938A3942B400E45ED7699B9B915353"
+                },
+                {
+                  "DisplayType": 1,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_toastie_angry",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "6BDC1D89F46ABDC0DD0D71452F96C21E"
+                    }
+                  ],
                   "ScoreThreshold": 84000,
                   "TierGuid": "2E0CE39E4B34C0E81C72D2A28DED3812"
                 },
@@ -89486,9 +89486,9 @@
                     {
                       "Constraints": [],
                       "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_toastie_angry",
+                      "InventoryHsda": "emote_reindog_hearts",
                       "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "6BDC1D89F46ABDC0DD0D71452F96C21E"
+                      "RewardGuid": "FC4D80838E6B5930B4EE3D1C5262B15A"
                     }
                   ],
                   "ScoreThreshold": 86000,
@@ -89500,9 +89500,9 @@
                     {
                       "Constraints": [],
                       "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_toastie_shocked",
+                      "InventoryHsda": "profileicon_ovs_batmobile",
                       "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "BF52590457431C0EDB5A109C4FF701D2"
+                      "RewardGuid": "F04F4B0F64CFF915B49BC96C1B482BDD"
                     }
                   ],
                   "ScoreThreshold": 88000,
@@ -89514,9 +89514,9 @@
                     {
                       "Constraints": [],
                       "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "emote_ovs_toastie_cool",
+                      "InventoryHsda": "emote_ovs_rickflick",
                       "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "D569873D4991BF575E33A7BA92318E0E"
+                      "RewardGuid": "7CD562C12E15D66E63C8D568B3801BB1"
                     }
                   ],
                   "ScoreThreshold": 90000,
@@ -89542,9 +89542,9 @@
                     {
                       "Constraints": [],
                       "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "skin_ovs_painter_beetlejuice",
+                      "InventoryHsda": "emote_ovs_toastie_cool",
                       "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "B1C78E53BFDEC023A0039D5D6082E6F3"
+                      "RewardGuid": "D569873D4991BF575E33A7BA92318E0E"
                     }
                   ],
                   "ScoreThreshold": 94000,
@@ -89556,13 +89556,41 @@
                     {
                       "Constraints": [],
                       "DirectInventoryItemCount": 1,
-                      "InventoryHsda": "profileicon_ovs_multiversus_tattoo",
+                      "InventoryHsda": "skin_ovs_lebron_50cent",
                       "RewardGrantMethod": "DirectInventoryItem",
-                      "RewardGuid": "A0F1880D11975272AEDA437BBD66A8A8"
+                      "RewardGuid": "E2A49DF2FAE80AB19392272DEBB159B3"
                     }
                   ],
                   "ScoreThreshold": 96000,
                   "TierGuid": "DDA3484E435383FF9DAA6594FFB0BC76"
+                },
+                {
+                  "DisplayType": 1,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_gingerbread_man",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "69560D6C9DB8124A0F0E4DA39B0FA9C2"
+                    }
+                  ],
+                  "ScoreThreshold": 98000,
+                  "TierGuid": "46FF71014B1BE6726C7D62AB7F9D0416"
+                },
+                {
+                  "DisplayType": 0,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "taunt_morty_twerkitout",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "555B86AA1DF3DE63607F018A7B776437"
+                    }
+                  ],
+                  "ScoreThreshold": 100000,
+                  "TierGuid": "9A6FD5F34A60612120874A9ECB07C1D2"
                 }
               ],
               "Title": {

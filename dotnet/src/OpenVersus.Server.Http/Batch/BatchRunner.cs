@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Hydra;
 using OpenVersus.Server.Core.Settings;
@@ -236,6 +237,13 @@ public sealed class BatchRunner(
 
             headers.Host = batch.Request.Host.Value;
             headers[HydraToken.Header] = batch.Request.Headers[HydraToken.Header];
+            if (batch.Request.Headers.TryGetValue(HissZstd.Header, out var zstd))
+            {
+                // The client's plugin puts its capability header on the request it sees, the batch itself; the hiss
+                // amalgamation inside the batch decides zstd or zlib by it.
+                headers[HissZstd.Header] = zstd;
+            }
+
             headers["x-real-ip"] = clientAddress;
             headers.ContentType = HydraBodies.ContentType;
             headers.ContentLength = requestBody.Length;
@@ -324,6 +332,11 @@ public sealed class BatchRunner(
 
             message.Headers.Host = batch.Request.Host.Value;
             message.Headers.TryAddWithoutValidation(HydraToken.Header, (IEnumerable<string?>)batch.Request.Headers[HydraToken.Header]);
+            if (batch.Request.Headers.TryGetValue(HissZstd.Header, out var zstd))
+            {
+                message.Headers.TryAddWithoutValidation(HissZstd.Header, (IEnumerable<string?>)zstd);
+            }
+
             message.Headers.TryAddWithoutValidation("x-real-ip", clientAddress);
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);

@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Hydra;
 using OpenVersus.Server.Core.Static;
 using OpenVersus.Server.Http.Batch;
@@ -99,7 +100,11 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
             Get("/accounts/abc/relationships/followers"),
             new JsonObject { ["verb"] = "PUT", ["url"] = "/ssc/invoke/create_custom_game_lobby", ["body"] = new JsonObject { ["Mode"] = "1v1" } },
             Get("/friends/me/invitations/incoming?teapot=1")),
-            r => r.Headers.Add("x-real-ip", "203.0.113.9"));
+            r =>
+            {
+                r.Headers.Add("x-real-ip", "203.0.113.9");
+                r.Headers.Add(HissZstd.Header, "1");
+            });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var responses = HydraDecoder.Decode(await response.Content.ReadAsByteArrayAsync())!["responses"]!.AsArray();
@@ -115,6 +120,8 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
         Assert.Equal(token, (string?)friends.Headers[HydraToken.Header]);
         Assert.Equal("203.0.113.9", (string?)friends.Headers["x-real-ip"]);
         Assert.Equal("kept", (string?)friends.Headers["x-custom"]);
+        // The client's zstd capability header rides on the batch; every item inherits it (the hiss inside a login batch reads it).
+        Assert.Equal("1", (string?)friends.Headers[HissZstd.Header]);
         var lobby = ts.Routed.Single(r => r.Target == "/ssc/invoke/create_custom_game_lobby");
         Assert.Equal("1v1", (string)HydraDecoder.Decode(lobby.Body)!["Mode"]!);
         // Only this service's unported item went to the TS server.

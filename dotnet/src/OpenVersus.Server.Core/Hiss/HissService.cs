@@ -98,7 +98,10 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
     private const string Template = "OpenVersus.Server.Core.Hiss.hiss-amalgamation.json";
 
     private readonly Lock _gate = new();
-    private (double Crc, int MatchmakingCrc, string FighterPass, Task<HissAnswer> Build)? _current;
+    private (double Crc, int MatchmakingCrc, string FighterPass, bool TestingGrounds, Task<HissAnswer> Build)? _current;
+
+    /// <summary>Added to the Crc while 1v1 Testing Grounds is open (weekdays), so the two catalogs never share a Crc.</summary>
+    internal const double TestingGroundsCrcOffset = 100_000;
 
     public async Task<HissAnswer> AnswerAsync(CancellationToken ct)
     {
@@ -107,14 +110,15 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         int matchmakingCrc = MatchmakingCrcOf(services);
         var fighterPass = FighterPass.Current;
         string fighterPassKey = FighterPass.Key(fighterPass);
+        bool testingGrounds = Matchmaking.TestingGrounds.IsOpen(services, (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
         Task<HissAnswer> build;
         lock (_gate)
         {
             // A build is shared by every request waiting on it, so it does not take their cancellation; a failed one is
             // tried again by the next request.
-            if (_current is not { } current || current.Crc != crc || current.MatchmakingCrc != matchmakingCrc || current.FighterPass != fighterPassKey || current.Build.IsFaulted || current.Build.IsCanceled)
+            if (_current is not { } current || current.Crc != crc || current.MatchmakingCrc != matchmakingCrc || current.FighterPass != fighterPassKey || current.TestingGrounds != testingGrounds || current.Build.IsFaulted || current.Build.IsCanceled)
             {
-                _current = (crc, matchmakingCrc, fighterPassKey, Task.Run(() => BuildAsync(mongo, crc, matchmakingCrc, fighterPass)));
+                _current = (crc, matchmakingCrc, fighterPassKey, testingGrounds, Task.Run(() => BuildAsync(mongo, crc, matchmakingCrc, fighterPass, testingGrounds)));
             }
 
             build = _current.Value.Build;
@@ -161,7 +165,9 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
     {
         var mongo = services.GetService<IMongoDatabase>();
         double crc = mongo is null ? DefaultCrc : await CrcAsync(mongo, ct);
-        return crc + (services.GetService<IOptionsMonitor<HissSettings>>()?.CurrentValue.ContentRevision ?? new HissSettings().ContentRevision);
+        bool testingGrounds = Matchmaking.TestingGrounds.IsOpen(services, (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
+        return crc + (services.GetService<IOptionsMonitor<HissSettings>>()?.CurrentValue.ContentRevision ?? new HissSettings().ContentRevision)
+            + (testingGrounds ? TestingGroundsCrcOffset : 0);
     }
 
     // LoadConfig: the first document's CRC.
@@ -172,7 +178,7 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         return config?.GetValue("CRC", BsonNull.Value) is { IsNumeric: true } value ? value.ToDouble() : DefaultCrc;
     }
 
-    private async Task<HissAnswer> BuildAsync(IMongoDatabase mongo, double crc, int matchmakingCrc, FighterPassSettings fighterPass)
+    private async Task<HissAnswer> BuildAsync(IMongoDatabase mongo, double crc, int matchmakingCrc, FighterPassSettings fighterPass, bool testingGrounds)
     {
         long started = Stopwatch.GetTimestamp();
         var assets = await DataAssets.EnabledAsync(mongo, CancellationToken.None);
@@ -180,6 +186,7 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         var answer = Fill(values);
         RiftCatalog.ExtendEndTimes(answer["body"]?["Data"]?["rift-config"]?["_hydra_compressed"] as JsonObject);
         ExtendFighterPasses(answer, fighterPass);
+        Matchmaking.TestingGrounds.ApplyTo(answer, testingGrounds);
         byte[] hydra = HydraEncoder.Encode(answer, compression: CompressionLevel.Optimal);
         log.LogInformation("Built the hiss answer for CRC {Crc}: {Assets} data assets, {Bytes} bytes, {Ms:F0} ms",
             crc, assets.Count, hydra.Length, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
@@ -188,6 +195,7 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
             var json = Fill(values);
             RiftCatalog.ExtendEndTimes(json["body"]?["Data"]?["rift-config"]?["_hydra_compressed"] as JsonObject);
             ExtendFighterPasses(json, fighterPass);
+            Matchmaking.TestingGrounds.ApplyTo(json, testingGrounds);
             return Js.Stringify(json);
         });
     }
@@ -339,6 +347,8 @@ public static class HissHosting
         // Every game service registers Hiss:* too (GameHttpHost: the catch-all answers carry the Crc); registering
         // twice is harmless, and a host with the hiss alone still binds its settings.
         builder.AddSetting<HissSettings>("Hiss");
+        builder.AddSetting<Matchmaking.FfaSettings>("Ffa");
+        builder.AddSetting<Matchmaking.TestingGroundsSettings>("TestingGrounds");
         builder.Services.AddSingleton<IHissService, HissService>();
         builder.Services.AddHostedService<HissWarmup>();
         return builder;

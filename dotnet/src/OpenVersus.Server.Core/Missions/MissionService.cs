@@ -280,7 +280,7 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
         new() { ["body"] = Answer(state, "", live)["body"]!["server_data"]!.DeepClone(), ["metadata"] = null, ["return_code"] = 0 };
 
     /// <summary>The match as the player's game saw it (for missions and match XP), or null when it is not known.</summary>
-    internal static async Task<(MissionMatch Match, bool Custom, bool Rift)?> MatchAsync(IDatabase redis, string matchId, string playerId, int? winningTeamIndex, JsonObject? counters)
+    internal static async Task<(MissionMatch Match, bool Custom, bool Rift, bool NoProgress)?> MatchAsync(IDatabase redis, string matchId, string playerId, int? winningTeamIndex, JsonObject? counters)
     {
         if (await JsonAtAsync(redis, matchId) is not JsonObject notification)
         {
@@ -289,6 +289,8 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
 
         var config = notification["gameplayConfigOverride"] as JsonObject;
         bool custom = Bool(config?["bIsCustomGame"]) ?? Bool(notification["isCustomGame"]) ?? false;
+        // A match whose config says it grants no progress (1v1 Testing Grounds): no XP and no missions, whatever the settings.
+        bool noProgress = Bool(config?["bModeGrantsProgress"]) == false;
         var player = (notification["players"] as JsonArray ?? []).OfType<JsonObject>().FirstOrDefault(p => Text(p["playerId"]) == playerId);
         bool won = player is not null && winningTeamIndex is { } w && RiftMissions.Number(player["teamIndex"]) == w;
         string character = "", skin = "";
@@ -309,7 +311,7 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
         rift |= Bool(config?["bIsRift"]) ?? false;
         var match = new MissionMatch(won, character, skin, Text(config?["ModeString"]) ?? Text(notification["mode"]) ?? "",
             Text(config?["Map"]) ?? Text(notification["map"]) ?? "", Bool(config?["bIsPvP"]) ?? true, counters);
-        return (match, custom, rift);
+        return (match, custom, rift, noProgress);
     }
 
     public async Task RecordMatchXpAsync(string matchId, string playerId, int? winningTeamIndex, CancellationToken ct)
@@ -323,7 +325,7 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
         }
 
         if (await MatchAsync(redis, matchId, playerId, winningTeamIndex, null) is not { } seen
-            || (seen.Custom && !settings.CurrentValue.CustomGamesProgress) || (seen.Rift && !rewards.RiftMatchXp))
+            || seen.NoProgress || (seen.Custom && !settings.CurrentValue.CustomGamesProgress) || (seen.Rift && !rewards.RiftMatchXp))
         {
             return;
         }
@@ -386,7 +388,7 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
             return;
         }
 
-        if (seen.Custom && !current.CustomGamesProgress)
+        if (seen.NoProgress || (seen.Custom && !current.CustomGamesProgress))
         {
             return;
         }

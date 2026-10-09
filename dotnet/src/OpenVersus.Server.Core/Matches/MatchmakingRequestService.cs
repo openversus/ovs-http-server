@@ -111,6 +111,8 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
                 return await OneVersusOneAsync(request, Casual, ct);
             case "ffa":
                 return await OneVersusOneAsync(request, FreeForAll, ct);
+            case Matchmaking.TestingGrounds.Criteria or Matchmaking.TestingGrounds.BareCriteria:
+                return await OneVersusOneAsync(request, TestingGroundsQueue, ct);
             default:
                 return null;
         }
@@ -122,17 +124,25 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         public bool IsCasual => List1v1 == Matchmaking.MatchmakingWorker.Casual1v1;
 
         public bool IsFfa => List1v1 == Matchmaking.MatchmakingWorker.Ffa;
+
+        public bool IsTestingGrounds => List1v1 == Matchmaking.TestingGrounds.List;
+
+        /// <summary>Solo entry only: FFA and Testing Grounds (the game's bPartyEligible false).</summary>
+        public bool IsSoloOnly => IsFfa || IsTestingGrounds;
     }
 
     private static readonly Queue Regular = new("1v1-retail", "2v2-retail", "1v1", "2v2");
     private static readonly Queue Casual = new("casual-retail", "casual-retail", Matchmaking.MatchmakingWorker.Casual1v1, Matchmaking.MatchmakingWorker.Casual2v2);
     // Solo only: its 2v2 names are never used.
     private static readonly Queue FreeForAll = new("ffa", "ffa", Matchmaking.MatchmakingWorker.Ffa, Matchmaking.MatchmakingWorker.Ffa);
+    // 1v1 Testing Grounds (Beta Speed), solo only: its 2v2 names are never used.
+    private static readonly Queue TestingGroundsQueue = new(Matchmaking.TestingGrounds.Criteria, Matchmaking.TestingGrounds.Criteria,
+        Matchmaking.TestingGrounds.List, Matchmaking.TestingGrounds.List);
 
     private async Task<MatchmakingAnswer> OneVersusOneAsync(PartyRequest request, Queue queue, CancellationToken ct)
     {
         string me = request.AccountId;
-        string kind = queue.IsFfa ? "FFA" : "1v1";
+        string kind = queue.IsFfa ? "FFA" : queue.IsTestingGrounds ? "Testing Grounds" : "1v1";
         log.LogInformation("Received {Kind} {Criteria} matchmaking request", kind, queue.Criteria1v1);
 
         if (await gate.BlockOutdatedAsync([me], log, "1v1 matchmaking"))
@@ -146,16 +156,22 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             return new MatchmakingAnswer(200, Matchmaking.FfaSchedule.ClosedFailure());
         }
 
+        if (queue.IsTestingGrounds && !Matchmaking.TestingGrounds.IsOpen(services, time.GetUtcNow()))
+        {
+            log.LogInformation("Rejected Testing Grounds matchmaking for {Player}: the queue is closed (FFA's weekend, or TestingGrounds:Enabled off)", me);
+            return new MatchmakingAnswer(200, Matchmaking.TestingGrounds.ClosedFailure());
+        }
+
         var redis = Redis();
         await RemoveTicketsAsync(redis, me, s_allLists);
         await EndRankedSetAsync(redis, me);
 
         if (await LobbyPlayersAsync(redis, me) is { Count: >= 2 } players)
         {
-            if (queue.IsFfa)
+            if (queue.IsSoloOnly)
             {
-                log.LogWarning("Rejected FFA matchmaking for {Player}, whose lobby has {Count} players; FFA is solo-entry only", me, players.Count);
-                return new MatchmakingAnswer(200, new JsonObject { ["error"] = "FFA matchmaking requires a solo party" });
+                log.LogWarning("Rejected {Kind} matchmaking for {Player}, whose lobby has {Count} players; {Kind} is solo-entry only", kind, me, players.Count, kind);
+                return new MatchmakingAnswer(200, new JsonObject { ["error"] = $"{kind} matchmaking requires a solo party" });
             }
 
             log.LogInformation("Lobby of {Player} has {Count} players, redirecting 1v1 request to 2v2 handler", me, players.Count);
@@ -587,7 +603,7 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         MatchmakingQueue.CancelAsync(redis, players, requestId);
 
     // Every queue's list: a player queueing anywhere leaves all of them.
-    private static readonly string[] s_allLists = [Regular.List1v1, Regular.List2v2, FreeForAll.List1v1, Casual.List1v1, Casual.List2v2];
+    private static readonly string[] s_allLists = [Regular.List1v1, Regular.List2v2, FreeForAll.List1v1, Casual.List1v1, Casual.List2v2, TestingGroundsQueue.List1v1];
 
     // redisRemoveExistingTicketsForPlayer: any ticket of the player's leaves the lists (TS: 1v1, 2v2 and FFA), with no notice.
     private async Task RemoveTicketsAsync(IDatabase redis, string playerId, IReadOnlyList<string> lists)
@@ -714,6 +730,7 @@ public static class MatchmakingRequestHosting
     {
         builder.AddEloRatings();
         builder.AddSetting<Matchmaking.FfaSettings>("Ffa");
+        builder.AddSetting<Matchmaking.TestingGroundsSettings>("TestingGrounds");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IMatchmakingRequestService, MatchmakingRequestService>();
         return builder;

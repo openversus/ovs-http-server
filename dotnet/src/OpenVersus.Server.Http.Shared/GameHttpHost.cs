@@ -30,6 +30,9 @@ public static class GameHttpHost
         builder.AddSetting<StubSettings>("Stubs");
         // The Crc in the hiss and in every TS catch-all answer (Hiss:ContentRevision).
         builder.AddSetting<HissSettings>("Hiss");
+        // The Crc adds an offset while 1v1 Testing Grounds is open (its schedule is FFA's): every service answers the same one.
+        builder.AddSetting<OpenVersus.Server.Core.Matchmaking.FfaSettings>("Ffa");
+        builder.AddSetting<OpenVersus.Server.Core.Matchmaking.TestingGroundsSettings>("TestingGrounds");
         // The session token check reads these.
         builder.AddSetting<AccessSettings>("Access");
         builder.AddSetting<RealtimeSettings>("Realtime");

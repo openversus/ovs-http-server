@@ -291,9 +291,16 @@ internal sealed class Rematches(IServiceProvider services, ICustomLobbyService l
             RematchVotes.Str(p["ip"]) ?? "", RollbackCallbacks.Truthy(p["isBot"]), RollbackCallbacks.Truthy(p["isSpectator"]),
             RematchVotes.Str(p["partyId"]))).ToList();
         string mode = RematchVotes.Str(config["mode"]) ?? "1v1";
+        // The match's mutators too (a Testing Grounds match's Beta Speed): the rollback registry reads its tick_rate from them.
+        var fields = BotDefaults.UnrankedNotificationFields();
+        if (config["worldBuffs"] is JsonArray worldBuffs)
+        {
+            fields["worldBuffs"] = worldBuffs.DeepClone();
+        }
+
         var launched = await launcher.LaunchAsync(new MatchLaunch(mode, MatchmakingMaps.Pick(mode, matchId, log), mode, players,
             GameplayConfigOverride: config["gameplayConfigOverride"] as JsonObject ?? BotDefaults.UnrankedConfigOverride(),
-            BotPerks: BotDefaults.PerksArray(), NotificationFields: BotDefaults.UnrankedNotificationFields()), ct);
+            BotPerks: BotDefaults.PerksArray(), NotificationFields: fields), ct);
         if (launched is null)
         {
             log.LogWarning("The rematch of Casual match {Match} could not start: declined for everyone", matchId);

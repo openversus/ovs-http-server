@@ -17,8 +17,8 @@ public sealed class EpicSettings
     [Description("The game's EOS client id, the audience an Epic ID token names (the packaged DefaultEngine.ini, EOSSettings ClientId). Empty: no verification, Epic ids are claims.")]
     public string ClientId { get; set; } = "";
 
-    [Description("The issuer an Epic account ID token names (Epic's OpenID discovery document).")]
-    public string Issuer { get; set; } = "https://api.epicgames.dev/epic/oauth/v2";
+    [Description("The issuers an Epic account ID token may name, separated by spaces: the game's SDK (1.15) issues v1 tokens, Epic's current discovery document says v2; both sign with the same keys.")]
+    public string Issuer { get; set; } = "https://api.epicgames.dev/epic/oauth/v1 https://api.epicgames.dev/epic/oauth/v2";
 
     [Description("Where Epic publishes the keys that sign ID tokens (JWKS; the discovery document's jwks_uri).")]
     public string JwksUrl { get; set; } = "https://api.epicgames.dev/epic/oauth/v2/.well-known/jwks.json";
@@ -30,6 +30,9 @@ public sealed class EpicSettings
     [Description("How far a token's expiry or not-before may be past, to absorb clock differences with Epic.")]
     [Range(0, 600)]
     public int ClockSkewSeconds { get; set; } = 60;
+
+    /// <summary>The accepted issuers, one per entry.</summary>
+    public IReadOnlyList<string> Issuers => Issuer.Split([' ', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     /// <summary>Whether Epic ids are checked at all: on, and a client id to check the audience against.</summary>
     public bool Enforced => Enabled && ClientId.Length > 0;

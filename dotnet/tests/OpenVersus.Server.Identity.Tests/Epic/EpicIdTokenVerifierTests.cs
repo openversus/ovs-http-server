@@ -17,7 +17,7 @@ namespace OpenVersus.Server.Identity.Tests.Epic;
 public sealed class EpicIdTokenVerifierTests
 {
     private const string ClientId = "xyza0000000000000000000000000000";
-    private const string Issuer = "https://api.epicgames.dev/epic/oauth/v2";
+    private const string Issuer = "https://api.epicgames.dev/epic/oauth/v1";
     private const string Account = "0123456789abcdef0123456789abcdef";
     private static readonly DateTimeOffset s_now = new(2026, 10, 8, 20, 0, 0, TimeSpan.Zero);
 
@@ -86,10 +86,51 @@ public sealed class EpicIdTokenVerifierTests
     }
 
     [Fact]
-    public async Task TheIssuerMustBeEpics()
+    public async Task TheIssuerMustBeOneOfEpics()
     {
         var refused = Assert.IsType<EpicTokenCheck.Refused>(await Verifier.CheckAsync(Token(_epic, "k1", iss: "https://api.epicgames.dev/auth/v1/oauth"), s_now));
         Assert.StartsWith("issuer", refused.Reason);
+        // The SDK's v1 and the discovery document's v2 are both Epic's.
+        Assert.IsType<EpicTokenCheck.Verified>(await Verifier.CheckAsync(Token(_epic, "k1", iss: "https://api.epicgames.dev/epic/oauth/v2"), s_now));
+    }
+
+    /// <summary>
+    /// A token the game's SDK really handed out (dotnet/local/epic-id-token.txt, gitignored; written by the client's
+    /// probe on an Epic launch), judged with the key Epic publishes for its kid: signature, claim names and shape.
+    /// The clock is the token's own iat, so the test outlives the token's two hours; the client id is the token's
+    /// own audience (the game's, public in every token), not a value kept here.
+    /// </summary>
+    [SkippableFact]
+    public async Task ATokenTheGamesSdkHandedOutVerifiesAgainstEpicsPublishedKey()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "local", "epic-id-token.txt");
+        Skip.IfNot(File.Exists(path), "no dotnet/local/epic-id-token.txt (the client's probe writes one to its log on an Epic launch)");
+        string token = File.ReadAllText(path).Trim();
+        var parsed = EpicIdToken.Parse(token);
+        Assert.NotNull(parsed);
+        string jwks;
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            jwks = await http.GetStringAsync(new EpicSettings().JwksUrl);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
+        {
+            throw new SkipException($"Epic's JWKS is not reachable: {e.Message}");
+        }
+
+        var keys = EpicKeySet.Parse(jwks);
+        Assert.NotNull(keys);
+        Skip.IfNot(keys.ContainsKey(parsed.KeyId), $"Epic no longer publishes kid {parsed.KeyId}: the local fixture is stale");
+        var settings = new EpicSettings();
+        string audience = parsed.Claims["aud"]!.GetValue<string>();
+        var issued = DateTimeOffset.FromUnixTimeSeconds(parsed.Claims["iat"]!.GetValue<long>());
+        var ok = Assert.IsType<EpicTokenCheck.Verified>(parsed.Verify(keys[parsed.KeyId], settings.Issuers, audience, issued + TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(settings.ClockSkewSeconds)));
+        Assert.Matches("^[a-f0-9]{32}$", ok.AccountId);
+        Assert.Equal(TimeSpan.FromHours(2), ok.Expires - issued);
+        Assert.Equal("id_token", parsed.Claims["t"]?.GetValue<string>());
+        // And a day later it is expired, nothing else.
+        Assert.StartsWith("expired", Assert.IsType<EpicTokenCheck.Refused>(parsed.Verify(keys[parsed.KeyId], settings.Issuers, audience, issued + TimeSpan.FromDays(1), TimeSpan.Zero)).Reason);
     }
 
     [Fact]

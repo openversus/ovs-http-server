@@ -128,16 +128,13 @@ internal sealed partial class AccessService(
 {
     private const int IdentityWaitAttempts = 15;
 
-    /// <summary>The account field saying when its Epic id was last proved by the game's Epic ID token (the Steam counterpart is the ticket record itself).</summary>
-    public const string EpicProvedField = "epicVerifiedAt";
-
     /// <summary>Whether the account's Steam id <paramref name="stored"/> was proved: its recorded ticket names it.</summary>
     private static bool StoredSteamProved(BsonDocument account, string stored) =>
         account.TryGetValue(IdentityRecord.TicketField, out var ticket) && ticket is BsonDocument doc && doc.GetValue("steam_id", "") == stored;
 
-    /// <summary>Whether the account's Epic id was proved: written with the game's token's proof (<see cref="EpicProvedField"/>).</summary>
+    /// <summary>Whether the account's Epic id was proved: written with the game's token's proof (<see cref="IdentityRecord.EpicProvedField"/>).</summary>
     private static bool StoredEpicProved(BsonDocument account) =>
-        account.TryGetValue(EpicProvedField, out var at) && at.IsValidDateTime;
+        account.TryGetValue(IdentityRecord.EpicProvedField, out var at) && at.IsValidDateTime;
     private static readonly TimeSpan s_identityWait = TimeSpan.FromMilliseconds(200);
     private static readonly TimeSpan s_activeSession = TimeSpan.FromSeconds(90);
     private static readonly JsonSerializerOptions s_json = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
@@ -597,7 +594,7 @@ internal sealed partial class AccessService(
                 ["GameplayPreferences"] = 964,
                 ["steamId"] = identity.SteamId,
                 ["epicId"] = identity.EpicId,
-                [EpicProvedField] = identity.EpicVerified && identity.EpicId.Length > 0 ? now : BsonNull.Value,
+                [IdentityRecord.EpicProvedField] = identity.EpicVerified && identity.EpicId.Length > 0 ? now : BsonNull.Value,
                 ["hardwareId"] = identity.Hardware.HardwareId,
                 ["hardwareIdVersion"] = identity.Hardware.HardwareIdVersion,
                 ["hardwareIdQuality"] = identity.Hardware.HardwareIdQuality,
@@ -654,14 +651,14 @@ internal sealed partial class AccessService(
                 player.Set("epicId", identity.EpicId);
                 if (identity.EpicVerified)
                 {
-                    player.Set(EpicProvedField, now);
+                    player.Set(IdentityRecord.EpicProvedField, now);
                 }
             }
             else if (stored == identity.EpicId)
             {
                 if (identity.EpicVerified && !storedProved)
                 {
-                    player.Set(EpicProvedField, now);
+                    player.Set(IdentityRecord.EpicProvedField, now);
                 }
             }
             else if (identity.EpicVerified)
@@ -674,7 +671,7 @@ internal sealed partial class AccessService(
                 {
                     log.LogInformation("Account {Player} held Epic id {Stored} as a claim; the login from {Ip} proved {Epic} and reached it by its other ids: replaced", player.Id, stored, ip, identity.EpicId);
                     player.Set("epicId", identity.EpicId);
-                    player.Set(EpicProvedField, now);
+                    player.Set(IdentityRecord.EpicProvedField, now);
                 }
             }
         }

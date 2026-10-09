@@ -20,9 +20,11 @@ public abstract record EpicTokenCheck
 }
 
 /// <summary>
-/// An Epic account ID token, as Epic's OpenID discovery document describes it: a JWT signed RS256 with one of the keys at
-/// its JWKS, issuer <c>https://api.epicgames.dev/epic/oauth/v2</c>, audience the game's client id, subject the Epic
-/// account id. Only the three parts are read here; <see cref="Verify"/> judges them against a key and the settings.
+/// An Epic account ID token as the game's SDK hands it out (seen live 2026-10-08): a JWT signed RS256 with one of the
+/// keys at Epic's JWKS, issuer <c>https://api.epicgames.dev/epic/oauth/v1</c> (the current discovery document says v2;
+/// same keys), audience the game's client id, subject the Epic account id, two hours from iat to exp, and beside them
+/// the product, sandbox and deployment ids (pfpid, pfsid, pfdid), the display name (dn), a nonce and a jti. Only the
+/// three parts are read here; <see cref="Verify"/> judges them against a key and the settings.
 /// </summary>
 /// <param name="KeyId">The header's kid.</param>
 /// <param name="Algorithm">The header's alg, whatever it says.</param>
@@ -67,11 +69,11 @@ public sealed record EpicIdToken(string KeyId, string Algorithm, JsonObject Clai
 
     /// <summary>
     /// Judges the token with <paramref name="key"/>, the key its kid names: the algorithm must be RS256 (nothing else is
-    /// ever tried against an RSA key), the signature must verify, the issuer must be <paramref name="issuer"/>, the
+    /// ever tried against an RSA key), the signature must verify, the issuer must be one of <paramref name="issuers"/>, the
     /// audience (a string or an array) must name <paramref name="clientId"/>, exp and nbf must hold within
     /// <paramref name="skew"/>, and the subject must be an Epic account id.
     /// </summary>
-    public EpicTokenCheck Verify(RSAParameters key, string issuer, string clientId, DateTimeOffset now, TimeSpan skew)
+    public EpicTokenCheck Verify(RSAParameters key, IReadOnlyList<string> issuers, string clientId, DateTimeOffset now, TimeSpan skew)
     {
         if (Algorithm != RequiredAlgorithm)
         {
@@ -93,7 +95,7 @@ public sealed record EpicIdToken(string KeyId, string Algorithm, JsonObject Clai
             return new EpicTokenCheck.Refused("bad signature");
         }
 
-        if (Str(Claims["iss"]) != issuer)
+        if (!issuers.Contains(Str(Claims["iss"]), StringComparer.Ordinal))
         {
             return new EpicTokenCheck.Refused($"issuer {Dash(Str(Claims["iss"]))}");
         }

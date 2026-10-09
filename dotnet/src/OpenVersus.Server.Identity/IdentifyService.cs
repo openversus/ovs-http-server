@@ -158,6 +158,11 @@ internal sealed class IdentifyService(
             await RecordTicketAsync(identity, resolvedId, ct);
         }
 
+        if (identity.EpicVerified && resolvedId.Length > 0)
+        {
+            await RecordEpicAsync(identity, resolvedId, ip, now, ct);
+        }
+
         // Full AccountToken-compatible shape, in the TS server's claim order, plus whether the Steam id was proved.
         var claims = new JsonObject
         {
@@ -471,6 +476,53 @@ internal sealed class IdentifyService(
         catch (Exception e) when (e is not OperationCanceledException)
         {
             log.LogError(e, "Could not record the Steam ticket of {Steam} on account {Account}", identity.SteamId, accountId);
+        }
+    }
+
+    // The verified Epic id onto the account the registration resolved to, by the login's rule (AccessService.BackfillAsync):
+    // an Epic launch's token lands in the same second as the game's own login, which may read the record before this
+    // registration wrote it; so the proof is put on the account here as the Steam ticket is. An empty or claimed id
+    // gives way to the proved one; an id the account holds proved stays (another person's; the login keeps them apart).
+    private async Task RecordEpicAsync(IpIdentity identity, string accountId, string ip, DateTimeOffset now, CancellationToken ct)
+    {
+        if (services.GetService<IMongoDatabase>() is not { } mongo || !ObjectId.TryParse(accountId, out var id))
+        {
+            return;
+        }
+
+        try
+        {
+            var players = mongo.GetCollection<BsonDocument>(PlayerRecord.Collection);
+            var account = await players.Find(new BsonDocument("_id", id)).Project(new BsonDocument { { "epicId", 1 }, { IdentityRecord.EpicProvedField, 1 } }).FirstOrDefaultAsync(ct);
+            if (account is null)
+            {
+                return;
+            }
+
+            string stored = account.TryGetValue("epicId", out var e) && e.IsString ? e.AsString : "";
+            bool storedProved = account.TryGetValue(IdentityRecord.EpicProvedField, out var at) && at.IsValidDateTime;
+            if (stored == identity.EpicId && storedProved)
+            {
+                return;
+            }
+
+            if (stored.Length > 0 && stored != identity.EpicId && stored != "Unknown" && storedProved)
+            {
+                log.LogWarning("Account {Account} holds proved Epic id {Stored}; the registration from {Ip} proved {Epic}: kept as is", accountId, stored, ip, identity.EpicId);
+                return;
+            }
+
+            if (stored.Length > 0 && stored != identity.EpicId && stored != "Unknown")
+            {
+                log.LogInformation("Account {Account} held Epic id {Stored} as a claim; the registration from {Ip} proved {Epic}: replaced", accountId, stored, ip, identity.EpicId);
+            }
+
+            await players.UpdateOneAsync(new BsonDocument("_id", id),
+                new BsonDocument("$set", new BsonDocument { { "epicId", identity.EpicId }, { IdentityRecord.EpicProvedField, now.UtcDateTime } }), cancellationToken: ct);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            log.LogError(e, "Could not record the verified Epic id of {Ip} on account {Account}", ip, accountId);
         }
     }
 

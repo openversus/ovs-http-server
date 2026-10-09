@@ -82,11 +82,12 @@ the launcher's account, not the game's.
 
 The check (`src/OpenVersus.Server.Identity/Epic`, in-process like the offline ticket check): Epic's published keys
 (`Epic:JwksUrl`, the JWKS of its OpenID discovery document; fetched at startup, again after `Epic:JwksRefreshMinutes`,
-and at once, at most once a minute, when a token names a key not held), the signature, the issuer (`Epic:Issuer`), the
-audience (`Epic:ClientId`, the game's EOS client id), expiry and not-before within `Epic:ClockSkewSeconds`, and a
-32-hex subject. The keys last fetched are the floor: when Epic cannot be reached they serve on. There is no "ask Epic"
-for an ID token as there is for a Steam ticket: a token stands until it expires (typically about an hour; unconfirmed
-until a live one is seen), and that is both the floor and the ceiling.
+and at once, at most once a minute, when a token names a key not held), the signature, the issuer (one of
+`Epic:Issuer`: the game's SDK issues `.../epic/oauth/v1` tokens, Epic's current discovery document names v2, both with
+the same keys), the audience (`Epic:ClientId`, the game's EOS client id), expiry and not-before within
+`Epic:ClockSkewSeconds`, and a 32-hex subject. The keys last fetched are the floor: when Epic cannot be reached they
+serve on. There is no "ask Epic" for an ID token as there is for a Steam ticket: a token stands until it expires (two
+hours from issue, as the game's SDK hands them out), and that is both the floor and the ceiling.
 
 Enforced only with `Epic:Enabled` and a client id (`Epic:ClientId`); without one, Epic ids are taken as claimed, as
 before, and a token is ignored. Enforced:
@@ -106,10 +107,11 @@ reached the account by its install id, hardware or IP: that match says whose acc
 right one. An id the account holds proved (its ticket names it; an Epic id written with its proof, `epicVerifiedAt`)
 is never displaced by a different proved one: two ticketed Steam accounts on one install are two people at a shared
 PC, and the second gets an account of their own instead of the first's. What the proof otherwise changes is how a login finds the account: an Epic client older than the one that sends
-the token is found by its install id, hardware and IP, which reach the same account, until it updates. The verifier has not yet seen a live Epic token (none
-exists on a Steam launch): it checks the names OpenID Connect gives the claims, and `Epic:ClientId` is where a surprise
-in the audience would be fixed. The `x-epic-id` header the account resolver still honors on other routes is not
-covered by this check (the resolver hardening is a separate item).
+the token is found by its install id, hardware and IP, which reach the same account, until it updates. The verifier was checked against a token the game's SDK handed out on an Epic launch (2026-10-08): the
+claims are `iss`, `aud` (the client id), `sub` (the account id), `iat`/`exp` two hours apart, `t: id_token`, the
+product, sandbox and deployment ids (`pfpid`, `pfsid`, `pfdid`), a display name, a nonce and a `jti`; a test verifies
+such a token against Epic's live key when one is at hand. The `x-epic-id` header the account resolver still honors on
+other routes is not covered by this check (the resolver hardening is a separate item).
 
 ## The token has its own secret
 

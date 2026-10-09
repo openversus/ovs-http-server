@@ -95,6 +95,10 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
 {
     /// <summary>The OVS friendly-fire mutator's slug (the client's FriendlyFireHooks.Slug).</summary>
     internal const string FriendlyFireMutator = "ovs_friendly_fire";
+    /// <summary>The OVS Beta Speed mutator's slug: the whole match at 1.2x (the client's GameSpeedHooks.BetaSpeedSlug).</summary>
+    internal const string BetaSpeedMutator = "ovs_beta_speed";
+    /// <summary>A Beta Speed match's frame rate: 60 x 1.2. Every frame is still 1/60 s of game time.</summary>
+    internal const int BetaSpeedTickRate = 72;
     /// <summary>A public FFA match's event queue, as the TS websocket sent it.</summary>
     internal const string FfaEventQueue = "evtq_ffa";
     public const string KeyPrefix = "match_config:";

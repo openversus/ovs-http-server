@@ -22,6 +22,8 @@ namespace OpenVersus.Server.Core.Matches;
 //   /ovs_register   the registry, for the rollback server, or for a node to learn its role: the humans and spectators,
 //                   never the bots (they have no client to connect; the game makes them), max_players their count (the
 //                   rollback server sizes its inputs from it and indexes them by player_index), match_duration 36000,
+//                   tick_rate 72 for a Beta Speed match (its frames a second; the clients run 1.2x and the rollback
+//                   server must pace them at that rate, or its rift correction pulls them back to 60),
 //                   each player's name and fighter from their connection ("Unknown" without). Sent as JSON signed over its
 //                   exact bytes (X-OVS-Signature, INodeConfig: a node hosts only on a config the server signed; a relay
 //                   ignores the header). Then, after the answer, the players are told to connect (game-server-instance-
@@ -121,12 +123,19 @@ internal sealed class RollbackCallbacks(IServiceProvider services, IMatchLaunche
             players.Add(entry);
         }
 
-        byte[] registry = Encoding.UTF8.GetBytes(Js.Stringify(new JsonObject
+        var config = new JsonObject
         {
             ["max_players"] = humans.Count,
             ["match_duration"] = MatchDuration,
             ["players"] = players,
-        }));
+        };
+        if (TickRate(match.Config) is { } tickRate)
+        {
+            config["tick_rate"] = tickRate;
+            log.LogInformation("Match {Match} runs Beta Speed: tick_rate {Rate}", match.Id, tickRate);
+        }
+
+        byte[] registry = Encoding.UTF8.GetBytes(Js.Stringify(config));
         string? signature = nodeConfig.Sign(registry);
         log.LogInformation("Registry of match {Match}: {Players} player(s){Bots}, {Signed}", match.Id, humans.Count,
             all.Count > humans.Count ? $" ({all.Count - humans.Count} bot(s) left out)" : "", signature is null ? "unsigned (no signing key)" : "signed");
@@ -342,6 +351,12 @@ internal sealed class RollbackCallbacks(IServiceProvider services, IMatchLaunche
     // ── The match a call names ─────────────────────────────────────────────────────────────────────────────────────
 
     private sealed record Keyed(string Id, JsonObject Config);
+
+    /// <summary>The match's own frame rate, from its mutators (a custom game's worldBuffs); null for the server's.</summary>
+    internal static int? TickRate(JsonObject match) =>
+        (match["worldBuffs"] as JsonArray ?? []).Any(b => b is JsonValue v && v.TryGetValue(out string? slug) && slug == GameplayConfigs.BetaSpeedMutator)
+            ? GameplayConfigs.BetaSpeedTickRate
+            : null;
 
     // The match config of the body's matchId when the body's key is its matchKey; null (and a log line) otherwise.
     private async Task<Keyed?> KeyedAsync(IDatabase redis, JsonNode? body, string route)

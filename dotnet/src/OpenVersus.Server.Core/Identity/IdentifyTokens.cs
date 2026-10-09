@@ -34,6 +34,11 @@ public static class IdentifyTokens
     }
 
     /// <summary>Whether the claims say the Steam id was proved by a ticket (the string "1", as the record and the TS-era flags are written).</summary>
-    public static bool SteamVerified(JsonObject? claims) =>
-        claims?["steamVerified"] is JsonValue v && v.GetValueKind() == System.Text.Json.JsonValueKind.String && v.GetValue<string>() == "1";
+    public static bool SteamVerified(JsonObject? claims) => Flag(claims, "steamVerified");
+
+    /// <summary>Whether the claims say the Epic id was proved by the game's Epic ID token (epicVerified "1").</summary>
+    public static bool EpicVerified(JsonObject? claims) => Flag(claims, "epicVerified");
+
+    private static bool Flag(JsonObject? claims, string name) =>
+        claims?[name] is JsonValue v && v.GetValueKind() == System.Text.Json.JsonValueKind.String && v.GetValue<string>() == "1";
 }

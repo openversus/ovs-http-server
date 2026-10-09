@@ -40,6 +40,7 @@ public sealed class AccessIdentityTests : IAsyncLifetime
     private IMongoClient? _mongo;
     private BanSettings _settings = new();
     private readonly SteamSettings _steam = new();
+    private readonly Core.Epic.EpicSettings _epic = new();
 
     private static bool Configured => !string.IsNullOrEmpty(s_redis) && !string.IsNullOrEmpty(s_mongo);
 
@@ -177,6 +178,106 @@ public sealed class AccessIdentityTests : IAsyncLifetime
         Assert.False(created["provisional"].AsBoolean);
     }
 
+    private const string Epic = "0123456789abcdef0123456789abcde0";
+
+    [SkippableFact]
+    public async Task WithoutAnEpicClientIdAClaimedEpicIdStillLogsIn()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        var epicOwner = await SeedAsync("Epic Owner", steam: "", install: "", epic: Epic);
+        await SeedAsync("Install Owner", steam: "", install: Install);
+        // The identify token (no verification configured anywhere) and the record both name the id as a claim.
+        var byToken = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, EpicIdentifyToken(verified: false)));
+        Assert.Equal(epicOwner.ToString(), byToken.PlayerId);
+        await Redis.HashSetAsync($"identity:{Ip}", [new HashEntry("epicId", Epic), new HashEntry("installId", Install)]);
+        var byRecord = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, null));
+        Assert.Equal(epicOwner.ToString(), byRecord.PlayerId);
+    }
+
+    [SkippableFact]
+    public async Task WithAnEpicClientIdOnlyAProvedEpicIdLogsIn()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        _epic.ClientId = "client";
+        var epicOwner = await SeedAsync("Epic Owner", steam: "", install: "", epic: Epic);
+        var installOwner = await SeedAsync("Install Owner", steam: "", install: Install);
+        // Unproved first: proved, the login would attach the install to the Epic owner's account, as it should.
+        var claimed = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, EpicIdentifyToken(verified: false)));
+        Assert.Equal(installOwner.ToString(), claimed.PlayerId);
+        var proved = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, EpicIdentifyToken(verified: true)));
+        Assert.Equal(epicOwner.ToString(), proved.PlayerId);
+    }
+
+    [SkippableFact]
+    public async Task WithAnEpicClientIdAnUnprovedEpicIdInTheIdentityRecordIsIgnored()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        _epic.ClientId = "client";
+        var epicOwner = await SeedAsync("Epic Owner", steam: "", install: "", epic: Epic);
+        var installOwner = await SeedAsync("Install Owner", steam: "", install: Install);
+        await Redis.HashSetAsync($"identity:{Ip}", [new HashEntry("epicId", Epic), new HashEntry("installId", Install)]);
+        var claimed = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, null));
+        Assert.Equal(installOwner.ToString(), claimed.PlayerId);
+        await Redis.HashSetAsync($"identity:{Ip}", "epicVerified", "1");
+        var proved = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, null));
+        Assert.Equal(epicOwner.ToString(), proved.PlayerId);
+    }
+
+    [SkippableFact]
+    public async Task AProvedSteamIdReplacesOneTheInstallsAccountHeldAsAClaim()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        const string claimed = "76561198000000002";
+        var account = await SeedAsync("Claimed", steam: claimed, install: Install);
+        await Redis.HashSetAsync($"identity:{Ip}", [new HashEntry("steamId", s_steam), new HashEntry("steamVerified", "1"), new HashEntry("steamTicket", TicketJson()), new HashEntry("installId", Install)]);
+        var result = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, IdentifyToken(s_steam, verified: true)));
+        Assert.Equal(account.ToString(), result.PlayerId);
+        var saved = await Players.Find(new BsonDocument("_id", account)).SingleAsync();
+        Assert.Equal(s_steam, saved["steamId"].AsString);
+        Assert.Equal(s_steam, saved["steamTicket"]["steam_id"].AsString);
+    }
+
+    [SkippableFact]
+    public async Task AProvedSteamIdDoesNotDisplaceAnotherProvedOne()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        const string sibling = "76561198000000002";
+        var account = await SeedAsync("Sibling", steam: sibling, install: Install);
+        await Players.UpdateOneAsync(new BsonDocument("_id", account), new BsonDocument("$set", new BsonDocument("steamTicket", new BsonDocument { { "steam_id", sibling }, { "ticket_hash", "x" } })));
+        await Redis.HashSetAsync($"identity:{Ip}", [new HashEntry("steamId", s_steam), new HashEntry("steamVerified", "1"), new HashEntry("steamTicket", TicketJson()), new HashEntry("installId", Install)]);
+        // Two proved Steam accounts on one install are two people: the sibling keeps their account, this login gets its own.
+        var result = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, IdentifyToken(s_steam, verified: true)));
+        Assert.NotEqual(account.ToString(), result.PlayerId);
+        var saved = await Players.Find(new BsonDocument("_id", account)).SingleAsync();
+        Assert.Equal(sibling, saved["steamId"].AsString);
+        Assert.Equal(sibling, saved["steamTicket"]["steam_id"].AsString);
+        var own = await Players.Find(new BsonDocument("_id", ObjectId.Parse(result.PlayerId))).SingleAsync();
+        Assert.Equal(s_steam, own["steamId"].AsString);
+    }
+
+    [SkippableFact]
+    public async Task AProvedEpicIdReplacesOneTheInstallsAccountHeldAsAClaimAndIsMarkedProved()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        _epic.ClientId = "client";
+        var account = await SeedAsync("Claimed", steam: "", install: Install, epic: "ffffffffffffffffffffffffffffffff");
+        var result = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, EpicIdentifyToken(verified: true)));
+        Assert.Equal(account.ToString(), result.PlayerId);
+        var saved = await Players.Find(new BsonDocument("_id", account)).SingleAsync();
+        Assert.Equal(Epic, saved["epicId"].AsString);
+        Assert.True(saved[AccessService.EpicProvedField].IsValidDateTime);
+
+        // Proved now: a different proved id reaching the install is another person, with an account of their own.
+        await Redis.KeyDeleteAsync($"identity:epic:{Epic}");
+        var other = IdentifyTokens.Sign(new JsonObject { ["epicId"] = "0123456789abcdef0123456789abcde1", ["installId"] = Install, ["identityRegistered"] = "1", ["epicVerified"] = "1" }, IdentifySecret, DateTimeOffset.UtcNow);
+        var theirs = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, other));
+        Assert.NotEqual(account.ToString(), theirs.PlayerId);
+        Assert.Equal(Epic, (await Players.Find(new BsonDocument("_id", account)).SingleAsync())["epicId"].AsString);
+    }
+
+    private static string EpicIdentifyToken(bool verified) =>
+        IdentifyTokens.Sign(new JsonObject { ["epicId"] = Epic, ["installId"] = Install, ["identityRegistered"] = "1", ["epicVerified"] = verified ? "1" : "" }, IdentifySecret, DateTimeOffset.UtcNow);
+
     [SkippableFact]
     public async Task TheGamesOwnSessionTokenStillBindsByTheAccountsSteamId()
     {
@@ -208,7 +309,7 @@ public sealed class AccessIdentityTests : IAsyncLifetime
         var services = Stores();
         return new AccessService(services, new TestOptions<AccessSettings>(new AccessSettings { JwtSecret = Secret, IdentifySecret = IdentifySecret }),
             new TestOptions<RealtimeSettings>(new RealtimeSettings()), new TestOptions<SeasonSettings>(new SeasonSettings()), new TestOptions<SteamSettings>(_steam),
-            new BanService(services, NullLogger<BanService>.Instance), new NameRules(options, TimeProvider.System, NullLogger<NameRules>.Instance),
+            new TestOptions<Core.Epic.EpicSettings>(_epic), new BanService(services, NullLogger<BanService>.Instance), new NameRules(options, TimeProvider.System, NullLogger<NameRules>.Instance),
             new PersonBans(services, options, TimeProvider.System, NullLogger<PersonBans>.Instance), TimeProvider.System, NullLogger<AccessService>.Instance);
     }
 
@@ -225,17 +326,21 @@ public sealed class AccessIdentityTests : IAsyncLifetime
         return IdentifyService.TicketFields(verified, Ip, SteamTickets.Now).ToJson(new MongoDB.Bson.IO.JsonWriterSettings { OutputMode = MongoDB.Bson.IO.JsonOutputMode.CanonicalExtendedJson });
     }
 
-    private async Task<ObjectId> SeedAsync(string name, string steam, string install)
+    private async Task<ObjectId> SeedAsync(string name, string steam, string install, string epic = "")
     {
         var id = ObjectId.GenerateNewId();
         await Players.InsertOneAsync(new BsonDocument
         {
             { "_id", id }, { "name", name }, { "hydraUsername", "OpenVersus_1234567890123" }, { "ip", "198.51.100.40" },
-            { "steamId", steam }, { "epicId", "" }, { "installId", install }, { "account", new BsonDocument("current_ip", "198.51.100.41") },
+            { "steamId", steam }, { "epicId", epic }, { "installId", install }, { "account", new BsonDocument("current_ip", "198.51.100.41") },
         });
         if (steam.Length > 0)
         {
             await Redis.StringSetAsync($"identity:steam:{steam}", id.ToString());
+        }
+        if (epic.Length > 0)
+        {
+            await Redis.StringSetAsync($"identity:epic:{epic}", id.ToString());
         }
 
         if (install.Length > 0)

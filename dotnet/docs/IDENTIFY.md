@@ -17,8 +17,7 @@ is refused, always.
 - Verified: the ticket's SteamID64 is the client's Steam id, and the identity record and the token say so
   (`steamVerified: "1"`).
 - Refused, or no ticket at all: the claimed `steamId` is logged and dropped. The client is identified by its install id,
-  its hardware fingerprint and its IP, as any non-Steam client always was. An Epic id is still taken as claimed: there
-  is no ticket for it (yet).
+  its hardware fingerprint and its IP, as any non-Steam client always was. An Epic id has a proof of its own (below).
 
 The check is offline. What it proves: Steam signed this ownership ticket for this SteamID64 and this app, and it has
 not expired. What it does not: that the ticket is fresh. Only the ownership ticket is signed and Steam reuses it for
@@ -70,6 +69,47 @@ the websocket is up yet; a game Steam saw close (or refused) within `Steam:Prese
 the reaper notices; everything else (no session, pending, unavailable, an older verdict, a session under a Steam id that
 belongs to another player, no service running) leaves the websocket's answer. Match logic keeps reading
 `online_players`: a game that lost its socket is still gone from the match.
+
+## An Epic id needs the game's ID token
+
+The client sends `epicToken` with its registration: the Epic account ID token the game's own Epic Online Services SDK
+holds once the game is logged into an Epic account, a JWT Epic signs (RS256) for the game's client id, whose subject is
+the Epic account id. The game never asks its SDK for one; the client does, on the game's platform handle, and
+registers again with it when the login lands (an Epic launch logs in during startup; the first registration goes
+without). Only an Epic Games Store launch logs into an Epic account: a Steam launch logs into EOS Connect alone
+(measured 2026-10-08), so a Steam client never has one, and the Epic id it may read off the Epic launcher's files is
+the launcher's account, not the game's.
+
+The check (`src/OpenVersus.Server.Identity/Epic`, in-process like the offline ticket check): Epic's published keys
+(`Epic:JwksUrl`, the JWKS of its OpenID discovery document; fetched at startup, again after `Epic:JwksRefreshMinutes`,
+and at once, at most once a minute, when a token names a key not held), the signature, the issuer (`Epic:Issuer`), the
+audience (`Epic:ClientId`, the game's EOS client id), expiry and not-before within `Epic:ClockSkewSeconds`, and a
+32-hex subject. The keys last fetched are the floor: when Epic cannot be reached they serve on. There is no "ask Epic"
+for an ID token as there is for a Steam ticket: a token stands until it expires (typically about an hour; unconfirmed
+until a live one is seen), and that is both the floor and the ceiling.
+
+Enforced only with `Epic:Enabled` and a client id (`Epic:ClientId`); without one, Epic ids are taken as claimed, as
+before, and a token is ignored. Enforced:
+
+- Verified: the token's subject is the client's Epic id (a differing claimed `epicId` is logged; the token decides), and
+  the identity record and the identify token say so (`epicVerified: "1"`). The login takes an Epic id from an identify
+  token or from the record only with that proof.
+- Refused (bad signature, another issuer or audience, expired, a key Epic does not publish): the claimed id is logged
+  and dropped, and a proof the same install stored earlier is dropped with it. No token: the claim is logged and
+  dropped. The client is identified by its install id, hardware and IP.
+- Not judged (no keys from Epic yet, in a fetch outage before any succeeded): the claim stays in the record unverified,
+  which the login ignores; nothing is refused, and the outage is logged once.
+
+Nothing is ever removed from an account: an account keeps the Epic id it has (and its Steam id beside it; a player
+has both when both were seen). A proved id, Steam or Epic, replaces one the account held as a claim when the login
+reached the account by its install id, hardware or IP: that match says whose account it is, and the proved id is the
+right one. An id the account holds proved (its ticket names it; an Epic id written with its proof, `epicVerifiedAt`)
+is never displaced by a different proved one: two ticketed Steam accounts on one install are two people at a shared
+PC, and the second gets an account of their own instead of the first's. What the proof otherwise changes is how a login finds the account: an Epic client older than the one that sends
+the token is found by its install id, hardware and IP, which reach the same account, until it updates. The verifier has not yet seen a live Epic token (none
+exists on a Steam launch): it checks the names OpenID Connect gives the claims, and `Epic:ClientId` is where a surprise
+in the audience would be fixed. The `x-epic-id` header the account resolver still honors on other routes is not
+covered by this check (the resolver hardening is a separate item).
 
 ## The token has its own secret
 

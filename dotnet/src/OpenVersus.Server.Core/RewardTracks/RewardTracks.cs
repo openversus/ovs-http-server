@@ -127,12 +127,23 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
             return [];
         }
 
+        // A track whose last tier does not recur stops at that tier's threshold: XP past it is not added, and a track it
+        // did not move is not reported (no banner): a maxed battle pass showed "-300 For Tier 51" (Jacob, 2026-10-08).
+        var moved = new HashSet<string>();
         var tracks = await UpdateAsync(accountId, stored =>
         {
+            moved.Clear();
             foreach (var (slug, add) in points)
             {
                 var state = stored[slug] as JsonObject ?? Initial(slug);
-                stored[slug] = Scored(slug, state, Score(state) + add);
+                long before = Score(state);
+                long after = Capped(slug, before + add);
+                if (after != before)
+                {
+                    moved.Add(slug);
+                }
+
+                stored[slug] = Scored(slug, state, after);
             }
 
             return true;
@@ -143,7 +154,20 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
             return [];
         }
 
-        return Changed(tracks, points.Keys);
+        return Changed(tracks, moved);
+    }
+
+    // The score a track keeps: at most its last tier's threshold, unless that tier recurs (bDoesLastTierRecurInfinitely).
+    internal static long Capped(string slug, long score)
+    {
+        var data = HissTables.Data("milestone-reward-tracks", slug);
+        if (data is null || data["bDoesLastTierRecurInfinitely"] is JsonValue recur && recur.TryGetValue(out bool recurs) && recurs)
+        {
+            return score;
+        }
+
+        var thresholds = (data["Tiers"] as JsonArray ?? []).OfType<JsonObject>().Select(t => RiftsNumber(t["ScoreThreshold"])).OfType<double>().ToList();
+        return thresholds.Count == 0 ? score : Math.Min(score, (long)thresholds.Max());
     }
 
     public Task<(JsonObject? Track, IReadOnlyList<JsonObject> Claimed)> ClaimAllAsync(string accountId, string trackSlug, CancellationToken ct) =>

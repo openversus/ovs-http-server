@@ -124,6 +124,28 @@ public sealed class RewardTrackServiceTests : IAsyncLifetime
         Assert.Equal(["body", "metadata", "return_code"], answer.Select(kv => kv.Key));
     }
 
+    // A maxed battle pass (its last tier does not recur) takes no more XP and is not reported, so no banner shows a
+    // negative "for tier 51" (Jacob, 2026-10-08); XP up to the last threshold still lands.
+    // The battle pass, and a fighter's level (its Fighter Pass): a maxed one gets no banner after a set.
+    [SkippableTheory]
+    [InlineData("mrt_battlepass_season_five")]
+    [InlineData("mrt_mastery_lebron")]
+    public async Task AMaxedTrackTakesNoMoreScoreAndIsNotReported(string pass)
+    {
+        Skip.If(_mongo is null, "set OVS_TEST_MONGO to run");
+        string id = ObjectId.GenerateNewId().ToString();
+        long max = RewardTrackService.Capped(pass, long.MaxValue);
+        Assert.True(max > 0 && max < long.MaxValue);
+
+        var toMax = await Service().AddScoreAsync(id, new Dictionary<string, int> { [pass] = (int)max + 300 }, default);
+        Assert.Equal(max, Track(await Service().AnswerAsync(id, default), pass)["CurrentScore"]!.GetValue<long>());
+        Assert.Single(toMax);
+
+        var past = await Service().AddScoreAsync(id, new Dictionary<string, int> { [pass] = 300 }, default);
+        Assert.Empty(past);
+        Assert.Equal(max, Track(await Service().AnswerAsync(id, default), pass)["CurrentScore"]!.GetValue<long>());
+    }
+
     [SkippableFact]
     public async Task AddedScoreReturnsTheChangedTracksAsTheAnswerListsThem()
     {

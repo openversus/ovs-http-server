@@ -315,7 +315,9 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
         ["ClaimedRewards"] = state["ClaimedRewards"]?.DeepClone() ?? new JsonArray(),
         ["bHasPremium"] = track["bHasPremium"]?.DeepClone(),
         ["Guid"] = track["Guid"]?.DeepClone(),
-        ["InfiniteTierThreshold"] = track["InfiniteTierThreshold"]?.DeepClone(),
+        // The infinity tier's index; a fighter track the Fighter Pass extension extends has it at its new end.
+        ["InfiniteTierThreshold"] = FighterPass.InfiniteTierIndex(track["TrackSlug"]?.GetValue<string>() ?? "") is int infinite
+            ? infinite : track["InfiniteTierThreshold"]?.DeepClone(),
         ["HighestClaimedInifiniteTier"] = state["HighestClaimedInifiniteTier"]?.DeepClone() ?? -1,
     };
 
@@ -367,6 +369,8 @@ public static class RewardTrackHosting
     public static WebApplicationBuilder AddRewardTracks(this WebApplicationBuilder builder)
     {
         builder.AddSetting<RewardTrackSettings>("RewardTracks");
+        builder.AddSetting<FighterPassSettings>("FighterPass");
+        builder.Services.AddHostedService<FighterPassSync>();
         builder.Services.AddSingleton<IRewardTrackService, RewardTrackService>();
         builder.Services.AddSingleton<IRewardGrants, RewardGrants>();
         return builder;

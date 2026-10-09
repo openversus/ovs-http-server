@@ -13,6 +13,7 @@ using OpenVersus.Server.Core.Assets;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Hydra;
+using OpenVersus.Server.Core.RewardTracks;
 using OpenVersus.Server.Core.Rifts;
 using OpenVersus.Server.Core.Settings;
 
@@ -87,20 +88,22 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
     private const string Template = "OpenVersus.Server.Core.Hiss.hiss-amalgamation.json";
 
     private readonly Lock _gate = new();
-    private (double Crc, Task<HissAnswer> Build)? _current;
+    private (double Crc, string FighterPass, Task<HissAnswer> Build)? _current;
 
     public async Task<HissAnswer> AnswerAsync(CancellationToken ct)
     {
         var mongo = services.GetService<IMongoDatabase>() ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)");
         double crc = await CrcAsync(mongo, ct);
+        var fighterPass = FighterPass.Current;
+        string fighterPassKey = FighterPass.Key(fighterPass);
         Task<HissAnswer> build;
         lock (_gate)
         {
             // A build is shared by every request waiting on it, so it does not take their cancellation; a failed one is
             // tried again by the next request.
-            if (_current is not { } current || current.Crc != crc || current.Build.IsFaulted || current.Build.IsCanceled)
+            if (_current is not { } current || current.Crc != crc || current.FighterPass != fighterPassKey || current.Build.IsFaulted || current.Build.IsCanceled)
             {
-                _current = (crc, Task.Run(() => BuildAsync(mongo, crc)));
+                _current = (crc, fighterPassKey, Task.Run(() => BuildAsync(mongo, crc, fighterPass)));
             }
 
             build = _current.Value.Build;
@@ -132,13 +135,14 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         return config?.GetValue("CRC", BsonNull.Value) is { IsNumeric: true } value ? value.ToDouble() : DefaultCrc;
     }
 
-    private async Task<HissAnswer> BuildAsync(IMongoDatabase mongo, double crc)
+    private async Task<HissAnswer> BuildAsync(IMongoDatabase mongo, double crc, FighterPassSettings fighterPass)
     {
         long started = Stopwatch.GetTimestamp();
         var assets = await DataAssets.EnabledAsync(mongo, CancellationToken.None);
         var values = Values(crc, assets);
         var answer = Fill(values);
         RiftCatalog.ExtendEndTimes(answer["body"]?["Data"]?["rift-config"]?["_hydra_compressed"] as JsonObject);
+        ExtendFighterPasses(answer, fighterPass);
         byte[] hydra = HydraEncoder.Encode(answer, compression: CompressionLevel.Optimal);
         log.LogInformation("Built the hiss answer for CRC {Crc}: {Assets} data assets, {Bytes} bytes, {Ms:F0} ms",
             crc, assets.Count, hydra.Length, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
@@ -146,8 +150,18 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         {
             var json = Fill(values);
             RiftCatalog.ExtendEndTimes(json["body"]?["Data"]?["rift-config"]?["_hydra_compressed"] as JsonObject);
+            ExtendFighterPasses(json, fighterPass);
             return Js.Stringify(json);
         });
+    }
+
+    // The fighter tracks as FighterPass:ExtraTiers extends them, as the server's own tables (HissTables) have them.
+    internal static void ExtendFighterPasses(JsonNode answer, FighterPassSettings fighterPass)
+    {
+        if (fighterPass.ExtraTiers > 0 && answer["body"]?["Data"]?["milestone-reward-tracks"] is JsonObject section && section["_hydra_compressed"] is JsonObject tracks)
+        {
+            section["_hydra_compressed"] = FighterPass.Extend(tracks, fighterPass);
+        }
     }
 
     // The same answer with zstd sections. A failure leaves every client on zlib.

@@ -9,7 +9,7 @@ export const LIME_SUPERMAN_ASSET = {
   character_slug: "character_superman", enabled: true,
 } as const;
 
-// Metallic Lime Superman: a material variant on Superman's own model (Jacob kept it for End Game, 2026-10-07, with his
+// Metallic Lime Superman: a material variant on Superman's own model (Tuggernuts kept it for End Game, 2026-10-07, with his
 // own thumbnail). Owned by everyone; not a Fighter Pass or battle pass reward.
 export const LIME_SUPERMAN_INVENTORY: InventoryDef = {
   ...CHROMIUM_SHAGGY_INVENTORY,

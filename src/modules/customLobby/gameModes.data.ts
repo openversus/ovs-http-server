@@ -4684,7 +4684,7 @@ export const GAME_MODES_CONFIG = {
             RequiredTeamPlayerBuffs: [],
           },
         ],
-        MapRotation: "CustomFFA", // was WB's PlaytestCustomFFA, with the unfinished M025 / M026 maps (Jacob, 2026-10-07)
+        MapRotation: "CustomFFA", // was WB's PlaytestCustomFFA, with the unfinished M025 / M026 maps (Tuggernuts, 2026-10-07)
         MatchDuration: 420,
         MaximumLocalPlayPlayers: 1,
         RequiredWorldBuffs: [],

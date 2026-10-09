@@ -125,7 +125,7 @@ public sealed class RewardTrackServiceTests : IAsyncLifetime
     }
 
     // A maxed battle pass (its last tier does not recur) takes no more XP and is not reported, so no banner shows a
-    // negative "for tier 51" (Jacob, 2026-10-08); XP up to the last threshold still lands.
+    // negative "for tier 51" (Tuggernuts, 2026-10-08); XP up to the last threshold still lands.
     // The battle pass, and a fighter's level (its Fighter Pass): a maxed one gets no banner after a set.
     [SkippableTheory]
     [InlineData("mrt_battlepass_season_five")]

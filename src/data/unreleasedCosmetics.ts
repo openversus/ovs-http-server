@@ -1,4 +1,4 @@
-// Cosmetics that ship in the game files but were never released, picked by Jacob after testing each
+// Cosmetics that ship in the game files but were never released, picked by Tuggernuts after testing each
 // one in game (2026-10-02; the review is in the Codex workspace, work/unreleased-audit/reviewed.txt).
 // They are End Game battle-pass rewards (milestones.ts). Their catalog rows, with the asset paths below,
 // are in dotnet/tools/assets/end-game-assets.json (sync_assets.mjs).

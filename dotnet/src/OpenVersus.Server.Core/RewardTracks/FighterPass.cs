@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace OpenVersus.Server.Core.RewardTracks;
 
-// A second season of Fighter Passes without a reset (Jacob, 2026-10-08). Each fighter's track (mrt_mastery_*, an
+// A second season of Fighter Passes without a reset (Tuggernuts, 2026-10-08). Each fighter's track (mrt_mastery_*, an
 // MvsCharacterMasteryRewardTrackHsda) ends in a tier the game draws as the wide infinity card: its DisplayType is
 // EMvsTierDisplayType::Infinite (2), not its place, says so, and get_milestone_reward_tracks' InfiniteTierThreshold
 // (15) is that tier's index. With FighterPass:ExtraTiers set, that tier becomes a Milestone card (1) and the extra

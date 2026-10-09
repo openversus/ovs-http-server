@@ -86475,7 +86475,7 @@ for (const { trackSlug, skinSlug } of CHROMIUM_FIGHTER_PASS) {
 // (unreleasedCosmetics.ts), in a shuffled order (2026-10-02).
 // Tier N is the Nth slug.
 const battlepassTiers = MILESTONE_REWARDS.mrt_battlepass_season_five.data.Tiers as any[];
-// The End Game battle pass, one reward per tier, in Jacob's order (2026-10-07): the valuable items spread out
+// The End Game battle pass, one reward per tier, in Tuggernuts's order (2026-10-07): the valuable items spread out
 // (early: One Tough Banana, Sailor Aquaman, the Tooniverse skins; mid: Jason, Cackle, Bugs Crying, Painter
 // Beetlejuice; late: Finn's dance, Laughing Shaggy, Peace Among Worlds; last: Twerk It Out), no two skins in a
 // row, taunts apart, the Toasties every few tiers.
@@ -86528,7 +86528,7 @@ export const OVS_BATTLEPASS_REWARD_SLUGS: string[] = [
   "emote_ovs_rickflick", // 46: Peace Among Worlds, late valuable
   "emote_ovs_jdawg", // 47: J-800 (Glassconsumer69)
   "emote_ovs_toastie_cool", // 48
-  LEBRON_50CENT_SLUG, // 49: Get Rich or Dunk Tryin' (Glassconsumer69), near the end (Jacob 2026-10-08)
+  LEBRON_50CENT_SLUG, // 49: Get Rich or Dunk Tryin' (Glassconsumer69), near the end (Tuggernuts 2026-10-08)
   "emote_ovs_gingerbread_man", // 50
   TWERK_IT_OUT_SLUG, // 51: Twerk It Out (Tuggernuts), the last tier
 ];

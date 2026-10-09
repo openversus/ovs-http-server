@@ -10,7 +10,7 @@ export const LEBRON_50CENT_ASSET = {
 } as const;
 
 // Get Rich or Dunk Tryin': LeBron as 50 Cent (cap, beard, tattoos, grey tank), made by Glassconsumer69. Its own head
-// part (the cap) on LeBron's skeleton, LeBron's body with a new colour map. A battle pass reward (tier 49, Jacob
+// part (the cap) on LeBron's skeleton, LeBron's body with a new colour map. A battle pass reward (tier 49, Tuggernuts
 // 2026-10-08), so owned once claimed.
 export const LEBRON_50CENT_INVENTORY: InventoryDef = {
   ...CHROMIUM_SHAGGY_INVENTORY,

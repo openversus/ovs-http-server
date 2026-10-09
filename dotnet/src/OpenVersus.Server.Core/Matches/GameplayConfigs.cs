@@ -174,7 +174,7 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
             ["bAllowMapHazards"] = hazards,
             ["RiftNodeAttunement"] = "Attunements:None",
             // The intro countdown: "X v Y" counts each team's players, so an FFA match read "1 v 1"; the game has an FFA one
-            // (CountdownTypes.FFA, in its binary) (Jacob, 2026-10-07).
+            // (CountdownTypes.FFA, in its binary) (Tuggernuts, 2026-10-07).
             ["CountdownDisplay"] = ffa ? "CountdownTypes:FFA" : "CountdownTypes:XvY",
             ["Cluster"] = "ec2-us-east-1-dokken",
             ["WorldBuffs"] = n["worldBuffs"]?.DeepClone() ?? new JsonArray(),

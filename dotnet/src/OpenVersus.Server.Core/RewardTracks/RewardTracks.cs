@@ -128,7 +128,7 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
         }
 
         // A track whose last tier does not recur stops at that tier's threshold: XP past it is not added, and a track it
-        // did not move is not reported (no banner): a maxed battle pass showed "-300 For Tier 51" (Jacob, 2026-10-08).
+        // did not move is not reported (no banner): a maxed battle pass showed "-300 For Tier 51" (Tuggernuts, 2026-10-08).
         var moved = new HashSet<string>();
         var tracks = await UpdateAsync(accountId, stored =>
         {

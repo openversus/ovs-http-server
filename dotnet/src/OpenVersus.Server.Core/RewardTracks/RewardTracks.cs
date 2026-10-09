@@ -39,7 +39,7 @@ namespace OpenVersus.Server.Core.RewardTracks;
 public sealed class RewardTrackSettings
 {
     [Description("Each player has their own reward tracks other than character and account levels (battle passes, the missions' bonus tracks, events), starting from nothing. Off: those tracks as the TS server's fixed answer has them, the same for everyone, and nothing is added to them.")]
-    public bool PerPlayer { get; set; }
+    public bool PerPlayer { get; set; } = true;
 
     [Description("Character and account levels (the mrt_mastery_* tracks) are each player's own, starting from zero and earned in matches. Off: as the TS server's fixed answer has them (every character at level 99), and no match XP is recorded.")]
     public bool CharacterMastery { get; set; }

@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
+using MongoDB.Driver;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Access;
@@ -174,20 +175,62 @@ public sealed class IdentifyEpicTests : IAsyncLifetime
         Assert.Null(accountId);
     }
 
+    [SkippableFact]
+    public async Task AVerifiedEpicIdIsPutOnTheAccountTheRegistrationResolvesTo()
+    {
+        Skip.IfNot(Configured && !string.IsNullOrEmpty(s_mongo), "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        _epic.ClientId = "client";
+        var mongo = new MongoDB.Driver.MongoClient(new MongoDB.Driver.MongoUrlBuilder(s_mongo) { DatabaseName = TestMongoDb }.ToMongoUrl());
+        await mongo.DropDatabaseAsync(TestMongoDb);
+        try
+        {
+            var players = mongo.GetDatabase(TestMongoDb).GetCollection<MongoDB.Bson.BsonDocument>("playertesters");
+            var id = MongoDB.Bson.ObjectId.Parse(Account);
+            await players.InsertOneAsync(new MongoDB.Bson.BsonDocument { { "_id", id }, { "name", "Claimed" }, { "epicId", Claimed }, { "installId", Install } });
+            await Redis.StringSetAsync($"identity:install:{Install}", Account);
+
+            // The game's own login may read the record before this registration wrote it: the proof goes onto the account here.
+            _verifier.Next = new EpicTokenCheck.Verified(Proved, new JsonObject(), DateTimeOffset.UtcNow.AddHours(1));
+            var (_, _, accountId) = await RegisterAsync(new JsonObject { ["epicId"] = Claimed, ["epicToken"] = "token", ["installId"] = Install }, mongo.GetDatabase(TestMongoDb));
+            Assert.Equal(Account, accountId);
+            var saved = await players.Find(new MongoDB.Bson.BsonDocument("_id", id)).SingleAsync();
+            Assert.Equal(Proved, saved["epicId"].AsString);
+            Assert.True(saved[Core.Identity.IdentityRecord.EpicProvedField].IsValidDateTime);
+
+            // Proved now: another person's proved id reaching the same install leaves it alone.
+            _verifier.Next = new EpicTokenCheck.Verified("cccccccccccccccccccccccccccccccc", new JsonObject(), DateTimeOffset.UtcNow.AddHours(1));
+            await RegisterAsync(new JsonObject { ["epicToken"] = "token", ["installId"] = Install }, mongo.GetDatabase(TestMongoDb));
+            Assert.Equal(Proved, (await players.Find(new MongoDB.Bson.BsonDocument("_id", id)).SingleAsync())["epicId"].AsString);
+        }
+        finally
+        {
+            await mongo.DropDatabaseAsync(TestMongoDb);
+        }
+    }
+
     // Helpers
 
-    private async Task<(Dictionary<string, string> Record, JsonObject Claims, string? AccountId)> RegisterAsync(JsonObject body)
+    private const string TestMongoDb = "ovs_identify_epic_tests";
+    private static readonly string? s_mongo = Environment.GetEnvironmentVariable("OVS_TEST_MONGO");
+
+    private async Task<(Dictionary<string, string> Record, JsonObject Claims, string? AccountId)> RegisterAsync(JsonObject body, MongoDB.Driver.IMongoDatabase? mongo = null)
     {
-        var result = Assert.IsType<IdentifyResult.Ok>(await Service().RegisterAsync(Ip, body));
+        var result = Assert.IsType<IdentifyResult.Ok>(await Service(mongo).RegisterAsync(Ip, body));
         var record = (await Redis.HashGetAllAsync($"identity:{Ip}")).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
         var claims = IdentifyTokens.Verify((string?)result.Response["token"], IdentifySecret, DateTimeOffset.UtcNow);
         Assert.NotNull(claims);
         return (record, claims, (string?)result.Response["accountId"]);
     }
 
-    private IdentifyService Service()
+    private IdentifyService Service(MongoDB.Driver.IMongoDatabase? mongo = null)
     {
-        var services = new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider();
+        var collection = new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!);
+        if (mongo is not null)
+        {
+            collection.AddSingleton(mongo);
+        }
+
+        var services = collection.BuildServiceProvider();
         using var key = SteamTickets.NewKey();
         return new IdentifyService(services,
             new Options<AccessSettings>(new AccessSettings { JwtSecret = "identify-epic-tests-game-secret-0123456789", IdentifySecret = IdentifySecret }),

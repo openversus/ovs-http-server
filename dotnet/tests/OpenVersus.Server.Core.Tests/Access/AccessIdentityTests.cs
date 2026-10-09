@@ -265,7 +265,7 @@ public sealed class AccessIdentityTests : IAsyncLifetime
         Assert.Equal(account.ToString(), result.PlayerId);
         var saved = await Players.Find(new BsonDocument("_id", account)).SingleAsync();
         Assert.Equal(Epic, saved["epicId"].AsString);
-        Assert.True(saved[AccessService.EpicProvedField].IsValidDateTime);
+        Assert.True(saved[IdentityRecord.EpicProvedField].IsValidDateTime);
 
         // Proved now: a different proved id reaching the install is another person, with an account of their own.
         await Redis.KeyDeleteAsync($"identity:epic:{Epic}");

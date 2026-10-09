@@ -80,7 +80,7 @@ public sealed class EpicIdTokenVerifier(IEpicKeySource source, IOptionsMonitor<E
             return new EpicTokenCheck.Refused($"kid {parsed.KeyId} is not one of Epic's keys");
         }
 
-        return parsed.Verify(key, options.Issuer, options.ClientId, now, TimeSpan.FromSeconds(options.ClockSkewSeconds));
+        return parsed.Verify(key, options.Issuers, options.ClientId, now, TimeSpan.FromSeconds(options.ClockSkewSeconds));
     }
 
     /// <summary>Fetches the keys now if none are held or they are due; the startup warm-up calls this.</summary>

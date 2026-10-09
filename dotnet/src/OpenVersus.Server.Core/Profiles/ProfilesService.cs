@@ -36,6 +36,13 @@ public interface IProfilesService
     Task<JsonArray> WbNetworkAccountsAsync(JsonNode? body, CancellationToken ct = default);
 
     /// <summary>
+    /// GET /accounts/wb_network/{id}: the player by id, else by public_id: <c>{id, identity.default_username: true,
+    /// identity.username, presence: "online", presence_state: 1}</c> (the TS answer, name as stored); <c>{}</c> for
+    /// no player, a bad id, or a failed read.
+    /// </summary>
+    Task<JsonObject> WbNetworkAccountAsync(string id, CancellationToken ct = default);
+
+    /// <summary>
     /// GET /profiles/bulk: <c>{ids: [...]}</c> in, profiles out. <paramref name="hydra"/>: the answer goes out as Hydra,
     /// where the TS server's <c>new Date()</c> becomes an empty map (JSON gets the time).
     /// </summary>
@@ -123,6 +130,44 @@ internal sealed class ProfilesService(IServiceProvider services, IOptionsMonitor
 
             return results;
         }, ct);
+    }
+
+    public async Task<JsonObject> WbNetworkAccountAsync(string id, CancellationToken ct)
+    {
+        var mongo = services.GetService<IMongoDatabase>();
+        if (mongo is null)
+        {
+            log.LogError("GET /accounts/wb_network/{{id}}: this service has no Mongo (MONGODB_URI)");
+            return [];
+        }
+
+        try
+        {
+            var players = mongo.GetCollection<BsonDocument>(PlayerRecord.Collection);
+            // findById (a string that is no ObjectId is a cast error, caught: null), then findOne({public_id}).
+            var player = ObjectId.TryParse(id, out var oid) ? await players.Find(new BsonDocument("_id", oid)).FirstOrDefaultAsync(ct) : null;
+            player ??= await players.Find(new BsonDocument("public_id", id)).FirstOrDefaultAsync(ct);
+            if (player is null)
+            {
+                return [];
+            }
+
+            var answer = new JsonObject { ["id"] = player["_id"].ToString(), ["identity.default_username"] = true };
+            // player.name as it is: a missing name leaves the key out (JSON drops an undefined value).
+            if (player.GetValue("name", BsonNull.Value) is { IsString: true } name)
+            {
+                answer["identity.username"] = name.AsString;
+            }
+
+            answer["presence"] = "online";
+            answer["presence_state"] = 1;
+            return answer;
+        }
+        catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            log.LogError(e, "GET /accounts/wb_network/{Id} failed", id);
+            return [];
+        }
     }
 
     public async Task<JsonArray> ProfilesAsync(JsonNode? body, bool hydra, CancellationToken ct)

@@ -137,6 +137,51 @@ public sealed class HydraBodiesTests : IAsyncLifetime, IClassFixture<GameAppFact
         Assert.Equal("""{"body":{"OneVsOne":[],"TwoVsTwo":[]},"metadata":null,"return_code":0}""", await response.Content.ReadAsStringAsync());
     }
 
+    [Fact]
+    public async Task LoadGameplayConfigIsAnEmptySuccess()
+    {
+        var response = await _server.CreateGameClient().GetAsync("/ssc/invoke/load_gameplay_config?MatchId=abc");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("GetLoadGameplayConfig", response.Headers.GetValues("X-OVS-Endpoint").Single());
+        Assert.Equal("""{"body":{},"metadata":null,"return_code":200}""", await response.Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [InlineData("GET", "/accounts/me/notifications", "AnyAccountsMeNotifications", """{"notifications":[],"total":0}""")]
+    [InlineData("GET", "/accounts/me/notifications/bulk", "AnyAccountsMeNotificationsById", """{"notifications":[],"total":0}""")]
+    [InlineData("POST", "/datarouter/api/v1/public/data/clients", "PostDatarouterApiV1PublicDataClients", "{}")]
+    [InlineData("GET", "/global_configuration_types/eula/global_configurations/x", "GetGlobalConfigurationTypesByTypeGlobalConfigurationsById", "200")]
+    // Without the stores the lookup answers {} as the TS catch does.
+    [InlineData("GET", "/accounts/wb_network/abc", "GetAccountsByIdBySub", "{}")]
+    // Methods and ids the TS server has no route for: its catch-all.
+    [InlineData("PUT", "/accounts/me/notifications", "AnyAccountsMeNotifications", CatchAll)]
+    [InlineData("GET", "/accounts/me/notifications/other", "AnyAccountsMeNotificationsById", CatchAll)]
+    [InlineData("GET", "/accounts/me/notifications/bulk/x", "AnyAccountsMeNotificationsBulkById", CatchAll)]
+    [InlineData("GET", "/global_configuration_types/other/global_configurations/x", "GetGlobalConfigurationTypesByTypeGlobalConfigurationsById", CatchAll)]
+    [InlineData("GET", "/accounts/epic/abc", "GetAccountsByIdBySub", CatchAll)]
+    public async Task SmallRoutesAnswerAsTheTsServerDoes(string method, string path, string endpoint, string body)
+    {
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+        if (method != "GET")
+        {
+            request.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+        }
+
+        var response = await _server.CreateGameClient().SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(endpoint, response.Headers.GetValues("X-OVS-Endpoint").Single());
+        Assert.Equal(body, await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task AnAcknowledgedNotificationIs204()
+    {
+        var response = await _server.CreateGameClient().DeleteAsync("/accounts/me/notifications/bulk/abc");
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal("AnyAccountsMeNotificationsBulkById", response.Headers.GetValues("X-OVS-Endpoint").Single());
+        Assert.Equal("", await response.Content.ReadAsStringAsync());
+    }
+
     private const string CatchAll = """{"body":{"Crc":1267552971,"MatchmakingCrc":2},"metadata":null,"return_code":200}""";
 
     [SkippableFact]

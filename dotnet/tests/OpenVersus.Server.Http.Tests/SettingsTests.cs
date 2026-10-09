@@ -14,7 +14,7 @@ namespace OpenVersus.Server.Http.Tests;
 public sealed class SettingsTests : IDisposable
 {
     // Any route still answered by a stub (GetClansByIdBySub).
-    private const string StubPath = "/accounts/wb_network/x";
+    private const string StubPath = "/virtual_commerce/purchases/x/toasts_gleamium";
 
     private readonly GameAppFactory _factory = new();
 
@@ -26,15 +26,15 @@ public sealed class SettingsTests : IDisposable
     public async Task ChangingTheStubStatusAppliesAtOnce()
     {
         var client = _factory.CreateGameClient();
-        Assert.Equal(501, (int)(await client.GetAsync(StubPath)).StatusCode);
+        Assert.Equal(501, (int)(await client.PostAsync(StubPath, null)).StatusCode);
 
         Assert.Null(await Settings.SetAsync("Stubs:StatusCode", "503", SettingScope.Instance));
-        Assert.Equal(503, (int)(await client.GetAsync(StubPath)).StatusCode);
+        Assert.Equal(503, (int)(await client.PostAsync(StubPath, null)).StatusCode);
         // The fallback is not a stub: it answers as the TS server's catch-all did, whatever the setting.
         Assert.Equal(200, (int)(await client.GetAsync("/not/a/route")).StatusCode);
 
         Assert.True(await Settings.RemoveAsync("Stubs:StatusCode", SettingScope.Instance));
-        Assert.Equal(501, (int)(await client.GetAsync(StubPath)).StatusCode);
+        Assert.Equal(501, (int)(await client.PostAsync(StubPath, null)).StatusCode);
     }
 
     [Theory]
@@ -44,7 +44,7 @@ public sealed class SettingsTests : IDisposable
     public async Task AStatusTheSettingCannotTakeIsRefused(string value)
     {
         Assert.NotNull(await Settings.SetAsync("Stubs:StatusCode", value, SettingScope.Instance));
-        Assert.Equal(501, (int)(await _factory.CreateGameClient().GetAsync(StubPath)).StatusCode);
+        Assert.Equal(501, (int)(await _factory.CreateGameClient().PostAsync(StubPath, null)).StatusCode);
     }
 
     [Fact]
@@ -67,6 +67,6 @@ public sealed class SettingsTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, (await client.PutAsync("/control/settings/Stubs:StatusCode", new StringContent("200"))).StatusCode);
         // A control path the service does not have is no game route either (the game's fallback asked for a token).
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/control/ops/no-such")).StatusCode);
-        Assert.Equal(501, (int)(await client.GetAsync(StubPath)).StatusCode);
+        Assert.Equal(501, (int)(await client.PostAsync(StubPath, null)).StatusCode);
     }
 }

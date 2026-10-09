@@ -81,9 +81,11 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
 
     private static JsonNode Static(string name) => JsonNode.Parse(StaticResponses.Json(name))!;
 
-    // The unported sub-request these tests send on: a route the TS server answers (GET /accounts/wb_network/{id}) that
-    // this service still stubs. Move it to another stub when that one is ported; when none is left, this bridge goes.
-    private const string Unported = "/accounts/wb_network/someone";
+    // The unported sub-request these tests send on: a route the TS server answers (a gleamium store purchase, sent as
+    // POST) that this service still stubs. Move it to another stub when that one is ported; when none is left, this bridge goes.
+    private const string Unported = "/virtual_commerce/purchases/someone/toasts_gleamium";
+
+    private static JsonObject Post(string url) => new() { ["verb"] = "POST", ["url"] = url, ["headers"] = new JsonObject(), ["body"] = new JsonObject() };
 
     // What the TS server's catch-all answers (the default CRC: no Mongo here), and so every route it never handled.
     private static JsonNode CatchAll => JsonNode.Parse("""{"body":{"Crc":1267552971,"MatchmakingCrc":2},"metadata":null,"return_code":200}""")!;
@@ -99,7 +101,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
         // service's own, for the TS server.
         using var response = await PutAsync(client, Batch(
             Get("/friends/me?page=2", new JsonObject { ["x-hydra-http-method"] = "GET", ["x-custom"] = "kept" }),
-            Get(Unported),
+            Post(Unported),
             Get("/accounts/abc/relationships/followers"),
             new JsonObject { ["verb"] = "PUT", ["url"] = "/ssc/invoke/create_custom_game_lobby", ["body"] = new JsonObject { ["Mode"] = "1v1" } },
             Get("/friends/me/invitations/incoming?teapot=1")),
@@ -137,7 +139,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
         await using var ts = await FakeTs.StartAsync();
         // Nothing listens on port 1.
         var client = Client(ts.Url, ("Batch:EdgeUrl", "http://127.0.0.1:1"));
-        using var response = await PutAsync(client, Batch(Get("/friends/me"), Get(Unported)));
+        using var response = await PutAsync(client, Batch(Get("/friends/me"), Post(Unported)));
 
         var responses = HydraDecoder.Decode(await response.Content.ReadAsByteArrayAsync())!["responses"]!.AsArray();
         Assert.Equal(502, Status(responses[0]));
@@ -151,7 +153,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
         var client = Client(ts.Url);
         using var response = await PutAsync(client, Batch(
             Get("/commerce/products"),
-            Get(Unported),
+            Post(Unported),
             Get("/commerce/purchases/someone"),
             new JsonObject { ["verb"] = "PUT", ["url"] = "/commerce/purchases/me?count=25", ["headers"] = new JsonObject { ["x-hydra-http-method"] = "GET" } }),
             r =>
@@ -241,7 +243,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
     [Fact]
     public async Task WithTheTsServerDownOnlyItsPartAnswers502()
     {
-        using var response = await PutAsync(Client("http://127.0.0.1:9"), Batch(Get(Unported), Get("/commerce/purchases/me")));
+        using var response = await PutAsync(Client("http://127.0.0.1:9"), Batch(Post(Unported), Get("/commerce/purchases/me")));
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var responses = HydraDecoder.Decode(await response.Content.ReadAsByteArrayAsync())!["responses"]!.AsArray();
         Assert.Equal(502, Status(responses[0]));
@@ -253,7 +255,7 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
     {
         await using var ts = await FakeTs.StartAsync(delay: TimeSpan.FromSeconds(20));
         var watch = Stopwatch.StartNew();
-        using var response = await PutAsync(Client(ts.Url, ("Batch:ForwardTimeoutSeconds", "1")), Batch(Get(Unported), Get("/commerce/purchases/me")));
+        using var response = await PutAsync(Client(ts.Url, ("Batch:ForwardTimeoutSeconds", "1")), Batch(Post(Unported), Get("/commerce/purchases/me")));
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"took {watch.Elapsed}");
         var responses = HydraDecoder.Decode(await response.Content.ReadAsByteArrayAsync())!["responses"]!.AsArray();
         Assert.Equal(504, Status(responses[0]));
@@ -288,13 +290,13 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
     {
         await using var ts = await FakeTs.StartAsync();
         var client = Client(ts.Url);
-        using (var forwarding = await PutAsync(client, Batch(Get(Unported))))
+        using (var forwarding = await PutAsync(client, Batch(Post(Unported))))
         {
             Assert.Equal("1", Assert.Single(ts.Requests).Headers[BatchRunner.ForwardedHeader]);
         }
 
         // Batch:TsUrl pointing back at this service (or the proxy): the forwarded batch arrives here marked.
-        using var loop = await PutAsync(client, Batch(Get(Unported)), r => r.Headers.Add(BatchRunner.ForwardedHeader, "1"));
+        using var loop = await PutAsync(client, Batch(Post(Unported)), r => r.Headers.Add(BatchRunner.ForwardedHeader, "1"));
         Assert.Equal(HttpStatusCode.LoopDetected, loop.StatusCode);
         Assert.Single(ts.Requests);
     }

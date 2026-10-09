@@ -1,0 +1,175 @@
+# The OpenVersus server as one Compose project: the C# services, the router in front of them, and the rollback relay.
+# The stores run in their own project (../dbs) and create the `ovs` network this one attaches to.
+#
+#   docker compose up -d                   everything (after the dbs project is up)
+#   docker compose up -d --no-deps web     one service, alone (a new image tag, say)
+#   docker compose --profile two-nodes up -d   with a second gateway node, for the edge to move games between
+#
+# Variables (an .env beside this file, or the shell):
+#   OVS_ENV_DIR     directory holding services.env and relay.env (env/ has the templates); never in the repository
+#   OVS_DATA_DIR    the ban files and name lists, mounted read-only at /data in every service
+#   OVS_KEYS_DIR    the node config signing key and its public half, mounted read-only at /keys (matchflow)
+#   OVS_RUN_DIR     host directory the services' control sockets appear in (ovsctl on the host talks to them there)
+#   OVS_LOG_DIR     host directory for the services' log files (a daily file per service, beside docker logs)
+#   OVS_UID/OVS_GID the host user the services run as: the owner of the four directories above, so bind mounts need
+#                   no chown and ovsctl runs as that user (or a member of the group); default the image's app user
+#   OVS_REGISTRY    "" to use local images, else "ghcr.io/<org>/" or the like; OVS_TAG the services' image tag
+#   OVS_GAME_PORT   the game's HTTP port on the host (8000); OVS_EDGE_PORT the game's websocket port (3001)
+#   OVS_RELAY_PORT  the relay's UDP port (41234); OVS_RENDEZVOUS_PORT the rendezvous's (41235); OVS_RELAY_ADDRESS the
+#                   address the rendezvous names the relay by to the nodes (the host's public address; 127.0.0.1 only
+#                   on a bench); OVS_RELAY_TAG the rollback image's tag
+#
+# Nothing but the router, the edge and the relay is reachable from outside; the services talk on `ovs`. The images
+# carry EXPOSE for their control ports; to reach one over TCP instead of its socket, add a 127.0.0.1 mapping here.
+
+name: openversus
+
+x-service: &service
+  restart: unless-stopped
+  user: "${OVS_UID:-1654}:${OVS_GID:-1654}"
+  networks: [ovs]
+  env_file:
+    - ${OVS_ENV_DIR:?set OVS_ENV_DIR to the directory holding services.env}/services.env
+  volumes:
+    - ${OVS_DATA_DIR:?set OVS_DATA_DIR to the directory holding the ban files and name lists}:/data:ro
+    - ${OVS_RUN_DIR:?set OVS_RUN_DIR to the directory the control sockets go in}:/tmp/openversus
+    - ${OVS_LOG_DIR:?set OVS_LOG_DIR to the directory the log files go in}:/var/log/openversus
+  logging:
+    driver: json-file
+    options: { max-size: "50m", max-file: "5" }
+
+x-build: &build
+  context: ../..
+  dockerfile: Dockerfile
+  args:
+    SOURCE_REVISION: ${OVS_SOURCE_REVISION:-unknown}
+
+services:
+  router:
+    image: haproxy:3.0-alpine
+    networks: [ovs]
+    ports:
+      - "${OVS_GAME_PORT:-8000}:8000"
+    volumes:
+      - ../router/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    restart: unless-stopped
+
+  http:
+    <<: *service
+    image: ${OVS_REGISTRY:-}ovs-http:${OVS_TAG:-latest}
+    build: { <<: *build, target: http }
+    environment:
+      Batch__EdgeUrl: http://router:8000
+      Serilog__WriteTo__0__Args__path: /var/log/openversus/http-.log
+
+  access:
+    <<: *service
+    image: ${OVS_REGISTRY:-}ovs-access:${OVS_TAG:-latest}
+    build: { <<: *build, target: access }
+    environment:
+      Serilog__WriteTo__0__Args__path: /var/log/openversus/access-.log
+
+  social:
+    <<: *service
+    image: ${OVS_REGISTRY:-}ovs-social:${OVS_TAG:-latest}
+    build: { <<: *build, target: social }
+    environment:
+      Serilog__WriteTo__0__Args__path: /var/log/openversus/social-.log
+
+  lobbies:
+    <<: *service
+    image: ${OVS_REGISTRY:-}ovs-lobbies:${OVS_TAG:-latest}
+    build: { <<: *build, target: lobbies }
+    environment:
+      Serilog__WriteTo__0__Args__path: /var/log/openversus/lobbies-.log
+
+  web:
+    <<: *service
+    image: ${OVS_REGISTRY:-}ovs-web:${OVS_TAG:-latest}
+    build: { <<: *build, target: web }
+    environment:
+      Serilog__WriteTo__0__Args__path: /var/log/openversus/web-.log
+
+  matchflow:
+    <<: *service
+    image: ${OVS_REGISTRY:-}ovs-matchflow:${OVS_TAG:-latest}
+    build: { <<: *build, target: matchflow }
+    volumes:
+      - ${OVS_DATA_DIR}:/data:ro
+      - ${OVS_KEYS_DIR:?set OVS_KEYS_DIR to the directory holding the node config signing key}:/keys:ro
+      - ${OVS_RUN_DIR}:/tmp/openversus
+      - ${OVS_LOG_DIR}:/var/log/openversus
+    environment:
+      Serilog__WriteTo__0__Args__path: /var/log/openversus/matchflow-.log
+
+  matchmaking:
+    <<: *service
+    image: ${OVS_REGISTRY:-}ovs-matchmaking:${OVS_TAG:-latest}
+    build: { <<: *build, target: matchmaking }
+    environment:
+      Serilog__WriteTo__0__Args__path: /var/log/openversus/matchmaking-.log
+
+  steam:
+    <<: *service
+    image: ${OVS_REGISTRY:-}ovs-steam:${OVS_TAG:-latest}
+    build: { <<: *build, target: steam }
+    environment:
+      Serilog__WriteTo__0__Args__path: /var/log/openversus/steam-.log
+
+  # A gateway node: holds the games' websocket sessions behind the edge. A second one (profile two-nodes) lets the
+  # edge move games off a node that goes away; each needs its own control socket name.
+  ws:
+    <<: *service
+    image: ${OVS_REGISTRY:-}ovs-ws:${OVS_TAG:-latest}
+    build: { <<: *build, target: ws }
+    environment:
+      Serilog__WriteTo__0__Args__path: /var/log/openversus/ws-.log
+
+  ws2:
+    <<: *service
+    profiles: [two-nodes]
+    image: ${OVS_REGISTRY:-}ovs-ws:${OVS_TAG:-latest}
+    environment:
+      Control__Socket: /tmp/openversus/ws2.sock
+      Serilog__WriteTo__0__Args__path: /var/log/openversus/ws2-.log
+
+  # The edge the game's websocket connects to (Realtime:Port in services.env is this host port). A drained edge exits
+  # when its last game leaves, so a long grace period costs nothing unless games remain; `stop -t 0` drops them.
+  edge:
+    <<: *service
+    image: ${OVS_REGISTRY:-}ovs-edge:${OVS_TAG:-latest}
+    build: { <<: *build, target: edge }
+    ports:
+      - "${OVS_EDGE_PORT:-3001}:3001"
+    stop_grace_period: 6h
+    environment:
+      Serilog__WriteTo__0__Args__path: /var/log/openversus/edge-.log
+
+  # The rollback relay (the ovs-rollback-server repository's image, `build.sh image <tag>`): UDP straight on the host's
+  # network, as players' nodes reach it there. Its own env file; its port is the argument.
+  relay:
+    image: ${OVS_REGISTRY:-}ovs-rollback-server-csharp:${OVS_RELAY_TAG:-latest}
+    network_mode: host
+    entrypoint: ["./OVS.Rollback.Server", "${OVS_RELAY_PORT:-41234}"]
+    env_file:
+      - ${OVS_ENV_DIR}/relay.env
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "5" }
+
+  # The rendezvous the nodes of a P2P match find each other through (UDP), from the same image; it names the relay as
+  # the fallback it hands out.
+  rendezvous:
+    image: ${OVS_REGISTRY:-}ovs-rollback-server-csharp:${OVS_RELAY_TAG:-latest}
+    network_mode: host
+    entrypoint: ["./rendezvous/OVS.Rollback.Rendezvous", "${OVS_RENDEZVOUS_PORT:-41235}", "--relay", "${OVS_RELAY_ADDRESS:-127.0.0.1}:${OVS_RELAY_PORT:-41234}"]
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "5" }
+
+networks:
+  ovs:
+    name: ovs
+    external: true

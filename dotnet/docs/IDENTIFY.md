@@ -95,7 +95,7 @@ the same keys), the audience (`Epic:ClientId`, the game's EOS client id), expiry
 serve on. There is no "ask Epic" for an ID token as there is for a Steam ticket: a token stands until it expires (two
 hours from issue, as the game's SDK hands them out), and that is both the floor and the ceiling.
 
-Enforced only with `Epic:Enabled` and a client id (`Epic:ClientId`); without one, Epic ids are taken as claimed, as
+Enforced only with `Epic:Enabled` and a client id (`Epic:ClientId`, the game's own by default); with it cleared, Epic ids are taken as claimed, as
 before, and a token is ignored. Enforced:
 
 - Verified: the token's subject is the client's Epic id (a differing claimed `epicId` is logged; the token decides), and

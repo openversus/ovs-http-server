@@ -47,6 +47,9 @@ COPY --from=build /out/Cli /opt/ovsctl
 RUN ln -s /opt/ovsctl/ovsctl /usr/local/bin/ovsctl
 # The services choose their own listeners (HTTP_PORT and the like); the base image's default of 8080 would only mislead.
 ENV ASPNETCORE_HTTP_PORTS=
+# Where the control sockets and the log files go, owned by the service's user: a named volume mounted at either takes
+# the ownership from here on its first use (a bind mount does not; the host directory decides then).
+RUN mkdir -p /tmp/openversus /var/log/openversus && chown $APP_UID:$APP_UID /tmp/openversus /var/log/openversus
 WORKDIR /app
 USER $APP_UID
 HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=3 CMD ["ovsctl", "health", "--probe"]

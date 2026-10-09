@@ -1,0 +1,49 @@
+# The stores: MongoDB and Redis, their volumes, and the `ovs` network every other stack attaches to. Its own Compose
+# project on purpose: a `down` of the services can never take the data with it, and if the stores are not running
+# nothing else runs either, so the network is created here.
+#
+#   docker compose -f dbs/compose.yaml up -d
+#
+# Nothing is published on the host: the services reach the stores by name on `ovs`, and a one-off tool container on
+# the same network does for administration (docker run --rm -it --network ovs redis:8-alpine redis-cli -h redis).
+# OVS_ENV_DIR holds mongo.env (MONGO_INITDB_ROOT_USERNAME/PASSWORD) and redis.conf; see env/ for templates.
+
+name: openversus-dbs
+
+services:
+  mongo:
+    image: mongo:8
+    env_file: ${OVS_ENV_DIR:?set OVS_ENV_DIR to the directory holding mongo.env and redis.conf}/mongo.env
+    networks:
+      ovs:
+        aliases: [openversus-mongo, openversus_mongo]
+    volumes:
+      - mongo_data:/data/db
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      ovs:
+        aliases: [openversus-redis, openversus_redis]
+    volumes:
+      - ${OVS_ENV_DIR}/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  redis_data:
+
+networks:
+  ovs:
+    name: ovs

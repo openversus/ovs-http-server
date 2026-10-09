@@ -19,8 +19,10 @@ public sealed class LogSettings
 
 /// <summary>
 /// Serilog under Microsoft.Extensions.Logging: code logs through <c>ILogger</c>, Serilog writes it. Output goes to the
-/// console, which is what a container's log collects. The level is the <c>Log:Level</c> setting, so it can be changed
-/// while the service runs; per-source levels come from the <c>Serilog</c> section of appsettings.
+/// console, which is what a container's log collects; a deployment that also wants files adds a sink through
+/// configuration (<c>Serilog:WriteTo:0:Name=File</c> with its <c>Args:path</c>, which the Compose files do into a shared
+/// log volume). The level is the <c>Log:Level</c> setting, so it can be changed while the service runs; per-source
+/// levels come from the <c>Serilog</c> section of appsettings.
 /// </summary>
 public static class OpenVersusLogging
 {

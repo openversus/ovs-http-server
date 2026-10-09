@@ -6,9 +6,9 @@ using OpenVersus.Server.Http.Shared.Endpoints;
 namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 
 /// <summary>
-/// GET /ssc/invoke/get_gm_leaderboards (the TS handleSsc_invoke_get_gm_leaderboards): the top 100 of 1v1 and of 2v2
-/// (<see cref="ILeaderboardService.GmLeaderboardsAsync"/>) in the SSC envelope, return_code 0; empty lists when a read
-/// fails, as the TS handler's fallback answered.
+/// GET /ssc/invoke/get_gm_leaderboards: the Grandmaster leaderboards, the 100 players with the best Master-rated fighter
+/// in each mode, each once (<see cref="ILeaderboardService.GmLeaderboardsAsync"/>; the tier is defined by this list), in the SSC
+/// envelope, return_code 0; empty lists when a read fails, as the TS handler's fallback answered.
 /// Seen in: server (GET), binary ssc name.
 /// </summary>
 public sealed class GetGetGmLeaderboards : JsonBodyEndpoint

@@ -13,9 +13,9 @@ using StackExchange.Redis;
 namespace OpenVersus.Server.Core.Tests.Leaderboards;
 
 /// <summary>
-/// get_gm_leaderboards (the TS handler): the top of each mode by elo, players with a game in that mode only, with the
-/// character each is connected with. Real Redis (database 15) and Mongo (a database of its own, dropped):
-/// OVS_TEST_REDIS, OVS_TEST_REDIS_USER, OVS_TEST_REDIS_PW, OVS_TEST_MONGO, as OpsTests.
+/// get_gm_leaderboards: the Grandmaster tier, the 100 players with the best Master-rated (2500) fighter in each mode,
+/// each once with that fighter, by its rating. Real Redis (database 15) and Mongo (a database of its own, dropped): OVS_TEST_REDIS,
+/// OVS_TEST_REDIS_USER, OVS_TEST_REDIS_PW, OVS_TEST_MONGO, as OpsTests.
 /// </summary>
 [Collection(RedisTestDatabase.Name)]
 public sealed class GmLeaderboardsTests : IAsyncLifetime
@@ -92,32 +92,64 @@ public sealed class GmLeaderboardsTests : IAsyncLifetime
         }
     }
 
-    private async Task RatingAsync(string id, int elo1v1, int games1v1, int elo2v2, int games2v2) =>
+    private async Task RatingAsync(string id, int elo1v1, BsonDocument characters1v1, BsonDocument? characters2v2 = null) =>
         await Ratings.InsertOneAsync(new BsonDocument
         {
-            { "account_id", id }, { "username", "p" }, { "elo_1v1", elo1v1 }, { "elo_2v2", elo2v2 }, { "wins_1v1", games1v1 }, { "losses_1v1", 0 },
-            { "wins_2v2", games2v2 }, { "losses_2v2", 0 },
+            { "account_id", id }, { "username", "p" }, { "elo_1v1", elo1v1 }, { "elo_2v2", 1000 }, { "wins_1v1", 5 }, { "losses_1v1", 0 },
+            { "wins_2v2", 1 }, { "losses_2v2", 0 }, { "characters_1v1", characters1v1 }, { "characters_2v2", characters2v2 ?? new BsonDocument() },
         });
 
+    private static BsonDocument Fighter(int elo) => new() { { "elo", elo }, { "wins", 3 }, { "losses", 1 } };
+
     [SkippableFact]
-    public async Task TheTopOfEachModeWithTheConnectedCharacter()
+    public async Task EachPlayersBestMasterFighterOnceBestFirstPerMode()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
-        string first = NewPlayer(), second = NewPlayer(), only2v2 = NewPlayer();
-        await RatingAsync(first, 1200, 3, 1000, 0);
-        await RatingAsync(second, 1300, 2, 900, 1);
-        await RatingAsync(only2v2, 1500, 0, 1100, 4);
-        await Redis.HashSetAsync($"connections:{second}", [new HashEntry("character", "character_shaggy")]);
+        string twoMasters = NewPlayer(), oneMaster = NewPlayer(), diamond = NewPlayer();
+        // The overall rating does not decide it (twoMasters' is lowest): the fighters' ratings do; a Diamond fighter (2499) is
+        // out, and twoMasters' second Master fighter (bugs, 2510) is not listed: one entry per player, their best.
+        await RatingAsync(twoMasters, 1800, new BsonDocument { { "character_shaggy", Fighter(2650) }, { "character_bugs", Fighter(2510) } });
+        await RatingAsync(oneMaster, 2900, new BsonDocument { { "character_taz", Fighter(2600) }, { "character_bugs", Fighter(2499) } },
+            characters2v2: new BsonDocument("character_taz", Fighter(2700)));
+        await RatingAsync(diamond, 2450, new BsonDocument("character_shaggy", Fighter(2450)));
 
         var body = await Leaderboards.GmLeaderboardsAsync(default);
 
-        // 1v1: by elo, only players with a 1v1 game (only2v2's 1500 does not count); the character the player is connected with, else Wonder Woman.
         var one = body["OneVsOne"]!.AsArray();
-        Assert.Equal([second, first], one.Select(e => (string)e!["AccountId"]!));
-        Assert.Equal([1L, 2L], one.Select(e => (long)e!["Rank"]!));
-        Assert.Equal(["1300", "1200"], one.Select(e => e!["Score"]!.ToJsonString()));
-        Assert.Equal(["character_shaggy", "character_wonder_woman"], one.Select(e => (string)e!["CharacterSlug"]!));
+        Assert.Equal([(twoMasters, "character_shaggy"), (oneMaster, "character_taz")],
+            one.Select(e => ((string)e!["AccountId"]!, (string)e!["CharacterSlug"]!)));
+        Assert.Equal([1, 2], one.Select(e => (int)e!["Rank"]!));
+        Assert.Equal(["2650", "2600"], one.Select(e => e!["Score"]!.ToJsonString()));
         var two = body["TwoVsTwo"]!.AsArray();
-        Assert.Equal([only2v2, second], two.Select(e => (string)e!["AccountId"]!));
+        Assert.Equal([(oneMaster, "character_taz")], two.Select(e => ((string)e!["AccountId"]!, (string)e!["CharacterSlug"]!)));
+    }
+
+    // The tier holds 100: the Grandmaster floor is the 100th entry's rating, not a threshold, and it moves with the list.
+    [SkippableFact]
+    public async Task TheFloorIsThe100thEntrysRating()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        // 101 Master fighters rated 2505 to 2605, one per player; the 2505 one is the 101st.
+        var lowest = "";
+        for (int i = 0; i <= 100; i++)
+        {
+            string id = NewPlayer();
+            await RatingAsync(id, 1000, new BsonDocument("character_shaggy", Fighter(2505 + i)));
+            if (i == 0)
+            {
+                lowest = id;
+            }
+        }
+
+        var one = (await Leaderboards.GmLeaderboardsAsync(default))["OneVsOne"]!.AsArray();
+        Assert.Equal(LeaderboardService.GrandmasterSize, one.Count);
+        Assert.Equal("2506", one[^1]!["Score"]!.ToJsonString());
+        Assert.DoesNotContain(lowest, one.Select(e => (string)e!["AccountId"]!));
+
+        // The 2505 fighter wins up to 2507: in, and the 2506 one is out.
+        await Ratings.UpdateOneAsync(new BsonDocument("account_id", lowest), new BsonDocument("$set", new BsonDocument("characters_1v1.character_shaggy.elo", 2507)));
+        one = (await Leaderboards.GmLeaderboardsAsync(default))["OneVsOne"]!.AsArray();
+        Assert.Equal("2507", one[^1]!["Score"]!.ToJsonString());
+        Assert.Contains(lowest, one.Select(e => (string)e!["AccountId"]!));
     }
 }

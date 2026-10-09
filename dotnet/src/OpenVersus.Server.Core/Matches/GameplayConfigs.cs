@@ -736,6 +736,9 @@ public static class RankedTiers
         ("Grandmaster", 3000, double.PositiveInfinity),
     ];
 
+    /// <summary>The lowest rating of a tier ("Master": 2500); Bronze's for a name that is no tier.</summary>
+    public static double Minimum(string tier) => s_tiers.FirstOrDefault(t => t.Name == tier, s_tiers[0]).Min;
+
     /// <summary>
     /// Each tier spans its ratings in five divisions of 100 (the fifth takes the rest). A rating in none (negative, not a
     /// number, or between two tiers' bounds, which only a fractional one can be) is Bronze 1.

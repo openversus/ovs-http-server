@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Access;
+using OpenVersus.Server.Core.Matches;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Leaderboards;
@@ -33,9 +34,14 @@ public interface ILeaderboardService
     Task<JsonObject> AroundAsync(string slug, string playerId, LeaderboardQuery query, CancellationToken ct = default);
 
     /// <summary>
-    /// GET /ssc/invoke/get_gm_leaderboards (the TS handleSsc_invoke_get_gm_leaderboards): the top 100 of 1v1 and of
-    /// 2v2 as <c>{OneVsOne: [{Rank, Score, AccountId, CharacterSlug}], TwoVsTwo: [...]}</c>, the character being the
-    /// one the player is connected with (connections:{id}, else Wonder Woman); both lists empty when a read fails.
+    /// GET /ssc/invoke/get_gm_leaderboards: the Grandmaster leaderboards. Grandmaster is the game's "Leaderboard" tier
+    /// (rankedsettings_default: MaximumNumberOfPlayersInTier 100, no RP threshold): a fighter is Grandmaster by being
+    /// on this list: the 100 players with the best fighter rating at Master (<see cref="RankedTiers"/>, 2500) in a
+    /// mode, each shown once with that fighter (a second Master fighter of theirs is not listed), by that rating; the
+    /// Grandmaster floor is the 100th entry's rating. <c>{OneVsOne: [{Rank, Score, AccountId,
+    /// CharacterSlug}], TwoVsTwo: [...]}</c> (the game's FMvsRankedLeaderboardEntry); both lists empty when a read
+    /// fails. Not the TS handler's answer (the top of the overall ratings, named by the connected character), which
+    /// was never what the tier means.
     /// </summary>
     Task<JsonObject> GmLeaderboardsAsync(CancellationToken ct = default);
 }
@@ -64,37 +70,41 @@ internal sealed partial class LeaderboardService(IServiceProvider services, ILog
         return Body(rows, query);
     }, ct);
 
-    private const string DefaultCharacter = "character_wonder_woman";
-
-    public Task<JsonObject> GmLeaderboardsAsync(CancellationToken ct) => Guarded("gm", async ratings =>
+    public Task<JsonObject> GmLeaderboardsAsync(CancellationToken ct) => Guarded("gm", async ratings => new JsonObject
     {
-        var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase();
-        return new JsonObject
-        {
-            ["OneVsOne"] = await GmEntriesAsync(await RowsAsync(ratings, "1v1", null, 100, 0, ct), redis),
-            ["TwoVsTwo"] = await GmEntriesAsync(await RowsAsync(ratings, "2v2", null, 100, 0, ct), redis),
-        };
+        ["OneVsOne"] = await GrandmasterAsync(ratings, "1v1", ct),
+        ["TwoVsTwo"] = await GrandmasterAsync(ratings, "2v2", ct),
     }, ct, () => new JsonObject { ["OneVsOne"] = new JsonArray(), ["TwoVsTwo"] = new JsonArray() });
 
-    private static async Task<JsonArray> GmEntriesAsync(List<Row> rows, IDatabase? redis)
-    {
-        var entries = new JsonArray();
-        foreach (var row in rows)
-        {
-            string character = DefaultCharacter;
-            try
-            {
-                // The TS handler's try/catch around the hash read: any failure leaves the default.
-                if (redis is not null && (string?)await redis.HashGetAsync($"connections:{row.AccountId}", "character") is { Length: > 0 } live)
-                {
-                    character = live;
-                }
-            }
-            catch (RedisException)
-            {
-            }
+    /// <summary>The size of the Grandmaster tier (rankedsettings_default's MaximumNumberOfPlayersInTier).</summary>
+    public const int GrandmasterSize = 100;
 
-            entries.Add(new JsonObject { ["Rank"] = row.Rank, ["Score"] = RankService.Json(row.Elo), ["AccountId"] = row.AccountId, ["CharacterSlug"] = character });
+    private static async Task<JsonArray> GrandmasterAsync(IMongoCollection<BsonDocument> ratings, string mode, CancellationToken ct)
+    {
+        // Each player's best fighter among those at a Master rating (one entry per player: the list is 100 people), best
+        // first; ties by player, and by fighter name within a player, so the list is stable.
+        BsonDocument[] pipeline =
+        [
+            new("$set", new BsonDocument("_charArray", new BsonDocument("$objectToArray", new BsonDocument("$ifNull", new BsonArray { $"$characters_{mode}", new BsonDocument() })))),
+            new("$unwind", "$_charArray"),
+            new("$set", new BsonDocument { { "charSlug", "$_charArray.k" }, { "charElo", new BsonDocument("$ifNull", new BsonArray { "$_charArray.v.elo", 0 }) } }),
+            new("$match", new BsonDocument("charElo", new BsonDocument("$gte", RankedTiers.Minimum("Master")))),
+            new("$sort", new BsonDocument { { "charElo", -1 }, { "charSlug", 1 } }),
+            new("$group", new BsonDocument { { "_id", "$account_id" }, { "charElo", new BsonDocument("$first", "$charElo") }, { "charSlug", new BsonDocument("$first", "$charSlug") } }),
+            new("$sort", new BsonDocument { { "charElo", -1 }, { "_id", 1 } }),
+            new("$limit", GrandmasterSize),
+        ];
+        var entries = new JsonArray();
+        int rank = 0;
+        foreach (var entry in await ratings.Aggregate<BsonDocument>(pipeline, cancellationToken: ct).ToListAsync(ct))
+        {
+            entries.Add(new JsonObject
+            {
+                ["Rank"] = ++rank,
+                ["Score"] = RankService.Json(entry["charElo"]),
+                ["AccountId"] = entry["_id"].ToString(),
+                ["CharacterSlug"] = entry["charSlug"].AsString,
+            });
         }
 
         return entries;

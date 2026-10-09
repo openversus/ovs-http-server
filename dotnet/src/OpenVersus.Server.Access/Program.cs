@@ -1,3 +1,4 @@
+using OpenVersus.Server.Identity.Epic;
 using OpenVersus.Server.Core.Access;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Http.Shared;
@@ -7,6 +8,7 @@ using OpenVersus.Server.Http.Shared;
 var builder = OpenVersusHost.CreateBuilder(KnownServices.Access, args);
 builder.AddGameHttp(typeof(Program).Assembly);
 builder.AddAccess();
+builder.AddEpicIdTokens();
 // The daily toast bonus's popup, when the game's websocket connects (the realtime gateway's connected events).
 builder.AddDailyToastPopups();
 

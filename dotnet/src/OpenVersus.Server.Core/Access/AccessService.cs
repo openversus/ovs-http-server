@@ -106,8 +106,12 @@ public abstract record AccessResult
 
 public interface IAccessService
 {
-    /// <summary>A login from <paramref name="ip"/>, with the x-hydra-access-token header when the client sent one.</summary>
-    Task<AccessResult> LoginAsync(string ip, string? accessToken, CancellationToken ct = default);
+    /// <summary>
+    /// A login from <paramref name="ip"/>, with the x-hydra-access-token header when the client sent one, and
+    /// <paramref name="provedEpicId"/> when the request's own Epic credential (auth.epic, the game's Epic access token)
+    /// verified: the Epic account id it names, which outranks any claim.
+    /// </summary>
+    Task<AccessResult> LoginAsync(string ip, string? accessToken, CancellationToken ct = default, string? provedEpicId = null);
 
     /// <summary>DELETE /access: the TS server only logs it.</summary>
     Task LogoutAsync(string ip, CancellationToken ct = default);
@@ -159,7 +163,7 @@ internal sealed partial class AccessService(
         public bool Any => SteamId.Length > 0 || EpicId.Length > 0 || InstallId.Length > 0;
     }
 
-    public async Task<AccessResult> LoginAsync(string ip, string? accessToken, CancellationToken ct = default)
+    public async Task<AccessResult> LoginAsync(string ip, string? accessToken, CancellationToken ct = default, string? provedEpicId = null)
     {
         var mongo = services.GetService<IMongoDatabase>();
         var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase();
@@ -180,6 +184,22 @@ internal sealed partial class AccessService(
         var now = time.GetUtcNow();
         string randomName = NewName();
         var identity = await ResolveIdentityAsync(redis, ip, accessToken, secret, now, ct);
+        if (IdentityRules.Normalize(IdentityKind.Epic, provedEpicId) is { Length: > 0 } proved)
+        {
+            // The game's own Epic credential proved this id (PostAccess verified it): it decides, whatever was claimed.
+            if (identity.EpicId.Length > 0 && identity.EpicId != proved)
+            {
+                log.LogInformation("The login from {Ip} claimed Epic id {Claimed}; the game's own Epic token proves {Epic}: the token decides", ip, identity.EpicId, proved);
+            }
+
+            identity.EpicId = proved;
+            identity.EpicVerified = true;
+            if (identity.Source == "none")
+            {
+                identity.Source = "epic-token";
+            }
+        }
+
         // Before an account is found or made: a banned person gets no new account under another identifier.
         if (await bans.FindAsync(new BanIdentifiers(SteamId: identity.SteamId, EpicId: identity.EpicId, HardwareId: identity.Hardware.HardwareId, InstallId: identity.InstallId)) is { } identified)
         {

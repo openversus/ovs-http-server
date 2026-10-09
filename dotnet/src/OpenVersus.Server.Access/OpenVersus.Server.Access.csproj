@@ -8,7 +8,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OpenVersus.Server.Core\OpenVersus.Server.Core.csproj" />
+    <!-- The Epic ID token verifier: the login judges the Epic credential the game's own request carries (PostAccess). -->
+    <ProjectReference Include="..\OpenVersus.Server.Identity\OpenVersus.Server.Identity.csproj" />
     <ProjectReference Include="..\OpenVersus.Server.Http.Shared\OpenVersus.Server.Http.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenVersus.Server.Access.Tests" />
   </ItemGroup>
 
 </Project>

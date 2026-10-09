@@ -70,7 +70,13 @@ the reaper notices; everything else (no session, pending, unavailable, an older 
 belongs to another player, no service running) leaves the websocket's answer. Match logic keeps reading
 `online_players`: a game that lost its socket is still gone from the match.
 
-## An Epic id needs the game's ID token
+## An Epic id needs the game's Epic token
+
+Two tokens prove an Epic account, both JWTs Epic signs for the game's client id with the same keys, both judged by the
+same check (below). The game's own login carries one: the Epic Games Store build sends Epic's access token for the
+account in `/access` as `auth.epic` (type `epic_id`, two hours), and the login verifies it and takes its subject as
+the proved Epic id, so every Epic client is proved at its login, with or without the OpenVersus client. The OpenVersus
+client adds the other, the ID token, at its registration:
 
 The client sends `epicToken` with its registration: the Epic account ID token the game's own Epic Online Services SDK
 holds once the game is logged into an Epic account, a JWT Epic signs (RS256) for the game's client id, whose subject is

@@ -275,6 +275,33 @@ public sealed class AccessIdentityTests : IAsyncLifetime
         Assert.Equal(Epic, (await Players.Find(new BsonDocument("_id", account)).SingleAsync())["epicId"].AsString);
     }
 
+    [SkippableFact]
+    public async Task TheGamesOwnEpicTokenProvesTheIdAtTheLoginWhateverWasClaimed()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        _epic.ClientId = "client";
+        var epicOwner = await SeedAsync("Epic Owner", steam: "", install: "", epic: Epic);
+        var installOwner = await SeedAsync("Install Owner", steam: "", install: Install);
+        // An unproved claim in the identify token, and the request's own credential proving another id: the credential wins.
+        var claimed = IdentifyTokens.Sign(new JsonObject { ["epicId"] = "0123456789abcdef0123456789abcde1", ["installId"] = Install, ["identityRegistered"] = "1" }, IdentifySecret, DateTimeOffset.UtcNow);
+        var result = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, claimed, provedEpicId: Epic));
+        Assert.Equal(epicOwner.ToString(), result.PlayerId);
+        Assert.True((await Players.Find(new BsonDocument("_id", epicOwner)).SingleAsync())[IdentityRecord.EpicProvedField].IsValidDateTime);
+
+        // No account carries the proved id: the login (its install id from the identify token) lands on the install's
+        // account and the proved id is written there.
+        await Players.DeleteOneAsync(new BsonDocument("_id", epicOwner));
+        await Redis.KeyDeleteAsync($"identity:epic:{Epic}");
+        // The first login moved the install id to the Epic owner's account (an install follows its platform account); put it back.
+        await Players.UpdateOneAsync(new BsonDocument("_id", installOwner), new BsonDocument("$set", new BsonDocument("installId", Install)));
+        var installOnly = IdentifyTokens.Sign(new JsonObject { ["installId"] = Install, ["identityRegistered"] = "1" }, IdentifySecret, DateTimeOffset.UtcNow);
+        var byInstall = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, installOnly, provedEpicId: Epic));
+        Assert.Equal(installOwner.ToString(), byInstall.PlayerId);
+        var saved = await Players.Find(new BsonDocument("_id", installOwner)).SingleAsync();
+        Assert.Equal(Epic, saved["epicId"].AsString);
+        Assert.True(saved[IdentityRecord.EpicProvedField].IsValidDateTime);
+    }
+
     private static string EpicIdentifyToken(bool verified) =>
         IdentifyTokens.Sign(new JsonObject { ["epicId"] = Epic, ["installId"] = Install, ["identityRegistered"] = "1", ["epicVerified"] = verified ? "1" : "" }, IdentifySecret, DateTimeOffset.UtcNow);
 

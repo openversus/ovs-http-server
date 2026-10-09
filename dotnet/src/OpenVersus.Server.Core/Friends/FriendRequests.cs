@@ -66,6 +66,26 @@ public interface IFriendRequests
     /// <summary>The TS removeFriend: the two players out of each other's lists, and out of the remover's blocked players.</summary>
     Task RemoveAsync(string accountId, string friendId, CancellationToken ct = default);
 
+    /// <summary>
+    /// The TS acceptFriendRequest by request id: {success} or {success: false, error: request_not_found |
+    /// request_not_pending | not_recipient}. An id that is no ObjectId is request_not_found (mongoose's cast error was
+    /// the route's catch there).
+    /// </summary>
+    Task<FriendRequestResult> AcceptAsync(string requestId, string acceptingId, CancellationToken ct = default);
+
+    /// <summary>The TS declineFriendRequest: the same checks as <see cref="AcceptAsync"/>, then the request declined.</summary>
+    Task<FriendRequestResult> DeclineAsync(string requestId, string decliningId, CancellationToken ct = default);
+
+    /// <summary>
+    /// The TS blockPlayer: the target becomes a blocked entry of the blocker's list (in place of any other entry), leaves
+    /// the target's list, every pending request between them is declined, and the blocker's blockedPlayers (Mongo and
+    /// Redis) gain the target. {success: false, error: cannot_block_self} for oneself.
+    /// </summary>
+    Task<FriendRequestResult> BlockAsync(string accountId, string targetId, string targetName, CancellationToken ct = default);
+
+    /// <summary>A player's account id by their public id (playertesters public_id), for PUT /friends/me/unfriend/{publicId}; null for none.</summary>
+    Task<string?> IdByPublicIdAsync(string publicId, CancellationToken ct = default);
+
     /// <summary>A player's name (playertesters name), for PUT /ovs/friends/send-request; null when there is no such player.</summary>
     Task<PlayerName?> PlayerNameAsync(string playerId, CancellationToken ct = default);
 }
@@ -192,6 +212,83 @@ internal sealed class FriendRequests(IServiceProvider services, TimeProvider tim
 
         log.LogInformation("Friend removed: {Account} <-> {Friend}", accountId, friendId);
     }
+
+    public async Task<FriendRequestResult> AcceptAsync(string requestId, string acceptingId, CancellationToken ct)
+    {
+        var request = await PendingAsync(requestId, ct);
+        return request.Error is not null ? new(false, request.Error) : await AcceptAsync(request.Document!, acceptingId, ct);
+    }
+
+    public async Task<FriendRequestResult> DeclineAsync(string requestId, string decliningId, CancellationToken ct)
+    {
+        var request = await PendingAsync(requestId, ct);
+        if (request.Error is not null)
+        {
+            return new(false, request.Error);
+        }
+
+        if (Str(request.Document!, "toAccountId") != decliningId)
+        {
+            return new(false, "not_recipient");
+        }
+
+        await Requests.UpdateOneAsync(new BsonDocument("_id", request.Document!["_id"]),
+            new BsonDocument("$set", new BsonDocument { { "status", "declined" }, { "updatedAt", time.GetUtcNow().UtcDateTime } }), cancellationToken: ct);
+        log.LogInformation("Friend request declined: {From} -> {To}", Str(request.Document!, "fromUsername"), Str(request.Document!, "toUsername"));
+        return new(true);
+    }
+
+    // FriendRequestModel.findById, then the status check.
+    private async Task<(BsonDocument? Document, string? Error)> PendingAsync(string requestId, CancellationToken ct)
+    {
+        var request = ObjectId.TryParse(requestId, out var oid) ? await Requests.Find(new BsonDocument("_id", oid)).FirstOrDefaultAsync(ct) : null;
+        return request is null ? (null, "request_not_found") : Str(request, "status") != "pending" ? (null, "request_not_pending") : (request, null);
+    }
+
+    public async Task<FriendRequestResult> BlockAsync(string accountId, string targetId, string targetName, CancellationToken ct)
+    {
+        if (accountId == targetId)
+        {
+            return new(false, "cannot_block_self");
+        }
+
+        var now = time.GetUtcNow().UtcDateTime;
+        var myList = await EnsureListAsync(accountId, ct);
+        var players = Mongo.GetCollection<BsonDocument>(PlayerRecord.Collection);
+        var doc = ObjectId.TryParse(accountId, out var me) ? await players.Find(new BsonDocument("_id", me)).FirstOrDefaultAsync(ct) : null;
+        // myList.friends = the others + {blocked}; save (mongoose: the whole array, __v + 1).
+        var kept = new BsonArray(Entries(myList).Where(e => Str(e, "friendAccountId") != targetId))
+        {
+            new BsonDocument { { "friendAccountId", targetId }, { "friendUsername", targetName }, { "status", "blocked" }, { "addedAt", now } },
+        };
+        await Lists.UpdateOneAsync(new BsonDocument("_id", myList["_id"]), new BsonDocument { { "$set", new BsonDocument("friends", kept) }, { "$inc", new BsonDocument("__v", 1) } }, cancellationToken: ct);
+        await Lists.UpdateOneAsync(new BsonDocument("accountId", targetId),
+            new BsonDocument("$pull", new BsonDocument("friends", new BsonDocument("friendAccountId", accountId))), cancellationToken: ct);
+        await Requests.UpdateManyAsync(new BsonDocument("$or", new BsonArray
+        {
+            new BsonDocument { { "fromAccountId", accountId }, { "toAccountId", targetId }, { "status", "pending" } },
+            new BsonDocument { { "fromAccountId", targetId }, { "toAccountId", accountId }, { "status", "pending" } },
+        }), new BsonDocument("$set", new BsonDocument { { "status", "declined" }, { "updatedAt", now } }), cancellationToken: ct);
+        if (doc is not null)
+        {
+            var player = PlayerRecord.Load(doc, now);
+            var blocked = player.Get("blockedPlayers") as BsonArray ?? [];
+            if (!blocked.Any(b => b.IsString && b.AsString == targetId))
+            {
+                player.SetArray("blockedPlayers", new BsonArray(blocked) { targetId });
+                await player.SaveAsync(players, ct);
+            }
+
+            var all = player.Get("blockedPlayers") as BsonArray ?? [];
+            await Redis.StringSetAsync($"player:{accountId}:blocked", Js.Stringify(new JsonArray([.. all.Select(b => (JsonNode?)(b.IsString ? b.AsString : null))])));
+        }
+
+        log.LogInformation("Player blocked: {Account} blocked {Target}", accountId, targetId);
+        return new(true);
+    }
+
+    public async Task<string?> IdByPublicIdAsync(string publicId, CancellationToken ct) =>
+        (await Mongo.GetCollection<BsonDocument>(PlayerRecord.Collection).Find(new BsonDocument("public_id", publicId)).FirstOrDefaultAsync(ct))?["_id"].ToString();
 
     public async Task<PlayerName?> PlayerNameAsync(string playerId, CancellationToken ct)
     {

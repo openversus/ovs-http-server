@@ -1,18 +1,26 @@
+using System.Text.Json.Nodes;
 using FastEndpoints;
-using OpenVersus.Server.Http.Shared.Stubs;
+using MongoDB.Bson;
+using MongoDB.Driver;
+using OpenVersus.Server.Web.Site;
+using StackExchange.Redis;
 
 namespace OpenVersus.Server.Web.Endpoints.OpenVersus.Web;
 
 /// <summary>
-/// GET /leaderboard.
+/// GET /leaderboard: the leaderboard page (leaderboard.html; the browser asks /api/leaderboard/{mode}). TS server: GET /leaderboard.
 /// Seen in: TS server: GET /leaderboard.
-/// Server only.
 /// </summary>
-public sealed class GetLeaderboard : StubEndpoint
+public sealed class GetLeaderboard : EndpointWithoutRequest
 {
     public override void Configure()
     {
         Verbs(FastEndpoints.Http.GET);
         Routes("/leaderboard");
+    }
+
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        await Pages.SendAsync(HttpContext, Pages.Leaderboard());
     }
 }

@@ -184,6 +184,8 @@ public sealed class AccessIdentityTests : IAsyncLifetime
     public async Task WithoutAnEpicClientIdAClaimedEpicIdStillLogsIn()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        // Epic:ClientId defaults to the game's own client id; cleared, an Epic id is a claim.
+        _epic.ClientId = "";
         var epicOwner = await SeedAsync("Epic Owner", steam: "", install: "", epic: Epic);
         await SeedAsync("Install Owner", steam: "", install: Install);
         // The identify token (no verification configured anywhere) and the record both name the id as a claim.

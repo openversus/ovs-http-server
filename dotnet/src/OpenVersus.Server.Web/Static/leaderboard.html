@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="/theme.css" />
+  <script src="/theme.js" defer></script>
+  <title>OpenVersus - Leaderboard</title>
+  <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png?v=20260418" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg?v=20260418" />
+  <link rel="shortcut icon" href="/favicon/favicon.ico?v=20260418" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png?v=20260418" />
+  <meta name="apple-mobile-web-app-title" content="OpenVersus" />
+  <link rel="manifest" href="/favicon/site.webmanifest?v=20260418" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fugaz+One&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+  <style>
+      :root {
+          --mv-blue: #1f6feb;
+          --mv-blue-dark: #0040a5;
+          --mv-orange: #ff7500;
+          --mv-orange-dark: #ff4d00;
+          --ink: #343434;
+          --card: rgba(255, 255, 255, 0.92);
+          --card2: rgba(255, 255, 255, 0.85);
+          --shadow: rgba(0, 0, 0, 0.28) 0px 19px 38px, rgba(0, 0, 0, 0.20) 0px 15px 12px;
+          --skew: -12deg;
+          --radius: 18px;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+          margin: 0;
+          font-family: "Fugaz One", Arial, sans-serif;
+          overflow-x: hidden;
+          color: var(--ink);
+          background: #000;
+      }
+      .background {
+          position: fixed; inset: 0; z-index: -2;
+          background-image: url("/images/name_change_background.jpeg");
+          background-size: cover; background-position: center; background-repeat: no-repeat;
+          transform: scale(1.03);
+      }
+      .background::after {
+          content: ""; position: absolute; inset: 0;
+          backdrop-filter: blur(6px);
+          background: rgba(10, 12, 20, 0.20);
+      }
+      .main_wrapper {
+          min-height: 100%;
+          display: grid; place-items: center;
+          padding: 24px 14px;
+      }
+      .main_container {
+          width: min(960px, 100%);
+          background: linear-gradient(180deg, var(--card), var(--card2));
+          border-radius: var(--radius);
+          box-shadow: var(--shadow);
+          padding: 22px;
+          position: relative; overflow: hidden;
+      }
+      .main_container::before {
+          content: ""; position: absolute; inset: -60px;
+          background: linear-gradient(115deg,
+          transparent 0%, transparent 45%,
+          rgba(255, 117, 0, 0.10) 45%, rgba(255, 117, 0, 0.10) 52%,
+          transparent 52%, transparent 100%),
+          linear-gradient(115deg,
+          transparent 0%, transparent 62%,
+          rgba(31, 111, 235, 0.10) 62%, rgba(31, 111, 235, 0.10) 69%,
+          transparent 69%, transparent 100%);
+          pointer-events: none; opacity: 0.85;
+      }
+      .content { position: relative; display: grid; gap: 18px; }
+      .top {
+          display: grid; grid-template-columns: 170px 1fr;
+          gap: 18px; align-items: center;
+      }
+      .logo {
+          width: 100%; max-width: 170px;
+          border-radius: 14px; display: block;
+          box-shadow: 0 10px 0 rgba(0, 0, 0, 0.10);
+      }
+      .panelTitle {
+          margin: 0;
+          font-size: clamp(22px, 3vw, 32px); line-height: 1;
+          background: linear-gradient(0deg, var(--mv-orange-dark), #ff8825);
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+          font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase;
+      }
+      .subline {
+          margin: 8px 0 0;
+          font-family: Helvetica, Arial, sans-serif;
+          color: rgba(20, 20, 20, 0.70); font-size: 14px;
+      }
+      .section {
+          padding: 16px; border: 3px solid #979797;
+          background: #fff; box-shadow: 0 10px 0 rgba(0, 0, 0, 0.10);
+          display: grid; gap: 12px;
+      }
+      .section-title {
+          margin: 0;
+          font-size: 20px; text-transform: uppercase; letter-spacing: 0.06em;
+          background: linear-gradient(0deg, var(--mv-blue-dark), var(--mv-blue));
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      }
+      .section-title.orange-title {
+          background: linear-gradient(0deg, var(--mv-orange-dark), #ff8825);
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      }
+      .tab-row {
+          display: flex; gap: 10px; margin-bottom: 4px;
+          align-items: center;
+      }
+      .char-select-wrap {
+          margin-left: auto;
+          display: flex; align-items: center; gap: 8px;
+      }
+      .char-select-label {
+          font-family: Helvetica, Arial, sans-serif;
+          font-size: 11px; font-weight: 800;
+          text-transform: uppercase; letter-spacing: 0.08em;
+          color: rgba(0,0,0,0.55);
+      }
+      .char-select {
+          font-family: Helvetica, Arial, sans-serif;
+          font-size: 13px; font-weight: 700;
+          padding: 8px 12px;
+          border: 2px solid var(--ink);
+          border-radius: 6px;
+          background: #fff;
+          color: var(--ink);
+          cursor: pointer;
+          min-width: 180px;
+      }
+      .char-select:hover { border-color: var(--mv-blue); }
+      .char-select:focus { outline: none; border-color: var(--mv-blue); }
+      .tab-btn {
+          display: inline-block; transform: skewX(var(--skew));
+          border: 3px solid var(--ink);
+          box-shadow: 0 8px 0 rgba(0, 0, 0, 0.15);
+          border-radius: 0; padding: 0; cursor: pointer; white-space: nowrap;
+          background: #ddd;
+          transition: background 0.15s;
+      }
+      .tab-btn.active { background: var(--mv-blue); }
+      .tab-btn.active .tab-label { color: #fff; }
+      .tab-btn:hover { filter: brightness(1.08); }
+      .tab-label {
+          display: block;
+          transform: skewX(calc(var(--skew) * -1));
+          background: transparent; border: none;
+          padding: 12px 24px; font-size: 16px; font-weight: 1000;
+          text-transform: uppercase; color: var(--ink);
+          letter-spacing: 0.06em; cursor: pointer;
+          font-family: Helvetica, Arial, sans-serif;
+      }
+      .lb-table {
+          width: 100%; border-collapse: collapse;
+          font-family: Helvetica, Arial, sans-serif;
+      }
+      .lb-table th {
+          text-align: left; padding: 10px 12px;
+          font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em;
+          color: rgba(0,0,0,0.55); border-bottom: 2px solid rgba(0,0,0,0.12);
+          font-weight: 900;
+      }
+      .lb-table td {
+          padding: 10px 12px; font-size: 14px; font-weight: 700;
+          border-bottom: 1px solid rgba(0,0,0,0.06);
+      }
+      .lb-table tr:hover td { background: rgba(31, 111, 235, 0.06); }
+      .rank-col { width: 60px; text-align: center; }
+      .char-col { width: 44px; text-align: center; padding: 4px !important; }
+      .char-icon {
+          width: 36px; height: 36px; border-radius: 50%;
+          object-fit: cover; border: 2px solid rgba(0,0,0,0.10);
+          background: #eee;
+      }
+      .elo-col { width: 80px; color: var(--mv-orange); font-weight: 900; }
+      .wl-col { width: 100px; }
+      .wr-col { width: 80px; }
+      .rank-badge {
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 32px; height: 32px; border-radius: 6px;
+          font-weight: 900; font-size: 14px; color: #fff;
+          background: var(--mv-blue);
+      }
+      .rank-badge.gold { background: #d4a017; }
+      .rank-badge.silver { background: #8a8a8a; }
+      .rank-badge.bronze { background: #cd7f32; }
+      .lb-separator {
+          border: none; border-top: 3px dashed rgba(0,0,0,0.15);
+          margin: 0;
+      }
+      .lb-table tr.my-row td {
+          background: rgba(31, 111, 235, 0.10);
+          font-weight: 900;
+      }
+      .lb-table tr.my-row:hover td {
+          background: rgba(31, 111, 235, 0.16);
+      }
+      .rank-badge.me { background: var(--mv-orange); }
+      .loading {
+          text-align: center; padding: 40px;
+          font-family: Helvetica, Arial, sans-serif;
+          color: rgba(0,0,0,0.45); font-weight: 700;
+      }
+      .back-btn {
+          display: inline-flex; align-items: center; gap: 6px;
+          text-decoration: none; color: var(--mv-blue);
+          font-family: Helvetica, Arial, sans-serif;
+          font-weight: 800; font-size: 13px;
+          text-transform: uppercase; letter-spacing: 0.06em;
+          padding: 8px 0; transition: opacity 0.15s;
+      }
+      .back-btn:hover { opacity: 0.7; }
+      .back-btn svg { width: 16px; height: 16px; }
+      .halfSecond { animation-delay: 0.5s; }
+      @media (max-width: 760px) {
+          .top { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+          .logo { max-width: 140px; }
+          .lb-table th, .lb-table td { padding: 8px 6px; font-size: 12px; }
+      }
+  </style>
+</head>
+<body>
+<section class="background"></section>
+<div class="main_wrapper">
+  <section class="main_container animate__animated animate__fadeIn">
+    <div class="content">
+      <a href="/home" class="back-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back to Home</a>
+      <div class="top">
+        <img src="/images/OpenVersus_logo.png" class="logo" alt="OpenVersus Logo"/>
+        <div>
+          <h1 class="panelTitle">Leaderboard</h1>
+          <p class="subline">Top 100 players ranked by ELO rating.</p>
+          <p class="subline">Leaderboards reset on the 1st of each month.</p>
+        </div>
+      </div>
+
+      <div class="section animate__animated animate__fadeInUp halfSecond">
+        <div class="tab-row">
+          <div class="tab-btn active" id="tab-1v1" onclick="switchTab('1v1')">
+            <span class="tab-label">1v1 Rankings</span>
+          </div>
+          <div class="tab-btn" id="tab-2v2" onclick="switchTab('2v2')">
+            <span class="tab-label">2v2 Rankings</span>
+          </div>
+          <div class="char-select-wrap">
+            <span class="char-select-label">Filter</span>
+            <select class="char-select" id="char-select" onchange="onCharacterChange(this.value)">
+              <option value="global">Global</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="leaderboard-content">
+          <div class="loading">Loading...</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+</div>
+
+<script>
+  let currentMode = '1v1';
+  let currentCharacter = 'global'; // 'global' or character_xxx slug
+
+  const CHARACTER_NAMES = {
+    'character_wonder_woman': 'Wonder Woman', 'character_batman': 'Batman', 'character_arya': 'Arya Stark',
+    'character_superman': 'Superman', 'character_steven': 'Steven Universe', 'character_garnet': 'Garnet',
+    'character_velma': 'Velma', 'character_finn': 'Finn', 'character_tom_and_jerry': 'Tom & Jerry',
+    'character_shaggy': 'Shaggy', 'character_jake': 'Jake', 'character_creature': 'Reindog',
+    'character_bugs_bunny': 'Bugs Bunny', 'character_harleyquinn': 'Harley Quinn', 'character_taz': 'Taz',
+    'character_c017': 'Iron Giant', 'character_c018': 'Marvin', 'character_c019': 'Morty',
+    'character_c020': 'Rick', 'character_c021': 'Black Adam', 'character_c023a': 'Gizmo',
+    'character_c023b': 'Stripe', 'character_c024': 'Betelgeuse', 'character_c025': 'Raven',
+    'character_c026': 'Samurai Jack', 'character_c027': 'Nubia', 'character_c028': 'The Joker',
+    'character_c029': 'Aquaman', 'character_c030': 'Powerpuff Girls', 'character_c031': 'Marceline',
+    'character_bananaguard': 'Banana Guard', 'character_jason': 'Jason Voorhees',
+    'character_c036': 'Agent Smith', 'character_c038': 'Lola Bunny', 'character_c16': 'LeBron James',
+  };
+
+  const WIKI = 'https://multiversus.wiki.gg/images/thumb/';
+  const CHARACTER_IMAGES = {
+    'character_wonder_woman': WIKI + 'WonderWoman_Icon.png/75px-WonderWoman_Icon.png',
+    'character_batman': WIKI + 'Batman_Icon.png/75px-Batman_Icon.png',
+    'character_arya': WIKI + 'Arya_Icon.png/75px-Arya_Icon.png',
+    'character_superman': WIKI + 'Superman_Icon.png/75px-Superman_Icon.png',
+    'character_steven': WIKI + 'Steven_Icon.png/75px-Steven_Icon.png',
+    'character_garnet': WIKI + 'Garnet_Icon.png/75px-Garnet_Icon.png',
+    'character_velma': WIKI + 'Velma_Icon.png/75px-Velma_Icon.png',
+    'character_finn': WIKI + 'Finn_Icon.png/75px-Finn_Icon.png',
+    'character_tom_and_jerry': WIKI + 'TomJerry_Icon.png/75px-TomJerry_Icon.png',
+    'character_shaggy': WIKI + 'Shaggy_Icon.png/75px-Shaggy_Icon.png',
+    'character_jake': WIKI + 'Jake_Icon.png/75px-Jake_Icon.png',
+    'character_creature': WIKI + 'Reindog_Icon.png/75px-Reindog_Icon.png',
+    'character_bugs_bunny': WIKI + 'Bugs_Icon.png/75px-Bugs_Icon.png',
+    'character_harleyquinn': WIKI + 'Harley_Icon.png/75px-Harley_Icon.png',
+    'character_taz': WIKI + 'Taz_Icon.png/75px-Taz_Icon.png',
+    'character_c017': WIKI + 'IronGiant_Icon.png/75px-IronGiant_Icon.png',
+    'character_c018': WIKI + 'Marvin_Icon.png/75px-Marvin_Icon.png',
+    'character_c019': WIKI + 'Morty_Icon.png/75px-Morty_Icon.png',
+    'character_c020': WIKI + 'Rick_Icon.png/75px-Rick_Icon.png',
+    'character_c021': WIKI + 'BlackAdamIcon.png/75px-BlackAdamIcon.png',
+    'character_c023a': WIKI + 'Gizmo_Icon.png/75px-Gizmo_Icon.png',
+    'character_c023b': WIKI + 'Stripe_Icon.png/75px-Stripe_Icon.png',
+    'character_c024': WIKI + 'Beetlejuice_Icon.png/75px-Beetlejuice_Icon.png',
+    'character_c025': WIKI + 'Raven_Icon.png/75px-Raven_Icon.png',
+    'character_c026': WIKI + 'SamuraiJackIcon.png/75px-SamuraiJackIcon.png',
+    'character_c027': WIKI + 'Nubia_Icon.png/75px-Nubia_Icon.png',
+    'character_c028': WIKI + 'Joker_Icon.png/75px-Joker_Icon.png',
+    'character_c029': WIKI + 'Aquaman_Icon.png/75px-Aquaman_Icon.png',
+    'character_c030': WIKI + 'PPGIcon.png/75px-PPGIcon.png',
+    'character_c031': WIKI + 'Marceline_Icon.png/75px-Marceline_Icon.png',
+    'character_bananaguard': WIKI + 'BananaGuard_Icon.png/75px-BananaGuard_Icon.png',
+    'character_jason': WIKI + 'JasonVoorhees_Icon.png/75px-JasonVoorhees_Icon.png',
+    'character_c036': WIKI + 'Agent_Smith_Icon.png/75px-Agent_Smith_Icon.png',
+    'character_c038': WIKI + 'Lola_Icon.png/75px-Lola_Icon.png',
+    'character_c16': WIKI + 'LeBron_Icon.png/75px-LeBron_Icon.png',
+  };
+
+  function getCharacterName(slug) {
+    if (!slug) return '';
+    const lower = slug.toLowerCase();
+    return CHARACTER_NAMES[lower] || CHARACTER_NAMES[slug] || slug.replace(/^character_/i, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  function getCharacterImage(slug) {
+    if (!slug) return '';
+    const lower = slug.toLowerCase();
+    return CHARACTER_IMAGES[lower] || CHARACTER_IMAGES[slug] || '';
+  }
+
+  function switchTab(mode) {
+    currentMode = mode;
+    document.getElementById('tab-1v1').classList.toggle('active', mode === '1v1');
+    document.getElementById('tab-2v2').classList.toggle('active', mode === '2v2');
+    loadLeaderboard(mode, currentCharacter);
+  }
+
+  function onCharacterChange(slug) {
+    currentCharacter = slug;
+    loadLeaderboard(currentMode, currentCharacter);
+  }
+
+  function populateCharacterDropdown() {
+    const sel = document.getElementById('char-select');
+    // Sort by display name for a friendly dropdown order
+    const entries = Object.entries(CHARACTER_NAMES)
+      .map(([slug, name]) => ({ slug, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const e of entries) {
+      const opt = document.createElement('option');
+      opt.value = e.slug;
+      opt.textContent = e.name;
+      sel.appendChild(opt);
+    }
+  }
+
+  function getRankBadgeClass(rank) {
+    if (rank === 1) return 'rank-badge gold';
+    if (rank === 2) return 'rank-badge silver';
+    if (rank === 3) return 'rank-badge bronze';
+    return 'rank-badge';
+  }
+
+  async function loadLeaderboard(mode, character) {
+    character = character || 'global';
+    const container = document.getElementById('leaderboard-content');
+    container.innerHTML = '<div class="loading">Loading...</div>';
+
+    try {
+      const qs = character !== 'global' ? '?character=' + encodeURIComponent(character) : '';
+      // Fetch top 100 and current player's rank in parallel
+      const [lbRes, meRes] = await Promise.all([
+        fetch('/api/leaderboard/' + mode + qs),
+        fetch('/api/leaderboard/' + mode + '/me' + qs),
+      ]);
+      const data = await lbRes.json();
+      const meData = await meRes.json();
+
+      if (!data.players || data.players.length === 0) {
+        const charName = character !== 'global' ? getCharacterName(character) : null;
+        const msg = charName
+          ? 'No one has played ' + escapeHtml(charName) + ' yet in this mode.'
+          : 'No players ranked yet. Play some matches!';
+        container.innerHTML = '<div class="loading">' + msg + '</div>';
+        return;
+      }
+
+      let html = '<table class="lb-table">';
+      html += '<thead><tr>';
+      html += '<th class="rank-col">Rank</th>';
+      html += '<th>Player</th>';
+      html += '<th class="char-col"></th>';
+      html += '<th class="elo-col">ELO</th>';
+      html += '<th class="wl-col">W / L</th>';
+      html += '<th class="wr-col">Win %</th>';
+      html += '</tr></thead><tbody>';
+
+      // Check if the current player is already in the top 100
+      const meId = meData && !meData.error ? meData.account_id : null;
+      const meInTop100 = meId && data.players.some(p => p.account_id === meId);
+
+      for (const p of data.players) {
+        const total = p.wins + p.losses;
+        const winRate = total > 0 ? Math.round((p.wins / total) * 100) : 0;
+        const isMe = meId && p.account_id === meId;
+        html += '<tr' + (isMe ? ' class="my-row"' : '') + '>';
+        html += '<td class="rank-col"><span class="' + getRankBadgeClass(p.rank) + (isMe ? ' me' : '') + '">' + p.rank + '</span></td>';
+        html += '<td>' + escapeHtml(p.username) + (isMe ? ' <span style="font-size:11px;color:var(--mv-blue);">(YOU)</span>' : '') + '</td>';
+        const charImg = getCharacterImage(p.bestCharacter);
+        const charName = getCharacterName(p.bestCharacter);
+        html += '<td class="char-col">' + (charImg ? '<img class="char-icon" src="' + charImg + '" alt="' + escapeHtml(charName) + '" title="' + escapeHtml(charName) + '" onerror="this.style.display=\'none\'">' : '') + '</td>';
+        html += '<td class="elo-col">' + p.elo + '</td>';
+        html += '<td class="wl-col">' + p.wins + ' / ' + p.losses + '</td>';
+        html += '<td class="wr-col">' + winRate + '%</td>';
+        html += '</tr>';
+      }
+
+      // If player is NOT in top 100, show separator + their row
+      if (meData && !meData.error && !meInTop100) {
+        const total = meData.wins + meData.losses;
+        const winRate = total > 0 ? Math.round((meData.wins / total) * 100) : 0;
+        html += '<tr><td colspan="6" style="padding:0;"><hr class="lb-separator"/></td></tr>';
+        html += '<tr class="my-row">';
+        html += '<td class="rank-col"><span class="rank-badge me">' + meData.rank + '</span></td>';
+        html += '<td>' + escapeHtml(meData.username) + ' <span style="font-size:11px;color:var(--mv-blue);">(YOU)</span></td>';
+        const meCharImg = getCharacterImage(meData.bestCharacter);
+        const meCharName = getCharacterName(meData.bestCharacter);
+        html += '<td class="char-col">' + (meCharImg ? '<img class="char-icon" src="' + meCharImg + '" alt="' + escapeHtml(meCharName) + '" title="' + escapeHtml(meCharName) + '" onerror="this.style.display=\'none\'">' : '') + '</td>';
+        html += '<td class="elo-col">' + meData.elo + '</td>';
+        html += '<td class="wl-col">' + meData.wins + ' / ' + meData.losses + '</td>';
+        html += '<td class="wr-col">' + winRate + '%</td>';
+        html += '</tr>';
+      }
+
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    } catch (err) {
+      container.innerHTML = '<div class="loading">Error loading leaderboard. Please try again.</div>';
+    }
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // Populate the character dropdown and load global 1v1 by default
+  populateCharacterDropdown();
+  loadLeaderboard('1v1', 'global');
+</script>
+</body>
+</html>

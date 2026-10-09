@@ -70,6 +70,8 @@ public sealed class IdentifyEpicTests : IAsyncLifetime
     public async Task WithoutAClientIdAnEpicIdIsTakenAsClaimed()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS to run");
+        // Epic:ClientId defaults to the game's own client id; cleared, an Epic id is a claim.
+        _epic.ClientId = "";
         await Redis.StringSetAsync($"identity:epic:{Claimed}", Account);
         var (record, claims, accountId) = await RegisterAsync(new JsonObject { ["epicId"] = Claimed, ["epicToken"] = "whatever", ["installId"] = Install });
         Assert.Equal(Claimed, record["epicId"]);

@@ -44,13 +44,26 @@ public interface ILeaderboardService
     /// was never what the tier means.
     /// </summary>
     Task<JsonObject> GmLeaderboardsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// The website's GET /api/leaderboard/{mode}?character= (the TS getLeaderboard, 100 rows): <c>{players: [{rank,
+    /// account_id, username, elo, wins, losses, bestCharacter}], character}</c>; a character board's elo, wins and losses
+    /// are that character's. Throws where the TS route answered 500.
+    /// </summary>
+    Task<JsonObject> WebBoardAsync(string mode, string? character, CancellationToken ct = default);
+
+    /// <summary>
+    /// The website's GET /api/leaderboard/{mode}/me (the TS getPlayerRank): the player's row as in
+    /// <see cref="WebBoardAsync"/> (rank by elo, ties by id), null with no game in the mode (or on the character).
+    /// </summary>
+    Task<JsonObject?> WebRankAsync(string accountId, string mode, string? character, CancellationToken ct = default);
 }
 
 internal sealed partial class LeaderboardService(IServiceProvider services, ILogger<LeaderboardService> log) : ILeaderboardService
 {
     private const int AroundWindow = 5;
 
-    private sealed record Row(long Rank, string AccountId, string Username, BsonValue Elo, string BestCharacter);
+    private sealed record Row(long Rank, string AccountId, string Username, BsonValue Elo, string BestCharacter, BsonValue? Wins = null, BsonValue? Losses = null);
 
     public Task<JsonObject> ShowAsync(string slug, LeaderboardQuery query, CancellationToken ct) => Guarded("show", async ratings =>
     {
@@ -75,6 +88,56 @@ internal sealed partial class LeaderboardService(IServiceProvider services, ILog
         ["OneVsOne"] = await GrandmasterAsync(ratings, "1v1", ct),
         ["TwoVsTwo"] = await GrandmasterAsync(ratings, "2v2", ct),
     }, ct, () => new JsonObject { ["OneVsOne"] = new JsonArray(), ["TwoVsTwo"] = new JsonArray() });
+
+    public async Task<JsonObject> WebBoardAsync(string mode, string? character, CancellationToken ct)
+    {
+        var ratings = services.GetService<IMongoDatabase>()?.GetCollection<BsonDocument>("eloratings") ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)");
+        var players = new JsonArray();
+        foreach (var row in await RowsAsync(ratings, mode, character, 100, 0, ct))
+        {
+            players.Add(WebRow(row));
+        }
+
+        return new JsonObject { ["players"] = players, ["character"] = character };
+    }
+
+    public async Task<JsonObject?> WebRankAsync(string accountId, string mode, string? character, CancellationToken ct)
+    {
+        var ratings = services.GetService<IMongoDatabase>()?.GetCollection<BsonDocument>("eloratings") ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)");
+        if (character is null)
+        {
+            if (await RankService.PlaceAsync(ratings, accountId, mode, ct) is not { } place
+                || await ratings.Find(new BsonDocument("account_id", accountId)).FirstOrDefaultAsync(ct) is not { } rating)
+            {
+                return null;
+            }
+
+            return WebRow(new Row(place.Rank, accountId, await UsernameAsync(rating, accountId, backfill: false, ratings, ct), place.Rating, BestCharacter(rating, mode),
+                rating.GetValue($"wins_{mode}", BsonNull.Value), rating.GetValue($"losses_{mode}", BsonNull.Value)));
+        }
+
+        var ranked = await ratings.Aggregate<BsonDocument>(CharacterPipeline(mode, character).Concat([Projection]).ToArray(), cancellationToken: ct).ToListAsync(ct);
+        int index = ranked.FindIndex(r => r.GetValue("account_id", BsonNull.Value) == accountId);
+        if (index < 0)
+        {
+            return null;
+        }
+
+        var me = ranked[index];
+        return WebRow(new Row(index + 1, accountId, await UsernameAsync(me, accountId, backfill: false, ratings, ct), me["charElo"], character, me["charWins"], me["charLosses"]));
+    }
+
+    // The TS row: wins and losses as stored (0 where TS wrote `|| 0`: the rank; the board's rows carry the field as is).
+    private static JsonObject WebRow(Row row) => new()
+    {
+        ["rank"] = row.Rank,
+        ["account_id"] = row.AccountId,
+        ["username"] = row.Username,
+        ["elo"] = RankService.Json(row.Elo),
+        ["wins"] = row.Wins is { } w ? RankService.Json(w) ?? 0 : 0,
+        ["losses"] = row.Losses is { } l ? RankService.Json(l) ?? 0 : 0,
+        ["bestCharacter"] = row.BestCharacter,
+    };
 
     /// <summary>The size of the Grandmaster tier (rankedsettings_default's MaximumNumberOfPlayersInTier).</summary>
     public const int GrandmasterSize = 100;
@@ -150,7 +213,7 @@ internal sealed partial class LeaderboardService(IServiceProvider services, ILog
                 var p = players[i];
                 string accountId = p.GetValue("account_id", BsonNull.Value).ToString()!;
                 string username = await UsernameAsync(p, accountId, backfill: true, ratings, ct);
-                rows.Add(new Row(skip + i + 1, accountId, username, p.GetValue(elo, BsonNull.Value), BestCharacter(p, mode)));
+                rows.Add(new Row(skip + i + 1, accountId, username, p.GetValue(elo, BsonNull.Value), BestCharacter(p, mode), p.GetValue($"wins_{mode}", BsonNull.Value), p.GetValue($"losses_{mode}", BsonNull.Value)));
             }
         }
         else
@@ -161,7 +224,7 @@ internal sealed partial class LeaderboardService(IServiceProvider services, ILog
             {
                 var p = players[i];
                 string accountId = p.GetValue("account_id", BsonNull.Value).ToString()!;
-                rows.Add(new Row(skip + i + 1, accountId, await UsernameAsync(p, accountId, backfill: false, ratings, ct), p["charElo"], character));
+                rows.Add(new Row(skip + i + 1, accountId, await UsernameAsync(p, accountId, backfill: false, ratings, ct), p["charElo"], character, p["charWins"], p["charLosses"]));
             }
         }
 

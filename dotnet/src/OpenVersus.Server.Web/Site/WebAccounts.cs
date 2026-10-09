@@ -73,6 +73,27 @@ public static class WebAccounts
         return (null, true);
     }
 
+    /// <summary>
+    /// The account at the browser's IP for a JSON route (the TS getPlayerFromReq): the only one there, or the picked one
+    /// (a fresh cookie); null for none, or several with no valid pick (the caller should visit a page with the picker).
+    /// </summary>
+    public static async Task<BsonDocument?> PickedAsync(HttpContext context, IMongoDatabase mongo, IDatabase redis)
+    {
+        string ip = Ip(context);
+        var accounts = await mongo.GetCollection<BsonDocument>(Players).Find(AtIp(ip)).ToListAsync(context.RequestAborted);
+        if (accounts.Count == 1)
+        {
+            return accounts[0];
+        }
+
+        if (accounts.Count > 1 && ReadCookie(context) is { } claim && Str(claim, "ip") == ip && !await StaleAsync(redis, claim, ip))
+        {
+            return accounts.FirstOrDefault(a => a["_id"].AsObjectId.ToString() == Str(claim, "accountId"));
+        }
+
+        return null;
+    }
+
     /// <summary>The picker page for these accounts.</summary>
     public static string Picker(IEnumerable<BsonDocument> accounts, string returnTo, string? error) =>
         Pages.AccountPicker(returnTo, error, accounts.Select(a =>

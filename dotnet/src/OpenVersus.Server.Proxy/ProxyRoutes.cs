@@ -18,7 +18,7 @@ public sealed class ProxySettings : IValidatableObject
     public string TsUrl { get; set; } = "http://127.0.0.1:18000";
 
     [Description("The routes the TS server still answers, as METHOD /path, separated by commas: the game's method (a GET the game sends as PUT with x-hydra-http-method matches too) and the path as the TS server declares it; a route constraint keeps a ported literal path out of a parameter ({id:regex(^(?!bulk$).+$)}). Everything else goes to C#. Empty: everything goes to C#.")]
-    public string TsRoutes { get; set; } = "PUT /accounts/me/relationships/{id}/block, PUT /accounts/me/relationships/{id}/unblock, PUT /friends/me/invitations/{id}/accept, PUT /friends/me/invitations/{id}/decline, PUT /friends/me/unfriend/{id}, PUT /social/me/block/{id}, PUT /social/me/unblock/{id}, DELETE /ovs/friends/{friendId}, POST /ovs/friends/accept, POST /ovs/friends/block, POST /ovs/friends/decline, GET /admin/banner, GET /api/admin/banner/online-count, POST /api/admin/banner, POST /syncAsset, GET /api/leaderboard/{mode}, GET /api/leaderboard/{mode}/me, GET /api/matches, GET /home, GET /leaderboard, GET /matches, GET /stats";
+    public string TsRoutes { get; set; } = "";
 
     // Refused when set, so the value shown is always the one in use.
     public IEnumerable<ValidationResult> Validate(ValidationContext context)

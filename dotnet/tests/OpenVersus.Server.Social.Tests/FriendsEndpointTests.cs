@@ -39,6 +39,38 @@ public sealed class FriendsEndpointTests(ServiceFactory<Program> factory) : ICla
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    [Theory]
+    // The game's writes answer their fixed shape whatever happened (this host has no stores: every write fails inside).
+    [InlineData("/friends/me/invitations/abc/accept", "PutFriendsMeInvitationsByIdAccept", """{"status":"ok"}""")]
+    [InlineData("/friends/me/invitations/abc/decline", "PutFriendsMeInvitationsByIdDecline", """{"status":"ok"}""")]
+    [InlineData("/friends/me/unfriend/some-public-id", "PutFriendsMeUnfriendById", """{"status":"ok"}""")]
+    [InlineData("/social/me/block/abc", "PutSocialMeBlockById", "{}")]
+    [InlineData("/social/me/unblock/abc", "PutSocialMeUnblockById", "{}")]
+    [InlineData("/accounts/me/relationships/abc/block", "PutAccountsMeRelationshipsByIdBlock", "{}")]
+    [InlineData("/accounts/me/relationships/abc/unblock", "PutAccountsMeRelationshipsByIdUnblock", "{}")]
+    public async Task TheGamesWritesAnswerTheirShapeWhateverHappens(string path, string endpoint, string body)
+    {
+        using var response = await factory.CreateGameClient().PutAsync(path, null);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(endpoint, response.Headers.GetValues("X-OVS-Endpoint").Single());
+        Assert.Equal(body, await response.Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    // The OpenVersus client's writes: without a resolvable account (no stores here) they answer 401 as the TS routes did.
+    [InlineData("POST", "/ovs/friends/accept", "PostOvsFriendsAccept")]
+    [InlineData("POST", "/ovs/friends/decline", "PostOvsFriendsDecline")]
+    [InlineData("POST", "/ovs/friends/block", "PostOvsFriendsBlock")]
+    [InlineData("DELETE", "/ovs/friends/abc", "DeleteOvsFriendsByFriendId")]
+    public async Task TheClientsWritesRefuseAnUnconnectedCaller(string method, string path, string endpoint)
+    {
+        using var request = new HttpRequestMessage(new HttpMethod(method), path) { Content = new StringContent("""{"requestId":"x","targetId":"y"}""", System.Text.Encoding.UTF8, "application/json") };
+        using var response = await factory.CreateGameClient().SendAsync(request);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(endpoint, response.Headers.GetValues("X-OVS-Endpoint").Single());
+        Assert.Equal("""{"error":"not_connected"}""", await response.Content.ReadAsStringAsync());
+    }
+
     [Fact]
     public async Task AHydraRequestGetsHydra()
     {

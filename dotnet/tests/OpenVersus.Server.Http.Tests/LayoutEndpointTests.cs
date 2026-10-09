@@ -48,9 +48,11 @@ public sealed class LayoutEndpointTests(GameAppFactory factory) : IClassFixture<
     [InlineData("/layout/dokken-layout-type/personalized/fighter-select-layout/x")]
     [InlineData("/layout/dokken-layout-type/personalized/fighter-bundle-content/x")]
     [InlineData("/layout/other-layout-type/personalized/main-variant/x")]
-    public async Task OthersAreNotPorted(string path)
+    public async Task OthersAreAnsweredAsTheTsCatchAllDid(string path)
     {
         using var response = await GetAsync(path, hydra: true);
-        Assert.True(response.Headers.Contains(Stub.Header));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(response.Headers.Contains(Stub.Header));
+        Assert.Equal(HydraBodies.ContentType, response.Content.Headers.ContentType?.MediaType);
     }
 }

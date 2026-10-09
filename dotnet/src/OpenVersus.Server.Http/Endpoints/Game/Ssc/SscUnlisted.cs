@@ -7,7 +7,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 /// Any SSC function without an endpoint of its own. The game's SSC names cannot all be enumerated from the binary
 /// (see docs/ROUTES.md), so a name the route map is missing lands here and shows up in the log by name.
 /// </summary>
-public sealed class SscUnlisted : StubEndpoint
+public sealed class SscUnlisted : TsCatchAllEndpoint
 {
     public override void Configure()
     {

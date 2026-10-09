@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Objects;
 /// Seen in: binary 0x1450617e0.
 /// Pieces include a bare '/': one more segment.
 /// </summary>
-public sealed class PutObjectsByTypeUniqueByIdByKeyUpsert : StubEndpoint
+public sealed class PutObjectsByTypeUniqueByIdByKeyUpsert : TsCatchAllEndpoint
 {
     public override void Configure()
     {

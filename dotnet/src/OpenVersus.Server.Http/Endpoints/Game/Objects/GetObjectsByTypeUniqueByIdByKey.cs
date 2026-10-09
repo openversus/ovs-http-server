@@ -25,7 +25,7 @@ public sealed class GetObjectsByTypeUniqueByIdByKey : JsonBodyEndpoint
         // Express routes ignore letter case.
         if (!string.Equals(Route<string>("type"), "preferences", StringComparison.OrdinalIgnoreCase))
         {
-            await SendNotPortedAsync();
+            await SendTsCatchAllAsync(ct);
             return;
         }
 

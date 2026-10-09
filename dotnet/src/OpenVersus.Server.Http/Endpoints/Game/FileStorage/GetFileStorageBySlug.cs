@@ -22,6 +22,6 @@ public sealed class GetFileStorageBySlug : JsonBodyEndpoint
         FileStorageResponses.UpdateKeyart or FileStorageResponses.UpdateThumbnail =>
             SendJsonAsync(FileStorageResponses.UpdateRecord(Route<string>("slug")!, AssetsUrl.Of(HttpContext)), ct),
         { } slug when FileStorageResponses.StaticSlugs.Contains(slug) => SendStaticAsync($"file-storage-{slug}", ct),
-        _ => SendNotPortedAsync(),
+        _ => SendTsCatchAllAsync(ct),
     };
 }

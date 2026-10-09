@@ -16,5 +16,5 @@ public sealed class GetCommercePurchasesById : StaticEndpoint
     }
 
     public override Task HandleAsync(CancellationToken ct) =>
-        Route<string>("id") == "me" ? SendStaticAsync("commerce-purchases-me", ct) : SendNotPortedAsync();
+        Route<string>("id") == "me" ? SendStaticAsync("commerce-purchases-me", ct) : SendTsCatchAllAsync(ct);
 }

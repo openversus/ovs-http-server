@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Accounts;
 /// Seen in: binary 0x140fa1bd0.
 /// Social layer; method from unknown.
 /// </summary>
-public sealed class AnyAccountsMeAgeInformation : StubEndpoint
+public sealed class AnyAccountsMeAgeInformation : TsCatchAllEndpoint
 {
     public override void Configure()
     {

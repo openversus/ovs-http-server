@@ -14,7 +14,7 @@ namespace OpenVersus.Server.Http.Tests;
 
 /// <summary>
 /// Every route in docs/routes.json reaches an endpoint of its own (named by the X-OVS-Endpoint header, or X-OVS-Stub for
-/// the fallback): not the fallback, not the SSC catch-all, and not
+/// a stub): not the fallback, not the SSC catch-all, and not
 /// an endpoint another route also lands on (which would mean one of the two is shadowed). Plus the routing rules the
 /// game depends on: the Hydra method override, the SSC catch-all and the fallback.
 /// </summary>
@@ -160,16 +160,20 @@ public sealed class RouteMapTests : IClassFixture<GameAppFactory>
     [Fact]
     public async Task AnUnlistedSscNameReachesTheCatchAll()
     {
-        var (status, stub, _) = await SendAsync("PUT", "/ssc/invoke/some_name_the_map_does_not_have");
-        Assert.Equal(s_stubStatus, (int)status);
-        Assert.Equal("SscUnlisted", stub);
+        // Answered as the TS server's catch-all answered it (200), by the endpoint named after that catch-all.
+        var (status, stub, endpoint) = await SendAsync("PUT", "/ssc/invoke/some_name_the_map_does_not_have");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("", stub);
+        Assert.Equal("SscUnlisted", endpoint);
     }
 
     [Fact]
     public async Task AnUnknownPathReachesTheFallback()
     {
-        var (status, stub, _) = await SendAsync("GET", "/definitely/not/a/route");
-        Assert.Equal(s_stubStatus, (int)status);
-        Assert.Equal(Stub.FallbackName, stub);
+        // The TS server's catch-all answered 200 for any path after the token check; so does the fallback.
+        var (status, stub, endpoint) = await SendAsync("GET", "/definitely/not/a/route");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("", stub);
+        Assert.Equal(Stub.FallbackName, endpoint);
     }
 }

@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Commerce;
 /// Seen in: binary fragment.
 /// Binary fragment; no builder found yet.
 /// </summary>
-public sealed class AnyCommerceSales : StubEndpoint
+public sealed class AnyCommerceSales : TsCatchAllEndpoint
 {
     public override void Configure()
     {

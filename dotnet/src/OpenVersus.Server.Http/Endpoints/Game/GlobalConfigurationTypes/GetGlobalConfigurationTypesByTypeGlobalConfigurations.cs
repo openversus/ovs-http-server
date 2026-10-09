@@ -22,5 +22,5 @@ public sealed class GetGlobalConfigurationTypesByTypeGlobalConfigurations : Stat
     public override Task HandleAsync(CancellationToken ct) =>
         s_answered.Contains(Route<string>("type") ?? "")
             ? Send.StringAsync("", contentType: "text/html; charset=utf-8", cancellation: ct)
-            : SendNotPortedAsync();
+            : SendTsCatchAllAsync(ct);
 }

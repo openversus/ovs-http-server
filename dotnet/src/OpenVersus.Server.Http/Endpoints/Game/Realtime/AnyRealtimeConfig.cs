@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Realtime;
 /// Seen in: binary 0x140f9abc0.
 /// Social layer; method from unknown.
 /// </summary>
-public sealed class AnyRealtimeConfig : StubEndpoint
+public sealed class AnyRealtimeConfig : TsCatchAllEndpoint
 {
     public override void Configure()
     {

@@ -17,5 +17,5 @@ public sealed class GetCommerceSteamMtxUserInfoById : StaticEndpoint
     }
 
     public override Task HandleAsync(CancellationToken ct) =>
-        Route<string>("id") == "me" ? SendStaticAsync("commerce-steam-mtx-user-info-me", ct) : SendNotPortedAsync();
+        Route<string>("id") == "me" ? SendStaticAsync("commerce-steam-mtx-user-info-me", ct) : SendTsCatchAllAsync(ct);
 }

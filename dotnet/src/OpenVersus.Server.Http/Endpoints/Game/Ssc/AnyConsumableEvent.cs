@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 /// Seen in: binary ssc name.
 /// Ssc: binary.
 /// </summary>
-public sealed class AnyConsumableEvent : StubEndpoint
+public sealed class AnyConsumableEvent : TsCatchAllEndpoint
 {
     public override void Configure()
     {

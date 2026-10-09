@@ -61,7 +61,7 @@ public sealed class HissServiceTests : IAsyncLifetime
             Asset("CharacterData", null), Asset("CharacterData", "character_a"), Asset("EmoteData", "emote"),
         ];
 
-        var values = HissService.Values(7, assets);
+        var values = HissService.Values(7, 2, assets);
 
         Assert.Equal("[\"character_a\",\"skin_b\",\"character_b\",\"skin_a\",\"taunt_b\",\"skin_loose\",null,\"character_a\",\"emote\"]", values["{{assets:all}}"]!.ToJsonString());
         Assert.Equal("[\"character_a\",\"character_b\",null,\"character_a\"]", values["{{assets:CharacterData}}"]!.ToJsonString());
@@ -78,11 +78,11 @@ public sealed class HissServiceTests : IAsyncLifetime
     [Fact]
     public void EveryMarkerIsFilled()
     {
-        var answer = HissService.Fill(HissService.Values(42, [Asset("CharacterData", "character_a"), Asset("SkinData", "skin_a", "character_a")]));
+        var answer = HissService.Fill(HissService.Values(42, 2, [Asset("CharacterData", "character_a"), Asset("SkinData", "skin_a", "character_a")]));
 
         Assert.DoesNotContain("{{", answer.ToJsonString(), StringComparison.Ordinal);
         Assert.Equal(42, answer["body"]!["Crc"]!.GetValue<double>());
-        // src/data/config.ts MATCHMAKING_CRC: 2 since End Game opened the FFA queue and closed casual.
+        // Hiss:MatchmakingCrc (the TS MATCHMAKING_CRC, 2 since End Game opened the FFA queue), a marker like the CRC.
         Assert.Equal(2, answer["body"]!["MatchmakingCrc"]!.GetValue<int>());
         var data = answer["body"]!["Data"]!.AsObject();
         Assert.Equal(20, data.Count);
@@ -92,7 +92,7 @@ public sealed class HissServiceTests : IAsyncLifetime
     [Fact]
     public void AMissingMarkerIsRefused()
     {
-        var values = HissService.Values(1, []);
+        var values = HissService.Values(1, 2, []);
         values["{{notInTheTemplate}}"] = 1;
 
         Assert.Throws<InvalidOperationException>(() => HissService.Fill(values));
@@ -256,18 +256,19 @@ public sealed class HissServiceTests : IAsyncLifetime
 
         // No config document: the TS server's in-memory default.
         var first = await Hiss.AnswerAsync(CancellationToken.None);
-        Assert.Equal(HissService.DefaultCrc, first.Crc);
+        // The game's Crc: the config CRC (the default: no document yet) plus Hiss:ContentRevision (15, the TS value).
+        Assert.Equal(HissService.DefaultCrc + 15, first.Crc);
         Assert.Same(first, await Hiss.AnswerAsync(CancellationToken.None));
 
         // An asset sync: the asset changes and the CRC is bumped.
         await Db.GetCollection<BsonDocument>("dataassets").InsertOneAsync(Asset("SkinData", "skin_new", "character_a"));
         await Db.GetCollection<BsonDocument>("config").InsertOneAsync(new BsonDocument("CRC", 2));
         var second = await Hiss.AnswerAsync(CancellationToken.None);
-        Assert.Equal(2, second.Crc);
+        Assert.Equal(2 + 15, second.Crc);
         Assert.NotSame(first, second);
         Assert.Contains("skin_new", second.Json, StringComparison.Ordinal);
         Assert.DoesNotContain("skin_new", first.Json, StringComparison.Ordinal);
-        Assert.Equal("2", HydraDecoder.Decode(second.Hydra)!["body"]!["Crc"]!.ToJsonString());
+        Assert.Equal("17", HydraDecoder.Decode(second.Hydra)!["body"]!["Crc"]!.ToJsonString());
         Assert.Same(second, await Hiss.AnswerAsync(CancellationToken.None));
 
         // The zstd encoding holds the same answer, and is smaller.

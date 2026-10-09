@@ -7,7 +7,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Commerce;
 /// GET /commerce/catalog/{id}/products.
 /// Seen in: binary 0x144fdb040.
 /// </summary>
-public sealed class GetCommerceCatalogByIdProducts : StubEndpoint
+public sealed class GetCommerceCatalogByIdProducts : TsCatchAllEndpoint
 {
     public override void Configure()
     {

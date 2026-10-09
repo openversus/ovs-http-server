@@ -3,20 +3,23 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using FastEndpoints;
 using Microsoft.Extensions.Options;
+using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Hiss;
 
 namespace OpenVersus.Server.Http.Shared.Stubs;
 
 /// <summary>Stub settings, changeable while the server runs (the control API, and so the CLI).</summary>
 public sealed class StubSettings
 {
-    [Description("The status every endpoint that is not ported yet answers with, and the fallback too. The game tends to fall over on answers it does not expect, so this is one setting for all of them.")]
+    [Description("The status every endpoint that is not ported yet answers with. The game tends to fall over on answers it does not expect, so this is one setting for all of them. A route the TS server never handled is not a stub: it answers as the TS catch-all did (TsCatchAllEndpoint), and so does the fallback.")]
     [Range(100, 599)]
     public int StatusCode { get; set; } = StatusCodes.Status501NotImplemented;
 }
 
 /// <summary>
 /// What a route that has not been ported yet answers: <see cref="StubSettings.StatusCode"/>, read on every request so
-/// a change applies at once. A route that needs something else overrides <see cref="StubEndpoint.StubStatusCode"/>.
+/// a change applies at once. A route that needs something else overrides <see cref="StubEndpoint.StubStatusCode"/>. A route
+/// the TS server never handled is <see cref="TsCatchAllEndpoint"/> instead.
 /// </summary>
 public static class Stub
 {
@@ -29,14 +32,17 @@ public static class Stub
     /// <summary>The fallback's name in <see cref="Header"/>: no endpoint claimed the request.</summary>
     public const string FallbackName = "Fallback";
 
-    /// <summary>Answers a request no endpoint claims, like a stub, and logs it: the route map may be missing it.</summary>
-    public static Task FallbackAsync(HttpContext context)
+    /// <summary>
+    /// Answers a request no endpoint claims as the TS server's catch-all did (it answered every path it had no route
+    /// for the same way, after the token check), and logs it: the route map may be missing the route.
+    /// </summary>
+    public static async Task FallbackAsync(HttpContext context)
     {
         var log = context.RequestServices.GetRequiredService<ILogger<StubEndpoint>>();
-        log.LogWarning("No endpoint: {Method} {Path}{Query}", context.Request.Method, context.Request.Path, context.Request.QueryString);
-        context.Response.StatusCode = context.RequestServices.GetRequiredService<IOptionsMonitor<StubSettings>>().CurrentValue.StatusCode;
-        context.Response.Headers[Header] = FallbackName;
-        return Task.CompletedTask;
+        log.LogWarning("No endpoint: {Method} {Path}{Query}; answered as the TS server did (its catch-all)", context.Request.Method, context.Request.Path, context.Request.QueryString);
+        context.Response.Headers[EndpointHeader] = FallbackName;
+        context.Response.ContentType = "application/json; charset=utf-8";
+        await context.Response.WriteAsync(Js.Stringify(await TsCatchAll.AnswerAsync(context.RequestServices, context.RequestAborted)), context.RequestAborted);
     }
 }
 

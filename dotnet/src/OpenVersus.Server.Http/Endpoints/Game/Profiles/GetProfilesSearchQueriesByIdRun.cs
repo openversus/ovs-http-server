@@ -23,7 +23,7 @@ public sealed class GetProfilesSearchQueriesByIdRun : JsonBodyEndpoint
     {
         if (Route<string>("id") != "get-by-username")
         {
-            await SendNotPortedAsync();
+            await SendTsCatchAllAsync(ct);
             return;
         }
 

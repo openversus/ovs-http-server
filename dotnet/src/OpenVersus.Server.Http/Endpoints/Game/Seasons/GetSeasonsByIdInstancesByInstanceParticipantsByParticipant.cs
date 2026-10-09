@@ -7,7 +7,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Seasons;
 /// GET /seasons/{id}/instances/{instance}/participants/{participant}.
 /// Seen in: binary 0x145067d00.
 /// </summary>
-public sealed class GetSeasonsByIdInstancesByInstanceParticipantsByParticipant : StubEndpoint
+public sealed class GetSeasonsByIdInstancesByInstanceParticipantsByParticipant : TsCatchAllEndpoint
 {
     public override void Configure()
     {

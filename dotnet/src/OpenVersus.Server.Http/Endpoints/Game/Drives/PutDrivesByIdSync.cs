@@ -17,5 +17,5 @@ public sealed class PutDrivesByIdSync : StaticEndpoint
     }
 
     public override Task HandleAsync(CancellationToken ct) =>
-        Route<string>("id") == "multiversus" ? SendStaticAsync("drives-multiversus-sync", ct) : SendNotPortedAsync();
+        Route<string>("id") == "multiversus" ? SendStaticAsync("drives-multiversus-sync", ct) : SendTsCatchAllAsync(ct);
 }

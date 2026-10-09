@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Profiles;
 /// Seen in: binary 0x145065a80; TS server: GET /profiles/{id}.
 /// Also 0x145065c50.
 /// </summary>
-public sealed class GetProfilesById : StubEndpoint
+public sealed class GetProfilesById : TsCatchAllEndpoint
 {
     public override void Configure()
     {

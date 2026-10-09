@@ -6,8 +6,8 @@ using OpenVersus.Server.Proxy;
 using Yarp.ReverseProxy.Configuration;
 using Yarp.ReverseProxy.Transforms;
 
-// The migration's reverse proxy (PROXY_PORT): the game talks to this, and each request goes to the C# http service if
-// its route is ported (Proxy:PortedRoutes), else to the TS server. Stateless: any number of replicas.
+// The migration's reverse proxy (PROXY_PORT): the game talks to this, and each request goes to the TS server if its
+// route is one the TS server still answers (Proxy:TsRoutes), else to C# (the router). Stateless: any number of replicas.
 var builder = OpenVersusHost.CreateBuilder(KnownServices.Proxy, args);
 builder.AddSetting<ProxySettings>("Proxy");
 
@@ -43,7 +43,7 @@ var app = builder.Build();
 app.UseOpenVersus();
 app.MapReverseProxy();
 app.Logger.LogWarning("MIGRATION BRIDGE: this proxy ties the C# services to the TS server until every route is ported; see dotnet/docs/MIGRATION-BRIDGES.md (1)");
-app.Logger.LogInformation("Routes to C# ({CSharp}): {Routes}; everything else to {Ts}", initial.CSharpUrl, initial.PortedRoutes, initial.TsUrl);
+app.Logger.LogInformation("Routes still answered by the TS server ({Ts}): {Routes}; everything else to C# ({CSharp})", initial.TsUrl, initial.TsRoutes, initial.CSharpUrl);
 app.Run();
 
 /// <summary>The entry point, visible to the tests' WebApplicationFactory.</summary>

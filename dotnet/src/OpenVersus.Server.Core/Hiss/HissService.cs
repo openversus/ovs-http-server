@@ -25,7 +25,8 @@ namespace OpenVersus.Server.Core.Hiss;
 // filled in as loadAssets.ts builds them. As there, the client's Crc is not read: the whole answer is always sent.
 //
 // The answer changes only with the data assets, and syncing an asset (the TS server's POST /syncAsset) bumps the CRC, so
-// it is built once per CRC. The CRC is read from the config collection on every request, so every replica sees a sync
+// it is built once per CRC. The Crc the game sees is the config CRC plus Hiss:ContentRevision (the TS server's
+// getCurrentCRC: CRC + HISS_CONTENT_REVISION), the knob for content changes that sync no asset. The CRC is read from the config collection on every request, so every replica sees a sync
 // (the TS server reads it once, at startup, and only the replica that took the sync sees it). A build reads the assets
 // after the CRC: an answer is never older than its CRC.
 //
@@ -44,6 +45,14 @@ public sealed class HissSettings
 {
     [Description("The oldest OpenVersus client version that reads zstd sections (its HydraZstd hook), such as 2026.10.01.1; those clients get the smaller zstd answer. From 2026.10.08.14 on a client says itself whether its hook took (the X-OVS-Zstd header), and only that decides: a build the hook misses (the Epic Games Store one, 2026-10-08) gets zlib. Empty: every client gets zlib.")]
     public string ZstdMinimumVersion { get; set; } = "";
+
+    [Description("Added to the config document's CRC in the Crc the game is answered (the hiss and every TS catch-all answer): bump it when the hiss content changes without an asset sync, so no client reuses a cached catalog. The TS server's HISS_CONTENT_REVISION (15 at the port's reference).")]
+    [System.ComponentModel.DataAnnotations.Range(0, int.MaxValue)]
+    public int ContentRevision { get; set; } = 15;
+
+    [Description("The MatchmakingCrc the game is answered (the hiss and every TS catch-all answer): bump it when the queue or game-mode catalog changes, so clients drop their cached matchmaking configuration. The TS server's MATCHMAKING_CRC (2 at the port's reference).")]
+    [System.ComponentModel.DataAnnotations.Range(0, int.MaxValue)]
+    public int MatchmakingCrc { get; set; } = 2;
 }
 
 public interface IHissService
@@ -89,12 +98,13 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
     private const string Template = "OpenVersus.Server.Core.Hiss.hiss-amalgamation.json";
 
     private readonly Lock _gate = new();
-    private (double Crc, string FighterPass, Task<HissAnswer> Build)? _current;
+    private (double Crc, int MatchmakingCrc, string FighterPass, Task<HissAnswer> Build)? _current;
 
     public async Task<HissAnswer> AnswerAsync(CancellationToken ct)
     {
         var mongo = services.GetService<IMongoDatabase>() ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)");
-        double crc = await CrcAsync(mongo, ct);
+        double crc = await CurrentCrcAsync(services, ct);
+        int matchmakingCrc = MatchmakingCrcOf(services);
         var fighterPass = FighterPass.Current;
         string fighterPassKey = FighterPass.Key(fighterPass);
         Task<HissAnswer> build;
@@ -102,9 +112,9 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         {
             // A build is shared by every request waiting on it, so it does not take their cancellation; a failed one is
             // tried again by the next request.
-            if (_current is not { } current || current.Crc != crc || current.FighterPass != fighterPassKey || current.Build.IsFaulted || current.Build.IsCanceled)
+            if (_current is not { } current || current.Crc != crc || current.MatchmakingCrc != matchmakingCrc || current.FighterPass != fighterPassKey || current.Build.IsFaulted || current.Build.IsCanceled)
             {
-                _current = (crc, fighterPassKey, Task.Run(() => BuildAsync(mongo, crc, fighterPass)));
+                _current = (crc, matchmakingCrc, fighterPassKey, Task.Run(() => BuildAsync(mongo, crc, matchmakingCrc, fighterPass)));
             }
 
             build = _current.Value.Build;
@@ -139,19 +149,34 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         return ClientVersions.Compare(clientVersion, configured) >= 0;
     }
 
+    /// <summary>The MatchmakingCrc the game is answered (<see cref="HissSettings.MatchmakingCrc"/>): in the hiss and every catch-all answer.</summary>
+    public static int MatchmakingCrcOf(IServiceProvider services) =>
+        services.GetService<IOptionsMonitor<HissSettings>>()?.CurrentValue.MatchmakingCrc ?? new HissSettings().MatchmakingCrc;
+
+    /// <summary>
+    /// The Crc the game is answered (the TS server's getCurrentCRC): the config document's CRC (the default without
+    /// Mongo or a document) plus <see cref="HissSettings.ContentRevision"/>.
+    /// </summary>
+    public static async Task<double> CurrentCrcAsync(IServiceProvider services, CancellationToken ct)
+    {
+        var mongo = services.GetService<IMongoDatabase>();
+        double crc = mongo is null ? DefaultCrc : await CrcAsync(mongo, ct);
+        return crc + (services.GetService<IOptionsMonitor<HissSettings>>()?.CurrentValue.ContentRevision ?? new HissSettings().ContentRevision);
+    }
+
     // LoadConfig: the first document's CRC.
-    /// <summary>The config CRC the TS server answers with (getCurrentCRC): the config document's, else the default.</summary>
+    /// <summary>The config document's CRC, else the default: the part of the game's Crc an asset sync bumps.</summary>
     internal static async Task<double> CrcAsync(IMongoDatabase mongo, CancellationToken ct)
     {
         var config = await mongo.GetCollection<BsonDocument>("config").Find(FilterDefinition<BsonDocument>.Empty).Limit(1).FirstOrDefaultAsync(ct);
         return config?.GetValue("CRC", BsonNull.Value) is { IsNumeric: true } value ? value.ToDouble() : DefaultCrc;
     }
 
-    private async Task<HissAnswer> BuildAsync(IMongoDatabase mongo, double crc, FighterPassSettings fighterPass)
+    private async Task<HissAnswer> BuildAsync(IMongoDatabase mongo, double crc, int matchmakingCrc, FighterPassSettings fighterPass)
     {
         long started = Stopwatch.GetTimestamp();
         var assets = await DataAssets.EnabledAsync(mongo, CancellationToken.None);
-        var values = Values(crc, assets);
+        var values = Values(crc, matchmakingCrc, assets);
         var answer = Fill(values);
         RiftCatalog.ExtendEndTimes(answer["body"]?["Data"]?["rift-config"]?["_hydra_compressed"] as JsonObject);
         ExtendFighterPasses(answer, fighterPass);
@@ -193,12 +218,13 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         }
     }
 
-    /// <summary>The markers' values: the CRC, and loadAssets.ts's lists (getAssetsByType, getAllSkinsByChar, ...).</summary>
-    internal static Dictionary<string, JsonNode?> Values(double crc, IReadOnlyList<BsonDocument> assets)
+    /// <summary>The markers' values: the CRCs, and loadAssets.ts's lists (getAssetsByType, getAllSkinsByChar, ...).</summary>
+    internal static Dictionary<string, JsonNode?> Values(double crc, int matchmakingCrc, IReadOnlyList<BsonDocument> assets)
     {
         var values = new Dictionary<string, JsonNode?>
         {
             ["{{crc}}"] = JsonValue.Create(crc),
+            ["{{matchmaking_crc}}"] = JsonValue.Create(matchmakingCrc),
             // OwnedByDefaultInventoryItems: End Game's restricted items are owned once paid (Ownership), not by default.
             ["{{assets:all}}"] = Slugs(assets.Where(a => !Inventory.Ownership.IsRestricted(DataAssets.Str(a, "slug")))),
             ["{{skinsByCharacter}}"] = ByCharacter(assets, "SkinData"),
@@ -310,6 +336,8 @@ public static class HissHosting
 {
     public static WebApplicationBuilder AddHiss(this WebApplicationBuilder builder)
     {
+        // Every game service registers Hiss:* too (GameHttpHost: the catch-all answers carry the Crc); registering
+        // twice is harmless, and a host with the hiss alone still binds its settings.
         builder.AddSetting<HissSettings>("Hiss");
         builder.Services.AddSingleton<IHissService, HissService>();
         builder.Services.AddHostedService<HissWarmup>();
@@ -320,10 +348,10 @@ public static class HissHosting
 /// <summary>The TS server's answer to an SSC call it does not implement (its catch-all).</summary>
 public static class TsCatchAll
 {
-    /// <summary>{Crc (the config CRC; the default without Mongo), MatchmakingCrc 1}, return_code 200.</summary>
-    public static async Task<JsonObject> AnswerAsync(IMongoDatabase? mongo, CancellationToken ct) => new()
+    /// <summary>{Crc (<see cref="HissService.CurrentCrcAsync"/>), MatchmakingCrc (<see cref="HissService.MatchmakingCrcOf"/>)}, return_code 200.</summary>
+    public static async Task<JsonObject> AnswerAsync(IServiceProvider services, CancellationToken ct) => new()
     {
-        ["body"] = new JsonObject { ["Crc"] = mongo is null ? HissService.DefaultCrc : await HissService.CrcAsync(mongo, ct), ["MatchmakingCrc"] = 1 },
+        ["body"] = new JsonObject { ["Crc"] = await HissService.CurrentCrcAsync(services, ct), ["MatchmakingCrc"] = HissService.MatchmakingCrcOf(services) },
         ["metadata"] = null,
         ["return_code"] = 200,
     };

@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Lobbies.Endpoints.Game.Ssc;
 /// Seen in: binary ssc name.
 /// Ssc: binary.
 /// </summary>
-public sealed class AnyLeaveParty : StubEndpoint
+public sealed class AnyLeaveParty : TsCatchAllEndpoint
 {
     public override void Configure()
     {

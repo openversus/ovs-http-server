@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 /// Seen in: binary ssc name.
 /// Ssc: binary.
 /// </summary>
-public sealed class AnyZdTicketSubmit : StubEndpoint
+public sealed class AnyZdTicketSubmit : TsCatchAllEndpoint
 {
     public override void Configure()
     {

@@ -7,7 +7,7 @@ namespace OpenVersus.Server.Social.Endpoints.Game.Accounts;
 /// PUT /accounts/me/relationships/{id}/unfollow.
 /// Seen in: binary 0x144ff4a20.
 /// </summary>
-public sealed class PutAccountsMeRelationshipsByIdUnfollow : StubEndpoint
+public sealed class PutAccountsMeRelationshipsByIdUnfollow : TsCatchAllEndpoint
 {
     public override void Configure()
     {

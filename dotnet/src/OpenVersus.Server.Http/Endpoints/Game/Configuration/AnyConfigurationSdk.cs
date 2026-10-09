@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Configuration;
 /// Seen in: binary fragment.
 /// Binary fragment; no builder found yet.
 /// </summary>
-public sealed class AnyConfigurationSdk : StubEndpoint
+public sealed class AnyConfigurationSdk : TsCatchAllEndpoint
 {
     public override void Configure()
     {

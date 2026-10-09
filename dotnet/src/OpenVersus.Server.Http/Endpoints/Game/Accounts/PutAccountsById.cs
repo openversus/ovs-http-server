@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Accounts;
 /// Seen in: binary 0x144fddd00.
 /// Also 0x144fddeb0.
 /// </summary>
-public sealed class PutAccountsById : StubEndpoint
+public sealed class PutAccountsById : TsCatchAllEndpoint
 {
     public override void Configure()
     {

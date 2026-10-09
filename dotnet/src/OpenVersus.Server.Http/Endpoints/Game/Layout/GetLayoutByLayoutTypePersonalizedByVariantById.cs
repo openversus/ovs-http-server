@@ -24,7 +24,7 @@ public sealed class GetLayoutByLayoutTypePersonalizedByVariantById : StaticEndpo
         var layouts = Resolve<ILayoutSource>();
         if (Route<string>("layout_type") != "dokken-layout-type" || Route<string>("variant") is not { } variant || !layouts.Variants.Contains(variant))
         {
-            await SendNotPortedAsync();
+            await SendTsCatchAllAsync(ct);
             return;
         }
 

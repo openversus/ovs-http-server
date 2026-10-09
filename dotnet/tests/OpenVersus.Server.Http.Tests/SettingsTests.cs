@@ -14,7 +14,7 @@ namespace OpenVersus.Server.Http.Tests;
 public sealed class SettingsTests : IDisposable
 {
     // Any route still answered by a stub (GetClansByIdBySub).
-    private const string StubPath = "/clans/x/members";
+    private const string StubPath = "/accounts/wb_network/x";
 
     private readonly GameAppFactory _factory = new();
 
@@ -30,7 +30,8 @@ public sealed class SettingsTests : IDisposable
 
         Assert.Null(await Settings.SetAsync("Stubs:StatusCode", "503", SettingScope.Instance));
         Assert.Equal(503, (int)(await client.GetAsync(StubPath)).StatusCode);
-        Assert.Equal(503, (int)(await client.GetAsync("/not/a/route")).StatusCode);
+        // The fallback is not a stub: it answers as the TS server's catch-all did, whatever the setting.
+        Assert.Equal(200, (int)(await client.GetAsync("/not/a/route")).StatusCode);
 
         Assert.True(await Settings.RemoveAsync("Stubs:StatusCode", SettingScope.Instance));
         Assert.Equal(501, (int)(await client.GetAsync(StubPath)).StatusCode);

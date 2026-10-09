@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Social.Endpoints.Game.Relationships;
 /// Seen in: binary fragment.
 /// Binary fragment; no builder found yet.
 /// </summary>
-public sealed class AnyRelationshipsFollowers : StubEndpoint
+public sealed class AnyRelationshipsFollowers : TsCatchAllEndpoint
 {
     public override void Configure()
     {

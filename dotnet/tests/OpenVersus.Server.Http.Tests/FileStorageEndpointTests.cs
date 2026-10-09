@@ -47,10 +47,12 @@ public sealed class FileStorageEndpointTests(GameAppFactory factory) : IClassFix
     [Theory]
     [InlineData("GET", "/file_storage/not-a-file")]
     [InlineData("PUT", "/drives/another/sync")]
-    public async Task WhatTheTsServerHasNoRouteForIsNotPorted(string method, string path)
+    public async Task WhatTheTsServerHasNoRouteForIsAnsweredAsItsCatchAllDid(string method, string path)
     {
         using var response = await SendAsync(new HttpMethod(method), path);
-        Assert.True(response.Headers.Contains(Stub.Header));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(response.Headers.Contains(Stub.Header));
+        Assert.Equal("""{"body":{"Crc":1267552971,"MatchmakingCrc":2},"metadata":null,"return_code":200}""", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]

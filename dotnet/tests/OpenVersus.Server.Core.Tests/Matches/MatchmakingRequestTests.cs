@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Cosmetics;
@@ -442,7 +443,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
 
         var answer = await Service().CasualBotsAsync(Asking(Me), CancellationToken.None);
 
-        Assert.Equal((1, 200), ((int)answer["body"]!["MatchmakingCrc"]!, (int)answer["return_code"]!));
+        Assert.Equal((new HissSettings().MatchmakingCrc, 200), ((int)answer["body"]!["MatchmakingCrc"]!, (int)answer["return_code"]!));
         var launch = _launcher.Launched!;
         Assert.Equal(("1v1", "1v1"), (launch.Mode, launch.MatchType));
         // Unranked for the TS websocket (the unranked config, no best-of-3 set, never rated), not a custom lobby's match.

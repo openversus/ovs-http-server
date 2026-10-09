@@ -40,7 +40,7 @@ public sealed class OwnershipTests
     public void TheHissOwnsByDefaultEverythingButTheRestricted()
     {
         static BsonDocument Asset(string type, string slug) => new() { ["assetType"] = type, ["enabled"] = true, ["slug"] = slug };
-        var values = HissService.Values(1, [Asset("SkinData", "skin_shaggy_default"), Asset("SkinData", "skin_ovs_chromium_shaggy"),
+        var values = HissService.Values(1, 2, [Asset("SkinData", "skin_shaggy_default"), Asset("SkinData", "skin_ovs_chromium_shaggy"),
             Asset("StatTrackingBundleData", "stat_tracking_bundle_ovs_dev"), Asset("SkinData", "skin_ovs_painter_beetlejuice")]);
         Assert.Equal(["skin_shaggy_default"], values["{{assets:all}}"]!.AsArray().Select(s => s!.GetValue<string>()));
         // The lists by type still name them: they exist, nobody owns them by default.

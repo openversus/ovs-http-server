@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 /// Seen in: binary ssc name.
 /// Ssc: binary.
 /// </summary>
-public sealed class AnyDebugLockInventoryItem : StubEndpoint
+public sealed class AnyDebugLockInventoryItem : TsCatchAllEndpoint
 {
     public override void Configure()
     {

@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 /// Seen in: binary ssc name.
 /// Ssc: binary.
 /// </summary>
-public sealed class AnyGetCurrentFtueStep : StubEndpoint
+public sealed class AnyGetCurrentFtueStep : TsCatchAllEndpoint
 {
     public override void Configure()
     {

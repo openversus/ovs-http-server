@@ -109,7 +109,7 @@ public sealed class FighterPassTests
     [Fact]
     public void TheHissAnswerIsExtendedAsTheTablesAre()
     {
-        var answer = HissService.Fill(HissService.Values(1, []));
+        var answer = HissService.Fill(HissService.Values(1, 2, []));
 
         HissService.ExtendFighterPasses(answer, s_season2);
 

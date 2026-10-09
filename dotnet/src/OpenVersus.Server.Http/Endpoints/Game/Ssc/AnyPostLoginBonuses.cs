@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 /// Seen in: binary ssc name.
 /// Ssc: binary.
 /// </summary>
-public sealed class AnyPostLoginBonuses : StubEndpoint
+public sealed class AnyPostLoginBonuses : TsCatchAllEndpoint
 {
     public override void Configure()
     {

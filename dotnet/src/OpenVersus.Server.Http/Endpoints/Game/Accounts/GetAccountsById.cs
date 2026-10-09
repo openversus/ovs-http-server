@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Accounts;
 /// Seen in: binary 0x144fda420; TS server: GET /accounts/{id}.
 /// Also 0x144fda5f0.
 /// </summary>
-public sealed class GetAccountsById : StubEndpoint
+public sealed class GetAccountsById : TsCatchAllEndpoint
 {
     public override void Configure()
     {

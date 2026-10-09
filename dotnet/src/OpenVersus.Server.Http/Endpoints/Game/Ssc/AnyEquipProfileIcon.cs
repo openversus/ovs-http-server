@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 /// Seen in: binary ssc name.
 /// Ssc: binary (probable).
 /// </summary>
-public sealed class AnyEquipProfileIcon : StubEndpoint
+public sealed class AnyEquipProfileIcon : TsCatchAllEndpoint
 {
     public override void Configure()
     {

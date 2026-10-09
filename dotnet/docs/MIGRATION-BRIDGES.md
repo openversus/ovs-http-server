@@ -11,8 +11,9 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 
 ### 1. The proxy (`src/OpenVersus.Server.Proxy`)
 
-- **What:** the game talks to the proxy. Routes listed in `Proxy:PortedRoutes` go to the C# http service; everything
-  else goes to the TS server (`Proxy:TsUrl`).
+- **What:** the game talks to the proxy. Routes listed in `Proxy:TsRoutes` (the ones the TS server still answers) go
+  to the TS server (`Proxy:TsUrl`); everything else goes to C# (`Proxy:CSharpUrl`: the router, which sends each route
+  to the service that owns it). The list is the port's remaining tail; it empties as routes are ported.
 - **Why:** each route is tried against the game as soon as it is ported.
 - **Delete when:** every route the game uses is ported. Then the game talks to the C# http service directly, and the
   proxy project, its tests and `KnownServices.Proxy` go.
@@ -124,7 +125,7 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   content type and the batch's client address. The TS `/batch` gives its sub-requests the same (the token is copied, the
   client address is inherited); the batch's other headers (`x-steam-id`, `x-install-id`, `X-OVS-Identity`, ...) reach
   neither server's sub-requests.
-- **Rolling a route back:** taking a route out of `Proxy:PortedRoutes` does not reach into batches; listing it in
+- **Rolling a route back:** adding a route to `Proxy:TsRoutes` does not reach into batches; listing it in
   `Batch:ForwardRoutes` (same `METHOD /path` form) does. Both are live settings.
 - **Why:** the login's two batches hold about 15 SSC and config reads; this lets each one move to C# on its own.
 - **Delete when:** every route a batch can contain is ported (the SSC catch-all `SscUnlisted` included). Then the

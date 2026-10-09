@@ -7,7 +7,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Arenas;
 /// GET /arenas/{id}/instances/{instance}/participants/{participant}.
 /// Seen in: binary 0x1450535f0.
 /// </summary>
-public sealed class GetArenasByIdInstancesByInstanceParticipantsByParticipant : StubEndpoint
+public sealed class GetArenasByIdInstancesByInstanceParticipantsByParticipant : TsCatchAllEndpoint
 {
     public override void Configure()
     {

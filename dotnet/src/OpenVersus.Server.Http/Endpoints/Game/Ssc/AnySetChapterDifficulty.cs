@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 /// Seen in: binary ssc name.
 /// Ssc: binary (probable).
 /// </summary>
-public sealed class AnySetChapterDifficulty : StubEndpoint
+public sealed class AnySetChapterDifficulty : TsCatchAllEndpoint
 {
     public override void Configure()
     {

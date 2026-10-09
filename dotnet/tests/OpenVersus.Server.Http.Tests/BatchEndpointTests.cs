@@ -81,9 +81,12 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
 
     private static JsonNode Static(string name) => JsonNode.Parse(StaticResponses.Json(name))!;
 
-    // The unported sub-request these tests send on: an SSC name no endpoint has, so the catch-all stub (SscUnlisted)
-    // answers it however many functions get ported.
-    private const string Unported = "/ssc/invoke/no_such_function";
+    // The unported sub-request these tests send on: a route the TS server answers (GET /accounts/wb_network/{id}) that
+    // this service still stubs. Move it to another stub when that one is ported; when none is left, this bridge goes.
+    private const string Unported = "/accounts/wb_network/someone";
+
+    // What the TS server's catch-all answers (the default CRC: no Mongo here), and so every route it never handled.
+    private static JsonNode CatchAll => JsonNode.Parse("""{"body":{"Crc":1267552971,"MatchmakingCrc":2},"metadata":null,"return_code":200}""")!;
 
     [Fact]
     public async Task AnItemAnotherServiceOwnsGoesThroughTheRouterAsARequestOfItsOwn()
@@ -163,7 +166,8 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
         var forwarded = Assert.Single(ts.Requests);
         var body = HydraDecoder.Decode(forwarded.Body)!;
         Assert.True(JsonNode.DeepEquals(s_options, body["options"]));
-        Assert.Equal([Unported, "/commerce/purchases/someone"], body["requests"]!.AsArray().Select(r => (string)r!["url"]!));
+        // /commerce/purchases/someone is no route of the TS server's (only "me" is): answered here as its catch-all did.
+        Assert.Equal([Unported], body["requests"]!.AsArray().Select(r => (string)r!["url"]!));
         // The batch's headers go with it, as the game sent them, and the client address as this service worked it out.
         Assert.Equal(client.DefaultRequestHeaders.GetValues(HydraToken.Header).Single(), forwarded.Headers[HydraToken.Header]);
         Assert.Equal("identity-value", forwarded.Headers["X-OVS-Identity"]);
@@ -176,17 +180,36 @@ public sealed class BatchEndpointTests(GameAppFactory factory) : IClassFixture<G
             ["responses"] = new JsonArray(
                 Item(200, Static("commerce-products")),
                 HydraRaw.Node(FakeTs.ItemFor(Unported)),
-                HydraRaw.Node(FakeTs.ItemFor("/commerce/purchases/someone")),
+                Item(200, CatchAll),
                 Item(200, Static("commerce-purchases-me"))),
         });
         Assert.Equal(expected, await response.Content.ReadAsByteArrayAsync());
     }
 
     [Fact]
+    public async Task AnItemTheTsServerNeverHandledIsAnsweredHereAsItsCatchAllAndNotForwarded()
+    {
+        await using var ts = await FakeTs.StartAsync();
+        // An SSC name the route map lacks (SscUnlisted) and one it has but the TS server never handled.
+        using var response = await PutAsync(Client(ts.Url), Batch(Get("/ssc/invoke/no_such_function"), Get("/ssc/invoke/get_preferred_currency")));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var responses = HydraDecoder.Decode(await response.Content.ReadAsByteArrayAsync())!["responses"]!.AsArray();
+        Assert.Equal(2, responses.Count);
+        foreach (var item in responses)
+        {
+            Assert.Equal(200, Status(item));
+            Assert.True(JsonNode.DeepEquals(CatchAll, item!["body"]), item.ToJsonString());
+        }
+
+        Assert.Empty(ts.Requests);
+    }
+
+    [Fact]
     public async Task TheTsServersBytesArePassedOnAsTheyCame()
     {
         await using var ts = await FakeTs.StartAsync();
-        using var response = await PutAsync(Client(ts.Url), Batch(Get("/ssc/invoke/compressed")));
+        // An SSC name the map lacks is answered here now; listing it sends it to the TS server as a ported route would be.
+        using var response = await PutAsync(Client(ts.Url, ("Batch:ForwardRoutes", "GET /ssc/invoke/compressed")), Batch(Get("/ssc/invoke/compressed")));
         byte[] answer = await response.Content.ReadAsByteArrayAsync();
         Assert.True(answer.AsSpan().IndexOf(s_compressed) >= 0, "the compressed value was re-encoded");
         Assert.NotEqual(s_compressed, HydraEncoder.Encode(HydraDecoder.Decode(s_compressed)));

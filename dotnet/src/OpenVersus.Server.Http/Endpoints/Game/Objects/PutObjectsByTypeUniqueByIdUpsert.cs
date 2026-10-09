@@ -7,7 +7,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Objects;
 /// PUT /objects/{type}/unique/{id}/upsert.
 /// Seen in: binary 0x145061a20.
 /// </summary>
-public sealed class PutObjectsByTypeUniqueByIdUpsert : StubEndpoint
+public sealed class PutObjectsByTypeUniqueByIdUpsert : TsCatchAllEndpoint
 {
     public override void Configure()
     {

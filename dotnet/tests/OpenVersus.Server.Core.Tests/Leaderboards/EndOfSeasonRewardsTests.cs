@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Hosting;
 using StackExchange.Redis;
@@ -107,7 +108,7 @@ public sealed class EndOfSeasonRewardsTests : IAsyncLifetime
         var answer = await Ranked.ClaimRewardsAsync(player, "Season:SeasonFive", default);
         // The TS catch-all's answer, which the game has always had.
         Assert.Equal(200, answer["return_code"]!.GetValue<int>());
-        Assert.Equal(1, answer["body"]!["MatchmakingCrc"]!.GetValue<int>());
+        Assert.Equal(new HissSettings().MatchmakingCrc, answer["body"]!["MatchmakingCrc"]!.GetValue<int>());
         Assert.NotNull(answer["body"]!["Crc"]);
 
         Assert.True(await GrantedAsync(player));

@@ -42,7 +42,7 @@ namespace OpenVersus.Server.Core.Leaderboards;
 //
 // PUT /ssc/invoke/ranked_claim_end_of_season_rewards: $addToSet the season (text, up to 64 characters) to
 // endofseasonrewards {_id: ObjectId(player)} {seasons: [...]} (upserted; only C# reads it). The answer is the TS
-// catch-all's, which the game has always had: {body: {Crc, MatchmakingCrc: 1}, metadata: null, return_code: 200}. The
+// catch-all's, which the game has always had: {body: {Crc, MatchmakingCrc}, metadata: null, return_code: 200}. The
 // game reads RewardsGranted from it and, with none, carries on to its season-reset notice; no rewards are granted.
 
 /// <summary>Ranked settings.</summary>
@@ -290,7 +290,7 @@ internal sealed class RankedDataService(IServiceProvider services, EloRatings ra
 
         return new JsonObject
         {
-            ["body"] = new JsonObject { ["Crc"] = await HissService.CrcAsync(mongo, ct), ["MatchmakingCrc"] = 1 },
+            ["body"] = new JsonObject { ["Crc"] = await HissService.CurrentCrcAsync(services, ct), ["MatchmakingCrc"] = HissService.MatchmakingCrcOf(services) },
             ["metadata"] = null,
             ["return_code"] = 200,
         };

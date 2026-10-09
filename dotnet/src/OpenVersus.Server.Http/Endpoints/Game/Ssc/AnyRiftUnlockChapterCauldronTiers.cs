@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Ssc;
 /// Seen in: binary ssc name.
 /// Ssc: binary (probable).
 /// </summary>
-public sealed class AnyRiftUnlockChapterCauldronTiers : StubEndpoint
+public sealed class AnyRiftUnlockChapterCauldronTiers : TsCatchAllEndpoint
 {
     public override void Configure()
     {

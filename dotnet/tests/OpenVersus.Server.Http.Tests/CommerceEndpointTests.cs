@@ -38,10 +38,11 @@ public sealed class CommerceEndpointTests(GameAppFactory factory) : IClassFixtur
     [Theory]
     [InlineData("/commerce/purchases/someone")]
     [InlineData("/commerce/steam/mtx_user_info/someone")]
-    public async Task AnotherIdIsNotAnsweredAsTheTsServerHasNoRouteForIt(string path)
+    public async Task AnotherIdIsAnsweredAsTheTsCatchAllSinceTheTsServerHasNoRouteForIt(string path)
     {
         using var response = await GetHydraAsync(path);
-        Assert.Equal(new StubSettings().StatusCode, (int)response.StatusCode);
-        Assert.True(response.Headers.Contains(Stub.Header));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(response.Headers.Contains(Stub.Header));
+        Assert.Equal(HydraCodec.EncodeJson("""{"body":{"Crc":1267552971,"MatchmakingCrc":2},"metadata":null,"return_code":200}"""), await response.Content.ReadAsByteArrayAsync());
     }
 }

@@ -31,7 +31,7 @@ Where the flag comes from:
   was not current it showed the screen at every login. Now each player sees it once per season.
 - The TS websocket's `FullRankUpdate` push after a ranked match (see the first open item).
 
-No rewards are granted: the claim answers what the TS catch-all answered (`{Crc, MatchmakingCrc: 1}`,
+No rewards are granted: the claim answers what the TS catch-all answered (`{Crc, MatchmakingCrc}`,
 `return_code` 200).
 
 ## Open items

@@ -61,7 +61,8 @@ public static class RouteOwnership
         {
             string verb = route.Method is "?" ? "GET" : route.Method;
             var (status, endpoint, stub) = await SendAsync(client, verb, path);
-            bool answered = endpoint != "" ? !own.Contains(endpoint)
+            // The fallback names itself in the endpoint header (it answers as the TS catch-all did, not as a stub).
+            bool answered = endpoint != "" ? !own.Contains(endpoint) && endpoint != Stub.FallbackName
                 : fallback ? stub != Stub.FallbackName : status != (int)HttpStatusCode.NotFound;
             if (answered)
             {

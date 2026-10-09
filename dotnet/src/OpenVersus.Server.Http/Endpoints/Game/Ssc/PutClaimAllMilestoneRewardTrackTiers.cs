@@ -38,7 +38,7 @@ public sealed class PutClaimAllMilestoneRewardTrackTiers : JsonBodyEndpoint
         if (body["TrackSlug"] is not JsonValue v || !v.TryGetValue(out string? trackSlug)
             || !Resolve<IOptionsMonitor<RewardTrackSettings>>().CurrentValue.Governs(trackSlug))
         {
-            await SendJsonAsync(await TsCatchAll.AnswerAsync(TryResolve<IMongoDatabase>(), ct), ct);
+            await SendJsonAsync(await TsCatchAll.AnswerAsync(HttpContext.RequestServices, ct), ct);
             return;
         }
 

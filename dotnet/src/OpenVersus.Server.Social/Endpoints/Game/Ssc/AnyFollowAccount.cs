@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Social.Endpoints.Game.Ssc;
 /// Seen in: binary ssc name.
 /// Ssc: binary.
 /// </summary>
-public sealed class AnyFollowAccount : StubEndpoint
+public sealed class AnyFollowAccount : TsCatchAllEndpoint
 {
     public override void Configure()
     {

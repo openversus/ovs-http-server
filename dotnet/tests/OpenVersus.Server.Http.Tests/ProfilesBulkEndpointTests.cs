@@ -44,10 +44,12 @@ public sealed class ProfilesBulkEndpointTests(GameAppFactory factory) : IClassFi
     }
 
     [Fact]
-    public async Task AnotherNetworkIsNotPorted()
+    public async Task AnotherNetworkIsAnsweredAsTheTsCatchAllDid()
     {
+        // The TS server routes only wb_network; any other network fell to its catch-all.
         using var response = await factory.CreateGameClient().SendAsync(Lookup("/accounts/epic/bulk", new JsonObject { ["ids"] = new JsonArray() }));
-        Assert.True(response.Headers.Contains(Stub.Header));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(response.Headers.Contains(Stub.Header));
     }
 
     [Theory]

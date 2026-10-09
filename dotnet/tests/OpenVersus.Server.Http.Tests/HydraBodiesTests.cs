@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using OpenVersus.Server.Core.Hydra;
+using HydraCodec = OpenVersus.Server.Core.Hydra.Hydra;
 using OpenVersus.Server.Http.Shared.Hosting;
 
 namespace OpenVersus.Server.Http.Tests;
@@ -100,12 +101,33 @@ public sealed class HydraBodiesTests : IAsyncLifetime, IClassFixture<GameAppFact
     [Fact]
     public async Task TheRealServersStubsAnswerHydraRequestsUnchanged()
     {
-        // A stub the gameplay gate does not cover (the matchmaking requests are gated; see ClientGameplayGateTests), and a
-        // debug function no server answers, so it stays a stub.
-        var response = await _server.CreateGameClient().PostAsync("/ssc/invoke/debug_unlock_inventory_item", Hydra("""{ "a": 1 }"""));
+        // A stub the gameplay gate does not cover (the matchmaking requests are gated; see ClientGameplayGateTests): a
+        // route the TS server answers that is not ported yet. Move it when it is.
+        var response = await _server.CreateGameClient().PostAsync("/virtual_commerce/purchases/x/toasts_gleamium", Hydra("""{ "a": 1 }"""));
         Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
-        Assert.Equal("AnyDebugUnlockInventoryItem", response.Headers.GetValues("X-OVS-Stub").Single());
+        Assert.Equal("PostVirtualCommercePurchasesByIdByItem", response.Headers.GetValues("X-OVS-Stub").Single());
     }
+
+    // A route the TS server never handled answers what its catch-all did, in the request's form: Hydra for a Hydra
+    // request, JSON otherwise (the TS server installed its Hydra encoder only on a Hydra request).
+    [Fact]
+    public async Task ARouteTheTsServerNeverHandledAnswersItsCatchAllInTheRequestsForm()
+    {
+        var client = _server.CreateGameClient();
+        var hydra = await client.PostAsync("/ssc/invoke/debug_unlock_inventory_item", Hydra("""{ "a": 1 }"""));
+        Assert.Equal(HttpStatusCode.OK, hydra.StatusCode);
+        Assert.Equal(HydraBodies.ContentType, hydra.Content.Headers.ContentType?.MediaType);
+        Assert.False(hydra.Headers.Contains("X-OVS-Stub"));
+        Assert.Equal("AnyDebugUnlockInventoryItem", hydra.Headers.GetValues("X-OVS-Endpoint").Single());
+        Assert.Equal(HydraCodec.EncodeJson(CatchAll), await hydra.Content.ReadAsByteArrayAsync());
+
+        var json = await client.GetAsync("/ssc/invoke/get_preferred_currency");
+        Assert.Equal(HttpStatusCode.OK, json.StatusCode);
+        Assert.Equal("application/json", json.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(CatchAll, await json.Content.ReadAsStringAsync());
+    }
+
+    private const string CatchAll = """{"body":{"Crc":1267552971,"MatchmakingCrc":2},"metadata":null,"return_code":200}""";
 
     [SkippableFact]
     public async Task EveryCapturedGameRequestSurvivesTheTripThroughJson()

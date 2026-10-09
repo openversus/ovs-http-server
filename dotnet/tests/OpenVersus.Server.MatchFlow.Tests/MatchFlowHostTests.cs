@@ -46,8 +46,8 @@ public sealed class MatchFlowHostTests : IClassFixture<ServiceFactory<Program>>
         Assert.Equal("""{"body":{"message":"Early absent report"},"metadata":null,"return_code":2}""", await response.Content.ReadAsStringAsync());
     }
 
-    // Routes the TS server never handled: what the game always got (its catch-all; without Mongo the default CRC), with
-    // any method.
+    // Routes the TS server never handled: what the game always got (its catch-all; without Mongo the default CRC plus the
+    // content revision, and the matchmaking CRC), with any method.
     [Theory]
     [InlineData("GET", "check_training_server_ready")]
     [InlineData("PUT", "get_or_create_my_match_config")]
@@ -64,7 +64,7 @@ public sealed class MatchFlowHostTests : IClassFixture<ServiceFactory<Program>>
         using var response = await _factory.CreateGameClient().SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.False(response.Headers.Contains("X-OVS-Stub"));
-        Assert.Equal("""{"body":{"Crc":1267552956,"MatchmakingCrc":1},"metadata":null,"return_code":200}""", await response.Content.ReadAsStringAsync());
+        Assert.Equal("""{"body":{"Crc":1267552971,"MatchmakingCrc":2},"metadata":null,"return_code":200}""", await response.Content.ReadAsStringAsync());
     }
 
     // Answered whatever happened (here: no Redis, no Mongo), as the TS server answered.

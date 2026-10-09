@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Store;
 /// Seen in: binary 0x144feb090.
 /// Segment order inferred.
 /// </summary>
-public sealed class GetStoreStoreProductsByIdMyProducts : StubEndpoint
+public sealed class GetStoreStoreProductsByIdMyProducts : TsCatchAllEndpoint
 {
     public override void Configure()
     {

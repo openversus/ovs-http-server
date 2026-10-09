@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Accounts;
 /// Seen in: binary 0x144fd7550.
 /// Method inferred: sibling of the {network} variant; sent as PUT + override.
 /// </summary>
-public sealed class GetAccountsBulk : StubEndpoint
+public sealed class GetAccountsBulk : TsCatchAllEndpoint
 {
     public override void Configure()
     {

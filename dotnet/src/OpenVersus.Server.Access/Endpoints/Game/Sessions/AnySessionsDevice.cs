@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Access.Endpoints.Game.Sessions;
 /// Seen in: binary 0x140f99970.
 /// Social layer; method from unknown.
 /// </summary>
-public sealed class AnySessionsDevice : StubEndpoint
+public sealed class AnySessionsDevice : TsCatchAllEndpoint
 {
     public override void Configure()
     {

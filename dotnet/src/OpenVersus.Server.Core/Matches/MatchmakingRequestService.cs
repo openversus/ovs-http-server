@@ -579,7 +579,7 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             log.LogError("casual_queue from {Player}: no match was started", me);
         }
 
-        return await TsCatchAll.AnswerAsync(services.GetService<MongoDB.Driver.IMongoDatabase>(), ct);
+        return await TsCatchAll.AnswerAsync(services, ct);
     }
 
     // The cancel (MatchmakingQueue); the TS server published matchmaking:cancel for its websocket.

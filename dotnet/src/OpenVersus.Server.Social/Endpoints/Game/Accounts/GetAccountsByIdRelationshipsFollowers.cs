@@ -7,7 +7,7 @@ namespace OpenVersus.Server.Social.Endpoints.Game.Accounts;
 /// GET /accounts/{id}/relationships/followers.
 /// Seen in: binary 0x144fed800.
 /// </summary>
-public sealed class GetAccountsByIdRelationshipsFollowers : StubEndpoint
+public sealed class GetAccountsByIdRelationshipsFollowers : TsCatchAllEndpoint
 {
     public override void Configure()
     {

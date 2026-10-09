@@ -21,7 +21,7 @@ public sealed class GetAccountsByNetworkBulk : JsonBodyEndpoint
     {
         if (Route<string>("network") != "wb_network")
         {
-            await SendNotPortedAsync();
+            await SendTsCatchAllAsync(ct);
             return;
         }
 

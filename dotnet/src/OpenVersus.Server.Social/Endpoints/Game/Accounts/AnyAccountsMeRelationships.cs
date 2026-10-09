@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Social.Endpoints.Game.Accounts;
 /// Seen in: binary fragment.
 /// Binary fragment; no builder found yet.
 /// </summary>
-public sealed class AnyAccountsMeRelationships : StubEndpoint
+public sealed class AnyAccountsMeRelationships : TsCatchAllEndpoint
 {
     public override void Configure()
     {

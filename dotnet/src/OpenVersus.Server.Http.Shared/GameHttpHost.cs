@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using OpenVersus.Server.Core.Access;
 using OpenVersus.Server.Core.Clients;
+using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Core.Preferences;
 using OpenVersus.Server.Core.Settings;
@@ -27,6 +28,8 @@ public static class GameHttpHost
     public static WebApplicationBuilder AddGameHttp(this WebApplicationBuilder builder, Assembly endpoints)
     {
         builder.AddSetting<StubSettings>("Stubs");
+        // The Crc in the hiss and in every TS catch-all answer (Hiss:ContentRevision).
+        builder.AddSetting<HissSettings>("Hiss");
         // The session token check reads these.
         builder.AddSetting<AccessSettings>("Access");
         builder.AddSetting<RealtimeSettings>("Realtime");

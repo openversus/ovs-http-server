@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Commerce;
 /// Seen in: binary 0x144fd91b0.
 /// Method not read yet; a bare '/' piece may mean one more segment.
 /// </summary>
-public sealed class AnyCommercePurchasesByIdFinalize : StubEndpoint
+public sealed class AnyCommercePurchasesByIdFinalize : TsCatchAllEndpoint
 {
     public override void Configure()
     {

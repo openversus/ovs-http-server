@@ -1,7 +1,7 @@
 {
   "body": {
     "Crc": "{{crc}}",
-    "MatchmakingCrc": 2,
+    "MatchmakingCrc": "{{matchmaking_crc}}",
     "Data": {
       "game-mode-config": {
         "_hydra_compressed": {

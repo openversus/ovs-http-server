@@ -7,7 +7,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Leaderboards;
 /// GET /leaderboards/{id}.
 /// Seen in: binary 0x145065df0.
 /// </summary>
-public sealed class GetLeaderboardsById : StubEndpoint
+public sealed class GetLeaderboardsById : TsCatchAllEndpoint
 {
     public override void Configure()
     {

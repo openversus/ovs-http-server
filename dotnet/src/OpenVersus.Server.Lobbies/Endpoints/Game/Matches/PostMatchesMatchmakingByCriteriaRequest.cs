@@ -34,7 +34,7 @@ public sealed class PostMatchesMatchmakingByCriteriaRequest : JsonBodyEndpoint
         var request = new PartyRequest(session.AccountId, session.Claims, ClientAddress.Of(HttpContext, stripMapped: true), (await ReadBodyAsync(ct)) as System.Text.Json.Nodes.JsonObject);
         if (await Resolve<IMatchmakingRequestService>().RequestAsync(Route<string>("criteria") ?? "", request, ct) is not { } answer)
         {
-            await SendNotPortedAsync();
+            await SendTsCatchAllAsync(ct);
             return;
         }
 

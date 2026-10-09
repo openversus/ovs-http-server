@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Clans;
 /// Seen in: binary 0x145059f00.
 /// Second segment's name not read yet.
 /// </summary>
-public sealed class GetClansByIdBySub : StubEndpoint
+public sealed class GetClansByIdBySub : TsCatchAllEndpoint
 {
     public override void Configure()
     {

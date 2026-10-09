@@ -6,7 +6,7 @@ namespace OpenVersus.Server.Core.Hosting;
 
 /// <summary>
 /// A list of routes written as <c>METHOD /path, METHOD /path, ...</c>, the route being a template as a C# endpoint
-/// declares it (<c>GET /profiles/{id}/inventory</c>): the proxy's Proxy:PortedRoutes and the http service's
+/// declares it (<c>GET /profiles/{id}/inventory</c>): the proxy's Proxy:TsRoutes and the http service's
 /// Batch:ForwardRoutes.
 /// </summary>
 public sealed class RouteList

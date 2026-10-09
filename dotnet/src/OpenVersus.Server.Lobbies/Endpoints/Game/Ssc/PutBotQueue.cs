@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Lobbies.Endpoints.Game.Ssc;
 /// Seen in: binary ssc name; captured 1x.
 /// Ssc: binary.
 /// </summary>
-public sealed class PutBotQueue : StubEndpoint
+public sealed class PutBotQueue : TsCatchAllEndpoint
 {
     public override void Configure()
     {

@@ -37,13 +37,16 @@ RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking Matc
         -p:SourceRevisionId=$SOURCE_REVISION -o /out/$project || exit 1; \
     done
 
-# What every service image shares: the ASP.NET runtime, ovsctl, and a health check through it. ovsctl reaches the
-# service over its control socket (/tmp/openversus/<service>.sock), the only way in for a service with no public port;
-# OVS_SERVICE (set by each image) tells it which service it is in. `ovsctl health --probe` is the service's readiness:
-# exit 0 ready, 1 not ready (a store it needs is missing or down), 2 unreachable. Docker only marks a container
-# unhealthy; an orchestrator that replaces unhealthy containers (ECS does) would restart every service that needs Redis
-# while Redis is down, which fixes nothing. There, the container check should be liveness instead (open question).
+# What every service image shares: the ASP.NET runtime, ovsctl, and a health check against the service's readiness
+# endpoint over its control socket (/tmp/openversus/<service>.sock, or Control__Socket; the only way in for a service
+# with no public port). Readiness answers 200 while the stores the service needs are reachable, 503 otherwise: exit 0
+# healthy, else unhealthy. The check is a curl, not ovsctl: a .NET process start every interval cost about 200 ms of
+# CPU per container (a fifth of a core across ten idle containers); the curl costs under a millisecond. Docker only
+# marks a container unhealthy; an orchestrator that replaces unhealthy containers (ECS does) would restart every service
+# that needs Redis while Redis is down, which fixes nothing. There, the container check should be liveness instead
+# (open question).
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET} AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/Cli /opt/ovsctl
 RUN ln -s /opt/ovsctl/ovsctl /usr/local/bin/ovsctl
 # The services choose their own listeners (HTTP_PORT and the like); the base image's default of 8080 would only mislead.
@@ -53,7 +56,8 @@ ENV ASPNETCORE_HTTP_PORTS=
 RUN mkdir -p /tmp/openversus /var/log/openversus && chown $APP_UID:$APP_UID /tmp/openversus /var/log/openversus
 WORKDIR /app
 USER $APP_UID
-HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=3 CMD ["ovsctl", "health", "--probe"]
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl -fsS --max-time 4 --unix-socket "${Control__Socket:-/tmp/openversus/$OVS_SERVICE.sock}" http://localhost/health/ready > /dev/null || exit 1
 
 # The game's HTTP API (HTTP_PORT, 8000 by default).
 FROM runtime AS http

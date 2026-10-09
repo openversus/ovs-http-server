@@ -27,7 +27,7 @@ public sealed class ProxyTests : IAsyncLifetime
         _proxy = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b
             .UseSetting("Proxy:CSharpUrl", csharpUrl)
             .UseSetting("Proxy:TsUrl", tsUrl)
-            .UseSetting("Proxy:TsRoutes", "DELETE /access, GET /ssc/invoke/get_gm_leaderboards, PUT /profiles/{id}/inventory")
+            .UseSetting("Proxy:TsRoutes", "DELETE /access, GET /ssc/invoke/get_gm_leaderboards, PUT /profiles/{id}/inventory, GET /accounts/wb_network/{id:regex(^(?!bulk$).+$)}")
             .UseSetting("Control:Socket", "off"));
         _client = _proxy.CreateClient();
     }
@@ -86,6 +86,10 @@ public sealed class ProxyTests : IAsyncLifetime
     [InlineData("PUT", "/profiles/abc/inventory", "GET", "csharp")]
     [InlineData("GET", "/profiles/bulk", null, "csharp")]
     [InlineData("GET", "/anything/else", null, "csharp")]
+    // A constraint keeps a ported literal path (the bulk lookup, sent as PUT + GET) out of a TS route's parameter.
+    [InlineData("GET", "/accounts/wb_network/abc", null, "ts")]
+    [InlineData("PUT", "/accounts/wb_network/abc", "GET", "ts")]
+    [InlineData("PUT", "/accounts/wb_network/bulk", "GET", "csharp")]
     public async Task RoutesByWhatTheTsServerStillAnswers(string method, string path, string? hydraMethod, string backend)
     {
         Assert.Equal(backend, (await SendAsync(method, path, hydraMethod))[0]);

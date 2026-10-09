@@ -31,6 +31,13 @@ public interface ILeaderboardService
 
     /// <summary>The rows around <paramref name="playerId"/>'s place (5 above, 5 below); none when they are not on it.</summary>
     Task<JsonObject> AroundAsync(string slug, string playerId, LeaderboardQuery query, CancellationToken ct = default);
+
+    /// <summary>
+    /// GET /ssc/invoke/get_gm_leaderboards (the TS handleSsc_invoke_get_gm_leaderboards): the top 100 of 1v1 and of
+    /// 2v2 as <c>{OneVsOne: [{Rank, Score, AccountId, CharacterSlug}], TwoVsTwo: [...]}</c>, the character being the
+    /// one the player is connected with (connections:{id}, else Wonder Woman); both lists empty when a read fails.
+    /// </summary>
+    Task<JsonObject> GmLeaderboardsAsync(CancellationToken ct = default);
 }
 
 internal sealed partial class LeaderboardService(IServiceProvider services, ILogger<LeaderboardService> log) : ILeaderboardService
@@ -57,7 +64,43 @@ internal sealed partial class LeaderboardService(IServiceProvider services, ILog
         return Body(rows, query);
     }, ct);
 
-    private async Task<JsonObject> Guarded(string view, Func<IMongoCollection<BsonDocument>, Task<JsonObject>> read, CancellationToken ct)
+    private const string DefaultCharacter = "character_wonder_woman";
+
+    public Task<JsonObject> GmLeaderboardsAsync(CancellationToken ct) => Guarded("gm", async ratings =>
+    {
+        var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase();
+        return new JsonObject
+        {
+            ["OneVsOne"] = await GmEntriesAsync(await RowsAsync(ratings, "1v1", null, 100, 0, ct), redis),
+            ["TwoVsTwo"] = await GmEntriesAsync(await RowsAsync(ratings, "2v2", null, 100, 0, ct), redis),
+        };
+    }, ct, () => new JsonObject { ["OneVsOne"] = new JsonArray(), ["TwoVsTwo"] = new JsonArray() });
+
+    private static async Task<JsonArray> GmEntriesAsync(List<Row> rows, IDatabase? redis)
+    {
+        var entries = new JsonArray();
+        foreach (var row in rows)
+        {
+            string character = DefaultCharacter;
+            try
+            {
+                // The TS handler's try/catch around the hash read: any failure leaves the default.
+                if (redis is not null && (string?)await redis.HashGetAsync($"connections:{row.AccountId}", "character") is { Length: > 0 } live)
+                {
+                    character = live;
+                }
+            }
+            catch (RedisException)
+            {
+            }
+
+            entries.Add(new JsonObject { ["Rank"] = row.Rank, ["Score"] = RankService.Json(row.Elo), ["AccountId"] = row.AccountId, ["CharacterSlug"] = character });
+        }
+
+        return entries;
+    }
+
+    private async Task<JsonObject> Guarded(string view, Func<IMongoCollection<BsonDocument>, Task<JsonObject>> read, CancellationToken ct, Func<JsonObject>? empty = null)
     {
         try
         {
@@ -68,7 +111,7 @@ internal sealed partial class LeaderboardService(IServiceProvider services, ILog
         catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             log.LogError(e, "Leaderboard {View} failed", view);
-            return new JsonObject { ["leaders"] = new JsonArray() };
+            return empty?.Invoke() ?? new JsonObject { ["leaders"] = new JsonArray() };
         }
     }
 

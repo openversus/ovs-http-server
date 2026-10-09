@@ -27,7 +27,7 @@ public sealed class ProxyTests : IAsyncLifetime
         _proxy = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b
             .UseSetting("Proxy:CSharpUrl", csharpUrl)
             .UseSetting("Proxy:TsUrl", tsUrl)
-            .UseSetting("Proxy:TsRoutes", "DELETE /access, GET /ssc/invoke/get_gm_leaderboards, PUT /profiles/{id}/inventory, GET /accounts/wb_network/{id:regex(^(?!bulk$).+$)}")
+            .UseSetting("Proxy:TsRoutes", "DELETE /access, GET /api/matches, PUT /profiles/{id}/inventory, GET /accounts/wb_network/{id:regex(^(?!bulk$).+$)}")
             .UseSetting("Control:Socket", "off"));
         _client = _proxy.CreateClient();
     }
@@ -75,11 +75,11 @@ public sealed class ProxyTests : IAsyncLifetime
     [Theory]
     [InlineData("POST", "/access", null, "csharp")]
     [InlineData("DELETE", "/access", null, "ts")]
-    [InlineData("GET", "/ssc/invoke/get_gm_leaderboards", null, "ts")]
+    [InlineData("GET", "/api/matches", null, "ts")]
     // The Hydra SDK's GET as PUT: the header names the real method.
-    [InlineData("PUT", "/ssc/invoke/get_gm_leaderboards", "GET", "ts")]
-    [InlineData("PUT", "/ssc/invoke/get_gm_leaderboards", "get", "ts")]
-    [InlineData("PUT", "/ssc/invoke/get_gm_leaderboards", null, "csharp")]
+    [InlineData("PUT", "/api/matches", "GET", "ts")]
+    [InlineData("PUT", "/api/matches", "get", "ts")]
+    [InlineData("PUT", "/api/matches", null, "csharp")]
     // A real PUT is the TS server's; the same path's GET (sent as PUT) is C#'s.
     [InlineData("PUT", "/profiles/abc/inventory", null, "ts")]
     [InlineData("PUT", "/profiles/abc/inventory", "PUT", "ts")]

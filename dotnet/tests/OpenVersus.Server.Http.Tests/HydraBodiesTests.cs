@@ -127,6 +127,16 @@ public sealed class HydraBodiesTests : IAsyncLifetime, IClassFixture<GameAppFact
         Assert.Equal(CatchAll, await json.Content.ReadAsStringAsync());
     }
 
+    [Fact]
+    public async Task TheGmLeaderboardsAnswerTheTsFallbackWithoutTheStores()
+    {
+        // The TS handler's fallback (its catch): empty lists, return_code 0. Not a stub, not the catch-all.
+        var response = await _server.CreateGameClient().GetAsync("/ssc/invoke/get_gm_leaderboards");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("GetGetGmLeaderboards", response.Headers.GetValues("X-OVS-Endpoint").Single());
+        Assert.Equal("""{"body":{"OneVsOne":[],"TwoVsTwo":[]},"metadata":null,"return_code":0}""", await response.Content.ReadAsStringAsync());
+    }
+
     private const string CatchAll = """{"body":{"Crc":1267552971,"MatchmakingCrc":2},"metadata":null,"return_code":200}""";
 
     [SkippableFact]

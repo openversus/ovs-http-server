@@ -19,6 +19,8 @@ public static class AccessHosting
         builder.AddSetting<Seasons.SeasonSettings>("Seasons");
         // A Steam id Steam itself refused lately is a claim at the login (SteamSessions.RefusedRecentlyAsync).
         builder.AddSetting<Steam.SteamSettings>("Steam");
+        // An Epic id from an identify token or record counts only with the game's token's proof while Epic:ClientId is set.
+        builder.AddSetting<Epic.EpicSettings>("Epic");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.AddBans();
         builder.Services.AddHostedService<BanLoader>();

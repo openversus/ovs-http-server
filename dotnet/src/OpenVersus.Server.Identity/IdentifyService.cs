@@ -11,9 +11,11 @@ using MongoDB.Driver;
 using OpenVersus.Server.Core.Access;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Epic;
 using OpenVersus.Server.Core.Settings;
 using OpenVersus.Server.Core.Steam;
 using OpenVersus.Server.Core.Identity;
+using OpenVersus.Server.Identity.Epic;
 using OpenVersus.Server.Identity.Steam;
 using StackExchange.Redis;
 
@@ -61,7 +63,9 @@ internal sealed class IdentifyService(
     IOptionsMonitor<AccessSettings> access,
     IOptionsMonitor<ClientSettings> clients,
     IOptionsMonitor<SteamSettings> steam,
+    IOptionsMonitor<EpicSettings> epic,
     ISteamTicketVerifier tickets,
+    IEpicIdTokenVerifier epicTokens,
     TimeProvider time,
     ILogger<IdentifyService> log) : IIdentifyService
 {
@@ -84,6 +88,12 @@ internal sealed class IdentifyService(
 
         /// <summary>Steam refused this registration's ticket: a stored proof for the same install is dropped too (Merge).</summary>
         public bool SteamRefused { get; init; }
+
+        /// <summary>The Epic id is the subject of a verified Epic ID token (with Epic verification enforced, the only way it counts).</summary>
+        public bool EpicVerified { get; init; }
+
+        /// <summary>The Epic ID token was refused: a stored proof for the same install is dropped too (Merge).</summary>
+        public bool EpicRefused { get; init; }
     }
 
     public async Task<IdentifyResult> RegisterAsync(string ip, JsonObject body, CancellationToken ct = default)
@@ -103,9 +113,10 @@ internal sealed class IdentifyService(
         }
 
         var now = time.GetUtcNow();
-        var incoming = await AskSteamAsync(redis, Incoming(body, ip, now), ip, now, ct);
+        bool epicEnforced = epic.CurrentValue.Enforced;
+        var incoming = await CheckEpicAsync(await AskSteamAsync(redis, Incoming(body, ip, now), ip, now, ct), body, ip, now, ct);
         int nodePort = Core.Matches.P2P.ParseNodePort(body["nodePort"]);
-        var identity = Merge(await ReadAsync(redis, ip), incoming);
+        var identity = Merge(await ReadAsync(redis, ip, epicEnforced), incoming);
         bool registered = identity.Any;
         string key = $"identity:{ip}";
         await redis.HashSetAsync(key,
@@ -121,17 +132,19 @@ internal sealed class IdentifyService(
             new HashEntry("nodePort", nodePort.ToString(CultureInfo.InvariantCulture)),
             new HashEntry("steamVerified", identity.SteamVerified ? "1" : ""),
             new HashEntry(IdentityRecord.TicketField, identity.SteamTicket),
+            new HashEntry("epicVerified", identity.EpicVerified ? "1" : ""),
         ]);
         await redis.KeyExpireAsync(key, s_recordLifetime);
         log.LogInformation("Identity registered for IP {Ip} - steam:{Steam} epic:{Epic} install:{Install} hardware:{Hardware} version:{Version} identity:{Registered} node:{Node}",
-            ip, identity.SteamId.Length > 0 ? identity.SteamId + (identity.SteamOnline ? " (verified, live on Steam)" : " (verified)") : "-", Dash(identity.EpicId), identity.InstallId.Length > 0 ? "yes" : "no",
+            ip, identity.SteamId.Length > 0 ? identity.SteamId + (identity.SteamOnline ? " (verified, live on Steam)" : " (verified)") : "-",
+            identity.EpicId.Length > 0 ? identity.EpicId + (identity.EpicVerified ? " (verified)" : epicEnforced ? " (claim)" : "") : "-", identity.InstallId.Length > 0 ? "yes" : "no",
             identity.Hardware.HardwareId.Length > 0 ? $"v{identity.Hardware.HardwareIdVersion}/{identity.Hardware.HardwareIdQuality}" : "none",
             identity.ClientVersion.Length > 0 ? identity.ClientVersion : "legacy", registered ? "registered" : "missing", nodePort > 0 ? nodePort : "none");
 
         // The account these ids are indexed to (a first launch has none yet): the token's id claim, so the resolver
         // takes its fast path. By the Steam id only when a ticket proved it.
         string resolvedId = "";
-        foreach (var (name, id) in new[] { ("steam", identity.SteamVerified ? identity.SteamId : ""), ("epic", identity.EpicId), ("install", identity.InstallId) })
+        foreach (var (name, id) in new[] { ("steam", identity.SteamVerified ? identity.SteamId : ""), ("epic", identity.EpicVerified || !epicEnforced ? identity.EpicId : ""), ("install", identity.InstallId) })
         {
             if (id.Length > 0 && await redis.StringGetAsync($"identity:{name}:{id}") is { HasValue: true } account)
             {
@@ -168,6 +181,7 @@ internal sealed class IdentifyService(
             ["GameplayPreferences"] = 964,
             ["steamVerified"] = identity.SteamVerified ? "1" : "",
             ["steamOnline"] = identity.SteamOnline ? "1" : "",
+            ["epicVerified"] = identity.EpicVerified ? "1" : "",
         };
         string token = IdentifyTokens.Sign(claims, secret, now);
 
@@ -309,7 +323,55 @@ internal sealed class IdentifyService(
         }
     }
 
-    private static async Task<IpIdentity?> ReadAsync(IDatabase redis, string ip)
+    // The Epic id: with verification enforced (Epic:Enabled and a client id), only the subject of a verified Epic ID
+    // token (epicToken) counts; a claimed epicId without one, or with a refused one, is logged and dropped, and a refused
+    // token takes a stored proof for the same install with it (Merge). When the token cannot be judged (no keys from
+    // Epic), the claim stays in the record unverified: the login ignores it, nothing is refused. Not enforced: as before,
+    // the claim is taken as given and a token is ignored.
+    private async Task<IpIdentity> CheckEpicAsync(IpIdentity incoming, JsonObject body, string ip, DateTimeOffset now, CancellationToken ct)
+    {
+        string token = StringOnly(body["epicToken"]) ?? "";
+        if (!epic.CurrentValue.Enforced)
+        {
+            if (token.Length > 0)
+            {
+                log.LogDebug("A client at {Ip} sent an Epic ID token, which is not checked (Epic:ClientId is not set): its Epic id {Epic} is taken as claimed", ip, Dash(incoming.EpicId));
+            }
+
+            return incoming;
+        }
+
+        if (token.Length == 0)
+        {
+            if (incoming.EpicId.Length > 0)
+            {
+                log.LogInformation("A client at {Ip} claims Epic id {Epic} without the game's Epic ID token: not used as an identity (its install id, hardware and IP decide)", ip, incoming.EpicId);
+            }
+
+            return incoming with { EpicId = "" };
+        }
+
+        switch (await epicTokens.CheckAsync(token, now, ct))
+        {
+            case EpicTokenCheck.Verified ok:
+                if (incoming.EpicId.Length > 0 && incoming.EpicId != ok.AccountId)
+                {
+                    log.LogWarning("A client at {Ip} claimed Epic id {Claimed}, but its Epic ID token is for {Epic}: the token decides", ip, incoming.EpicId, ok.AccountId);
+                }
+
+                return incoming with { EpicId = ok.AccountId, EpicVerified = true };
+            case EpicTokenCheck.Refused refused:
+                log.LogWarning("Refused the Epic ID token from {Ip} ({Reason}); the Epic id it claims ({Claimed}) is not used", ip, refused.Reason, Dash(incoming.EpicId));
+                return incoming with { EpicId = "", EpicRefused = true };
+            case EpicTokenCheck.Unavailable unavailable:
+                log.LogInformation("The Epic ID token from {Ip} could not be judged ({Reason}): the Epic id {Epic} stays a claim", ip, unavailable.Reason, Dash(incoming.EpicId));
+                return incoming;
+            default:
+                return incoming;
+        }
+    }
+
+    private static async Task<IpIdentity?> ReadAsync(IDatabase redis, string ip, bool epicEnforced)
     {
         var fields = (await redis.HashGetAllAsync($"identity:{ip}")).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
         if (fields.Count == 0)
@@ -321,8 +383,13 @@ internal sealed class IdentifyService(
         // A record from before tickets (no steamVerified field) never proved its Steam id: the id is dropped here, so a
         // later call from the same install cannot inherit it. A Steam id in a record is always a proved one.
         bool verified = Field("steamVerified") == "1";
-        return new IpIdentity(verified ? Field("steamId") : "", verified, verified ? Field(IdentityRecord.TicketField) : "", Field("epicId"),
-            new HardwareSignal(Field("hardwareId"), Field("hardwareIdVersion"), Field("hardwareIdQuality")), Field("installId"), Field("clientVersion"));
+        // Likewise an Epic id, once verification is enforced: a record's id counts only with the token's proof.
+        bool epicVerified = Field("epicVerified") == "1";
+        return new IpIdentity(verified ? Field("steamId") : "", verified, verified ? Field(IdentityRecord.TicketField) : "", epicVerified || !epicEnforced ? Field("epicId") : "",
+            new HardwareSignal(Field("hardwareId"), Field("hardwareIdVersion"), Field("hardwareIdQuality")), Field("installId"), Field("clientVersion"))
+        {
+            EpicVerified = epicVerified && Field("epicId").Length > 0,
+        };
     }
 
     // TS mergeIpIdentity: a second call from the same install only adds to what the first stored; another install
@@ -336,16 +403,20 @@ internal sealed class IdentifyService(
 
         // A refused ticket takes the stored proof with it: the record must not say verified when Steam just said no.
         var steam = incoming.SteamId.Length > 0 || incoming.SteamRefused ? incoming : stored;
+        // The Epic id: a verified or refused token decides; else a stored proof stands (a claim from the launcher's files
+        // under an Epic key outage must not outrank it: there is no offline verdict to carry it); else as before.
+        var epicSide = incoming.EpicVerified || incoming.EpicRefused ? incoming : stored.EpicVerified ? stored : incoming.EpicId.Length > 0 ? incoming : stored;
         return new IpIdentity(
             steam.SteamId,
             steam.SteamId.Length > 0 && steam.SteamVerified,
             steam.SteamId.Length > 0 ? steam.SteamTicket : "",
-            incoming.EpicId.Length > 0 ? incoming.EpicId : stored.EpicId,
+            epicSide.EpicId,
             incoming.Hardware.HardwareId.Length > 0 ? incoming.Hardware : stored.Hardware,
             incoming.InstallId,
             incoming.ClientVersion.Length > 0 ? incoming.ClientVersion : stored.ClientVersion)
         {
             SteamOnline = steam.SteamId.Length > 0 && steam.SteamOnline,
+            EpicVerified = epicSide.EpicId.Length > 0 && epicSide.EpicVerified,
         };
     }
 
@@ -424,6 +495,7 @@ public static class IdentifyHosting
         builder.AddSetting<ClientSettings>("Clients");
         builder.AddSetting<SteamSettings>("Steam");
         builder.AddSteamTickets();
+        builder.AddEpicIdTokens();
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.TryAddSingleton<IIdentifyService, IdentifyService>();
         return builder;

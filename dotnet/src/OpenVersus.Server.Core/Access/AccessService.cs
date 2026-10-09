@@ -13,6 +13,7 @@ using OpenVersus.Server.Core.Bans;
 using OpenVersus.Server.Core.CustomLobbies;
 using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Core.Seasons;
+using OpenVersus.Server.Core.Epic;
 using OpenVersus.Server.Core.Steam;
 using StackExchange.Redis;
 
@@ -118,6 +119,7 @@ internal sealed partial class AccessService(
     IOptionsMonitor<RealtimeSettings> realtime,
     IOptionsMonitor<SeasonSettings> seasons,
     IOptionsMonitor<SteamSettings> steam,
+    IOptionsMonitor<EpicSettings> epic,
     IBanService bans,
     INameRules names,
     IPersonBans personBans,
@@ -125,6 +127,17 @@ internal sealed partial class AccessService(
     ILogger<AccessService> log) : IAccessService
 {
     private const int IdentityWaitAttempts = 15;
+
+    /// <summary>The account field saying when its Epic id was last proved by the game's Epic ID token (the Steam counterpart is the ticket record itself).</summary>
+    public const string EpicProvedField = "epicVerifiedAt";
+
+    /// <summary>Whether the account's Steam id <paramref name="stored"/> was proved: its recorded ticket names it.</summary>
+    private static bool StoredSteamProved(BsonDocument account, string stored) =>
+        account.TryGetValue(IdentityRecord.TicketField, out var ticket) && ticket is BsonDocument doc && doc.GetValue("steam_id", "") == stored;
+
+    /// <summary>Whether the account's Epic id was proved: written with the game's token's proof (<see cref="EpicProvedField"/>).</summary>
+    private static bool StoredEpicProved(BsonDocument account) =>
+        account.TryGetValue(EpicProvedField, out var at) && at.IsValidDateTime;
     private static readonly TimeSpan s_identityWait = TimeSpan.FromMilliseconds(200);
     private static readonly TimeSpan s_activeSession = TimeSpan.FromSeconds(90);
     private static readonly JsonSerializerOptions s_json = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
@@ -137,6 +150,9 @@ internal sealed partial class AccessService(
         // The Steam id was proved by the client's session ticket (an identify token or record says so); the game's own
         // session token carries the account's stored id, which this login bound before.
         public bool SteamVerified;
+        // The Epic id was proved by the game's Epic ID token (an identify token or record says so); read only while
+        // Epic:ClientId is set, when an unproved Epic id is a claim the login ignores.
+        public bool EpicVerified;
         // The verified ticket's decoded fields (the identify service's TicketFields, extended JSON), to keep on the account; or "".
         public string SteamTicket = "";
         // The UDP port of the client's P2P node (Matches/P2P.cs); 0 when it reported none.
@@ -341,10 +357,19 @@ internal sealed partial class AccessService(
                         log.LogInformation("The identify token from {Ip} names Steam id {Steam} without a ticket's proof: ignored", ip, JsString(identify["steamId"]));
                     }
 
-                    if (steamId.Length > 0 || Truthy(identify["epicId"]) || Truthy(identify["installId"]))
+                    bool epicVerified = IdentifyTokens.EpicVerified(identify);
+                    string epicId = epicVerified || !epic.CurrentValue.Enforced ? IdentityRules.Normalize(IdentityKind.Epic, identify["epicId"]) : "";
+                    if (epicId.Length == 0 && Truthy(identify["epicId"]))
+                    {
+                        log.LogInformation("The identify token from {Ip} names Epic id {Epic} without the game's token's proof: ignored", ip, JsString(identify["epicId"]));
+                    }
+
+                    if (steamId.Length > 0 || epicId.Length > 0 || Truthy(identify["installId"]))
                     {
                         Fill(identity, identify, steamId);
                         identity.SteamVerified = steamId.Length > 0;
+                        identity.EpicId = epicId;
+                        identity.EpicVerified = epicVerified && epicId.Length > 0;
                         identity.Source = "identify";
                     }
                 }
@@ -430,7 +455,15 @@ internal sealed partial class AccessService(
         }
 
         string steamId = steamVerified ? IdentityRules.Normalize(IdentityKind.Steam, Field("steamId")) : "";
-        if (!(steamId.Length > 0 || Field("epicId").Length > 0 || Field("installId").Length > 0))
+        // The same for an Epic id while Epic verification is enforced: without the game's token's proof it is a claim.
+        bool epicVerified = Field("epicVerified") == "1";
+        string epicId = epicVerified || !epic.CurrentValue.Enforced ? IdentityRules.Normalize(IdentityKind.Epic, Field("epicId")) : "";
+        if (epicId.Length == 0 && Field("epicId").Length > 0)
+        {
+            log.LogInformation("The identity record of {Ip} names Epic id {Epic} without the game's token's proof: ignored", ip, Field("epicId"));
+        }
+
+        if (!(steamId.Length > 0 || epicId.Length > 0 || Field("installId").Length > 0))
         {
             return false;
         }
@@ -438,7 +471,8 @@ internal sealed partial class AccessService(
         identity.SteamId = steamId;
         identity.SteamVerified = steamId.Length > 0;
         identity.SteamTicket = steamId.Length > 0 ? Field(IdentityRecord.TicketField) : "";
-        identity.EpicId = IdentityRules.Normalize(IdentityKind.Epic, Field("epicId"));
+        identity.EpicId = epicId;
+        identity.EpicVerified = epicVerified && epicId.Length > 0;
         identity.Hardware = IdentityRules.NormalizeHardware(Field("hardwareId"), Field("hardwareIdVersion"), Field("hardwareIdQuality"));
         identity.InstallId = IdentityRules.Normalize(IdentityKind.Install, Field("installId"));
         identity.ClientVersion = Field("clientVersion");
@@ -476,12 +510,22 @@ internal sealed partial class AccessService(
 
         if (found is null && identity.InstallId.Length > 0)
         {
+            // The install's account is this person's unless it names another platform account: a different id it holds
+            // as a claim is no conflict when this login proved its own (the install match says whose account it is, and
+            // BackfillAsync replaces the claim); a different id it holds proved is another person at a shared PC, who
+            // gets an account of their own.
             var owner = await FindOne(new BsonDocument("installId", identity.InstallId));
-            bool steamConflict = identity.SteamId.Length > 0 && Str(owner, "steamId") is { Length: > 0 } s && s != identity.SteamId;
-            bool epicConflict = identity.EpicId.Length > 0 && Str(owner, "epicId") is { Length: > 0 } e && e != identity.EpicId;
+            bool steamConflict = identity.SteamId.Length > 0 && Str(owner, "steamId") is { Length: > 0 } s && s != identity.SteamId
+                && !(identity.SteamVerified && !StoredSteamProved(owner!, s));
+            bool epicConflict = identity.EpicId.Length > 0 && Str(owner, "epicId") is { Length: > 0 } e && e != identity.EpicId
+                && !(identity.EpicVerified && !StoredEpicProved(owner!));
             if (!steamConflict && !epicConflict)
             {
                 found = owner;
+            }
+            else
+            {
+                log.LogInformation("The install's account {Player} names another proved platform account; the login from {Ip} gets its own", owner!["_id"].ToString(), ip);
             }
         }
 
@@ -552,6 +596,7 @@ internal sealed partial class AccessService(
                 ["GameplayPreferences"] = 964,
                 ["steamId"] = identity.SteamId,
                 ["epicId"] = identity.EpicId,
+                [EpicProvedField] = identity.EpicVerified && identity.EpicId.Length > 0 ? now : BsonNull.Value,
                 ["hardwareId"] = identity.Hardware.HardwareId,
                 ["hardwareIdVersion"] = identity.Hardware.HardwareIdVersion,
                 ["hardwareIdQuality"] = identity.Hardware.HardwareIdQuality,
@@ -567,19 +612,70 @@ internal sealed partial class AccessService(
     }
 
     // An existing account takes this login's ids where it has none (or an old IP-derived placeholder), a strong
-    // fingerprint, the install id (which no other account keeps), and the IP.
+    // fingerprint, the install id (which no other account keeps), and the IP. A proved id (a ticket's or a token's)
+    // also replaces one the account carried as a claim: the account was reached through this person's install id,
+    // hardware or IP, so the id it held unproved gives way to the one proved now. An id the account holds proved
+    // (its ticket names it; an Epic id written with its proof) is never displaced by a different proved one: two
+    // ticketed Steam accounts on one install are two people at a shared PC, and an account does not move between them.
+    // Nothing is ever removed: an account keeps every id it has, Steam and Epic side by side.
     private async Task BackfillAsync(IMongoCollection<BsonDocument> players, IDatabase redis, PlayerRecord player, Identity identity, string ip, DateTime now, CancellationToken ct)
     {
         static bool IsStale(string? value) => string.IsNullOrEmpty(value) || value == "Unknown" || value.StartsWith("ip_", StringComparison.Ordinal);
 
-        if (identity.SteamId.Length > 0 && IsStale(player.Str("steamId")))
+        if (identity.SteamId.Length > 0)
         {
-            player.Set("steamId", identity.SteamId);
+            string stored = player.Str("steamId") ?? "";
+            if (IsStale(stored))
+            {
+                player.Set("steamId", identity.SteamId);
+            }
+            else if (stored != identity.SteamId && identity.SteamVerified)
+            {
+                bool storedProved = StoredSteamProved(player.Document, stored);
+                if (storedProved)
+                {
+                    log.LogWarning("Account {Player} holds proved Steam id {Stored}; the login from {Ip} proved {Steam} and reached it by its other ids: kept as is", player.Id, stored, ip, identity.SteamId);
+                }
+                else
+                {
+                    log.LogInformation("Account {Player} held Steam id {Stored} as a claim; the login from {Ip} proved {Steam} and reached it by its other ids: replaced", player.Id, stored, ip, identity.SteamId);
+                    player.Set("steamId", identity.SteamId);
+                }
+            }
         }
 
-        if (identity.EpicId.Length > 0 && IsStale(player.Str("epicId")))
+        if (identity.EpicId.Length > 0)
         {
-            player.Set("epicId", identity.EpicId);
+            string stored = player.Str("epicId") ?? "";
+            bool storedProved = StoredEpicProved(player.Document);
+            if (IsStale(stored))
+            {
+                player.Set("epicId", identity.EpicId);
+                if (identity.EpicVerified)
+                {
+                    player.Set(EpicProvedField, now);
+                }
+            }
+            else if (stored == identity.EpicId)
+            {
+                if (identity.EpicVerified && !storedProved)
+                {
+                    player.Set(EpicProvedField, now);
+                }
+            }
+            else if (identity.EpicVerified)
+            {
+                if (storedProved)
+                {
+                    log.LogWarning("Account {Player} holds proved Epic id {Stored}; the login from {Ip} proved {Epic} and reached it by its other ids: kept as is", player.Id, stored, ip, identity.EpicId);
+                }
+                else
+                {
+                    log.LogInformation("Account {Player} held Epic id {Stored} as a claim; the login from {Ip} proved {Epic} and reached it by its other ids: replaced", player.Id, stored, ip, identity.EpicId);
+                    player.Set("epicId", identity.EpicId);
+                    player.Set(EpicProvedField, now);
+                }
+            }
         }
 
         var hw = identity.Hardware;

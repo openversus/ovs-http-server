@@ -281,12 +281,6 @@ public sealed class HissServiceTests : IAsyncLifetime
         Assert.Equal(0, ZstdSections(second.Hydra));
     }
 
-    private static int FreePort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        return ((IPEndPoint)listener.LocalEndpoint).Port;
-    }
 
     public async Task InitializeAsync()
     {
@@ -302,7 +296,7 @@ public sealed class HissServiceTests : IAsyncLifetime
 
         var builder = OpenVersusHost.CreateBuilder(new ServiceDefinition("hisstest", "TEST_PORT", 1, 1),
         [
-            $"--TEST_PORT={FreePort()}", $"--Control:Port={FreePort()}", "--Control:Socket=off",
+            "--TEST_PORT=0", "--Control:Port=0", "--Control:Socket=off",
             $"--REDIS={parts[0]}", $"--REDIS_PORT={(parts.Length > 1 ? parts[1] : "6379")}",
             $"--REDIS_USERNAME={Environment.GetEnvironmentVariable("OVS_TEST_REDIS_USER") ?? ""}",
             $"--REDIS_PW={Environment.GetEnvironmentVariable("OVS_TEST_REDIS_PW") ?? ""}",

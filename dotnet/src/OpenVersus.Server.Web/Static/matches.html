@@ -179,6 +179,17 @@
           font-size: 11px;
           font-weight: 700;
       }
+      .finished_flag {
+          display: block;
+          margin-top: 4px;
+          color: #9ca3af;
+          font-family: Arial, sans-serif;
+          font-size: 11px;
+          font-weight: 700;
+      }
+      .match_card.finished {
+          opacity: 0.6;
+      }
       .empty_state {
           text-align: center;
           padding: 60px 20px;
@@ -315,13 +326,16 @@
     const s0 = (m.scores && m.scores[0]) || 0;
     const s1 = (m.scores && m.scores[1]) || 0;
     const concede = m.conceded ? '<span class="concede_flag">CONCEDED</span>' : '';
+    // A match that ended a few minutes ago (the server lists it for a while after its end).
+    const finished = m.finished ? '<span class="finished_flag">FINISHED</span>' : '';
     return `
-      <div class="match_card">
+      <div class="match_card${m.finished ? ' finished' : ''}">
         <div class="team team_left">${team0}</div>
         <div class="score_block">
           <div class="score">${s0} - ${s1}</div>
           <div class="mode_pill">${escapeHtml(m.mode || '')}</div>
           ${concede}
+          ${finished}
         </div>
         <div class="team team_right">${team1}</div>
       </div>
@@ -335,12 +349,14 @@
       const list = document.getElementById('match_list');
       const count = document.getElementById('match_count');
       const online = document.getElementById('online_count');
-      const matches = data.matches || [];
+      // The matches being played first, then those that just finished.
+      const matches = (data.matches || []).slice().sort((a, b) => (a.finished ? 1 : 0) - (b.finished ? 1 : 0));
+      const playing = matches.filter(m => !m.finished).length;
+      const finished = matches.length - playing;
       const onlinePlayers = typeof data.onlinePlayers === 'number' ? data.onlinePlayers : 0;
 
-      count.textContent = matches.length === 1
-        ? '1 match in progress'
-        : matches.length + ' matches in progress';
+      count.textContent = (playing === 1 ? '1 match in progress' : playing + ' matches in progress')
+        + (finished > 0 ? ' · ' + finished + ' just finished' : '');
 
       online.textContent = onlinePlayers === 1
         ? '1 player online'

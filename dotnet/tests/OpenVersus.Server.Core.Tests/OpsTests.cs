@@ -36,12 +36,6 @@ public sealed class OpsTests : IAsyncLifetime
 
     private static bool Configured => !string.IsNullOrEmpty(s_redis) && !string.IsNullOrEmpty(s_mongo);
 
-    private static int FreePort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        return ((IPEndPoint)listener.LocalEndpoint).Port;
-    }
 
     public async Task InitializeAsync()
     {
@@ -66,7 +60,7 @@ public sealed class OpsTests : IAsyncLifetime
 
         var builder = OpenVersusHost.CreateBuilder(new ServiceDefinition("opstest", "TEST_PORT", 1, 1),
         [
-            $"--TEST_PORT={FreePort()}", $"--Control:Port={FreePort()}", "--Control:Socket=off",
+            "--TEST_PORT=0", "--Control:Port=0", "--Control:Socket=off",
             $"--REDIS={parts[0]}", $"--REDIS_PORT={(parts.Length > 1 ? parts[1] : "6379")}", $"--REDIS_USERNAME={user}", $"--REDIS_PW={pw}",
             $"--REDIS_DB={TestRedisDb}", $"--MONGODB_URI={mongoUrl.ToMongoUrl()}",
         ]);
@@ -254,6 +248,7 @@ public sealed class OpsTests : IAsyncLifetime
         await Game("f2", endedMinutesAgo: 6);
         await Game("g1", endedMinutesAgo: 3, set: "s3");
         await Game("g2", endedMinutesAgo: 1, set: "s3");
+        await Redis.StringSetAsync("ranked_set_final:s3", """{"players":[],"mode":"ranked-1v1","scores":[2,1],"gamesPlayed":3}""");
         await Game("h1", endedMinutesAgo: 1, set: "s4");
         await Redis.StringSetAsync("ranked_set:s4", """{"players":[{"playerId":"p1","teamIndex":0},{"playerId":"p2","teamIndex":1}],"mode":"ranked-1v1","scores":[1,0],"gamesPlayed":1}""");
 
@@ -264,6 +259,9 @@ public sealed class OpsTests : IAsyncLifetime
         var s3 = matches.Single(m => m.SetId == "s3");
         Assert.Equal("g2", s3.MatchId);
         Assert.True(s3.Finished);
+        // Its final score, kept when the set was dropped.
+        Assert.Equal([2, 1], s3.Scores);
+        Assert.Equal(3, s3.GamesPlayed);
         // Between games: in progress, with the set's score.
         var s4 = matches.Single(m => m.SetId == "s4");
         Assert.False(s4.Finished);

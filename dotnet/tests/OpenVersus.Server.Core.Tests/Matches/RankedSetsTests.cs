@@ -543,6 +543,8 @@ public sealed class RankedSetsTests : IAsyncLifetime
             .Where(p => ((string?)p["setKey"] ?? "").Contains(Set, StringComparison.Ordinal));
         Assert.Equal(GameEnd.Over, result.Kind);
         Assert.Equal([P1], paid.Select(p => (string)p["playerId"]!));
+        // The dropped set's final score stays readable for the match list.
+        Assert.Equal([2, 0], JsonNode.Parse((string)(await Db.StringGetAsync(RankedSets.FinalKey(Set)))!)!["scores"]!.AsArray().Select(v => (int)v!));
     }
 
     [SkippableFact]

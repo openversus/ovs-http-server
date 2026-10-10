@@ -289,9 +289,11 @@ internal sealed class OpsService : IOpsService
                 continue;
             }
 
+            // A finished set's score is its final one (Matches.RankedSets.FinalKey: the set's state as it was dropped).
             using var set = await JsonAsync(redis, $"ranked_set:{setId}");
+            using var final = set is null && endedAt is not null ? await JsonAsync(redis, Matches.RankedSets.FinalKey(setId)) : null;
             seen.Add(setId);
-            results.Add(await MatchAsync(redis, setId, matchId, Str(config.RootElement, "mode"), players, set?.RootElement, finished: endedAt is not null && set is null));
+            results.Add(await MatchAsync(redis, setId, matchId, Str(config.RootElement, "mode"), players, (set ?? final)?.RootElement, finished: endedAt is not null && set is null));
         }
 
         foreach (string key in await KeysAsync("ranked_set:*"))

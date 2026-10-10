@@ -823,9 +823,22 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
         return null;
     }
 
-    // Drops the set: every player's pointer (and disconnect flag), the state, the check-ins, the current game.
+    /// <summary>A dropped set's last state (its final score), kept for <see cref="FinalTtl"/>: the ops match list shows a
+    /// finished set with it (OpsService.MatchesAsync).</summary>
+    public static string FinalKey(string setId) => $"ranked_set_final:{setId}";
+
+    /// <summary>Twice as long as the match list shows a finished match.</summary>
+    public static readonly TimeSpan FinalTtl = Ops.MatchView.FinishedListedFor * 2;
+
+    // Drops the set: every player's pointer (and disconnect flag), the state (its last copy kept as the final one), the
+    // check-ins, the current game.
     private static async Task DropAsync(IDatabase redis, string setId, List<string> all, bool disconnectFlags)
     {
+        if ((string?)await redis.StringGetAsync($"ranked_set:{setId}") is { Length: > 0 } last)
+        {
+            await redis.StringSetAsync(FinalKey(setId), last, FinalTtl);
+        }
+
         foreach (string id in all)
         {
             await redis.KeyDeleteAsync($"player_ranked_set:{id}");

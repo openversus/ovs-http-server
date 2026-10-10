@@ -32,7 +32,7 @@ public sealed class InstanceRegistryTests
         int controlPort = FreePort();
         var builder = OpenVersusHost.CreateBuilder(new ServiceDefinition(service, "TEST_PORT", 1, 1, ServiceStores.Redis),
         [
-            $"--TEST_PORT={FreePort()}", $"--Control:Port={controlPort}", "--Control:Socket=off",
+            "--TEST_PORT=0", $"--Control:Port={controlPort}", "--Control:Socket=off",
             $"--REDIS={parts[0]}", $"--REDIS_PORT={(parts.Length > 1 ? parts[1] : "6379")}",
             $"--REDIS_USERNAME={Environment.GetEnvironmentVariable("OVS_TEST_REDIS_USER") ?? ""}",
             $"--REDIS_PW={Environment.GetEnvironmentVariable("OVS_TEST_REDIS_PW") ?? ""}",

@@ -559,6 +559,20 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         Assert.Equal([Me], _gate.Modals);
     }
 
+    [Theory]
+    [InlineData("arena-retail")]
+    [InlineData("arena")]
+    // The Arena lobby's Start Matchmaking: refused as a closed queue is, never the catch-all (no ticket: the game waits
+    // with every button disabled). Needs no Redis: nothing is read.
+    public async Task AnArenaRequestIsRefusedNotLeftWithoutATicket(string criteria)
+    {
+        var answer = (await Service(withRedis: false).RequestAsync(criteria, Asking(Me), CancellationToken.None))!;
+
+        Assert.Equal((200, Js.Stringify(OpenVersus.Server.Core.Arenas.ArenaMatchmaking.Unavailable())), (answer.Status, Js.Stringify(answer.Body)));
+        Assert.Equal(1, (int)answer.Body["return_code"]!);
+        Assert.Null(answer.After);
+    }
+
     [Fact]
     // Every bot fighter has skins to wear, and none is one the lobbies refuse (PartyService's disabled characters).
     public void TheBotRosterIsPlayable()

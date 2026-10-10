@@ -301,6 +301,10 @@ public sealed class HissServiceTests : IAsyncLifetime
             $"--REDIS_USERNAME={Environment.GetEnvironmentVariable("OVS_TEST_REDIS_USER") ?? ""}",
             $"--REDIS_PW={Environment.GetEnvironmentVariable("OVS_TEST_REDIS_PW") ?? ""}",
             "--REDIS_DB=15", $"--MONGODB_URI={mongoUrl.ToMongoUrl()}",
+            // The Crc's offsets off (1v1 Testing Grounds is open on weekdays, Arenas is on by default): the answers here
+            // carry the config CRC plus Hiss:ContentRevision only, whatever the day (ArenaHissTests and TestingGroundsTests
+            // cover the offsets).
+            "--TestingGrounds:Enabled=false", "--Arenas:Enabled=false",
         ]);
         builder.AddHiss();
         _app = builder.Build();

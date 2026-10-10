@@ -31,6 +31,10 @@ public sealed class GameAppFactory : WebApplicationFactory<Program>
         builder.UseSetting("Access:JwtSecret", Secret);
         // Never a live router: a batch item another service owns would go there. Nothing listens on port 1.
         builder.UseSetting("Batch:EdgeUrl", "http://127.0.0.1:1");
+        // The Crc's offsets off (1v1 Testing Grounds is open on weekdays, Arenas is on by default), so a catch-all answer
+        // carries the TS server's Crc whatever the day.
+        builder.UseSetting("TestingGrounds:Enabled", "false");
+        builder.UseSetting("Arenas:Enabled", "false");
     }
 
     public static string Token(string secret = Secret, TimeSpan? lifetime = null) =>

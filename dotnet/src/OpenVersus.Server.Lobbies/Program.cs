@@ -1,3 +1,4 @@
+using OpenVersus.Server.Core.Arenas;
 using OpenVersus.Server.Core.Cosmetics;
 using OpenVersus.Server.Core.CustomLobbies;
 using OpenVersus.Server.Core.Hosting;
@@ -6,13 +7,14 @@ using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.Rifts;
 using OpenVersus.Server.Http.Shared;
 
-// Parties, party and custom lobbies, the rift lobby, queueing and the game's /matches routes (routes owned by "lobbies"
+// Parties, party and custom lobbies, the rift lobby, the Arena lobby, queueing and the game's /matches routes (routes owned by "lobbies"
 // in docs/routes.json). The public port is LOBBIES_PORT; the router sends these routes here.
 var builder = OpenVersusHost.CreateBuilder(KnownServices.Lobbies, args);
 builder.AddGameHttp(typeof(Program).Assembly);
 builder.AddPartyLobbies();
 builder.AddCustomLobbies();
 builder.AddRiftLobbies();
+builder.AddArenaLobbies();
 builder.AddMatchHistory();
 builder.AddMatchmakingRequests();
 // A player's equipped cosmetics are copied for their match when they join a lobby.

@@ -17,9 +17,9 @@ override header, not on the wire method. `?` means the method is not known yet.
 **Websockets** (not in the tables): the Hydra realtime socket (the ws service; binary Hydra messages; the
 server pings `0x0c` every 20 s and the game answers `0x0a`).
 
-**Totals.** 252 routes. The game can call 210 Hydra/engine/social routes and SSC functions; the TS
-server answers 115. Not answered: 33 routes and 62 SSC functions.
-OpenVersus's own, not the game: openversus client mod 10, rollback server 10, website (browser) 18, admin and data sync 4.
+**Totals.** 254 routes. The game can call 211 Hydra/engine/social routes and SSC functions; the TS
+server answers 115. Not answered: 33 routes and 63 SSC functions.
+OpenVersus's own, not the game: openversus client mod 10, rollback server 11, website (browser) 18, admin and data sync 4.
 
 Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ovs-client`,
 `ovs-rollback`, `ovs-web`, `ovs-admin`). The skeleton's endpoint folders follow the same split.
@@ -81,6 +81,7 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 | ? | `/ssc/invoke/consumable_event` | http | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/consume_character_xp_boost` | http | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/convert_candy_to_gold` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/create_arena_lobby` | lobbies | binary `ssc name` | **no** | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it; method from the bench log 2026-10-10 (the mode select's Arena button) |
 | PUT | `/ssc/invoke/create_rift_lobby` | lobbies | binary `ssc name`, capture ×5 | **no** | ssc: server/capture |
 | ? | `/ssc/invoke/debug_lock_inventory_item` | http | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/debug_unlock_inventory_item` | http | binary `ssc name` | **no** | ssc: binary |
@@ -155,6 +156,7 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 | POST | `/ovs_match_inputs` | matchflow | — | **no** | C# only: the rollback server's recording of a match's inputs (its InputRecording settings) |
 | POST | `/ovs_match_started` | matchflow | — | yes | server only |
 | POST | `/ovs_match_status` | matchflow | — | yes | server only |
+| GET | `/ovs_node_config` | matchflow | — | yes | server only |
 | POST | `/ovs_p2p_failed` | matchflow | — | yes | server only |
 | POST | `/ovs_p2p_ready` | matchflow | — | yes | server only |
 | POST | `/ovs_register` | matchflow | — | yes | server only |
@@ -302,6 +304,7 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 | ? | `/ssc/invoke/consumable_event` | http | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/consume_character_xp_boost` | http | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/convert_candy_to_gold` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/create_arena_lobby` | lobbies | binary `ssc name` | **no** | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it; method from the bench log 2026-10-10 (the mode select's Arena button) |
 | PUT | `/ssc/invoke/create_custom_game_lobby` | lobbies | binary `ssc name` | yes | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it |
 | PUT | `/ssc/invoke/create_party` | lobbies | binary `ssc name` | yes | ssc: binary |
 | PUT | `/ssc/invoke/create_party_lobby` | lobbies | binary `ssc name`, capture ×11 | yes | ssc: server/capture |

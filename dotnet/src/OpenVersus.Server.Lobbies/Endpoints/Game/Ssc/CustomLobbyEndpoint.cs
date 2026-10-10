@@ -31,6 +31,9 @@ public abstract class CustomLobbyEndpoint : JsonBodyEndpoint
 
         var body = (await ReadBodyAsync(ct)) as JsonObject;
         var request = new PartyRequest(session.AccountId, session.Claims, ClientAddress.Of(HttpContext, stripMapped: true), body);
-        await SendJsonAsync(await Resolve<ICustomLobbyService>().AnswerAsync(Route, request, ct), ct);
+        await SendJsonAsync(await OtherLobbyAsync(request, ct) ?? await Resolve<ICustomLobbyService>().AnswerAsync(Route, request, ct), ct);
     }
+
+    /// <summary>The answer when the request is for another kind of lobby that shares the route (an Arena lobby), else null.</summary>
+    protected virtual Task<JsonObject?> OtherLobbyAsync(PartyRequest request, CancellationToken ct) => Task.FromResult<JsonObject?>(null);
 }

@@ -150,7 +150,6 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
         end
         return value
         """;
-    private const string CodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private const string Cluster = LobbyDocuments.Cluster;
 
     // The fields that must be an object, and those that must be an array, where cjson wrote an empty one (fixCjsonEmptyTables).
@@ -622,7 +621,7 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
         {
             for (int attempt = 0; attempt < 5 && code is null; attempt++)
             {
-                string drawn = string.Concat(Enumerable.Range(0, 5).Select(_ => CodeAlphabet[Random.Shared.Next(CodeAlphabet.Length)]));
+                string drawn = LobbyCodes.Draw();
                 if (await redis.StringSetAsync($"lobby_code:{drawn}", lobbyId, s_lobbyTtl, When.NotExists))
                 {
                     code = drawn;

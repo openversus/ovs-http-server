@@ -335,6 +335,27 @@ public sealed class PartyServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    // The solo lobby shows the fighter the leaver's lobby had (player:{id}, written at creation and by every lock), not
+    // Shaggy: their session has no fighter until a matchmaking request writes one (the TS server read the session only).
+    public async Task ALeaverWhoHasNotQueuedKeepsTheirFighter()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await SeedLobbyAsync(Owner, Guest);
+        await Db.StringSetAsync($"player_lobby:{Guest}", Lobby);
+        await Db.HashSetAsync($"connections:{Guest}", [new("id", Guest), new("GameplayPreferences", "448")]);
+        await Db.HashSetAsync($"player:{Guest}", [new("character", "character_Jason"), new("skin", "skin_jason_000")]);
+
+        var answer = await Service().LeaveAsync(Asking(Guest, $$"""{"LobbyId": "{{Lobby}}"}"""));
+
+        var loadout = answer["body"]!["lobby"]!["LockedLoadouts"]![Guest]!;
+        Assert.Equal(("character_Jason", "skin_jason_000"), (loadout["Character"]!.GetValue<string>(), loadout["Skin"]!.GetValue<string>()));
+    }
+
+    [Fact]
     public async Task ARefusedLockIsAnsweredAndRecordsNothing()
     {
         if (_redis is null)

@@ -37,6 +37,10 @@ public class ServiceFactory<TProgram> : WebApplicationFactory<TProgram> where TP
         builder.UseSetting("Access:JwtSecret", Secret);
         builder.UseSetting("Access:IdentifySecret", IdentifySecret);
         builder.UseSetting("Batch:EdgeUrl", "http://127.0.0.1:1");
+        // The Crc's offsets off (1v1 Testing Grounds is open on weekdays, Arenas is on by default), so a catch-all answer
+        // carries the TS server's Crc whatever the day.
+        builder.UseSetting("TestingGrounds:Enabled", "false");
+        builder.UseSetting("Arenas:Enabled", "false");
     }
 
     public static string Token() =>

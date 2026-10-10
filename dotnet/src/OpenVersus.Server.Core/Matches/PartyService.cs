@@ -61,6 +61,10 @@ namespace OpenVersus.Server.Core.Matches;
 //     the match copy, and their lock is recorded and answered. The TS server looked the session's id up, found none,
 //     wrote the cosmetics of "undefined" (player:undefined:cosmetics, shared by every such player) and, for a lock,
 //     never answered.
+//   - the solo lobby a leave makes shows the player's fighter as their lobby has it (player:{player}, which the lobby's
+//     creation and every loadout lock write), then the session's, then Shaggy; the TS server read the session only,
+//     which has a fighter only once a matchmaking request has written one, so leaving a lobby before queueing turned
+//     the player into Shaggy (seen leaving an Arena lobby, 2026-10-10).
 
 /// <summary>Who is asking: the session's account id and token claims, their address, and the request body.</summary>
 public sealed record PartyRequest(string AccountId, JsonObject? Claims, string ClientIp, JsonObject? Body);
@@ -451,9 +455,11 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
 
             string soloId = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(12));
             var connection = await HashAsync(redis, $"connections:{me}");
+            var loadout = await HashAsync(redis, $"player:{me}");
             await redis.StringSetAsync($"lobby:{soloId}", new LobbyState(soloId, me, Or(Get(connection, "username"), Get(connection, "hydraUsername"), "Unknown"), "1v1", [me], NowMs(), null).ToJson(), SoloTtl);
             await redis.StringSetAsync($"player_lobby:{me}", soloId, SoloTtl);
-            var member = new LobbyDocuments.Member(me, Now(), Preferences(connection), Or(Get(connection, "character"), "character_shaggy"), Or(Get(connection, "skin"), "skin_shaggy_default"));
+            var member = new LobbyDocuments.Member(me, Now(), Preferences(connection),
+                Or(Get(loadout, "character"), Get(connection, "character"), "character_shaggy"), Or(Get(loadout, "skin"), Get(connection, "skin"), "skin_shaggy_default"));
             return LobbyDocuments.Answer(LobbyDocuments.Lobby([member], me, "local", "1v1", soloId));
         }
 

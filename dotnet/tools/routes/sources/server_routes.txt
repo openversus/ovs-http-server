@@ -93,6 +93,7 @@ GET	/ovs/notifications	1
 POST	/ovs_end_match	1
 POST	/ovs_match_started	1
 POST	/ovs_match_status	1
+GET	/ovs_node_config	1
 POST	/ovs_p2p_failed	1
 POST	/ovs_p2p_ready	1
 POST	/ovs_register	1

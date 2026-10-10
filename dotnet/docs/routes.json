@@ -1622,7 +1622,7 @@
       "GET /ovs_node_config"
     ],
     "notes": [
-      "server only: the signed settings update every P2P node fetches at startup (the rollback repo's NodeLockdown)"
+      "server only"
     ],
     "kind": "ovs-rollback",
     "in_game": false,
@@ -2242,6 +2242,22 @@
     "in_game": true,
     "in_server": false,
     "owner": "http"
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/create_arena_lobby",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it",
+      "method from the bench log 2026-10-10 (the mode select's Arena button)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",

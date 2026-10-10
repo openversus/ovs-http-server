@@ -47,7 +47,10 @@ namespace OpenVersus.Server.Core.Matches;
 // token with no id is refused (the TS server would build a lobby for the player "undefined"); a token claim that is
 // missing is sent as "" (the TS server sends undefined, a NaN double where the game expects a string); each player's
 // Steam entry carries their Steam id, else Epic id, else account id (the TS server sends 76561195177950873 for everyone),
-// in the answer and in the messages a join sends.
+// in the answer and in the messages a join sends; a joining player's fighter, and each member's in the lobby a join sends
+// them, is the one their lobby has (player:{player}, written by the lobby's creation and every loadout lock), then the
+// session's, then Shaggy (the TS server read the session only, which has a fighter only once a matchmaking request has
+// written one: a player who had not queued yet showed as Shaggy).
 
 /// <summary>What the lobby answers carry about the game build (GAME_VERSION).</summary>
 public sealed class LobbySettings
@@ -139,6 +142,7 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
 
         var ownerConnection = await HashAsync(redis, $"connections:{ownerId}");
         var ownerLoadout = await HashAsync(redis, $"player:{ownerId}");
+        var myLoadout = await HashAsync(redis, $"player:{me}");
         string mode = Or(Str(lobby, "mode"), "1v1");
         string ownerUsername = Str(lobby, "ownerUsername") ?? "";
         var now = time.GetUtcNow();
@@ -160,7 +164,8 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
                 loadouts: new JsonObject
                 {
                     [ownerId] = Loadout(Or(Get(ownerLoadout, "character"), "character_shaggy"), Or(Get(ownerLoadout, "skin"), "skin_shaggy_default")),
-                    [me] = Loadout(Or(Get(connection, "character"), "character_shaggy"), Or(Get(connection, "skin"), "skin_shaggy_default")),
+                    [me] = Loadout(Or(Get(myLoadout, "character"), Get(connection, "character"), "character_shaggy"),
+                        Or(Get(myLoadout, "skin"), Get(connection, "skin"), "skin_shaggy_default")),
                 },
                 modeString: mode, gameVersion: settings.CurrentValue.GameVersion),
             all: new JsonArray(
@@ -307,7 +312,8 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
     }
 
     // What a join sends every member (the TS websocket's handlePlayerJoinedLobby): the lobby with everyone on team 0 in
-    // lobby order, each from their own session (connections:{player}), and the same three messages to each of them.
+    // lobby order, each from their own session (connections:{player}) and their fighter as their lobby has it
+    // (player:{player}, then the session's), and the same three messages to each of them.
     private async Task TellMembersAsync(IDatabase redis, LobbyPlayer joiner, string lobbyId, string ownerId, string joinedUsername, List<string> memberIds, string mode)
     {
         long now = time.GetUtcNow().ToUnixTimeSeconds();
@@ -317,11 +323,13 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
         {
             string pid = memberIds[i];
             var connection = connections[pid] = await HashAsync(redis, $"connections:{pid}");
+            var loadout = await HashAsync(redis, $"player:{pid}");
             teamPlayers[pid] = TeamPlayer(pid, now, i);
             gameplay[pid] = Preferences(connection);
             autoParty[pid] = false;
             platforms[pid] = "PC";
-            loadouts[pid] = Loadout(Or(Get(connection, "character"), "character_shaggy"), Or(Get(connection, "skin"), "skin_shaggy_default"));
+            loadouts[pid] = Loadout(Or(Get(loadout, "character"), Get(connection, "character"), "character_shaggy"),
+                Or(Get(loadout, "skin"), Get(connection, "skin"), "skin_shaggy_default"));
         }
 
         var lobby = ServerData(teamPlayers, memberIds.Count, ownerId, gameplay, autoParty, platforms, loadouts, mode, gameVersion: "local", matchId: lobbyId);

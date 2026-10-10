@@ -100,6 +100,7 @@ POST	/ovs_end_match	matchflow
 POST	/ovs_match_inputs	matchflow
 POST	/ovs_match_started	matchflow
 POST	/ovs_match_status	matchflow
+GET	/ovs_node_config	matchflow
 POST	/ovs_p2p_failed	matchflow
 POST	/ovs_p2p_ready	matchflow
 POST	/ovs_register	matchflow
@@ -139,6 +140,7 @@ POST	/ssc/invoke/claim_mission_rewards	http
 ?	/ssc/invoke/consumable_event	http
 ?	/ssc/invoke/consume_character_xp_boost	http
 ?	/ssc/invoke/convert_candy_to_gold	http
+PUT	/ssc/invoke/create_arena_lobby	lobbies
 PUT	/ssc/invoke/create_custom_game_lobby	lobbies
 PUT	/ssc/invoke/create_party	lobbies
 PUT	/ssc/invoke/create_party_lobby	lobbies

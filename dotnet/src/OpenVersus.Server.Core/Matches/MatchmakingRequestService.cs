@@ -113,6 +113,9 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
                 return await OneVersusOneAsync(request, FreeForAll, ct);
             case Matchmaking.TestingGrounds.Criteria or Matchmaking.TestingGrounds.BareCriteria:
                 return await OneVersusOneAsync(request, TestingGroundsQueue, ct);
+            case Arenas.ArenaMatchmaking.Criteria or Arenas.ArenaMatchmaking.BareCriteria:
+                log.LogInformation("Refused Arena matchmaking for {Player}: no Arena queue", request.AccountId);
+                return new MatchmakingAnswer(200, Arenas.ArenaMatchmaking.Unavailable());
             default:
                 return null;
         }

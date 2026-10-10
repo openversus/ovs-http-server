@@ -93,7 +93,7 @@ public sealed class LobbyStoreTests : IAsyncLifetime
     [InlineData("", "2v2")]
     [InlineData("ranked-1v1", "ranked-2v2")]
     [InlineData("1v1_ranked", "2v2_ranked")]
-    [InlineData("FFA", "2v2")]
+    [InlineData("evtq_ffa", "2v2")]
     [InlineData("2v2", "2v2")]
     [InlineData("ranked-2v2", "ranked-2v2")]
     [InlineData("evtq_arena", "evtq_arena")]

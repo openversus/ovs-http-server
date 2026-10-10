@@ -143,15 +143,16 @@ public sealed class PartyLobby : Lobby
 
     /// <summary>
     /// A mode as a duo plays it: 1v1 is 2v2, ranked 1v1 is ranked 2v2, and FFA (which a duo may not play) is 2v2; any other
-    /// mode stays. Ranked is named both ways the code has known it (the TS server's ranked-1v1, and 1v1_ranked); which one
-    /// the game sends is not seen yet.
+    /// mode stays. The game's mode select sends 1v1, 2v2 and, for FFA, its event queue evtq_ffa (bench, 2026-10-10). Ranked
+    /// is named both ways the code has known it (the TS server's ranked-1v1, and 1v1_ranked); which one the game sends is
+    /// not seen yet.
     /// </summary>
     public static string DuoMode(string mode) => mode switch
     {
         "1v1" or "" => "2v2",
         "ranked-1v1" => "ranked-2v2",
         "1v1_ranked" => "2v2_ranked",
-        _ when string.Equals(mode, "FFA", StringComparison.OrdinalIgnoreCase) => "2v2",
+        "evtq_ffa" => "2v2",
         _ => mode,
     };
 }

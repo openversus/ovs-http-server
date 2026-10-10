@@ -454,6 +454,28 @@ public sealed class PartyServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    // An invite into an Arena lobby is an Arena invite (the game answers it with join_arena_lobby), and the lobby holds
+    // sixteen: a lobby of two is not full.
+    public async Task AnInviteToAnArenaLobbyIsAnArenaInviteAndTwoPlayersDoNotFillIt()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        const string third = "0000000000000000000e0003";
+        var heard = await ListenAsync();
+        await SeedModeLobbyAsync("arena_lobby", Owner, Guest);
+
+        await Service().InviteAsync(Asking(Owner, $$"""{"InviteeAccountID": "{{third}}", "LobbyId": "{{Lobby}}"}"""));
+
+        var told = await Eventually(() => heard.TryPeek(out var m) ? m : null);
+        Assert.Equal("Arena", (string?)told["message"]!["data"]!["ContextData"]!["LobbyType"]);
+        Assert.Equal(Lobby, (string?)await Db.StringGetAsync($"pending_join_lobby:{third}"));
+        await Db.KeyDeleteAsync($"pending_join_lobby:{third}");
+    }
+
+    [Fact]
     public async Task AnInviteIsSentOnlyWhenItNamesALobby()
     {
         if (_redis is null)
@@ -504,6 +526,26 @@ public sealed class PartyServiceTests : IAsyncLifetime
         Assert.Equal(Owner, told["message"]!["data"]!["NewLeader"]!.GetValue<string>());
         // The TS server's key order for this one message.
         Assert.Equal(["data", "payload", "cmd", "header"], told["message"]!.AsObject().Select(e => e.Key));
+    }
+
+    [Fact]
+    // An Arena lobby's mode is its kind, not a game mode: the party lobby a leave gives starts in the login's mode (kept, it
+    // was stored as an Arena lobby and the game showed it as Custom).
+    public async Task LeavingAnArenaLobbyGivesAPartyLobbyInTheLoginsMode()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await SeedModeLobbyAsync("arena_lobby", Guest);
+        await Db.StringSetAsync($"player_lobby:{Guest}", Lobby);
+
+        var answer = await Service().LeaveAsync(Asking(Guest, $$"""{"LobbyId": "{{Lobby}}"}"""));
+
+        string solo = answer["body"]!["lobby"]!["MatchID"]!.GetValue<string>();
+        Assert.Equal("2v2", (string?)answer["body"]!["lobby"]!["ModeString"]);
+        Assert.Equal("2v2", (string?)JsonNode.Parse(await LobbyJson(solo))!["mode"]);
     }
 
     [Fact]

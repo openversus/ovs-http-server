@@ -122,7 +122,8 @@ upgrade_track_to_premium retry_current_rift_node""".split()
 # SSC methods seen only on the local bench (the proxy log), in none of the captures above: name -> (method, where).
 SSC_BENCH = {"retry_current_rift_node": ("PUT", "bench proxy log 2026-09-30 (Retry on a rift match's results)"),
              "casual_queue": ("PUT", "bench proxy log 2026-10-02 (the Casual queue's fall back to bots)"),
-             "create_arena_lobby": ("PUT", "bench log 2026-10-10 (the mode select's Arena button)")}
+             "create_arena_lobby": ("PUT", "bench log 2026-10-10 (the mode select's Arena button)"),
+             "join_arena_lobby": ("PUT", "bench log 2026-10-10 (accepting an invite with ContextData.LobbyType Arena)")}
 
 # Routes only the C# server has (no TS route, capture or binary string): method, path, note.
 CSHARP_ONLY = [("POST", "/ovs_match_inputs", "C# only: the rollback server's recording of a match's inputs (its InputRecording settings)")]

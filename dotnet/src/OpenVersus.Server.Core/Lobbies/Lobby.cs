@@ -174,10 +174,20 @@ public sealed class RiftLobby : Lobby
     public int ChapterDifficulty => Field("chapterDifficulty") is JsonValue d && d.TryGetValue(out double n) ? (int)n : 0;
 }
 
-/// <summary>The Arena lobby (UMvsArenaLobby, ArenaLobbyService): eight teams of two.</summary>
+/// <summary>
+/// The Arena lobby (UMvsArenaLobby, ArenaLobbyService): eight teams of two. Its record adds two fields to the TS set,
+/// written only here (a party record never has them): teams {player: team index} (a player it does not name, the creator,
+/// placed before anyone joins, is on team 0) and homes {player: the party lobby they came from}, where a leave takes them
+/// back.
+/// </summary>
 public sealed class ArenaLobby : Lobby
 {
     public const string TemplateName = "arena_lobby";
+
+    /// <summary>The lobby's teams: eight of two (WB: "8 teams of 2").</summary>
+    public const int TeamCount = 8, TeamSize = 2;
+
+    public const int Capacity = TeamCount * TeamSize;
 
     internal ArenaLobby(string id, string ownerId, string ownerUsername, List<string> playerIds, JsonNode? createdAt, JsonObject read)
         : base(id, ownerId, ownerUsername, TemplateName, playerIds, createdAt, read)
@@ -185,4 +195,69 @@ public sealed class ArenaLobby : Lobby
     }
 
     public override string Template => TemplateName;
+
+    public bool IsFull => PlayerIds.Count >= Capacity;
+
+    /// <summary>The team <paramref name="playerId"/> is on.</summary>
+    public int TeamOf(string playerId) => Field("teams")?[playerId] is JsonValue v && v.TryGetValue(out int team) ? team : 0;
+
+    /// <summary>The party lobby <paramref name="playerId"/> came from, if any.</summary>
+    public string? HomeOf(string playerId) => Field("homes")?[playerId] is JsonValue v && v.TryGetValue(out string? home) ? home : null;
+
+    public void SetHome(string playerId, string partyLobbyId) => SetMap("homes", playerId, partyLobbyId);
+
+    /// <summary>Moves <paramref name="playerId"/> to <paramref name="team"/>: false when it is no team, they are on it, or it is full.</summary>
+    public bool SwitchTeam(string playerId, int team)
+    {
+        if (team < 0 || team >= TeamCount || !PlayerIds.Contains(playerId) || TeamOf(playerId) == team
+            || PlayerIds.Count(p => p != playerId && TeamOf(p) == team) >= TeamSize)
+        {
+            return false;
+        }
+
+        SetMap("teams", playerId, team);
+        return true;
+    }
+
+    /// <summary>A player leaves (or is kicked): off the lobby, its teams and its homes. The lead passes as Successor says.</summary>
+    public void Remove(string playerId)
+    {
+        PlayerIds.Remove(playerId);
+        foreach (string field in new[] { "teams", "homes" })
+        {
+            if (Field(field) is JsonObject map && map.ContainsKey(playerId))
+            {
+                var kept = map.DeepClone().AsObject();
+                kept.Remove(playerId);
+                SetField(field, kept);
+            }
+        }
+
+        if (OwnerId == playerId && PlayerIds.Count > 0)
+        {
+            // The one lead rule for every lobby: the longest-tenured player still in it (playerIds is in join order).
+            OwnerId = PlayerIds[0];
+        }
+    }
+
+    private void SetMap(string field, string key, JsonNode value)
+    {
+        var map = (Field(field) as JsonObject)?.DeepClone().AsObject() ?? [];
+        map[key] = value;
+        SetField(field, map);
+    }
+
+    /// <summary>A player joins on the first team with room (a party's partner, whose leader is alone on team 0, joins them).</summary>
+    public override void Join(string playerId)
+    {
+        var taken = PlayerIds.GroupBy(TeamOf).ToDictionary(g => g.Key, g => g.Count());
+        int team = Enumerable.Range(0, TeamCount).FirstOrDefault(t => taken.GetValueOrDefault(t) < TeamSize, -1);
+        if (team < 0)
+        {
+            throw new InvalidOperationException($"arena lobby {Id} is full");
+        }
+
+        base.Join(playerId);
+        SetMap("teams", playerId, team);
+    }
 }

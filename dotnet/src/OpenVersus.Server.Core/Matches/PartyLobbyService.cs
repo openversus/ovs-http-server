@@ -22,7 +22,8 @@ namespace OpenVersus.Server.Core.Matches;
 //   join           the lobby is someone else's: the player is added to it, and every member, the joiner and the owner
 //                  included, is sent the lobby (below)
 //   owner refresh  the player owns the lobby and it has 2+ players: everyone in it, in the lobby's mode
-//   own            the player owns the lobby alone: the lobby, as its kind (an Arena lobby: its eight teams of two)
+//   own            the player owns the lobby alone: the lobby, in its mode
+//   arena          an Arena lobby, whoever asks: everyone in it on their teams (eight of two), nobody added or told
 //   no lobby       nothing stored under the id (a custom lobby, kept apart: CustomLobbyService): the player alone, 1v1
 //
 // Redis, read     player_lobby:{player} (a lobby id), lobby:{id} (JSON, below),
@@ -110,6 +111,12 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
 
         // A record with no playerIds (an older custom lobby) is no lobby to the store: the solo answer, as it always was.
         var lobby = matchId.Length > 0 ? await LobbyStore.GetAsync(redis, matchId) : null;
+        // An Arena lobby is joined by join_arena_lobby, which tells the others; here it is only shown, as it stands.
+        if (lobby is ArenaLobby arena)
+        {
+            return await ArenaAsync(redis, player, connection, matchId, arena);
+        }
+
         if (lobby is not null && lobby.OwnerId != me)
         {
             return await JoinAsync(redis, player, connection, matchId, lobby);
@@ -207,8 +214,7 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
     }
 
     // The player's own lobby with only them in it: the lobby's id, creation and mode, their fighter as their lobby has it
-    // (player:{player}, then the session's, then Shaggy). An Arena lobby is its own document (eight teams of two) with the
-    // HissCrc every other answer here carries; a rift lobby the party shape in its mode (what its create sent).
+    // (player:{player}, then the session's, then Shaggy). A rift lobby gets the party shape in its mode (what its create sent).
     private async Task<JsonObject> OwnAsync(IDatabase redis, LobbyPlayer player, Dictionary<string, string> connection, string matchId, Lobby lobby)
     {
         string me = player.Id;
@@ -217,14 +223,41 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
         string skin = Or(Get(loadout, "skin"), Get(connection, "skin"), "skin_shaggy_default");
         string version = settings.CurrentValue.GameVersion;
         var now = time.GetUtcNow();
-        var serverData = lobby is ArenaLobby
-            ? Arenas.ArenaLobbyService.Lobby(matchId, me, lobby.CreatedSeconds, new JsonObject { ["HissCrc"] = LobbyDocuments.HissCrc }, Preferences(connection), character, skin, version)
-            : LobbyDocuments.Lobby([new LobbyDocuments.Member(me, lobby.CreatedSeconds, Preferences(connection), character, skin)], me, version, Or(lobby.Mode, PartyLobby.LoginMode), matchId: null);
+        var serverData = LobbyDocuments.Lobby([new LobbyDocuments.Member(me, lobby.CreatedSeconds, Preferences(connection), character, skin)], me, version, Or(lobby.Mode, PartyLobby.LoginMode), matchId: null);
         return Match(
             updatedAt: now.ToUnixTimeSeconds(), createdAt: lobby.CreatedSeconds, rand: Random.Shared.NextDouble(), serverData,
             all: new JsonArray(Member(me, hydraName: player.HydraUsername, wbId: player.WbNetworkId, name: player.Username, hydraListed: player.HydraUsername, PlatformId(me, connection, player))),
             current: new JsonArray(me), count: 1,
             templateAt: now.ToUnixTimeSeconds(), templateId: matchId, id: matchId, template: lobby.Template);
+    }
+
+    // An Arena lobby as it stands: its document from the store (ArenaLobbyService.DocumentAsync) and every player in it.
+    private async Task<JsonObject> ArenaAsync(IDatabase redis, LobbyPlayer player, Dictionary<string, string> connection, string matchId, ArenaLobby lobby)
+    {
+        long now = time.GetUtcNow().ToUnixTimeSeconds();
+        var all = new JsonArray();
+        foreach (string pid in lobby.PlayerIds)
+        {
+            if (pid == player.Id)
+            {
+                all.Add(Member(pid, hydraName: player.HydraUsername, wbId: player.WbNetworkId, name: player.Username, hydraListed: player.HydraUsername, PlatformId(pid, connection, player)));
+                continue;
+            }
+
+            var other = await HashAsync(redis, $"connections:{pid}");
+            all.Add(Member(pid,
+                hydraName: Or(Get(other, "hydraUsername"), Get(other, "username"), "Unknown"),
+                wbId: Or(Get(other, "wb_network_id"), pid),
+                name: Or(Get(other, "username"), "Unknown"),
+                hydraListed: Or(Get(other, "hydraUsername"), "Unknown"),
+                PlatformId(pid, other)));
+        }
+
+        return Match(
+            updatedAt: now, createdAt: lobby.CreatedSeconds, rand: Random.Shared.NextDouble(),
+            await Arenas.ArenaLobbyService.DocumentAsync(redis, lobby, settings.CurrentValue.GameVersion, now),
+            all, current: new JsonArray([.. lobby.PlayerIds.Select(id => (JsonNode)id)]), count: lobby.PlayerIds.Count,
+            templateAt: now, templateId: matchId, id: matchId, template: lobby.Template);
     }
 
     // Nothing stored under the id: the player alone, under the id the game asked for, with the session's fighter, in 1v1

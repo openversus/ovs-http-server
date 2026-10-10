@@ -2920,6 +2920,22 @@
   },
   {
     "method": "PUT",
+    "path": "/ssc/invoke/join_arena_lobby",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it",
+      "method from the bench log 2026-10-10 (accepting an invite with ContextData.LobbyType Arena)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false,
+    "owner": "lobbies"
+  },
+  {
+    "method": "PUT",
     "path": "/ssc/invoke/join_custom_game_lobby",
     "area": "ssc",
     "binary": "ssc name",

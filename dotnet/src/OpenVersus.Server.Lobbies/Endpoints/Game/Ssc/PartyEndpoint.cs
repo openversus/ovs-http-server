@@ -44,6 +44,8 @@ public abstract class PartyEndpoint : JsonBodyEndpoint
         var body = (await ReadBodyAsync(ct)) as JsonObject;
         var request = new PartyRequest(session.AccountId, session.Claims, ClientAddress.Of(HttpContext, stripMapped: true), body);
         Logger.LogInformation("{Route} from {Player}: LobbyTemplate {Template}", Route, session.AccountId, LobbyTemplate(body));
+        // The whole request, for reading what the game sends (it carries account ids: Debug, off unless Log:Level is raised).
+        Logger.LogDebug("{Route} body: {Body}", Route, body?.ToJsonString() ?? "none");
         await BeforeAsync(request);
         var party = Resolve<IPartyService>();
         if (Shared && await party.CustomLobbyAsync(Route, request) is { } custom

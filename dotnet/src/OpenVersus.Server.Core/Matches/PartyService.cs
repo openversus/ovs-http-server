@@ -317,10 +317,11 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             return LobbyDocuments.Ssc([]);
         }
 
-        // The game does not always hide "+" once the party is full: refused here.
-        if (await LobbyStore.GetAsync(redis, lobbyId) is { } lobby)
+        // The game does not always hide "+" once the party is full: refused here. An Arena lobby holds sixteen.
+        var invitedTo = await LobbyStore.GetAsync(redis, lobbyId);
+        if (invitedTo is { } lobby)
         {
-            if (lobby.PlayerIds.Count >= 2)
+            if (lobby.PlayerIds.Count >= (lobby is ArenaLobby ? ArenaLobby.Capacity : 2))
             {
                 log.LogWarning("Invite blocked: lobby {Lobby} already has {Count} players (full)", lobbyId, lobby.PlayerIds.Count);
                 return LobbyDocuments.Ssc([]);
@@ -333,18 +334,9 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             }
         }
 
-        await ProfileNotifications.SendAsync(redis, invitee, new JsonObject
-        {
-            ["template_id"] = "InviteReceivedForLobby",
-            ["LobbyType"] = 0,
-            ["MatchID"] = lobbyId,
-            ["ContextData"] = new JsonObject { ["LobbyType"] = "Party" },
-            ["IsSpectator"] = false,
-            ["InviterAccountId"] = me,
-        });
-
-        // The invitee's join goes to this lobby when they accept.
-        await redis.StringSetAsync($"pending_join_lobby:{invitee}", lobbyId, TimeSpan.FromSeconds(60));
+        // The invite's origin is the lobby's kind (an Arena lobby's invite is answered with join_arena_lobby); the invitee's
+        // join goes to this lobby when they accept.
+        await LobbyInvites.SendAsync(redis, invitee, lobbyId, LobbyInvites.OriginOf(invitedTo), me);
 
         return LobbyDocuments.Ssc([]);
     }
@@ -360,6 +352,13 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         string? fromBody = new[] { "LobbyId", "lobbyId", "MatchID", "matchId" }.Select(k => Str(body, k)).FirstOrDefault(v => !string.IsNullOrEmpty(v));
         // An accepted invite (pending) wins over the player's own lobby, which wins over what the game sends.
         string? target = new[] { pending, mapped, fromBody }.FirstOrDefault(v => !string.IsNullOrEmpty(v));
+        // Accepting a party invite from inside an Arena lobby (the one back to the party a partner left it for, or any other)
+        // leaves it; nobody else is brought along.
+        if (!string.IsNullOrEmpty(mapped) && mapped != target && await LobbyStore.GetAsync(redis, mapped) is ArenaLobby { } arena && arena.PlayerIds.Contains(me))
+        {
+            await services.GetRequiredService<Arenas.IArenaLobbyService>().LeaveAsync(me, mapped, bringPartners: false);
+        }
+
         log.LogInformation("join_party_lobby: Player {Player}: pending={Pending}, body={Body}, redis={Mapped}", me, pending, fromBody, mapped);
         if (target is null)
         {
@@ -460,28 +459,43 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         var redis = Redis();
         string me = request.AccountId;
 
-        // The lobby the game names, when the player is in it: they leave it for a new solo lobby.
+        // The lobby the game names, when the player is in it: they leave it for a new solo lobby. An Arena lobby is left
+        // through its own service, back to the party lobby the player came from when there is one.
         if (Str(request.Body, "LobbyId") is { } named && await LobbyStore.GetAsync(redis, named) is { } left && left.PlayerIds.Contains(me))
         {
-            log.LogInformation("leave_player_lobby: Player {Player} leaving party lobby {Lobby}", me, named);
-            var remaining = (await LobbyStore.UpdateAsync(redis, named, lobby =>
+            if (left is ArenaLobby)
             {
-                lobby.PlayerIds.Remove(me);
-                return lobby.PlayerIds.Count == 0 ? LobbyWrite.Delete : LobbyWrite.SaveFor(SoloTtl);
-            }))?.PlayerIds ?? [];
+                log.LogInformation("leave_player_lobby: Player {Player} leaving arena lobby {Lobby}", me, named);
+                if (await services.GetRequiredService<Arenas.IArenaLobbyService>().LeaveAsync(me, named) is { } home
+                    && await LobbyStore.GetAsync(redis, home) is { } party)
+                {
+                    return LobbyDocuments.Answer(await LobbyOfAsync(redis, party, ModeOf(party), writeCosmetics: false, ct));
+                }
 
-            await LobbyStore.ClearPointerAsync(redis, me);
-            await LobbyStore.ResetReadyAsync(redis, named);
-            if (remaining.Count > 0)
+                await LobbyStore.ClearPointerAsync(redis, me);
+            }
+            else
             {
-                await PlayerMessages.SendAsync(redis, remaining, PlayerLeftNotice(named, me, remaining[0]));
+                log.LogInformation("leave_player_lobby: Player {Player} leaving party lobby {Lobby}", me, named);
+                var remaining = (await LobbyStore.UpdateAsync(redis, named, lobby =>
+                {
+                    lobby.PlayerIds.Remove(me);
+                    return lobby.PlayerIds.Count == 0 ? LobbyWrite.Delete : LobbyWrite.SaveFor(SoloTtl);
+                }))?.PlayerIds ?? [];
+
+                await LobbyStore.ClearPointerAsync(redis, me);
+                await LobbyStore.ResetReadyAsync(redis, named);
+                if (remaining.Count > 0)
+                {
+                    await PlayerMessages.SendAsync(redis, remaining, PlayerLeftNotice(named, me, remaining[0]));
+                }
             }
 
             string soloId = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(12));
             var connection = await HashAsync(redis, $"connections:{me}");
             var loadout = await HashAsync(redis, $"player:{me}");
-            // The mode they last played stays theirs.
-            string kept = Or(left.Mode, "1v1");
+            // The mode they last played stays theirs (KeptMode).
+            string kept = KeptMode(left);
             await LobbyStore.SaveAsync(redis, new PartyLobby(soloId, me, Or(Get(connection, "username"), Get(connection, "hydraUsername"), "Unknown"), kept, [me], NowMs()), SoloTtl);
             await LobbyStore.SetPointerAsync(redis, me, soloId, SoloTtl);
             var member = new LobbyDocuments.Member(me, Now(), Preferences(connection),
@@ -548,7 +562,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
 
         foreach (string pid in nonOwners)
         {
-            var solo = await NewLobbyAsync(redis, pid, await HashAsync(redis, $"connections:{pid}"), Or(lobby.Mode, "1v1"));
+            var solo = await NewLobbyAsync(redis, pid, await HashAsync(redis, $"connections:{pid}"), KeptMode(lobby));
             await redis.StringSetAsync($"pending_join_lobby:{pid}", solo.Id, TimeSpan.FromSeconds(60));
             await PlayerMessages.NotifyClientAsync(redis, pid, "party_left", "Party Update", pid == leaving ? "Returning to solo lobby" : "Your party member left",
                 new JsonObject { ["newLobbyId"] = solo.Id }, NowMs());
@@ -611,7 +625,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
                 // Each on its own, as there: one player's failure does not cost the others their lobby.
                 try
                 {
-                    var solo = await NewLobbyAsync(redis, pid, await HashAsync(redis, $"connections:{pid}"), Or(lobby.Mode, "1v1"));
+                    var solo = await NewLobbyAsync(redis, pid, await HashAsync(redis, $"connections:{pid}"), KeptMode(lobby));
                     await redis.StringSetAsync($"pending_join_lobby:{pid}", solo.Id, TimeSpan.FromSeconds(60));
                 }
                 catch (Exception e) when (e is RedisException or TimeoutException)
@@ -882,6 +896,11 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
 
     // The lobby's mode; a duo's in its duo form (a lobby stored before PartyLobby.Join made it so). The TS server said 2v2
     // for any duo.
+    // The mode a new party lobby keeps from the lobby a player left or lost: a party lobby's game mode. An Arena or rift
+    // lobby's mode is its kind, not a game mode (kept, it made the new party lobby an Arena lobby to the store, and the game
+    // showed it as Custom: bench, 2026-10-10), so that player starts in the login's mode.
+    private static string KeptMode(Lobby left) => left is PartyLobby ? Or(left.Mode, "1v1") : PartyLobby.LoginMode;
+
     private static string ModeOf(Lobby lobby) => lobby.PlayerIds.Count >= 2 ? PartyLobby.DuoMode(lobby.Mode) : Or(lobby.Mode, "1v1");
 
     // The IP-keyed copy of the session gets lobby_id only while it is this player's (a household shares an IP).

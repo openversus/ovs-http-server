@@ -133,6 +133,7 @@ async function run(baseUrl, outFile) {
   await step("solo-no-lobby", LOBBY(0), everyone);
   await step("solo-own-lobby", LOBBY(1), async () => { await everyone(); await lobby(1, { ownerId: P1, ownerUsername: "PlayerOne", playerIds: [P1] }); });
   await step("arena-own-lobby", LOBBY(11), async () => { await everyone(); await lobby(11, { ownerId: P1, ownerUsername: "PlayerOne", playerIds: [P1], mode: "arena_lobby" }); });
+  await step("arena-member", LOBBY(12), async () => { await everyone(); await lobby(12, { playerIds: [P2, P1], mode: "arena_lobby", teams: { [P1]: 0 } }); });
   await step("solo-zero-preferences", LOBBY(1), async () => { await everyone(); await redis.hSet(`connections:${P1}`, "GameplayPreferences", "0"); });
   await step("solo-no-session", LOBBY(0), async () => { await session(P2, 2); });
   await step("custom-lobby", LOBBY(2), async () => { await everyone(); await redis.set(`lobby:${LOBBY(2)}`, JSON.stringify({ Teams: [], LeaderID: P2 })); });

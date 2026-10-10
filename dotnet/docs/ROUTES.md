@@ -17,8 +17,8 @@ override header, not on the wire method. `?` means the method is not known yet.
 **Websockets** (not in the tables): the Hydra realtime socket (the ws service; binary Hydra messages; the
 server pings `0x0c` every 20 s and the game answers `0x0a`).
 
-**Totals.** 254 routes. The game can call 211 Hydra/engine/social routes and SSC functions; the TS
-server answers 115. Not answered: 33 routes and 63 SSC functions.
+**Totals.** 255 routes. The game can call 212 Hydra/engine/social routes and SSC functions; the TS
+server answers 115. Not answered: 33 routes and 64 SSC functions.
 OpenVersus's own, not the game: openversus client mod 10, rollback server 11, website (browser) 18, admin and data sync 4.
 
 Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ovs-client`,
@@ -101,6 +101,7 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 | ? | `/ssc/invoke/grant_gold` | http | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/ingame_purchase_event` | http | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/invite_to_party` | lobbies | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/join_arena_lobby` | lobbies | binary `ssc name` | **no** | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it; method from the bench log 2026-10-10 (accepting an invite with ContextData.LobbyType Arena) |
 | ? | `/ssc/invoke/join_party` | lobbies | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/join_voting_competition` | http | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/leave_party` | lobbies | binary `ssc name` | **no** | ssc: binary |
@@ -346,6 +347,7 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 | ? | `/ssc/invoke/ingame_purchase_event` | http | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/invite_to_party` | lobbies | binary `ssc name` | **no** | ssc: binary |
 | PUT | `/ssc/invoke/invite_to_player_lobby` | lobbies | binary `ssc name` | yes | ssc: server/capture |
+| PUT | `/ssc/invoke/join_arena_lobby` | lobbies | binary `ssc name` | **no** | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it; method from the bench log 2026-10-10 (accepting an invite with ContextData.LobbyType Arena) |
 | PUT | `/ssc/invoke/join_custom_game_lobby` | lobbies | binary `ssc name` | yes | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it |
 | ? | `/ssc/invoke/join_party` | lobbies | binary `ssc name` | **no** | ssc: binary |
 | PUT | `/ssc/invoke/join_party_lobby` | lobbies | binary `ssc name` | yes | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it |

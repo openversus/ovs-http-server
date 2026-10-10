@@ -16,13 +16,14 @@ using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Matches;
 
-// The party lobby the game fetches after create_party_lobby, ported from the TS server's PUT /matches/:id
-// (handlers/matches.ts handleMatches_id, branch infinity-war). The game keeps its own lobby id (it sends it to
-// matchmaking later) and ignores the answer's id. Three answers:
+// The lobby the game fetches after making one (create_party_lobby, create_arena_lobby), ported from the TS server's PUT
+// /matches/:id (handlers/matches.ts handleMatches_id, branch infinity-war). The game keeps its own lobby id (it sends it
+// to matchmaking later) and ignores the answer's id. Four answers, each the lobby as stored:
 //   join           the lobby is someone else's: the player is added to it, and every member, the joiner and the owner
 //                  included, is sent the lobby (below)
-//   owner refresh  the player owns the lobby and it has 2+ players: everyone in it
-//   solo           anything else: the player alone (the TS server's fixed answer, a new random id each time)
+//   owner refresh  the player owns the lobby and it has 2+ players: everyone in it, in the lobby's mode
+//   own            the player owns the lobby alone: the lobby, as its kind (an Arena lobby: its eight teams of two)
+//   no lobby       nothing stored under the id (a custom lobby, kept apart: CustomLobbyService): the player alone, 1v1
 //
 // Redis, read     player_lobby:{player} (a lobby id), lobby:{id} (JSON, below),
 //                 connections:{player} (GameplayPreferences, hydraUsername, username, wb_network_id, character, skin),
@@ -56,6 +57,10 @@ namespace OpenVersus.Server.Core.Matches;
 // join that adds the player cancels any search either of them was in, as join_party_lobby does (the TS PUT did not).
 // lobby_redirect:{id} is not read: nothing writes it (the TS server read it on every request; redisSaveLobbyRedirect
 // has no caller).
+// The answers carry the stored lobby (2026-10-10): the player's own lobby is answered with its id, its creation date,
+// its mode, the player's fighter and its kind's template (an Arena lobby with its own document); the TS server answered
+// it, and any id with nothing stored, with a fixed fake (2025 dates, one rand, Wonder Woman, 1v1, new ids). An owner's
+// refresh carries the lobby's mode; the TS server sent 2v2 for any lobby of two or more.
 
 /// <summary>What the lobby answers carry about the game build (GAME_VERSION).</summary>
 public sealed class LobbySettings
@@ -115,7 +120,7 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
             return await RefreshAsync(redis, player, matchId, lobby);
         }
 
-        return Solo(player, connection);
+        return lobby is not null ? await OwnAsync(redis, player, connection, matchId, lobby) : Alone(player, connection, matchId);
     }
 
     private async Task<JsonObject> JoinAsync(IDatabase redis, LobbyPlayer player, Dictionary<string, string> connection, string matchId, Lobby lobby)
@@ -168,7 +173,7 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
                 Member(ownerId, hydraName: Or(Get(ownerConnection, "hydraUsername"), ownerUsername), wbId: Or(Get(ownerConnection, "wb_network_id"), ownerId), name: ownerName, hydraListed: Or(Get(ownerConnection, "hydraUsername"), ownerUsername), PlatformId(ownerId, ownerConnection)),
                 Member(me, hydraName: player.HydraUsername, wbId: player.WbNetworkId, name: player.Username, hydraListed: player.HydraUsername, PlatformId(me, connection, player))),
             current: new JsonArray(ownerId, me), count: 2,
-            templateAt: now.ToUnixTimeSeconds(), templateId: ObjectId.GenerateNewId().ToString(), id: matchId);
+            templateAt: now.ToUnixTimeSeconds(), templateId: ObjectId.GenerateNewId().ToString(), id: matchId, template: lobby.Template);
     }
 
     private async Task<JsonObject> RefreshAsync(IDatabase redis, LobbyPlayer player, string matchId, Lobby lobby)
@@ -196,29 +201,51 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
 
         return Match(
             updatedAt: now.ToUnixTimeSeconds(), createdAt: lobby.CreatedSeconds, rand: Random.Shared.NextDouble(),
-            // playerIds.length >= 2 ? "2v2" : mode, and there are always 2+ here.
-            LobbyDocuments.Lobby(members, lobby.OwnerId, settings.CurrentValue.GameVersion, "2v2", matchId: null),
+            LobbyDocuments.Lobby(members, lobby.OwnerId, settings.CurrentValue.GameVersion, Or(lobby.Mode, "2v2"), matchId: null),
             all, current: new JsonArray([.. playerIds.Select(id => (JsonNode)id)]), count: playerIds.Count,
-            templateAt: now.ToUnixTimeSeconds(), templateId: matchId, id: matchId);
+            templateAt: now.ToUnixTimeSeconds(), templateId: matchId, id: matchId, template: lobby.Template);
     }
 
-    // The TS server's original answer: fixed dates, rand and loadout, and new ids.
-    private JsonObject Solo(LobbyPlayer player, Dictionary<string, string> connection)
+    // The player's own lobby with only them in it: the lobby's id, creation and mode, their fighter as their lobby has it
+    // (player:{player}, then the session's, then Shaggy). An Arena lobby is its own document (eight teams of two) with the
+    // HissCrc every other answer here carries; a rift lobby the party shape in its mode (what its create sent).
+    private async Task<JsonObject> OwnAsync(IDatabase redis, LobbyPlayer player, Dictionary<string, string> connection, string matchId, Lobby lobby)
     {
         string me = player.Id;
+        var loadout = await HashAsync(redis, $"player:{me}");
+        string character = Or(Get(loadout, "character"), Get(connection, "character"), "character_shaggy");
+        string skin = Or(Get(loadout, "skin"), Get(connection, "skin"), "skin_shaggy_default");
+        string version = settings.CurrentValue.GameVersion;
         var now = time.GetUtcNow();
+        var serverData = lobby is ArenaLobby
+            ? Arenas.ArenaLobbyService.Lobby(matchId, me, lobby.CreatedSeconds, new JsonObject { ["HissCrc"] = LobbyDocuments.HissCrc }, Preferences(connection), character, skin, version)
+            : LobbyDocuments.Lobby([new LobbyDocuments.Member(me, lobby.CreatedSeconds, Preferences(connection), character, skin)], me, version, Or(lobby.Mode, PartyLobby.LoginMode), matchId: null);
         return Match(
-            updatedAt: 1742265244, createdAt: 1742265244, rand: 0.6975513760957894,
-            LobbyDocuments.Lobby([new LobbyDocuments.Member(me, now.ToUnixTimeSeconds(), Preferences(connection), "character_wonder_woman", "skin_wonder_woman_default")],
+            updatedAt: now.ToUnixTimeSeconds(), createdAt: lobby.CreatedSeconds, rand: Random.Shared.NextDouble(), serverData,
+            all: new JsonArray(Member(me, hydraName: player.HydraUsername, wbId: player.WbNetworkId, name: player.Username, hydraListed: player.HydraUsername, PlatformId(me, connection, player))),
+            current: new JsonArray(me), count: 1,
+            templateAt: now.ToUnixTimeSeconds(), templateId: matchId, id: matchId, template: lobby.Template);
+    }
+
+    // Nothing stored under the id: the player alone, under the id the game asked for, with the session's fighter, in 1v1
+    // (the TS server's answer, whose dates, rand, Wonder Woman and new ids were fixed fakes).
+    private JsonObject Alone(LobbyPlayer player, Dictionary<string, string> connection, string matchId)
+    {
+        string me = player.Id;
+        long seconds = time.GetUtcNow().ToUnixTimeSeconds();
+        string character = Or(Get(connection, "character"), "character_shaggy"), skin = Or(Get(connection, "skin"), "skin_shaggy_default");
+        return Match(
+            updatedAt: seconds, createdAt: seconds, rand: Random.Shared.NextDouble(),
+            LobbyDocuments.Lobby([new LobbyDocuments.Member(me, seconds, Preferences(connection), character, skin)],
                 me, settings.CurrentValue.GameVersion, "1v1", matchId: null),
             all: new JsonArray(Member(me, hydraName: player.HydraUsername, wbId: player.WbNetworkId, name: player.Username, hydraListed: player.HydraUsername, PlatformId(me, connection, player))),
             current: new JsonArray(me), count: 1,
-            templateAt: now.ToUnixTimeSeconds(), templateId: ObjectId.GenerateNewId().ToString(), id: ObjectId.GenerateNewId().ToString());
+            templateAt: seconds, templateId: ObjectId.GenerateNewId().ToString(), id: matchId.Length > 0 ? matchId : ObjectId.GenerateNewId().ToString());
     }
 
-    /// <summary>The party_lobby match document all three answers and a join's messages share; its keys in the TS server's order.</summary>
+    /// <summary>The match document every answer and a join's messages share, its template the lobby's kind; its keys in the TS server's order.</summary>
     private static JsonObject Match(long updatedAt, long createdAt, double rand, JsonObject serverData,
-        JsonArray all, JsonArray current, int count, long templateAt, string templateId, string id) => new()
+        JsonArray all, JsonArray current, int count, long templateAt, string templateId, string id, string template = PartyLobby.TemplateName) => new()
     {
         ["updated_at"] = LobbyDocuments.Date(updatedAt),
         ["created_at"] = LobbyDocuments.Date(createdAt),
@@ -243,8 +270,8 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
         ["template"] = new JsonObject
         {
             ["type"] = "async",
-            ["name"] = "party_lobby",
-            ["slug"] = "party_lobby",
+            ["name"] = template,
+            ["slug"] = template,
             ["min_players"] = 2,
             ["max_players"] = 2,
             ["game_server_integration_enabled"] = false,

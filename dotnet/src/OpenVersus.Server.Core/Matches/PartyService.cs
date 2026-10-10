@@ -702,8 +702,9 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         }
         else if (lobby is PartyLobby { PlayerIds.Count: 2 } && await MatchmakingQueue.HeldTicketAsync(redis, lobby.PlayerIds) is { } ticket)
         {
+            // TODO: remove this branch. The game has no un-ready while a search is running, only Cancel (leader and partner
+            // alike send MatchmakingRequestService.CancelAsync's route; bench, 2026-10-10), so no game reaches it.
             // A party lobby of two players that is searching: either player's un-ready cancels the search and un-readies both.
-            // (A searching solo player has no un-ready, only Cancel: MatchmakingRequestService.CancelAsync, same effect.)
             log.LogInformation("set_ready_for_lobby: Player {Player} un-readied while party lobby {Lobby} was searching: search cancelled", me, matchId);
             await MatchmakingQueue.CancelAsync(redis, lobby.PlayerIds, MatchmakingQueue.RequestIdOf(ticket));
             await redis.KeyDeleteAsync(readyKey);

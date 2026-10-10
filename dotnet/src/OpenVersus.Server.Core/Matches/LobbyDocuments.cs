@@ -10,6 +10,9 @@ public static class LobbyDocuments
 {
     public const string Cluster = "ec2-us-east-1-dokken";
 
+    /// <summary>The HissCrc the TS server put in every lobby it built (the game's own is not stored with a lobby).</summary>
+    public const int HissCrc = 1167552915;
+
     /// <summary>One player of a lobby, as the lobby's teams list them and its per-player maps key them.</summary>
     public sealed record Member(string Id, long JoinedAt, JsonNode GameplayPreferences, string Character, string Skin);
 
@@ -45,7 +48,7 @@ public static class LobbyDocuments
             ["PlayerGameplayPreferences"] = gameplay,
             ["PlayerAutoPartyPreferences"] = autoParty,
             ["GameVersion"] = gameVersion,
-            ["HissCrc"] = 1167552915,
+            ["HissCrc"] = HissCrc,
             ["Platforms"] = platforms,
             ["AllMultiplayParams"] = MultiplayParams(),
             ["LockedLoadouts"] = loadouts,

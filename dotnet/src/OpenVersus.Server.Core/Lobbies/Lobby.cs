@@ -128,15 +128,32 @@ public sealed class PartyLobby : Lobby
 
     public override string Template => TemplateName;
 
-    /// <summary>A 1v1 party lobby that a join makes a duo becomes a 2v2 lobby.</summary>
+    /// <summary>The mode a login's new party lobby starts in: 2v2, the game's main mode.</summary>
+    public const string LoginMode = "2v2";
+
+    /// <summary>A solo party lobby that a join makes a duo takes the duo's form of its mode (<see cref="DuoMode"/>).</summary>
     public override void Join(string playerId)
     {
         base.Join(playerId);
-        if (PlayerIds.Count == 2 && Mode is "1v1" or "")
+        if (PlayerIds.Count == 2)
         {
-            Mode = "2v2";
+            Mode = DuoMode(Mode);
         }
     }
+
+    /// <summary>
+    /// A mode as a duo plays it: 1v1 is 2v2, ranked 1v1 is ranked 2v2, and FFA (which a duo may not play) is 2v2; any other
+    /// mode stays. Ranked is named both ways the code has known it (the TS server's ranked-1v1, and 1v1_ranked); which one
+    /// the game sends is not seen yet.
+    /// </summary>
+    public static string DuoMode(string mode) => mode switch
+    {
+        "1v1" or "" => "2v2",
+        "ranked-1v1" => "ranked-2v2",
+        "1v1_ranked" => "2v2_ranked",
+        _ when string.Equals(mode, "FFA", StringComparison.OrdinalIgnoreCase) => "2v2",
+        _ => mode,
+    };
 }
 
 /// <summary>The rift lobby (UMvsRiftLobby, RiftLobbyService): a rift, a chapter and a difficulty.</summary>

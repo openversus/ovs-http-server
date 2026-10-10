@@ -51,8 +51,9 @@ namespace OpenVersus.Server.Core.Matches;
 // them, is the one their lobby has (player:{player}, written by the lobby's creation and every loadout lock), then the
 // session's, then Shaggy (the TS server read the session only, which has a fighter only once a matchmaking request has
 // written one: a player who had not queued yet showed as Shaggy).
-// A join that makes a 1v1 lobby a duo makes it a 2v2 lobby, and the answer and messages say 2v2 (PartyLobby.Join; the TS
-// server sent the lobby's stored mode, always 1v1).
+// A join that makes a solo party lobby a duo gives it the duo form of its mode (PartyLobby.Join: 1v1 and FFA are 2v2,
+// ranked 1v1 is ranked 2v2), and the answer and messages say so (the TS server sent the stored mode, always 1v1). A
+// join that adds the player cancels any search either of them was in, as join_party_lobby does (the TS PUT did not).
 // lobby_redirect:{id} is not read: nothing writes it (the TS server read it on every request; redisSaveLobbyRedirect
 // has no caller).
 
@@ -122,9 +123,11 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
         string me = player.Id;
         string ownerId = lobby.OwnerId;
         log.LogInformation("Player {Player} ({Name}) joining existing lobby {Lobby} owned by {Owner}", me, player.Username, matchId, ownerId);
+        bool added = false;
         lobby = await LobbyStore.UpdateAsync(redis, matchId, joined =>
         {
-            if (joined.PlayerIds.Contains(me))
+            added = !joined.PlayerIds.Contains(me);
+            if (!added)
             {
                 return LobbyWrite.Keep;
             }
@@ -134,6 +137,11 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
             return LobbyWrite.Save;
         }) ?? lobby;
         var playerIds = lobby.PlayerIds;
+        if (added)
+        {
+            // An accepted invite ends any search either of them was in (as join_party_lobby does).
+            await MatchmakingQueue.CancelAsync(redis, playerIds, "party-changed");
+        }
 
         var ownerConnection = await HashAsync(redis, $"connections:{ownerId}");
         var ownerLoadout = await HashAsync(redis, $"player:{ownerId}");

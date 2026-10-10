@@ -11,6 +11,7 @@ using OpenVersus.Server.Core.Cosmetics;
 using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Lobbies;
+using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.Settings;
 using StackExchange.Redis;
 
@@ -34,8 +35,9 @@ namespace OpenVersus.Server.Core.Matches;
 // answer is the TS catch-all's, which is what the game was always given and
 // which it takes as "match found"; the match itself reaches it over the websocket.
 // ffa (the public Free For All queue, the TS handleMatches_matchmaking_ffa_request): the 1v1 request onto the FFA list,
-// answered with criteria ffa; solo only (a lobby of two or more: 200 {error: "FFA matchmaking requires a solo party"},
-// nothing queued) and only while the queue is open (Matchmaking/FfaSchedule.cs; closed: FfaSchedule.ClosedFailure, 200,
+// answered with criteria ffa; solo only (a lobby of two or more is answered as queued, nothing is queued, and its games
+// are told the search was cancelled 1.5 s later, with a banner: a refused request would leave the game waiting with its
+// cancel greyed out) and only while the queue is open (Matchmaking/FfaSchedule.cs; closed: FfaSchedule.ClosedFailure, 200,
 // right after the client check, before anything is cleaned up). Its tickets' skill is 0, as Casual's: the TS server read
 // the 2v2 rating (and made one when missing), which FFA matching never looks at.
 //
@@ -172,6 +174,23 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
 
         if (await LobbyPlayersAsync(redis, me) is { Count: >= 2 } players)
         {
+            if (queue.IsFfa)
+            {
+                // A party may not play FFA. A refused request leaves the game waiting for a ticket with its cancel greyed
+                // out, so the request is answered as queued, nothing is queued, and a moment later the party's games are
+                // told the search was cancelled, with a banner saying why (no toast).
+                var (partyId, partyProfile, partyFailure) = await PrepareRequesterAsync(redis, request, ct);
+                if (partyFailure is not null)
+                {
+                    return partyFailure;
+                }
+
+                var accepted = OneVersusOneAnswer(request, queue, partyId, partyProfile);
+                log.LogWarning("Refused FFA matchmaking for {Player}, whose lobby has {Count} players: answered as queued, nothing queued, cancelled in {Delay} s",
+                    me, players.Count, FfaPartyCancelDelay.TotalSeconds);
+                return new MatchmakingAnswer(200, accepted, () => CancelFfaPartyAsync(redis, players, accepted["id"], request.Body?["match"]));
+            }
+
             if (queue.IsSoloOnly)
             {
                 log.LogWarning("Rejected {Kind} matchmaking for {Player}, whose lobby has {Count} players; {Kind} is solo-entry only", kind, me, players.Count, kind);
@@ -188,13 +207,59 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             return failure;
         }
 
-        var answer = Answer(request, id, queue.Criteria1v1, 1, 606.406234735998, "character_wonder_woman", s_founders.DeepClone(),
+        var answer = OneVersusOneAnswer(request, queue, id, profile);
+        return new MatchmakingAnswer(200, answer, () => QueueAsync(redis, id, [id], request.Body?["match"], (string)answer["id"]!, queue.List1v1));
+    }
+
+    private JsonObject OneVersusOneAnswer(PartyRequest request, Queue queue, string id, JsonNode? profile) =>
+        Answer(request, id, queue.Criteria1v1, 1, 606.406234735998, "character_wonder_woman", s_founders.DeepClone(),
             new JsonObject { [id] = Region(0.04239736124873161) },
             new JsonObject { [id] = new JsonArray(Guid.NewGuid().ToString()) },
             new JsonObject { [id] = OneVersusOnePlayer(id, profile) },
             new JsonObject { [id] = new JsonArray() },
             partyId: null, profileId: "1252922", idFirst: false);
-        return new MatchmakingAnswer(200, answer, () => QueueAsync(redis, id, [id], request.Body?["match"], (string)answer["id"]!, queue.List1v1));
+
+    /// <summary>How long a party's refused FFA search shows as searching before its games are told it was cancelled.</summary>
+    internal static TimeSpan FfaPartyCancelDelay = TimeSpan.FromSeconds(1.5);
+
+    // A party's FFA search, answered as queued and never queued: the party's connected games are told it started (as a
+    // queueing tells them), then, FfaPartyCancelDelay later, that it was cancelled (as a cancel tells them), and each
+    // player gets a banner; the party's ready goes, as a cancel's does. Runs on its own once the answer has gone.
+    private Task CancelFfaPartyAsync(IDatabase redis, IReadOnlyList<string> players, JsonNode? requestId, JsonNode? match)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var connected = new List<string>();
+                foreach (string pid in players.Distinct())
+                {
+                    if (await redis.KeyExistsAsync(GatewayPresence.ConnectionKey(pid)))
+                    {
+                        connected.Add(pid);
+                    }
+                }
+
+                await PlayerMessages.SendAsync(redis, connected, MatchmakingQueue.MatchmakerStarted(new JsonObject
+                {
+                    ["matchmakingRequestId"] = requestId?.DeepClone(),
+                    ["partyId"] = match?.DeepClone(),
+                }));
+                await Task.Delay(FfaPartyCancelDelay, time);
+                await PlayerMessages.SendAsync(redis, connected, MatchLauncher.MatchmakingCancelled(requestId?.DeepClone()));
+                foreach (string pid in players.Distinct())
+                {
+                    await LobbyStore.ResetReadyOfAsync(redis, pid);
+                    await PlayerMessages.NotifyClientAsync(redis, pid, "admin_banner", "Free For All", "Free For All is for solo players only.",
+                        new JsonObject { ["timeout"] = 10 }, time.GetUtcNow().ToUnixTimeMilliseconds());
+                }
+            }
+            catch (Exception e)
+            {
+                log.LogError("Cancelling a party's FFA search ({Players}) failed: {Error}", string.Join(", ", players), e.Message);
+            }
+        });
+        return Task.CompletedTask;
     }
 
     private async Task<MatchmakingAnswer> TwoVersusTwoAsync(PartyRequest request, Queue queue, CancellationToken ct)

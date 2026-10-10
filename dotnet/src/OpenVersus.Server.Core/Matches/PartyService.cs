@@ -53,8 +53,11 @@ namespace OpenVersus.Server.Core.Matches;
 //   - set_mode_for_lobby no longer reads every session in Redis (KEYS connections:*) for a debug log.
 //   - the TS createLobby's record (player:{player}:lobby:{id}: id, created_at, mode, owner; no TTL, deleted with the
 //     player's keys when their session ends) is not written: set_mode_for_lobby checks the lobby's own owner, and writes
-//     the mode into a party lobby (the TS server wrote it into that record, which nothing read). A 1v1 party lobby that
-//     a join makes a duo becomes a 2v2 lobby (PartyLobby.Join): the TS server's PUT /matches join sent such a duo 1v1.
+//     the mode into a party lobby (the TS server wrote it into that record, which nothing read). A solo party lobby that
+//     a join makes a duo takes the duo form of its mode (PartyLobby.Join: 1v1 and FFA are 2v2, ranked 1v1 is ranked 2v2):
+//     the TS server's PUT /matches join sent such a duo 1v1, and its join_party_lobby 2v2 whatever the mode.
+//   - a login's new party lobby starts in 2v2 (PartyLobby.LoginMode; the TS server's 1v1). A player who leaves a lobby,
+//     or is left alone in one, keeps the mode it had: the TS server put them back in 1v1.
 //   - set_lobby_not_joinable keeps the lobby's lifetime and set_lobby_joinable marks it joinable again (both below).
 //   - an un-ready takes back only that player's ready; the TS server deleted the whole party's (party_ready:{lobby}), so
 //     the other player, still shown ready, had to ready again before the party could be all ready. While a party lobby of
@@ -207,9 +210,9 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             await LobbyStore.ClearPointerAsync(redis, me);
         }
 
-        var lobby = await NewLobbyAsync(redis, me, connection);
+        var lobby = await NewLobbyAsync(redis, me, connection, PartyLobby.LoginMode);
         var member = new LobbyDocuments.Member(me, Now(), Preferences(connection), shownCharacter, shownSkin);
-        return LobbyDocuments.Answer(LobbyDocuments.Lobby([member], me, settings.CurrentValue.GameVersion, "1v1", lobby.Id));
+        return LobbyDocuments.Answer(LobbyDocuments.Lobby([member], me, settings.CurrentValue.GameVersion, lobby.Mode, lobby.Id));
     }
 
     // ── create_party (PartyManager::CreateParty: a flat {MatchID}) ───────────────────────────────────────────────────
@@ -220,7 +223,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         string? lobbyId = await LobbyStore.PointerAsync(redis, me);
         if (lobbyId is null)
         {
-            lobbyId = (await NewLobbyAsync(redis, me, await HashAsync(redis, $"connections:{me}"))).Id;
+            lobbyId = (await NewLobbyAsync(redis, me, await HashAsync(redis, $"connections:{me}"), PartyLobby.LoginMode)).Id;
             log.LogInformation("create_party: Created new lobby {Lobby} for player {Player}", lobbyId, me);
         }
 
@@ -263,6 +266,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
                 }) ?? lobby;
             }
 
+            log.LogInformation("set_mode_for_lobby: {Player} set lobby {Lobby} to {Mode}", me, lobbyId, modeText);
             // Everyone in the party hears of it (the TS server told only the player who changed it).
             var party = lobby.PlayerIds.Contains(me) ? lobby.PlayerIds : [me];
             await PlayerMessages.SendAsync(redis, party, PlayerMessages.Update(new JsonObject
@@ -476,11 +480,13 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             string soloId = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(12));
             var connection = await HashAsync(redis, $"connections:{me}");
             var loadout = await HashAsync(redis, $"player:{me}");
-            await LobbyStore.SaveAsync(redis, new PartyLobby(soloId, me, Or(Get(connection, "username"), Get(connection, "hydraUsername"), "Unknown"), "1v1", [me], NowMs()), SoloTtl);
+            // The mode they last played stays theirs.
+            string kept = Or(left.Mode, "1v1");
+            await LobbyStore.SaveAsync(redis, new PartyLobby(soloId, me, Or(Get(connection, "username"), Get(connection, "hydraUsername"), "Unknown"), kept, [me], NowMs()), SoloTtl);
             await LobbyStore.SetPointerAsync(redis, me, soloId, SoloTtl);
             var member = new LobbyDocuments.Member(me, Now(), Preferences(connection),
                 Or(Get(loadout, "character"), Get(connection, "character"), "character_shaggy"), Or(Get(loadout, "skin"), Get(connection, "skin"), "skin_shaggy_default"));
-            return LobbyDocuments.Answer(LobbyDocuments.Lobby([member], me, "local", "1v1", soloId));
+            return LobbyDocuments.Answer(LobbyDocuments.Lobby([member], me, "local", kept, soloId));
         }
 
         // Otherwise the player's own lobby: a step of joining another (pending join), or a real leave.
@@ -534,7 +540,6 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             nonOwners = kept.PlayerIds.Where(p => p != kept.OwnerId).ToList();
             kept.PlayerIds.Clear();
             kept.PlayerIds.Add(kept.OwnerId);
-            kept.Mode = "1v1";
             return LobbyWrite.Save;
         });
         await redis.StringSetAsync($"pending_join_lobby:{owner}", lobby.Id, TimeSpan.FromSeconds(60));
@@ -543,7 +548,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
 
         foreach (string pid in nonOwners)
         {
-            var solo = await NewLobbyAsync(redis, pid, await HashAsync(redis, $"connections:{pid}"));
+            var solo = await NewLobbyAsync(redis, pid, await HashAsync(redis, $"connections:{pid}"), Or(lobby.Mode, "1v1"));
             await redis.StringSetAsync($"pending_join_lobby:{pid}", solo.Id, TimeSpan.FromSeconds(60));
             await PlayerMessages.NotifyClientAsync(redis, pid, "party_left", "Party Update", pid == leaving ? "Returning to solo lobby" : "Your party member left",
                 new JsonObject { ["newLobbyId"] = solo.Id }, NowMs());
@@ -606,7 +611,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
                 // Each on its own, as there: one player's failure does not cost the others their lobby.
                 try
                 {
-                    var solo = await NewLobbyAsync(redis, pid, await HashAsync(redis, $"connections:{pid}"));
+                    var solo = await NewLobbyAsync(redis, pid, await HashAsync(redis, $"connections:{pid}"), Or(lobby.Mode, "1v1"));
                     await redis.StringSetAsync($"pending_join_lobby:{pid}", solo.Id, TimeSpan.FromSeconds(60));
                 }
                 catch (Exception e) when (e is RedisException or TimeoutException)
@@ -622,7 +627,6 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             {
                 kept.PlayerIds.Clear();
                 kept.PlayerIds.Add(kept.OwnerId);
-                kept.Mode = "1v1";
                 return LobbyWrite.Save;
             });
             await LobbyStore.ClearPointerAsync(redis, playerId);
@@ -838,13 +842,13 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
 
     // ── shared ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    // The TS createLobby and the state saved with it: a new solo 1v1 lobby owned by the player.
-    private async Task<Lobby> NewLobbyAsync(IDatabase redis, string owner, Dictionary<string, string> connection)
+    // The TS createLobby and the state saved with it: a new solo lobby owned by the player, in <paramref name="mode"/>.
+    private async Task<Lobby> NewLobbyAsync(IDatabase redis, string owner, Dictionary<string, string> connection, string mode)
     {
         string id = ObjectId.GenerateNewId().ToString();
         var now = time.GetUtcNow();
         await redis.HashSetAsync($"connections:{owner}", "lobby_id", id);
-        var lobby = new PartyLobby(id, owner, Or(Get(connection, "username"), Get(connection, "hydraUsername"), "Unknown"), "1v1", [owner], now.ToUnixTimeMilliseconds());
+        var lobby = new PartyLobby(id, owner, Or(Get(connection, "username"), Get(connection, "hydraUsername"), "Unknown"), mode, [owner], now.ToUnixTimeMilliseconds());
         await LobbyStore.SaveAsync(redis, lobby);
         await LobbyStore.SetPointerAsync(redis, owner, id, PartyTtl);
         log.LogInformation("Creating party lobby for {Player} - matchLobbyId:{Lobby}", owner, id);
@@ -875,8 +879,9 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         return answer;
     }
 
-    // playerIds.length >= 2 ? "2v2" : (mode || "1v1")
-    private static string ModeOf(Lobby lobby) => lobby.PlayerIds.Count >= 2 ? "2v2" : Or(lobby.Mode, "1v1");
+    // The lobby's mode; a duo's in its duo form (a lobby stored before PartyLobby.Join made it so). The TS server said 2v2
+    // for any duo.
+    private static string ModeOf(Lobby lobby) => lobby.PlayerIds.Count >= 2 ? PartyLobby.DuoMode(lobby.Mode) : Or(lobby.Mode, "1v1");
 
     // The IP-keyed copy of the session gets lobby_id only while it is this player's (a household shares an IP).
     private static async Task MirrorLobbyIdAsync(IDatabase redis, string? ip, string playerId, string lobbyId)

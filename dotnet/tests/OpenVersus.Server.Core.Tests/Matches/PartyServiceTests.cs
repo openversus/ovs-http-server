@@ -143,9 +143,29 @@ public sealed class PartyServiceTests : IAsyncLifetime
 
     private async Task<string> LobbyJson(string id) => (await Db.StringGetAsync($"lobby:{id}")).ToString();
 
-    private Task SeedLobbyAsync(params string[] players) => Db.StringSetAsync($"lobby:{Lobby}",
-        Js.Stringify(new JsonObject { ["lobbyId"] = Lobby, ["ownerId"] = Owner, ["ownerUsername"] = "Owner", ["mode"] = "1v1", ["playerIds"] = new JsonArray(players.Select(p => (JsonNode?)p).ToArray()), ["createdAt"] = 1790000000123 }),
+    private Task SeedLobbyAsync(params string[] players) => SeedModeLobbyAsync("1v1", players);
+
+    private Task SeedModeLobbyAsync(string mode, params string[] players) => Db.StringSetAsync($"lobby:{Lobby}",
+        Js.Stringify(new JsonObject { ["lobbyId"] = Lobby, ["ownerId"] = Owner, ["ownerUsername"] = "Owner", ["mode"] = mode, ["playerIds"] = new JsonArray(players.Select(p => (JsonNode?)p).ToArray()), ["createdAt"] = 1790000000123 }),
         TimeSpan.FromHours(1));
+
+    // A search the player is in: their ticket on its list and in realtime:queued (removed by the test's end).
+    private async Task<string> SearchAsync(string list, string requestId, params string[] players)
+    {
+        string ticket = Js.Stringify(new JsonObject
+        {
+            ["matchType"] = list,
+            ["matchmakingRequestId"] = requestId,
+            ["players"] = new JsonArray([.. players.Select(p => (JsonNode)new JsonObject { ["id"] = p })]),
+        });
+        await Db.ListRightPushAsync(list, ticket);
+        foreach (string player in players)
+        {
+            await Db.HashSetAsync(MatchmakingQueue.QueuedKey, player, ticket);
+        }
+
+        return ticket;
+    }
 
     private static async Task<T> Eventually<T>(Func<T?> read) where T : class
     {
@@ -332,6 +352,9 @@ public sealed class PartyServiceTests : IAsyncLifetime
         }
 
         await SeedLobbyAsync(Owner);
+        // Each was searching on their own: accepting the invite ends both searches.
+        await SearchAsync($"test_queue:{Lobby}", "owner-search", Owner);
+        await SearchAsync($"test_queue2:{Lobby}", "guest-search", Guest);
         var heard = await ListenAsync();
         var lobbies = new PartyLobbyService(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
             new TestOptions<LobbySettings>(new LobbySettings()), TimeProvider.System, NullLogger<PartyLobbyService>.Instance);
@@ -342,6 +365,33 @@ public sealed class PartyServiceTests : IAsyncLifetime
         Assert.Equal("2v2", (string?)JsonNode.Parse(await LobbyJson(Lobby))!["mode"]);
         var joined = await Eventually(() => heard.FirstOrDefault(m => (string?)m["message"]!["data"]?["template_id"] == "PlayerJoinedLobby"));
         Assert.Equal("2v2", (string?)joined["message"]!["data"]!["ModeString"]);
+        try
+        {
+            Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Owner));
+            Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Guest));
+            Assert.Equal(0, await Db.ListLengthAsync($"test_queue:{Lobby}") + await Db.ListLengthAsync($"test_queue2:{Lobby}"));
+        }
+        finally
+        {
+            await Db.HashDeleteAsync(MatchmakingQueue.QueuedKey, [Owner, Guest]);
+        }
+    }
+
+    // A login's new party lobby is a 2v2 lobby, and its answer says so.
+    [Fact]
+    public async Task ALoginsNewPartyLobbyIsA2v2Lobby()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        var answer = await Service().CreatePartyLobbyAsync(Asking(Owner, "{}"));
+
+        Assert.Equal("2v2", (string?)answer["body"]!["lobby"]!["ModeString"]);
+        string lobby = (string)(await Db.StringGetAsync($"player_lobby:{Owner}"))!;
+        Assert.Equal("2v2", (string?)JsonNode.Parse(await LobbyJson(lobby))!["mode"]);
+        await Db.KeyDeleteAsync($"lobby:{lobby}");
     }
 
     [Fact]
@@ -434,13 +484,17 @@ public sealed class PartyServiceTests : IAsyncLifetime
         }
 
         var heard = await ListenAsync();
-        await SeedLobbyAsync(Owner, Guest);
+        await SeedModeLobbyAsync("2v2", Owner, Guest);
         await Db.StringSetAsync($"player_lobby:{Guest}", Lobby);
         await Db.SetAddAsync($"party_ready:{Lobby}", Owner);
 
         var answer = await Service().LeaveAsync(Asking(Guest, $$"""{"LobbyId": "{{Lobby}}"}"""));
 
         string solo = answer["body"]!["lobby"]!["MatchID"]!.GetValue<string>();
+        // Both keep the mode they last played: the leaver's new lobby and the one left behind.
+        Assert.Equal("2v2", (string?)answer["body"]!["lobby"]!["ModeString"]);
+        Assert.Equal("2v2", (string?)JsonNode.Parse(await LobbyJson(solo))!["mode"]);
+        Assert.Equal("2v2", (string?)JsonNode.Parse(await LobbyJson(Lobby))!["mode"]);
         Assert.NotEqual(Lobby, solo);
         Assert.Equal(solo, (string?)await Db.StringGetAsync($"player_lobby:{Guest}"));
         Assert.DoesNotContain(Guest, await LobbyJson(Lobby));
@@ -602,7 +656,7 @@ public sealed class PartyServiceTests : IAsyncLifetime
         }
 
         var heard = await ListenAsync();
-        await SeedLobbyAsync(Owner, Guest);
+        await SeedModeLobbyAsync("2v2", Owner, Guest);
         await Db.StringSetAsync($"player_lobby:{Owner}", Lobby);
         await Db.StringSetAsync($"player_lobby:{Guest}", Lobby);
 
@@ -610,7 +664,8 @@ public sealed class PartyServiceTests : IAsyncLifetime
 
         var lobby = (JsonObject)JsonNode.Parse(await LobbyJson(Lobby))!;
         Assert.Equal([Owner], lobby["playerIds"]!.AsArray().Select(p => p!.GetValue<string>()));
-        Assert.Equal("1v1", lobby["mode"]!.GetValue<string>());
+        // The mode it had stays (the TS server put the owner back in 1v1).
+        Assert.Equal("2v2", lobby["mode"]!.GetValue<string>());
         Assert.False(await Db.KeyExistsAsync($"player_lobby:{Guest}"));
         Assert.Equal(Lobby, (string?)await Db.StringGetAsync($"player_lobby:{Owner}"));
         Assert.Equal(Lobby, (string?)await Db.StringGetAsync($"pending_join_lobby:{Owner}"));

@@ -10,6 +10,7 @@ using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Matchmaking;
+using OpenVersus.Server.Core.Realtime;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Tests.Matches;
@@ -527,18 +528,54 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    // FFA is solo entry: a lobby of two is refused (not sent to 2v2), and nothing is queued.
-    public async Task AnFfaRequestFromALobbyOfTwoIsRefused()
+    // FFA is solo entry: a lobby of two is answered as queued (a refused request would leave the game waiting, its cancel
+    // greyed out), nothing is queued, and both games are told the search started and then that it was cancelled, each
+    // player gets a banner (no toast), and the party's ready goes.
+    public async Task AnFfaRequestFromALobbyOfTwoIsAnsweredThenCancelled()
     {
         Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
         await PlayerAsync(Me);
         await PlayerAsync(Mate);
         await LobbyAsync(Me, Mate);
+        await Db.SetAddAsync($"party_ready:{Lobby}", [Me, Mate]);
+        foreach (string player in new[] { Me, Mate })
+        {
+            await Db.StringSetAsync(GatewayPresence.ConnectionKey(player), "node");
+        }
+
+        var heard = new System.Collections.Concurrent.ConcurrentQueue<JsonObject>();
+        await _redis!.GetSubscriber().SubscribeAsync(RedisChannel.Literal("ws:send"), (_, message) =>
+        {
+            if (JsonNode.Parse(message.ToString()) is JsonObject sent && sent["playerIds"]!.ToJsonString().Contains("0000000000000000000b"))
+            {
+                heard.Enqueue(sent);
+            }
+        });
+        MatchmakingRequestService.FfaPartyCancelDelay = TimeSpan.Zero;
 
         var answer = (await Service().RequestAsync("ffa", Asking(Me), CancellationToken.None))!;
+        Assert.Equal(200, answer.Status);
+        Assert.Equal("ffa", (string?)answer.Body["criteria_slug"]);
+        string requestId = (string)answer.Body["id"]!;
+        await answer.After!();
 
-        Assert.Equal((200, """{"error":"FFA matchmaking requires a solo party"}"""), (answer.Status, Js.Stringify(answer.Body)));
-        Assert.Null(answer.After);
+        for (int i = 0; i < 50 && heard.Count(h => (string?)h["message"]!["cmd"] == "matchmaking-cancel") < 1; i++)
+        {
+            await Task.Delay(50);
+        }
+
+        foreach (string player in new[] { Me, Mate })
+        {
+            var mine = heard.Where(h => h["playerIds"]!.ToJsonString().Contains(player)).Select(h => h["message"]!).ToList();
+            Assert.Contains(mine, m => (string?)m["data"]?["template_id"] == "OnMatchmakerStarted" && (string?)m["data"]!["MatchmakingRequestId"] == requestId);
+            Assert.Contains(mine, m => (string?)m["cmd"] == "matchmaking-cancel" && (string?)m["payload"]!["id"] == requestId);
+            Assert.Contains("admin_banner", (await Db.ListRangeAsync($"{PlayerMessages.NotificationPrefix}{player}")).Select(v => v.ToString()).FirstOrDefault() ?? "");
+        }
+
+        Assert.Empty(await Db.ListRangeAsync(MatchmakingWorker.Ffa));
+        Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Me));
+        Assert.False(await Db.KeyExistsAsync($"party_ready:{Lobby}"));
+        MatchmakingRequestService.FfaPartyCancelDelay = TimeSpan.FromSeconds(1.5);
     }
 
     [Fact]

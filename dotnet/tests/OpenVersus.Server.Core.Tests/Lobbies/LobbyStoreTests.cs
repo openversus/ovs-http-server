@@ -87,6 +87,18 @@ public sealed class LobbyStoreTests : IAsyncLifetime
         Assert.Equal(1791649860, lobby.CreatedSeconds);
     }
 
+    // A duo plays 1v1 as 2v2, ranked 1v1 as ranked 2v2 (both spellings), and FFA (which a duo may not play) as 2v2.
+    [Theory]
+    [InlineData("1v1", "2v2")]
+    [InlineData("", "2v2")]
+    [InlineData("ranked-1v1", "ranked-2v2")]
+    [InlineData("1v1_ranked", "2v2_ranked")]
+    [InlineData("FFA", "2v2")]
+    [InlineData("2v2", "2v2")]
+    [InlineData("ranked-2v2", "ranked-2v2")]
+    [InlineData("evtq_arena", "evtq_arena")]
+    public void ADuoPlaysTheDuoFormOfItsMode(string mode, string duo) => Assert.Equal(duo, PartyLobby.DuoMode(mode));
+
     [Fact]
     public void ANewPartyLobbyHasTheTsServersFieldsInItsOrder()
     {

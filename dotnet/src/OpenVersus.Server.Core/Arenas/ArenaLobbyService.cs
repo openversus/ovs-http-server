@@ -28,8 +28,9 @@ namespace OpenVersus.Server.Core.Arenas;
 // create_arena_lobby, so the others in their party lobby are sent an Arena invite (LobbyInvites), which their game asks
 // them to accept ("Accept arena invite from {Username}?") and answers with join_arena_lobby.
 //
-// PUT /ssc/invoke/join_arena_lobby: an accepted Arena invite (bench, 2026-10-10). The lobby is the one the invite named
-// (pending_join_lobby), else the one the body names. The player joins on the first team with room (ArenaLobby.Join), is
+// PUT /ssc/invoke/join_arena_lobby: an accepted Arena invite, or a code typed in an Arena lobby's Join box after GET
+// /matches/{code} (bench, 2026-10-10). The lobby is the one the invite named (pending_join_lobby), else the body's HostId
+// (its LobbyId is the lobby the player is in). The player joins on the first team with room (ArenaLobby.Join), is
 // answered the lobby, and everyone already in it is told (PlayerJoinedLobby). Refused (return_code 1): no Arena lobby
 // there, or it is full.
 // Redis, written  lobby:{id} (playerIds, teams; 8 h from two players); player_lobby:{player} = id EX 8 h;
@@ -49,6 +50,12 @@ public interface IArenaLobbyService
 
     /// <summary>The join_arena_lobby answer for the player the session token names.</summary>
     Task<JsonObject> JoinAsync(JsonObject? claims, JsonObject? request, CancellationToken ct);
+
+    /// <summary>
+    /// GET /matches/{code} for an Arena lobby's code: its match document (the custom lobby's shape, under the arena_lobby
+    /// template), which the game answers with join_arena_lobby {HostId}; null for any other code.
+    /// </summary>
+    Task<JsonObject?> ByCodeAsync(string code, CancellationToken ct);
 
     /// <summary>switch_custom_game_lobby_team in an Arena lobby (the request's MatchID), else null: another lobby's.</summary>
     Task<JsonObject?> SwitchTeamAsync(string playerId, JsonObject? request, CancellationToken ct);
@@ -204,16 +211,27 @@ internal sealed class ArenaLobbyService(IServiceProvider services, IOptionsMonit
         }
 
         string? pending = await redis.StringGetAsync($"pending_join_lobby:{me}");
-        string target = new[] { pending, Str(request, "LobbyId"), Str(request, "MatchID"), Str(request, "HostId") }.FirstOrDefault(t => !string.IsNullOrEmpty(t)) ?? "";
+        // The body names the lobby to join as HostId; its LobbyId is the lobby the player is in (bench, a code join from the
+        // player's own Arena lobby), as in join_party_lobby: never the target.
+        string target = new[] { pending, Str(request, "HostId"), Str(request, "MatchID") }.FirstOrDefault(t => !string.IsNullOrEmpty(t)) ?? "";
         if (await LobbyStore.GetAsync(redis, target) is not ArenaLobby lobby)
         {
             log.LogWarning("join_arena_lobby from {Player}: no arena lobby {Lobby} (pending {Pending})", me, target, pending);
             return LobbyDocuments.Ssc([], returnCode: 1);
         }
 
-        // The party they come from, where a leave takes them back.
+        // The party they come from, where a leave takes them back. A player joining by code from their own Arena lobby leaves
+        // it, keeps the party lobby they came to it from, and brings the partner who came with them (a party is never split).
         var from = await LobbyStore.PointerAsync(redis, me) is { } previous ? await LobbyStore.GetAsync(redis, previous) : null;
         string? home = from is PartyLobby party && party.PlayerIds.Contains(me) ? party.Id : null;
+        var bring = new List<string>();
+        if (from is ArenaLobby own && own.Id != target && own.PlayerIds.Contains(me))
+        {
+            home = own.HomeOf(me);
+            bring = home is null ? [] : [.. own.PlayerIds.Where(p => p != me && own.HomeOf(p) == home)];
+            await LeaveAsync(me, own.Id, bringPartners: false);
+        }
+
         bool added = false;
         var joined = await LobbyStore.UpdateAsync(redis, target, changed =>
         {
@@ -248,6 +266,12 @@ internal sealed class ArenaLobbyService(IServiceProvider services, IOptionsMonit
         if (!string.IsNullOrEmpty(pending))
         {
             await redis.KeyDeleteAsync($"pending_join_lobby:{me}");
+        }
+
+        foreach (string partner in bring)
+        {
+            await LobbyInvites.SendAsync(redis, partner, target, LobbyInvites.Arena, me);
+            log.LogInformation("Invited {Partner}, who came into an Arena with {Player}, into arena lobby {Lobby}", partner, me, target);
         }
 
         var document = await DocumentAsync(redis, joined, lobbies.CurrentValue.GameVersion, time.GetUtcNow().ToUnixTimeSeconds());
@@ -308,6 +332,60 @@ internal sealed class ArenaLobbyService(IServiceProvider services, IOptionsMonit
         }
 
         return Lobby(lobby.Id, lobby.OwnerId, members, new JsonObject { ["HissCrc"] = LobbyDocuments.HissCrc }, gameVersion);
+    }
+
+    public async Task<JsonObject?> ByCodeAsync(string code, CancellationToken ct)
+    {
+        if (code.Length == 0 || code.Length > 10 || services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis
+            || await redis.StringGetAsync(LobbyCodes.Key(code.ToUpperInvariant())) is not { IsNullOrEmpty: false } id
+            || await LobbyStore.GetAsync(redis, id.ToString()) is not ArenaLobby lobby)
+        {
+            return null;
+        }
+
+        var document = await DocumentAsync(redis, lobby, lobbies.CurrentValue.GameVersion, time.GetUtcNow().ToUnixTimeSeconds());
+        // The custom lobby's answer (CustomLobbyService.ByCodeAsync, which the game joins from), its dates as there.
+        return new JsonObject
+        {
+            ["updated_at"] = new JsonObject(),
+            ["created_at"] = new JsonObject(),
+            ["account_id"] = null,
+            ["completion_time"] = null,
+            ["name"] = "white-green-wind-breeze-OS5dF",
+            ["state"] = "open",
+            ["access_level"] = "public",
+            ["origin"] = "client",
+            ["rand"] = Random.Shared.NextDouble(),
+            ["winning_team"] = new JsonArray(),
+            ["win"] = new JsonArray(),
+            ["loss"] = new JsonArray(),
+            ["draw"] = null,
+            ["arbitration"] = null,
+            ["data"] = new JsonObject(),
+            ["server_data"] = document,
+            ["players"] = new JsonObject(),
+            ["matchmaking"] = null,
+            ["cluster"] = LobbyDocuments.Cluster,
+            ["last_warning_time"] = null,
+            ["template"] = new JsonObject
+            {
+                ["type"] = "async",
+                ["name"] = Mode,
+                ["slug"] = Mode,
+                ["min_players"] = 1,
+                ["max_players"] = ArenaLobby.Capacity,
+                ["game_server_integration_enabled"] = false,
+                ["game_server_config"] = null,
+                ["created_at"] = new JsonObject(),
+                ["updated_at"] = new JsonObject(),
+                ["data"] = new JsonObject(),
+                ["id"] = "",
+            },
+            ["criteria"] = new JsonObject { ["slug"] = null },
+            ["shortcode"] = null,
+            ["id"] = lobby.Id,
+            ["access"] = "public",
+        };
     }
 
     // switch_custom_game_lobby_team, {MatchID, TeamIndex} (bench, 2026-10-10): the team, when it has room; everyone in the

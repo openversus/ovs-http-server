@@ -209,6 +209,28 @@ public sealed class ArenaLobbyJoinTests : IAsyncLifetime
         Assert.Equal(party, (string?)await Redis.StringGetAsync($"pending_join_lobby:{Other}"));
     }
 
+    [SkippableFact]
+    public async Task AnArenaCodeAnswersItsLobbyAndJoiningFromAnotherArenaLeavesItAndBringsThePartner()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS to run");
+        var (party, mine) = await PartyInArenaAsync();
+        string theirs = await LobbyAsync(ArenaLobbyService.Mode, Third);
+        string code = (string)(await Service().LobbyCodeAsync(Third, new JsonObject { ["LobbyId"] = theirs }, CancellationToken.None))!["body"]!["LobbyCode"]!;
+        _keys.AddRange([LobbyCodes.Key(code), ArenaLobbyService.CodeKey(theirs), $"pending_join_lobby:{Other}"]);
+
+        var match = await Service().ByCodeAsync(code.ToLowerInvariant(), CancellationToken.None);
+        var joined = await Service().JoinAsync(new JsonObject { ["id"] = Me }, new JsonObject { ["HostId"] = theirs, ["IsSpectator"] = false, ["LobbyId"] = mine }, CancellationToken.None);
+
+        Assert.Equal("arena_lobby", (string?)match!["template"]!["slug"]);
+        Assert.Equal(theirs, (string?)match["id"]);
+        Assert.Equal(0, (int)joined["return_code"]!);
+        Assert.DoesNotContain(Me, (string)(await Redis.StringGetAsync($"lobby:{mine}"))!);
+        var stored = JsonNode.Parse((string)(await Redis.StringGetAsync($"lobby:{theirs}"))!)!;
+        Assert.Equal(party, (string?)stored["homes"]![Me]);
+        Assert.Equal(theirs, (string?)await Redis.StringGetAsync($"pending_join_lobby:{Other}"));
+        Assert.Null(await Service().ByCodeAsync("NOPE1", CancellationToken.None));
+    }
+
     private sealed class StaticMonitor(LobbySettings value) : IOptionsMonitor<LobbySettings>
     {
         public LobbySettings CurrentValue => value;

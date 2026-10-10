@@ -53,8 +53,8 @@ namespace OpenVersus.Server.Core.Matches;
 //   - set_mode_for_lobby no longer reads every session in Redis (KEYS connections:*) for a debug log.
 //   - the TS createLobby's record (player:{player}:lobby:{id}: id, created_at, mode, owner; no TTL, deleted with the
 //     player's keys when their session ends) is not written: set_mode_for_lobby checks the lobby's own owner, and writes
-//     the mode into a party lobby (the TS server wrote it into that record, which nothing read), so the lobby a join
-//     sends carries the owner's chosen mode instead of always 1v1.
+//     the mode into a party lobby (the TS server wrote it into that record, which nothing read). A 1v1 party lobby that
+//     a join makes a duo becomes a 2v2 lobby (PartyLobby.Join): the TS server's PUT /matches join sent such a duo 1v1.
 //   - set_lobby_not_joinable keeps the lobby's lifetime and set_lobby_joinable marks it joinable again (both below).
 //   - an un-ready takes back only that player's ready; the TS server deleted the whole party's (party_ready:{lobby}), so
 //     the other player, still shown ready, had to ready again before the party could be all ready. While a party lobby of
@@ -404,7 +404,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
                 return LobbyWrite.Keep;
             }
 
-            joined.PlayerIds.Add(me);
+            joined.Join(me);
             return LobbyWrite.Save;
         }) ?? lobby;
         await LobbyStore.SetPointerAsync(redis, me, target, PartyTtl);

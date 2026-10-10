@@ -51,6 +51,8 @@ namespace OpenVersus.Server.Core.Matches;
 // them, is the one their lobby has (player:{player}, written by the lobby's creation and every loadout lock), then the
 // session's, then Shaggy (the TS server read the session only, which has a fighter only once a matchmaking request has
 // written one: a player who had not queued yet showed as Shaggy).
+// A join that makes a 1v1 lobby a duo makes it a 2v2 lobby, and the answer and messages say 2v2 (PartyLobby.Join; the TS
+// server sent the lobby's stored mode, always 1v1).
 // lobby_redirect:{id} is not read: nothing writes it (the TS server read it on every request; redisSaveLobbyRedirect
 // has no caller).
 
@@ -127,7 +129,7 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
                 return LobbyWrite.Keep;
             }
 
-            joined.PlayerIds.Add(me);
+            joined.Join(me);
             log.LogInformation("Saved lobby state for {Lobby} with players: {Players}", matchId, string.Join(", ", joined.PlayerIds));
             return LobbyWrite.Save;
         }) ?? lobby;

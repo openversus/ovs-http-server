@@ -321,6 +321,29 @@ public sealed class PartyServiceTests : IAsyncLifetime
         Assert.Equal(Lobby, await party.CustomLobbyAsync("leave_player_lobby", Asking(Owner, "{}")));
     }
 
+    // PUT /matches/{id} for someone else's 1v1 lobby: the join makes it a duo, a 2v2 lobby, and the lobby the joiner is
+    // answered and every member is sent says 2v2 (the TS server sent 1v1).
+    [Fact]
+    public async Task AJoinThatMakesA1v1LobbyADuoMakesItA2v2Lobby()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await SeedLobbyAsync(Owner);
+        var heard = await ListenAsync();
+        var lobbies = new PartyLobbyService(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
+            new TestOptions<LobbySettings>(new LobbySettings()), TimeProvider.System, NullLogger<PartyLobbyService>.Instance);
+
+        var answer = await lobbies.PutAsync(new LobbyPlayer(Guest, "Guest_h", "Guest", Guest), Lobby, CancellationToken.None);
+
+        Assert.Equal("2v2", (string?)answer!["server_data"]!["ModeString"]);
+        Assert.Equal("2v2", (string?)JsonNode.Parse(await LobbyJson(Lobby))!["mode"]);
+        var joined = await Eventually(() => heard.FirstOrDefault(m => (string?)m["message"]!["data"]?["template_id"] == "PlayerJoinedLobby"));
+        Assert.Equal("2v2", (string?)joined["message"]!["data"]!["ModeString"]);
+    }
+
     [Fact]
     public async Task AnInvitedPlayerJoinsAndTheOwnerIsToldOnce()
     {
@@ -342,6 +365,8 @@ public sealed class PartyServiceTests : IAsyncLifetime
         Assert.Equal(Lobby, answer["body"]!["lobby"]!["MatchID"]!.GetValue<string>());
         Assert.Equal("2v2", answer["body"]!["lobby"]!["ModeString"]!.GetValue<string>());
         Assert.Contains(Guest, await LobbyJson(Lobby));
+        // The 1v1 lobby the join made a duo is a 2v2 lobby.
+        Assert.Equal("2v2", (string?)JsonNode.Parse(await LobbyJson(Lobby))!["mode"]);
         Assert.False(await Db.KeyExistsAsync($"pending_join_lobby:{Guest}"));
         Assert.Equal(Lobby, (string?)await Db.StringGetAsync($"player_lobby:{Guest}"));
 

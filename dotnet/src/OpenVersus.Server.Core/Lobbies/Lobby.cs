@@ -60,6 +60,9 @@ public abstract class Lobby
     /// <summary>When the lobby was made (whole seconds); a createdAt that is not a number is the TS server's NaN date, sent as 0.</summary>
     public long CreatedSeconds => CreatedAt is JsonValue v && v.TryGetValue<double>(out double ms) && double.IsFinite(ms) ? (long)Math.Floor(ms / 1000) : 0;
 
+    /// <summary>A player joins: they are added after the players already in it. A kind may change the lobby with it.</summary>
+    public virtual void Join(string playerId) => PlayerIds.Add(playerId);
+
     /// <summary>A field the base does not model (a kind's own), as read; null when absent.</summary>
     protected JsonNode? Field(string name) => _json[name];
 
@@ -124,6 +127,16 @@ public sealed class PartyLobby : Lobby
     }
 
     public override string Template => TemplateName;
+
+    /// <summary>A 1v1 party lobby that a join makes a duo becomes a 2v2 lobby.</summary>
+    public override void Join(string playerId)
+    {
+        base.Join(playerId);
+        if (PlayerIds.Count == 2 && Mode is "1v1" or "")
+        {
+            Mode = "2v2";
+        }
+    }
 }
 
 /// <summary>The rift lobby (UMvsRiftLobby, RiftLobbyService): a rift, a chapter and a difficulty.</summary>

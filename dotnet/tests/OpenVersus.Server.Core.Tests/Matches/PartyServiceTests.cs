@@ -205,6 +205,99 @@ public sealed class PartyServiceTests : IAsyncLifetime
         Assert.Equal([Guest], _gate.Modals);
     }
 
+    // Each player's ready is their own: an un-ready takes back only the player who sent it, and the party is all ready
+    // again as soon as that player readies again.
+    [Fact]
+    public async Task AnUnreadyTakesBackOnlyThatPlayersReady()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await SeedLobbyAsync(Owner, Guest);
+        var party = Service();
+
+        await party.SetReadyAsync(Asking(Owner, $$"""{"MatchID": "{{Lobby}}", "Ready": true}"""));
+        var both = await party.SetReadyAsync(Asking(Guest, $$"""{"MatchID": "{{Lobby}}", "Ready": true}"""));
+        Assert.True((bool)both["body"]!["bAllPlayersReady"]!);
+
+        var unready = await party.SetReadyAsync(Asking(Guest, $$"""{"MatchID": "{{Lobby}}", "Ready": false}"""));
+        Assert.False((bool)unready["body"]!["bAllPlayersReady"]!);
+        Assert.Equal([Owner], (await Db.SetMembersAsync($"party_ready:{Lobby}")).Select(v => v.ToString()));
+
+        var again = await party.SetReadyAsync(Asking(Guest, $$"""{"MatchID": "{{Lobby}}", "Ready": true}"""));
+        Assert.True((bool)again["body"]!["bAllPlayersReady"]!);
+    }
+
+    // A party lobby of two players that is searching: either player's un-ready cancels the search for both (their
+    // tickets, each game told) and un-readies both. A searching solo player has no un-ready, only Cancel: the cancel
+    // route (MatchmakingRequestTests.ACancelReachesTheWholeLobbyAndUnreadiesIt).
+    [Fact]
+    public async Task AnUnreadyWhileThePartySearchesCancelsTheSearchAndUnreadiesEveryone()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        string list = $"test_queue:{Lobby}";
+        string ticket = Js.Stringify(new JsonObject
+        {
+            ["matchType"] = list,
+            ["matchmakingRequestId"] = "request-e1",
+            ["players"] = new JsonArray(new JsonObject { ["id"] = Owner }, new JsonObject { ["id"] = Guest }),
+        });
+        try
+        {
+            await SeedLobbyAsync(Owner, Guest);
+            await Db.SetAddAsync($"party_ready:{Lobby}", [Owner, Guest]);
+            await Db.ListRightPushAsync(list, ticket);
+            await Db.HashSetAsync(MatchmakingQueue.QueuedKey, [new(Owner, ticket), new(Guest, ticket)]);
+            var heard = await ListenAsync();
+
+            var unready = await Service().SetReadyAsync(Asking(Guest, $$"""{"MatchID": "{{Lobby}}", "Ready": false}"""));
+
+            Assert.False((bool)unready["body"]!["bAllPlayersReady"]!);
+            Assert.False(await Db.KeyExistsAsync($"party_ready:{Lobby}"));
+            Assert.Equal(0, await Db.ListLengthAsync(list));
+            Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Owner));
+            Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Guest));
+            // Each game hears its search cancelled, with the request's id.
+            foreach (string player in new[] { Owner, Guest })
+            {
+                await Eventually(() => heard.FirstOrDefault(h => (string?)h["playerIds"]![0] == player && (string?)h["message"]!["cmd"] == "matchmaking-cancel"
+                    && (string?)h["message"]!["payload"]!["id"] == "request-e1"));
+            }
+        }
+        finally
+        {
+            await Db.HashDeleteAsync(MatchmakingQueue.QueuedKey, [Owner, Guest]);
+        }
+    }
+
+    // Training mode and matchmaking mark the lobby not joinable, and joinable again after: the flag is kept, and a party's
+    // lobby keeps its 8 hours (one in training mode for over an hour lost its lobby when this wrote 1 h).
+    [Fact]
+    public async Task NotJoinableAndJoinableAgainKeepThePartysLobbyAndItsLifetime()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await SeedLobbyAsync(Owner, Guest);
+        var party = Service();
+
+        await party.SetNotJoinableAsync(Asking(Owner, $$"""{"LobbyId": "{{Lobby}}"}"""));
+        Assert.False((bool)JsonNode.Parse(await LobbyJson(Lobby))!["joinable"]!);
+        Assert.InRange((await Db.KeyTimeToLiveAsync($"lobby:{Lobby}"))!.Value, TimeSpan.FromHours(7.9), TimeSpan.FromHours(8));
+
+        await party.SetJoinableAsync(Asking(Owner, $$"""{"LobbyId": "{{Lobby}}"}"""));
+        Assert.True((bool)JsonNode.Parse(await LobbyJson(Lobby))!["joinable"]!);
+        Assert.Equal([Owner, Guest], JsonNode.Parse(await LobbyJson(Lobby))!["playerIds"]!.AsArray().Select(p => (string)p!));
+    }
+
     [Fact]
     public async Task ACustomLobbyRequestIsHandedOnAndAPartyOneIsNot()
     {
@@ -386,7 +479,6 @@ public sealed class PartyServiceTests : IAsyncLifetime
 
         string ip = "198.51.100.9";
         await Db.StringSetAsync($"player_lobby:{Owner}", Lobby);
-        await Db.HashSetAsync($"player:{Owner}:lobby:{Lobby}", [new("id", Lobby), new("owner", Owner), new("mode", "1v1")]);
         await Db.HashSetAsync($"connections:{Owner}", [new("id", Owner), new("current_ip", ip), new("GameplayPreferences", "448")]);
         // The IP-keyed copy is another household member's.
         await Db.HashSetAsync($"connections:{ip}", [new("id", Guest), new("lobby_id", "theirs")]);
@@ -402,13 +494,35 @@ public sealed class PartyServiceTests : IAsyncLifetime
         Assert.Equal(Lobby, (string?)await Db.HashGetAsync($"connections:{Owner}", "lobby_id"));
         Assert.Equal("448", (string?)await Db.HashGetAsync($"connections:{Owner}", "GameplayPreferences"));
         Assert.Equal("theirs", (string?)await Db.HashGetAsync($"connections:{ip}", "lobby_id"));
-        Assert.Equal("2v2", (string?)await Db.HashGetAsync($"player:{Owner}:lobby:{Lobby}", "mode"));
+        // The party lobby keeps the mode (the lobby a join sends shows it); no record of the TS createLobby is written.
+        Assert.Equal("2v2", (string?)JsonNode.Parse(await LobbyJson(Lobby))!["mode"]);
+        Assert.False(await Db.KeyExistsAsync($"player:{Owner}:lobby:{Lobby}"));
 
         // The player's own copy is updated.
         await Db.HashSetAsync($"connections:{ip}", "id", Owner);
         await Db.HashDeleteAsync($"connections:{Owner}", "lobby_id");
         await Service().SetModeAsync(Asking(Owner, """{"ModeString": "1v1"}"""));
         Assert.Equal(Lobby, (string?)await Db.HashGetAsync($"connections:{ip}", "lobby_id"));
+    }
+
+    // Only the lobby's owner changes its mode; a rift or Arena lobby's mode is its kind and stays.
+    [Fact]
+    public async Task OnlyTheOwnerChangesTheModeAndAnArenaLobbyStaysOne()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await SeedLobbyAsync(Owner, Guest);
+        await Db.StringSetAsync($"player_lobby:{Guest}", Lobby);
+        await Service().SetModeAsync(Asking(Guest, """{"ModeString": "FFA"}"""));
+        Assert.Equal("1v1", (string?)JsonNode.Parse(await LobbyJson(Lobby))!["mode"]);
+
+        await Db.StringSetAsync($"lobby:{Lobby}", Js.Stringify(new JsonObject { ["lobbyId"] = Lobby, ["ownerId"] = Owner, ["mode"] = "arena_lobby", ["playerIds"] = new JsonArray(Owner) }));
+        await Db.StringSetAsync($"player_lobby:{Owner}", Lobby);
+        await Service().SetModeAsync(Asking(Owner, """{"ModeString": "1v1"}"""));
+        Assert.Equal("arena_lobby", (string?)JsonNode.Parse(await LobbyJson(Lobby))!["mode"]);
     }
 
     [Fact]

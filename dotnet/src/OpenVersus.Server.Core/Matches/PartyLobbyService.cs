@@ -24,7 +24,7 @@ namespace OpenVersus.Server.Core.Matches;
 //   owner refresh  the player owns the lobby and it has 2+ players: everyone in it
 //   solo           anything else: the player alone (the TS server's fixed answer, a new random id each time)
 //
-// Redis, read     lobby_redirect:{id} (a lobby id), player_lobby:{player} (a lobby id), lobby:{id} (JSON, below),
+// Redis, read     player_lobby:{player} (a lobby id), lobby:{id} (JSON, below),
 //                 connections:{player} (GameplayPreferences, hydraUsername, username, wb_network_id, character, skin),
 //                 player:{player} (character, skin: the owner's and the members' loadouts)
 // Redis, written  lobby:{id} on a join that adds the player: the JSON as read with the player pushed onto playerIds
@@ -51,6 +51,8 @@ namespace OpenVersus.Server.Core.Matches;
 // them, is the one their lobby has (player:{player}, written by the lobby's creation and every loadout lock), then the
 // session's, then Shaggy (the TS server read the session only, which has a fighter only once a matchmaking request has
 // written one: a player who had not queued yet showed as Shaggy).
+// lobby_redirect:{id} is not read: nothing writes it (the TS server read it on every request; redisSaveLobbyRedirect
+// has no caller).
 
 /// <summary>What the lobby answers carry about the game build (GAME_VERSION).</summary>
 public sealed class LobbySettings
@@ -89,13 +91,6 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
         if (connection.Count == 0 || !connection.ContainsKey("id"))
         {
             log.LogWarning("No Redis player connection found for player ID {Player}, cannot set loadout.", me);
-        }
-
-        // A lobby the player was force-joined into wins over the one they asked for.
-        if (matchId.Length > 0 && await redis.StringGetAsync($"lobby_redirect:{matchId}") is { IsNullOrEmpty: false } redirect)
-        {
-            log.LogInformation("Lobby redirect: {From} -> {To} for player {Player}", matchId, (string?)redirect, me);
-            matchId = redirect!;
         }
 
         if (await LobbyStore.PointerAsync(redis, me) is { } assigned && assigned != matchId

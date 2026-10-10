@@ -23,7 +23,8 @@ namespace OpenVersus.Server.Core.Realtime;
 //   5. their own lobby's records (IPartyService.ForgetLobbyAsync: player_lobby, and a solo lobby).
 //   6. their session: connections:{player} and its match copy of the cosmetics, only while it is still the session the
 //      closed connection was opened with (a script compares the token); then player:{player}* (found by SCAN: the TS
-//      createLobby records player:{player}:lobby:{lobby} have no TTL), and the IP's copy of the session
+//      createLobby records player:{player}:lobby:{lobby}, which have no TTL and this server no longer writes, among
+//      them), and the IP's copy of the session
 //      (connections:{ip}) while it is still this player's. The match flow reads the session too (a pregame dodge's
 //      fighter, after match_characters:{set}; GameplayConfigs at a match's start): TS deleted it at the close as well.
 // A replaced event (a newer login took the connection over) drops the ticket too, as the TS websocket's handshake did

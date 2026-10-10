@@ -22,7 +22,7 @@ namespace OpenVersus.Server.Core.Arenas;
 //
 // Redis, read     connections:{player} (GameplayPreferences, username, hydraUsername), player:{player} (character, skin)
 // Redis, written  lobby:{id} (JSON, mode "arena_lobby") EX 1 h; player_lobby:{player} = id EX 8 h;
-//                 player:{player}:lobby:{id} hash (id, created_at, mode, owner); connections:{player} lobby_id = id
+//                 connections:{player} lobby_id = id
 //
 // PUT /ssc/invoke/lobby_code from an Arena lobby (the lobby screen's eye button; the route is the custom lobby's, which
 // asks here first): the lobby's code, for any member (the custom lobby gives its leader one). The first ask draws it,
@@ -76,13 +76,6 @@ internal sealed class ArenaLobbyService(IServiceProvider services, IOptionsMonit
         };
         await redis.StringSetAsync($"lobby:{lobbyId}", Js.Stringify(state), TimeSpan.FromHours(1));
         await redis.StringSetAsync($"player_lobby:{playerId}", lobbyId, TimeSpan.FromHours(8));
-        await redis.HashSetAsync($"player:{playerId}:lobby:{lobbyId}",
-        [
-            new HashEntry("id", lobbyId),
-            new HashEntry("created_at", now.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")),
-            new HashEntry("mode", Mode),
-            new HashEntry("owner", playerId),
-        ]);
         await redis.HashSetAsync($"connections:{playerId}", "lobby_id", lobbyId);
         log.LogInformation("Created arena lobby {Lobby} for {Player}", lobbyId, playerId);
 

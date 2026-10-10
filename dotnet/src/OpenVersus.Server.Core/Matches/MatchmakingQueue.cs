@@ -14,7 +14,8 @@ namespace OpenVersus.Server.Core.Matches;
 //     sent OnMatchmakerStarted {MatchmakingRequestId} (payload match: the ticket's partyId) and given the ticket
 //     (realtime:queued {player} = the ticket's JSON, which the gateway ticks every second: GatewayTicks); then the ticket is
 //     pushed (RPUSH {matchType}), whoever is connected. A player not connected gets nothing, as there.
-//   Cancelled (the game's cancel, a failed queueing, a player joining the party: "party-changed"): each player holding a
+//   Cancelled (the game's cancel, a failed queueing, a player joining the party: "party-changed", an un-ready in a
+//     searching party lobby of two players: PartyService.SetReadyAsync): each player holding a
 //     ticket loses it: the ticket leaves its list (LREM by its bytes), the tick stops (HDEL), the game is sent
 //     matchmaking-cancel {id: the cancel's id, state 3} and the player is set idle. A player holding none gets nothing, as
 //     the TS handler did nothing without a running tick.
@@ -140,6 +141,20 @@ public static class MatchmakingQueue
                 await redis.HashSetAsync($"player:{player}", "status", "in_match");
             }
         }
+    }
+
+    /// <summary>The ticket one of <paramref name="players"/> holds (the first found), as pushed; null when none holds one.</summary>
+    public static async Task<string?> HeldTicketAsync(IDatabase redis, IEnumerable<string> players)
+    {
+        foreach (string player in players.Distinct())
+        {
+            if ((string?)await redis.HashGetAsync(QueuedKey, player) is { } ticket)
+            {
+                return ticket;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>A ticket's request id, for the tick; null when the ticket names none.</summary>

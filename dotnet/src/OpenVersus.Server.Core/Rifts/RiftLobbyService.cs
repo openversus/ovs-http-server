@@ -24,8 +24,8 @@ namespace OpenVersus.Server.Core.Rifts;
 // Redis, read     connections:{player} (GameplayPreferences, username, hydraUsername), player:{player} (character, skin)
 // (lock_rift_lobby_loadout: see LockLoadoutAsync)
 // Redis, written  lobby:{id} (JSON, as the TS server's create_party_lobby writes it, mode "rift_lobby", plus riftConfigSlug,
-//                 chapterGuid, chapterDifficulty) EX 1 h; player_lobby:{player} = id EX 8 h; player:{player}:lobby:{id}
-//                 hash (id, created_at, mode, owner); connections:{player} lobby_id = id
+//                 chapterGuid, chapterDifficulty) EX 1 h; player_lobby:{player} = id EX 8 h; connections:{player} lobby_id
+//                 = id
 // Mongo           the player's rift state (RiftStateService)
 //
 // RuntimeData is the rift's entry in the player's runtime data (RiftProgressService: a new player's is the frozen
@@ -81,13 +81,6 @@ internal sealed class RiftLobbyService(IServiceProvider services, IRiftStateServ
         };
         await redis.StringSetAsync($"lobby:{lobbyId}", Js.Stringify(state), TimeSpan.FromHours(1));
         await redis.StringSetAsync($"player_lobby:{playerId}", lobbyId, TimeSpan.FromHours(8));
-        await redis.HashSetAsync($"player:{playerId}:lobby:{lobbyId}",
-        [
-            new HashEntry("id", lobbyId),
-            new HashEntry("created_at", now.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")),
-            new HashEntry("mode", Mode),
-            new HashEntry("owner", playerId),
-        ]);
         await redis.HashSetAsync($"connections:{playerId}", "lobby_id", lobbyId);
         log.LogInformation("Created rift lobby {Lobby} for {Player}: {Rift} chapter {Chapter} difficulty {Difficulty}", lobbyId, playerId, slug, chapter, difficulty);
 

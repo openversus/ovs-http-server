@@ -69,6 +69,7 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
         public Task<JsonObject> JoinAsync(PartyRequest request, CancellationToken ct) => throw new NotSupportedException();
         public Task<JsonObject> LeaveAsync(PartyRequest request, CancellationToken ct) => throw new NotSupportedException();
         public Task<JsonObject> SetNotJoinableAsync(PartyRequest request, CancellationToken ct) => throw new NotSupportedException();
+        public Task<JsonObject> SetJoinableAsync(PartyRequest request, CancellationToken ct) => throw new NotSupportedException();
         public Task<JsonObject> SetReadyAsync(PartyRequest request, CancellationToken ct) => throw new NotSupportedException();
         public Task<JsonObject> LockLoadoutAsync(PartyRequest request, CancellationToken ct) => throw new NotSupportedException();
         public Task<JsonObject> AnswerAsync(string route, PartyRequest request, CancellationToken ct) => throw new NotSupportedException();

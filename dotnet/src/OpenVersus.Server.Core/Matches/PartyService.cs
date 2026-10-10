@@ -27,8 +27,6 @@ namespace OpenVersus.Server.Core.Matches;
 //                               not joinable); EX 8 h with 2+ players, else 1 h (the shared leave writes 1 h)
 //   player_lobby:{player}       lobby id, EX 8 h (the shared leave writes 1 h)
 //   pending_join_lobby:{player} lobby id, EX 60 s: the lobby an invited (or left) player's next join goes to
-//   player:{player}:lobby:{id}  hash {id, created_at (ISO), mode, owner}, no TTL: the TS createLobby's record, which
-//                               set_mode_for_lobby checks for ownership
 //   connections:{player}        lobby_id written; the session read for names, GameplayPreferences, character, skin
 //   player:{player}             character, skin, ip (+ profileIcon at create_party_lobby): the loadout the matchmaker reads
 //   party_ready:{lobby}         set of ready players, EX 1 h
@@ -53,6 +51,16 @@ namespace OpenVersus.Server.Core.Matches;
 //   - the IP-keyed session copy (connections:{ip}) gets lobby_id only when it is this player's; the TS check compared
 //     the copy's id with itself, so it always wrote, into another household member's copy too.
 //   - set_mode_for_lobby no longer reads every session in Redis (KEYS connections:*) for a debug log.
+//   - the TS createLobby's record (player:{player}:lobby:{id}: id, created_at, mode, owner; no TTL, deleted with the
+//     player's keys when their session ends) is not written: set_mode_for_lobby checks the lobby's own owner, and writes
+//     the mode into a party lobby (the TS server wrote it into that record, which nothing read), so the lobby a join
+//     sends carries the owner's chosen mode instead of always 1v1.
+//   - set_lobby_not_joinable keeps the lobby's lifetime and set_lobby_joinable marks it joinable again (both below).
+//   - an un-ready takes back only that player's ready; the TS server deleted the whole party's (party_ready:{lobby}), so
+//     the other player, still shown ready, had to ready again before the party could be all ready. While a party lobby of
+//     two players is searching (either of them holds a matchmaking ticket), either player's un-ready cancels the search
+//     (MatchmakingQueue.CancelAsync: both games are told matchmaking-cancel) and un-readies both; the TS server left the
+//     ticket searching.
 //   - party keys (the retired /party page) are not updated: nothing makes them any more.
 //   - a mode change is sent to everyone in the party; the TS server told only the player who changed it.
 //   - an invite that names no lobby is not sent (it could not be accepted); the TS server sent it with an empty MatchID.
@@ -82,6 +90,7 @@ public interface IPartyService
     Task<JsonObject> JoinAsync(PartyRequest request, CancellationToken ct = default);
     Task<JsonObject> LeaveAsync(PartyRequest request, CancellationToken ct = default);
     Task<JsonObject> SetNotJoinableAsync(PartyRequest request, CancellationToken ct = default);
+    Task<JsonObject> SetJoinableAsync(PartyRequest request, CancellationToken ct = default);
     Task<JsonObject> SetReadyAsync(PartyRequest request, CancellationToken ct = default);
     Task<JsonObject> LockLoadoutAsync(PartyRequest request, CancellationToken ct = default);
 
@@ -232,21 +241,30 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         var mode = request.Body?["ModeString"]?.DeepClone();
         string modeText = mode is JsonValue mv && mv.TryGetValue(out string? s) ? s : Js.Stringify(mode);
 
-        // changeLobbyMode: only the player who made the lobby (its player:{owner}:lobby:{id} record) changes it.
-        var record = await HashAsync(redis, $"player:{me}:lobby:{lobbyId}");
-        if (Get(record, "id") is null)
+        // changeLobbyMode: only the lobby's owner changes its mode. A party lobby keeps it (a join's lobby then shows it); a
+        // rift or Arena lobby's mode is its kind, so it is not overwritten.
+        var lobby = await LobbyStore.GetAsync(redis, lobbyId);
+        if (lobby is null)
         {
             log.LogError("Lobby not found for id: {Lobby}", lobbyId);
         }
-        else if (Get(record, "owner") != me)
+        else if (lobby.OwnerId != me)
         {
             log.LogError("You are not the owner of this lobby");
         }
         else
         {
-            await redis.HashSetAsync($"player:{me}:lobby:{lobbyId}", "mode", modeText);
+            if (lobby is PartyLobby)
+            {
+                lobby = await LobbyStore.UpdateAsync(redis, lobbyId, changed =>
+                {
+                    changed.Mode = modeText;
+                    return LobbyWrite.Save;
+                }) ?? lobby;
+            }
+
             // Everyone in the party hears of it (the TS server told only the player who changed it).
-            var party = await LobbyStore.GetAsync(redis, lobbyId) is { } current && current.PlayerIds.Contains(me) ? current.PlayerIds : [me];
+            var party = lobby.PlayerIds.Contains(me) ? lobby.PlayerIds : [me];
             await PlayerMessages.SendAsync(redis, party, PlayerMessages.Update(new JsonObject
             {
                 ["template_id"] = "OnLobbyModeUpdated",
@@ -261,10 +279,10 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             }
         }
 
-        if (await LobbyStore.GetAsync(redis, lobbyId) is { PlayerIds.Count: > 1 } lobby)
+        if (await LobbyStore.GetAsync(redis, lobbyId) is { PlayerIds.Count: > 1 } full)
         {
-            log.LogInformation("set_lobby_mode: Lobby {Lobby} has {Count} players, returning full lobby data", lobbyId, lobby.PlayerIds.Count);
-            return LobbyDocuments.Answer(await LobbyOfAsync(redis, lobby, mode, writeCosmetics: false, ct));
+            log.LogInformation("set_lobby_mode: Lobby {Lobby} has {Count} players, returning full lobby data", lobbyId, full.PlayerIds.Count);
+            return LobbyDocuments.Answer(await LobbyOfAsync(redis, full, mode, writeCosmetics: false, ct));
         }
 
         return LobbyDocuments.Ssc([]);
@@ -632,15 +650,23 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         log.LogInformation("Cleaned up lobby data for disconnected player {Player}", playerId);
     }
 
-    // ── set_lobby_not_joinable (matchmaking starts: a stale join must fail) ──────────────────────────────────────────
-    public async Task<JsonObject> SetNotJoinableAsync(PartyRequest request, CancellationToken ct)
+    // ── set_lobby_not_joinable / set_lobby_joinable ─────────────────────────────────────────────────────────────────
+    // The game marks its lobby not joinable when matchmaking starts or it goes into training mode, and joinable again
+    // after. The flag is recorded (joinable false, then true); nothing on this server reads it yet. The lobby keeps its
+    // lifetime (8 h with 2+ players): the TS server wrote it back for 1 h, so a party in training mode for over an hour
+    // lost its lobby, and its set_lobby_joinable kept nothing.
+    public Task<JsonObject> SetNotJoinableAsync(PartyRequest request, CancellationToken ct) => MarkJoinableAsync(request, false);
+
+    public Task<JsonObject> SetJoinableAsync(PartyRequest request, CancellationToken ct) => MarkJoinableAsync(request, true);
+
+    private async Task<JsonObject> MarkJoinableAsync(PartyRequest request, bool joinable)
     {
         if (Str(request.Body, "LobbyId") is { Length: > 0 } lobbyId)
         {
             await LobbyStore.UpdateAsync(Redis(), lobbyId, lobby =>
             {
-                lobby.SetField("joinable", false);
-                return LobbyWrite.SaveFor(SoloTtl);
+                lobby.SetField("joinable", joinable);
+                return LobbyWrite.Save;
             });
         }
 
@@ -670,9 +696,17 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         {
             await redis.SetAddAsync(readyKey, me);
         }
+        else if (lobby is PartyLobby { PlayerIds.Count: 2 } && await MatchmakingQueue.HeldTicketAsync(redis, lobby.PlayerIds) is { } ticket)
+        {
+            // A party lobby of two players that is searching: either player's un-ready cancels the search and un-readies both.
+            // (A searching solo player has no un-ready, only Cancel: MatchmakingRequestService.CancelAsync, same effect.)
+            log.LogInformation("set_ready_for_lobby: Player {Player} un-readied while party lobby {Lobby} was searching: search cancelled", me, matchId);
+            await MatchmakingQueue.CancelAsync(redis, lobby.PlayerIds, MatchmakingQueue.RequestIdOf(ticket));
+            await redis.KeyDeleteAsync(readyKey);
+        }
         else
         {
-            await redis.KeyDeleteAsync(readyKey);
+            await redis.SetRemoveAsync(readyKey, me);
         }
 
         await redis.KeyExpireAsync(readyKey, SoloTtl);
@@ -809,13 +843,6 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
     {
         string id = ObjectId.GenerateNewId().ToString();
         var now = time.GetUtcNow();
-        await redis.HashSetAsync($"player:{owner}:lobby:{id}",
-        [
-            new("id", id),
-            new("created_at", now.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")),
-            new("mode", "1v1"),
-            new("owner", owner),
-        ]);
         await redis.HashSetAsync($"connections:{owner}", "lobby_id", id);
         var lobby = new PartyLobby(id, owner, Or(Get(connection, "username"), Get(connection, "hydraUsername"), "Unknown"), "1v1", [owner], now.ToUnixTimeMilliseconds());
         await LobbyStore.SaveAsync(redis, lobby);

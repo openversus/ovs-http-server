@@ -97,8 +97,9 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 - **Asset sync:** `dataassets` and the `config` collection's `CRC` are written by `POST /syncAsset` (the web service, as
   the TS `dataAssetSync.ts` wrote them: the asset, then the CRC bumped). `HissService` builds its answer once per CRC
   and the inventory, cosmetics and hiss answers read the assets, so a sync must keep bumping the CRC.
-- **Delete when:** no TS service reads or writes that key, collection or channel any more. Then the C# side may change
-  the shape, drop the mongoose quirks, and the contract comment goes.
+- **Delete when:** production runs on C# (the cutover). A fallback to the TS server after that is a restore of the
+  backups taken just before the cutover (all of Mongo, Redis's append-only file), not a TS server reading what C# wrote;
+  from then on the C# side may change the shapes, drop the mongoose quirks, and the contract comments go.
 
 Retired when the TS server left the stack (every route ported; numbers are not reused): 1 (the YARP proxy in front of
 the game, which sent the routes C# had not ported to the TS server; the game talks to the router), 3 (`/batch` sent the

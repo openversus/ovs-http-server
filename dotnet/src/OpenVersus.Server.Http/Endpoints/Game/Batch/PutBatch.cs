@@ -8,7 +8,7 @@ namespace OpenVersus.Server.Http.Endpoints.Game.Batch;
 
 /// <summary>
 /// PUT /batch: runs sub-requests (<see cref="BatchRunner"/>). A body without a requests array answers 400 (the TS
-/// server throws and never answers); a batch this service forwarded that came back to it, 508.
+/// server throws and never answers).
 /// Seen in: binary 0x145054730; captured 26x; TS server: PUT /batch.
 /// </summary>
 public sealed class PutBatch : JsonBodyEndpoint
@@ -21,19 +21,7 @@ public sealed class PutBatch : JsonBodyEndpoint
 
     public override async Task HandleAsync(CancellationToken ct)
     {
-        byte[]? answer;
-        try
-        {
-            answer = await Resolve<BatchRunner>().RunAsync(HttpContext, await ReadBodyAsync(ct), ct);
-        }
-        catch (BatchLoopException)
-        {
-            Logger.LogError("A batch this service sent the TS server came back to it: Batch:TsUrl ({TsUrl}) must be the TS server, not this service or the proxy",
-                Resolve<Microsoft.Extensions.Options.IOptionsMonitor<BatchSettings>>().CurrentValue.TsUrl);
-            await Send.ResultAsync(Results.StatusCode(StatusCodes.Status508LoopDetected));
-            return;
-        }
-
+        byte[]? answer = await Resolve<BatchRunner>().RunAsync(HttpContext, await ReadBodyAsync(ct), ct);
         if (answer is null)
         {
             await Send.ResultAsync(Results.StatusCode(StatusCodes.Status400BadRequest));

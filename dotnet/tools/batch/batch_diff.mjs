@@ -1,6 +1,6 @@
-// PUT /batch on the TS server and the C# port, compared item by item and byte by byte. The C# port answers the
-// sub-requests it has ported and sends the rest to the TS server as one TS batch (Batch:TsUrl must be <tsUrl>), so
-// both servers run against the same stores. Run from the repository root:
+// PUT /batch on the TS server and the C# port, compared item by item and byte by byte. The C# port answers every
+// sub-request itself (another service's through the router); both servers must run against the same stores. Run from
+// the repository root:
 //
 //   REF_MONGO_URI=mongodb://127.0.0.1:27017/<db> REF_JWT_SECRET=<both servers' JWT_SECRET> REF_CS_CONTROL=<C# control port> \
 //     [REF_ACCOUNT=<account id>] [REF_CLIENT_VERSION=<version>] node dotnet/tools/batch/batch_diff.mjs run <tsUrl> <csUrl> [accounts]
@@ -8,9 +8,9 @@
 // Batches: every distinct batch the game sent in the captures (REF_CORPUS, default dotnet/local/hydra-corpus; account
 // ids rewritten), and one of the ported reads that could come in a batch plus sub-requests C# must send on (a stubbed
 // id, an unknown path, an unported SSC function), for the first <accounts> players with an identity (default 25),
-// plus REF_ACCOUNT (an account id) if set. Each batch runs in two C# modes, set live through the control API: "mixed"
-// (Batch:ForwardRoutes empty, so C# answers what it has ported) and "all-ts" (every game route in the route map listed, so
-// everything goes to the TS server).
+// plus REF_ACCOUNT (an account id) if set. Each batch runs in one C# mode, "mixed": C# answers everything (the "all-ts"
+// mode, every route sent on to the TS server through Batch:ForwardRoutes, went with that setting when the TS server left
+// the stack).
 //
 // Each batch is sent to the TS server, then to C#, then to the TS server again. A path whose value differs between the
 // two TS answers changes on every request (a timestamp, a random id) and is set aside, and listed; anything else C#
@@ -124,17 +124,10 @@ function synthetic(id, name) {
   };
 }
 
-// Every game route in the route map (docs/routes.json), so "all-ts" stays all as routes are ported. (The map writes "?"
-// for a method nobody has seen, and a regex path for the TS /.*/access route; neither can be listed.)
-const ALL_TS = JSON.parse(fs.readFileSync("dotnet/docs/routes.json", "utf8"))
-  .filter((r) => r.kind === "game" && ["GET", "PUT", "POST", "DELETE"].includes(r.method) && !r.path.startsWith("/.*"))
-  .map((r) => `${r.method} ${r.path}`).join(", ");
-
 async function setting(key, value) {
   const response = await fetch(`http://127.0.0.1:${control}/control/settings/${key}?scope=instance`, { method: "PUT", body: value });
   if (!response.ok) throw new Error(`setting ${key}: ${response.status} ${await response.text()}`);
 }
-const setForwardRoutes = value => setting("Batch:ForwardRoutes", value);
 
 // The TS server never answers a batch in which one sub-request throws (get_equipped_cosmetics does when the player has
 // no connection record): such a batch is recorded as a hang, and C# must still answer it, with 504 for what it sent there.
@@ -242,8 +235,7 @@ let batches = 0, identicalBytes = 0, problems = 0, hangs = 0, checkedAlone = 0, 
 await setting("Batch:ForwardTimeoutSeconds", String(FORWARD_TIMEOUT));
 const volatile = new Map();
 const report = [];
-for (const mode of ["mixed", "all-ts"]) {
-  await setForwardRoutes(mode === "mixed" ? "" : ALL_TS);
+for (const mode of ["mixed"]) {
   for (const [index, player] of players.entries()) {
     const id = player._id.toHexString();
     const session = await login(player, index);
@@ -325,11 +317,10 @@ for (const mode of ["mixed", "all-ts"]) {
     }
   }
 }
-await setForwardRoutes("");
 await setting("Batch:ForwardTimeoutSeconds", "30");
 
 console.log(`${hangs} batches the TS server never answered; ${checkedAlone} C# items checked against C# alone; ObjectId byte maps turned into hex: ${[...objectIdMaps].map(([k, v]) => `${k} ${v}`).join(", ") || "none"}`);
-console.log(`${batches} batches (${shapes.size} captured shapes + synthetic, ${players.length} players, 2 modes): ${problems} with differences, ${identicalBytes} byte-identical, ${lengthChecked} length-checked, ${blocksChecked} compressed blocks checked`);
+console.log(`${batches} batches (${shapes.size} captured shapes + synthetic, ${players.length} players): ${problems} with differences, ${identicalBytes} byte-identical, ${lengthChecked} length-checked, ${blocksChecked} compressed blocks checked`);
 console.log(`set aside (changes between two TS answers):${volatile.size ? "" : " nothing"}`);
 for (const [p, n] of [...volatile].sort()) console.log(`    ${p} x${n}`);
 for (const line of report) console.log("  " + line);

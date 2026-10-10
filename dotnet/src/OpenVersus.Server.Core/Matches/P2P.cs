@@ -11,7 +11,7 @@ namespace OpenVersus.Server.Core.Matches;
 // The notification (the stored match config) carries p2p, true or false, as every TS creator writes it; the TS
 // websocket then sends a P2P match's players to 127.0.0.1 and their node's port (connections:{id} nodePort, which
 // /access writes from /api/identify), and /ovs_register (RollbackCallbacks) holds game-server-instance-ready until the
-// host's node posts /ovs_p2p_ready. The switch is Rollback:P2P here and P2P_ROLLBACK in the TS server (MIGRATION-BRIDGES.md 8).
+// host's node posts /ovs_p2p_ready. The switch is Rollback:P2P (P2P_ROLLBACK fills it when it is not set itself: TsEnvironment).
 
 /// <summary>Which matches run P2P, and the node port a client reports.</summary>
 public static class P2P

@@ -67,7 +67,7 @@ public sealed class RollbackSettings
     [Description("A rollback server deployed for each match through the deploy webhook (ON_DEMAND_ROLLBACK=1), instead of the running ones on UdpPortLow..UdpPortHigh.")]
     public bool OnDemand { get; set; }
 
-    [Description("Every match with a human player (any mode, bots and spectators included) runs P2P, on the players' own nodes, with no rollback server unless their nodes report that no direct path opened (P2P_ROLLBACK). The TS server reads its own P2P_ROLLBACK for the matches it still creates: keep the two the same (MIGRATION-BRIDGES.md 8).")]
+    [Description("Every match with a human player (any mode, bots and spectators included) runs P2P, on the players' own nodes, with no rollback server unless their nodes report that no direct path opened (P2P_ROLLBACK).")]
     public bool P2P { get; set; }
 
     [Description("The address the players' P2P nodes are sent to for a relay when no direct path opened: /ovs_p2p_failed answers it with the match's rollback port (UDP_SERVER_IP). Empty: the nodes are named no relay, and such a match times out.")]
@@ -406,17 +406,5 @@ public static class MatchLauncherHosting
         builder.Services.AddSingleton<IMatchLauncher, MatchLauncher>();
         builder.Services.AddHttpClient(MatchLauncher.DeployClient, c => c.Timeout = TimeSpan.FromSeconds(30));
         return builder;
-    }
-
-    /// <summary>The startup warning for MIGRATION-BRIDGES.md 8, in every executable that starts matches (UseOpenVersus).
-    /// Logged once the app has started: the cluster settings are loaded by a hosted service, and before that the value
-    /// read would be the configuration's, not a cluster override's.</summary>
-    public static void WarnP2PBridge(WebApplication app)
-    {
-        if (app.Services.GetService<IMatchLauncher>() is not null)
-        {
-            app.Lifetime.ApplicationStarted.Register(() => app.Logger.LogWarning("MIGRATION BRIDGE: P2P is switched twice, Rollback:P2P (here, now {P2P}) for the matches C# starts and the TS server's P2P_ROLLBACK for its own matchmaker's, and a P2P node's port still comes from the TS server's /api/identify; keep the two the same. See dotnet/docs/MIGRATION-BRIDGES.md (8)",
-                app.Services.GetRequiredService<IOptionsMonitor<RollbackSettings>>().CurrentValue.P2P));
-        }
     }
 }

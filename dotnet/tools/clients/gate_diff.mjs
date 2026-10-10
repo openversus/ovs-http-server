@@ -11,8 +11,7 @@
 //   REF_MONGO_URI   a scratch database (name containing ref/test/scratch; dropped)
 //   REF_JWT_SECRET  the JWT secret both servers use
 // Both servers need the gate on with a minimum of 2026.09.28.1 (MIN_CLIENT_VERSION=2026.09.28.1,
-// CLIENT_VERSION_CHECK=true), and the C# server's Batch:TsUrl must be the TS server. Never point these at data you want
-// to keep.
+// CLIENT_VERSION_CHECK=true). Never point these at data you want to keep.
 //
 // The calendar (get_calendar_events), whose required-update popup follows the same decision, is compared whole: answer
 // (its popup's start, now minus a minute, as "<now>"), byte length and writes.

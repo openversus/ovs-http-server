@@ -31,7 +31,6 @@ public sealed class GameAppFactory : WebApplicationFactory<Program>
         builder.UseSetting("Access:JwtSecret", Secret);
         // Never a live router: a batch item another service owns would go there. Nothing listens on port 1.
         builder.UseSetting("Batch:EdgeUrl", "http://127.0.0.1:1");
-        builder.UseSetting("Batch:TsUrl", "http://127.0.0.1:1");
     }
 
     public static string Token(string secret = Secret, TimeSpan? lifetime = null) =>

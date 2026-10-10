@@ -54,8 +54,6 @@ var app = builder.Build();
 app.UseBatchPipeline();
 // Unknown paths come here (the router's default), so this service answers them with the stub fallback.
 app.UseGameHttp(fallback: true);
-app.Logger.LogWarning("MIGRATION BRIDGE: /batch sends the sub-requests C# has not ported to the TS server ({TsUrl}); see dotnet/docs/MIGRATION-BRIDGES.md (3)",
-    app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<BatchSettings>>().CurrentValue.TsUrl);
 
 app.Run();
 

@@ -2,7 +2,7 @@ using OpenVersus.Server.Core.Hosting;
 
 namespace OpenVersus.Server.Core.Tests.Hosting;
 
-/// <summary>"METHOD /path" route lists (Proxy:PortedRoutes, Batch:ForwardRoutes).</summary>
+/// <summary>"METHOD /path" route lists.</summary>
 public sealed class RouteListTests
 {
     private readonly RouteList _routes = new("GET /commerce/products, GET /profiles/{id}/inventory, PUT /matches/{id}");

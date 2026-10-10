@@ -11,11 +11,10 @@ using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.RewardTracks;
 
-// End Game's ranked-set XP. Whoever settles a ranked set (or a public FFA game) decides who is paid and whether they won:
-// the TS server (rankedSetXpService.ts) for the sets it still rates, C# (RankedSetXpPayout) for the rest; nothing before
-// a game is played, so a pregame dodge pays nobody; after one, a player who quit gets nothing, everyone else is paid.
-// Both publish {playerId, won, character, setKey, source} for each player on reward_tracks:ranked_set
-// (docs/MIGRATION-BRIDGES.md 10).
+// End Game's ranked-set XP. Whoever settles a ranked set (or a public FFA game) decides who is paid and whether they won
+// (RankedSetXpPayout, the rules of the TS server's rankedSetXpService.ts): nothing before a game is played, so a pregame
+// dodge pays nobody; after one, a player who quit gets nothing, everyone else is paid. It publishes {playerId, won,
+// character, setKey, source} for each player on reward_tracks:ranked_set.
 // Once per player and set:
 //
 //   - the battle pass (mrt_battlepass_season_five) gains RewardTracks:BattlePassSetXp, +BattlePassWinXp for a win;
@@ -58,7 +57,6 @@ internal sealed class RankedSetXpSubscriber(IServiceProvider services, IOptionsM
             return;
         }
 
-        log.LogWarning("MIGRATION BRIDGE: ranked-set XP is paid from the TS server's {Channel} and sent through its websocket (ws:send); see dotnet/docs/MIGRATION-BRIDGES.md (10)", Channel);
         await redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(Channel), (channel, message) => _ = OneAtATimeAsync(message.ToString()));
     }
 

@@ -79,9 +79,6 @@ public static class KnownServices
     public static readonly ServiceDefinition Web = new("web", "WEB_PORT", DefaultPublicPort: 8004, DefaultControlPort: 17809,
         ServiceStores.Redis | ServiceStores.Mongo);
 
-    /// <summary>The migration's reverse proxy: ported routes to the C# services, the rest to the TS server.</summary>
-    public static readonly ServiceDefinition Proxy = new("proxy", "PROXY_PORT", DefaultPublicPort: 8080, DefaultControlPort: 17804);
-
     /// <summary>
     /// The edge in front of the realtime gateway (EDGE_PORT): holds the game's websocket and links it to a gateway node,
     /// moving it to another when that node goes (docs/REALTIME.md). Redis: the nodes are found in the instance registry.
@@ -96,7 +93,7 @@ public static class KnownServices
     public static readonly ServiceDefinition Steam = new("steam", PublicPortKey: null, DefaultPublicPort: 0, DefaultControlPort: 17811,
         ServiceStores.Redis);
 
-    public static IReadOnlyList<ServiceDefinition> All { get; } = [Http, Access, Social, Lobbies, Web, Realtime, Edge, Matchmaking, MatchFlow, Steam, Proxy];
+    public static IReadOnlyList<ServiceDefinition> All { get; } = [Http, Access, Social, Lobbies, Web, Realtime, Edge, Matchmaking, MatchFlow, Steam];
 
     public static ServiceDefinition? Find(string name) => All.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
 }
@@ -187,7 +184,6 @@ public static class OpenVersusHost
         OpenVersusLogging.FollowLevelSetting(app.Services);
         app.LogFrozenAccountData();
         app.MapOpenVersusControl();
-        Matches.MatchLauncherHosting.WarnP2PBridge(app);
         app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
         app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready"), ResponseWriter = WriteReadyAsync });
         var service = app.Services.GetRequiredService<ServiceDefinition>();

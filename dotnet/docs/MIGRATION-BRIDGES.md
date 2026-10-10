@@ -9,15 +9,6 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
 
 ## Active
 
-### 1. The proxy (`src/OpenVersus.Server.Proxy`)
-
-- **What:** the game talks to the proxy. Routes listed in `Proxy:TsRoutes` (the ones the TS server still answers) go
-  to the TS server (`Proxy:TsUrl`); everything else goes to C# (`Proxy:CSharpUrl`: the router, which sends each route
-  to the service that owns it). The list is the port's remaining tail; it empties as routes are ported.
-- **Why:** each route is tried against the game as soon as it is ported.
-- **Delete when:** every route the game uses is ported. Then the game talks to the C# http service directly, and the
-  proxy project, its tests and `KnownServices.Proxy` go.
-
 ### 2. Shared data contracts (Redis keys, Mongo collections)
 
 - **What:** the C# services read and write the same Redis keys and Mongo documents as the TS services, exactly as they
@@ -29,8 +20,7 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   `matchmaking:cancel`, `MatchLaunches` for `match:notifications` and `matchmaking:complete`, `RollbackCallbacks` for
   `game_server_ready:notifications`, `MatchEnd` for `match:end`, `PerksLock` for `perks:notifications`,
   `ClientUpdateGate` for `client_update:modal`, and since slice 3b the lobby, toast and ranked set channels), and every
-  message to a game goes through `ws:send`, which the realtime gateway delivers. The TS server's own routes that still
-  run behind the proxy (bridge 1) publish their channels to nobody: no TS websocket runs.
+  message to a game goes through `ws:send`, which the realtime gateway delivers.
 - **Starting a match:** `IMatchLauncher` (`Core/Matches/`, for rifts and custom lobbies) writes what the TS custom lobby
   writes when a match starts (`match:{id}`, `match:{id}:perks:{bot}`, the notification at `{id}`, `rollback:current_port`
   on demand) and appends the notification (the TS `MATCH_FOUND_NOTIFICATION`, with a custom game's settings and its
@@ -104,49 +94,19 @@ invisible. If a new bridge is added, it gets an entry here and that warning, or 
   0 is a value. The game sends its current value with every party-lobby request; both servers record it before the
   handler (C# `GameplayPreferencesRecorder`, TS `recordGameplayPreferencesFromRequest`), and every lobby and match
   reads the stored one. The TS websocket builds the match configs from `connections:{id}`.
-- **Asset sync:** `dataassets` and the `config` collection's `CRC` are written only by the TS server's `POST /syncAsset`
-  (`dataAssetSync.ts`: the asset, then the CRC bumped). C# reads both (`HissService` builds its answer once per CRC;
-  the inventory, cosmetics and hiss answers read the assets), so an asset sync goes through the TS server until
-  `/syncAsset` is ported, and must keep bumping the CRC.
+- **Asset sync:** `dataassets` and the `config` collection's `CRC` are written by `POST /syncAsset` (the web service, as
+  the TS `dataAssetSync.ts` wrote them: the asset, then the CRC bumped). `HissService` builds its answer once per CRC
+  and the inventory, cosmetics and hiss answers read the assets, so a sync must keep bumping the CRC.
 - **Delete when:** no TS service reads or writes that key, collection or channel any more. Then the C# side may change
   the shape, drop the mongoose quirks, and the contract comment goes.
 
-### 3. `/batch` sends the sub-requests C# has not ported to TS (`src/OpenVersus.Server.Http/Batch/BatchRunner.cs`)
-
-- **Decided:** 2026-09-29 (option 1, on the condition that it is recorded here and never becomes permanent).
-- **Not part of the bridge:** a sub-request another C# service owns (`owner` in `routes.json`) goes to that service
-  through the router (`Batch:EdgeUrl`: the proxy on the bench, the router in production) as a request of its own, with
-  the same headers. That is how a batch spans services, and it stays when TS is gone.
-- **What:** the C# `/batch` runs each of its own service's sub-requests through its own pipeline. Those that reach a stub (not ported), and
-  those whose route is listed in `Batch:ForwardRoutes`, go to the TS server (`Batch:TsUrl`) together, as one TS `/batch`
-  carrying the game's batch headers as they came (plus `X-Real-IP`), so the TS server runs them exactly as it runs its
-  own batches. Its answers are put into the response byte for byte, in the game's order.
-- **Headers, as in TS:** a sub-request answered in C# gets its own headers, the batch's `x-hydra-access-token`, the Hydra
-  content type and the batch's client address. The TS `/batch` gives its sub-requests the same (the token is copied, the
-  client address is inherited); the batch's other headers (`x-steam-id`, `x-install-id`, `X-OVS-Identity`, ...) reach
-  neither server's sub-requests.
-- **Rolling a route back:** adding a route to `Proxy:TsRoutes` does not reach into batches; listing it in
-  `Batch:ForwardRoutes` (same `METHOD /path` form) does. Both are live settings.
-- **Why:** the login's two batches hold about 15 SSC and config reads; this lets each one move to C# on its own.
-- **Delete when:** every route a batch can contain is ported (the SSC catch-all `SscUnlisted` included). Then the
-  forwarding code, `Batch:TsUrl`, `Batch:ForwardRoutes`, `Batch:ForwardTimeoutSeconds`, the startup warning and this
-  entry go; `/batch` keeps running its sub-requests in C#.
-
-### 8. P2P is switched in two places, and a P2P node's port is still the TS server's
-
-- **What:** whether eligible matches run P2P (on the players' own nodes) is `Rollback:P2P` for every match C# starts
-  (`MatchLauncher`: custom lobbies and their rematches, the Casual queue, rift nodes; the C# matchmaker; a ranked set's
-  next game, `RankedSets`), and the TS server's `P2P_ROLLBACK` environment variable for the matches its own matchmaker
-  starts when it runs. Both write `p2p` into the match config with the same rule (`Matches/P2P.cs`,
-  `src/services/nodePort.ts` hasP2PHost: every match with a human who plays). The match flow serves the nodes
-  (`RollbackCallbacks`, `NodeConfig`) and sends each game to its node (`MatchLaunches`: 127.0.0.1 and the port its client
-  reported, `Rollback:P2PNodePort` when none). That port comes from `/api/identify` (the web service's since the
-  identity port, docs/IDENTIFY.md; the TS one wrote the same record while it answered the route).
-  `Rollback:P2P` takes `P2P_ROLLBACK` when it is not set itself, but a cluster setting changed through the control API is
-  not seen by TS.
-- **Until then:** do not run the TS matchmaker beside the C# one; change both together if it runs. Each executable that
-  starts matches logs the C# value once it has started (the cluster settings are loaded by then).
-- **Delete when:** the TS matchmaker is retired.
+Retired when the TS server left the stack (every route ported; numbers are not reused): 1 (the YARP proxy in front of
+the game, which sent the routes C# had not ported to the TS server; the game talks to the router), 3 (`/batch` sent the
+sub-requests C# had not ported to the TS server as one TS batch; a sub-request another service owns still goes through
+the router, `Batch:EdgeUrl`), 8 (P2P was switched in two places, `Rollback:P2P` and the TS matchmaker's `P2P_ROLLBACK`;
+the TS matchmaker no longer runs, and `P2P_ROLLBACK` still fills `Rollback:P2P` through `TsEnvironment`), 10 (End Game's
+ranked-set XP was settled by the TS server and paid by C#; C# settles the sets and FFA games and publishes the payment on
+`reward_tracks:ranked_set` itself, `RankedSetXpPayout`, which `RankedSetXpSubscriber` in the match flow pays).
 
 Retired with the port tail: 6 (ratings: the TS `PUT /matches/:id/leave` rated a leaver its own way; the route is C#'s
 now and puts the leave on the match flow's `match:results` stream (`MatchLeaves`), where it is settled as the game's
@@ -156,22 +116,6 @@ Retired with slice 3e (the realtime gateway in the TS websocket's place; numbers
 progress reached the game through the TS websocket), 5 (`ovsctl player disconnect` through the TS websocket), 7 (the TS
 websocket declined every Casual rematch), 9 (the match flow built configs from the TS websocket's channels, which still
 sent them; with it the settings `MatchEnd:Enabled`, `GameplayConfigs:Mode` and `Realtime:Gateway`).
-
-### 10. End Game's ranked-set XP is settled by the TS server and paid by C#
-
-- **Decided:** 2026-10-04 (End Game), on the condition that it is recorded here.
-- **What:** ratings and ranked sets are still the TS server's (6). When it settles a ranked set or a public FFA game,
-  `awardRankedSetXp` / `awardFfaMatchXp` (`src/services/rankedSetXpService.ts`) decide who is paid and whether they
-  won: a set needs one game played, so a pregame dodge pays nobody (not even the side given the win); after a
-  game, whoever quit (a concede, a walkout, a dodge before game 2 or 3) gets nothing and everyone else is paid. They publish
-  `{playerId, won, character, setKey, source}` for each player on `reward_tracks:ranked_set`. The C#
-  `RankedSetXpSubscriber` (`Core/RewardTracks/RankedSetXp.cs`, in the match flow executable) pays it once per `setKey`
-  and player (`ranked_set_xp:{setKey}:{playerId}`). The battle pass gets `RewardTracks:BattlePassSetXp`/`WinXp`, the
-  account and the played character's levels get `CharacterSetXp`/`WinXp`, and the levels' completed tiers are paid
-  at once. It tells the game on `ws:send` (RewardTrackStatesUpdated) and logs a `MIGRATION BRIDGE` warning.
-- **Why:** the reward tracks are C#'s (`rewardtracks`), the sets are TS's.
-- **Delete when:** ranked sets are settled in C# (with 6). The C# code that settles them calls the subscriber's
-  payment directly, and the channel, the TS publish and this entry go.
 
 ## Not bridges (kept after the migration)
 

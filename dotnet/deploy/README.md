@@ -43,9 +43,8 @@ The dbs project is not needed where MongoDB and Redis already run: attach the se
 
 ## A bench
 
-A development bench adds an override file of its own outside the repository: the game-facing ports on localhost, and,
-while the port is unfinished, the migration's YARP proxy as the game's entry with a TS index container behind it for
-unported routes. Neither is part of a deployment.
+A development bench adds an override file of its own outside the repository: the game-facing ports on localhost. The
+game's entry is the router, as in a deployment.
 
 ## Updating
 

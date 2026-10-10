@@ -37,7 +37,6 @@ public class ServiceFactory<TProgram> : WebApplicationFactory<TProgram> where TP
         builder.UseSetting("Access:JwtSecret", Secret);
         builder.UseSetting("Access:IdentifySecret", IdentifySecret);
         builder.UseSetting("Batch:EdgeUrl", "http://127.0.0.1:1");
-        builder.UseSetting("Batch:TsUrl", "http://127.0.0.1:1");
     }
 
     public static string Token() =>

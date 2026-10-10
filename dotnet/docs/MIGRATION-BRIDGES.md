@@ -124,7 +124,10 @@ sent them; with it the settings `MatchEnd:Enabled`, `GameplayConfigs:Mode` and `
   (`MatchResults`, at most ~10,000 kept); the match flow replicas read it as one consumer group (`MatchResultStream`),
   so each result is handled once, a result appended while no replica runs waits instead of being lost, and a replica
   that dies leaves its unacknowledged results to the others (XAUTOCLAIM after a minute; Redis 6.2+). It replaced the
-  pub/sub channel `match:end_of_match_stats` the TS server published.
+  pub/sub channel `match:end_of_match_stats` the TS server published. Two more records ride on it: a leave said over HTTP
+  (`leave`, `MatchLeaves`) and End Game's ranked-set and FFA XP (`set_xp`, `RankedSetXpPayout`, paid by
+  `RankedSetXpPayer`; it was the pub/sub channel `reward_tracks:ranked_set`, which lost a payment made while the match
+  flow restarted).
 
 - `TsEnvironment`: the TS server's environment variable names (`JWT_SECRET`, `WB_DOMAIN`, ...) fill C# settings, so the
   containers' `.env` files carry over. Configuration compatibility, not a runtime tie to TS.

@@ -5,7 +5,7 @@ using OpenVersus.Server.Core.RewardTracks;
 namespace OpenVersus.Server.Core.Tests.RewardTracks;
 
 /// <summary>
-/// End Game's ranked-set XP (RankedSetXpSubscriber): what a set is worth to each track, and CurrentTier stopping at a
+/// End Game's ranked-set XP (RankedSetXpPayer): what a set is worth to each track, and CurrentTier stopping at a
 /// finished track's last tier. Needs no stores.
 /// </summary>
 public sealed class RankedSetXpTests
@@ -19,20 +19,20 @@ public sealed class RankedSetXpTests
             ["mrt_battlepass_season_five"] = 450,
             ["mrt_mastery_account"] = 600,
             ["mrt_mastery_banana_guard"] = 600,
-        }, RankedSetXpSubscriber.Points(settings, won: true, "character_BananaGuard"));
+        }, RankedSetXpPayer.Points(settings, won: true, "character_BananaGuard"));
         // A loss: no win bonus.
         Assert.Equal(new Dictionary<string, int>
         {
             ["mrt_battlepass_season_five"] = 300,
             ["mrt_mastery_account"] = 400,
             ["mrt_mastery_banana_guard"] = 400,
-        }, RankedSetXpSubscriber.Points(settings, won: false, "character_BananaGuard"));
+        }, RankedSetXpPayer.Points(settings, won: false, "character_BananaGuard"));
     }
 
     [Fact]
     public void ACharacterWithoutALevelTrackPaysOnlyThePassAndTheAccount()
     {
-        var points = RankedSetXpSubscriber.Points(new RewardTrackSettings(), won: false, "character_nobody");
+        var points = RankedSetXpPayer.Points(new RewardTrackSettings(), won: false, "character_nobody");
         Assert.Equal(["mrt_battlepass_season_five", "mrt_mastery_account"], points.Keys.Order());
     }
 
@@ -41,7 +41,7 @@ public sealed class RankedSetXpTests
     {
         var settings = new RewardTrackSettings { BattlePassSetXp = 10, BattlePassWinXp = 5, CharacterSetXp = 0, CharacterWinXp = 0 };
         Assert.Equal(new Dictionary<string, int> { ["mrt_battlepass_season_five"] = 15 },
-            RankedSetXpSubscriber.Points(settings, won: true, "character_BananaGuard"));
+            RankedSetXpPayer.Points(settings, won: true, "character_BananaGuard"));
     }
 
     [Fact]

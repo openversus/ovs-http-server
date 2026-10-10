@@ -184,7 +184,7 @@ internal sealed class SetRatings(IServiceProvider services, EloRatings ratings, 
         // End Game's set XP, as the TS processSetResult awarded it once the set was rated.
         if (redis is not null && outcome.MatchId.Length > 0)
         {
-            await RewardTracks.RankedSetXpPayout.PublishSetAsync(redis, outcome);
+            await RewardTracks.RankedSetXpPayout.AppendSetAsync(redis, outcome);
         }
 
         return deltas;

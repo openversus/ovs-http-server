@@ -128,7 +128,7 @@ internal sealed class MatchResultStream(IServiceProvider services, IMissionServi
             var pending = await redis.StreamPendingMessagesAsync(MatchResults.Stream, Group, 1, _consumer, entry.Id, entry.Id);
             if (pending.Length > 0 && pending[0].DeliveryCount > MaxDeliveries)
             {
-                log.LogError("Match result {Id} failed {Count} times; dropped: {Result}", entry.Id, pending[0].DeliveryCount, (string?)entry["result"] ?? (string?)entry[MatchLeaves.Field]);
+                log.LogError("Match result {Id} failed {Count} times; dropped: {Result}", entry.Id, pending[0].DeliveryCount, (string?)entry["result"] ?? (string?)entry[MatchLeaves.Field] ?? (string?)entry[RewardTracks.RankedSetXpPayout.Field]);
                 await redis.StreamAcknowledgeAsync(MatchResults.Stream, Group, entry.Id);
                 continue;
             }
@@ -148,6 +148,13 @@ internal sealed class MatchResultStream(IServiceProvider services, IMissionServi
                 && Text(leave["matchId"]) is { Length: > 0 } leftMatch && Text(leave["playerId"]) is { Length: > 0 } leaver)
             {
                 await statusEvents.LeftAsync(leftMatch, leaver);
+            }
+
+            // End Game's ranked-set or FFA XP (RankedSetXpPayout): paid, or it throws and the record stays pending.
+            if ((string?)entry[RewardTracks.RankedSetXpPayout.Field] is { Length: > 0 } xp)
+            {
+                var payer = services.GetService<RewardTracks.IRankedSetXpPayer>() ?? throw new InvalidOperationException("this service pays no ranked-set XP (AddRankedSetXp)");
+                await payer.PayAsync(xp);
             }
 
             if (Js.Parse((string?)entry["result"] ?? "null") is JsonObject result && Text(result["matchId"]) is { Length: > 0 } matchId)
@@ -180,7 +187,7 @@ internal sealed class MatchResultStream(IServiceProvider services, IMissionServi
     }
 
     // End Game's XP for a public FFA game (the TS submit_end_of_match_stats paid it, rankedSetXpService.ts): the reporter,
-    // when a human of a public FFA match, the winner as a win. Paid once per match and player by the subscriber.
+    // when a human of a public FFA match, the winner as a win. Paid once per match and player by RankedSetXpPayer.
     private static async Task FfaXpAsync(IDatabase redis, string matchId, string playerId, int? winning)
     {
         if (Js.Parse((string?)await redis.StringGetAsync(matchId) ?? "null") is not JsonObject config || Text(config["mode"]) != "FFA"
@@ -195,7 +202,7 @@ internal sealed class MatchResultStream(IServiceProvider services, IMissionServi
         string character = Text((Js.Parse((string?)await redis.StringGetAsync($"match_characters:{matchId}") ?? "null") as JsonObject)?[playerId])
             ?? (string?)await redis.HashGetAsync($"connections:{playerId}", "character") ?? "";
         bool won = winning is { } team && MatchWinner.Number(player["teamIndex"]) is { } index && (int)index == team;
-        await RewardTracks.RankedSetXpPayout.PublishFfaAsync(redis, playerId, won, character, matchId);
+        await RewardTracks.RankedSetXpPayout.AppendFfaAsync(redis, playerId, won, character, matchId);
     }
 
     // Every human of the match (the config's players that are not bots) has reported.

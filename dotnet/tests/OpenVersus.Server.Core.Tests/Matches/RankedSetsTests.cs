@@ -8,6 +8,7 @@ using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Realtime;
+using OpenVersus.Server.Core.RewardTracks;
 using OpenVersus.Server.Core.Seasons;
 using StackExchange.Redis;
 
@@ -529,34 +530,19 @@ public sealed class RankedSetsTests : IAsyncLifetime
     public async Task AWalkoutInTheDecidingGameIsTheSetsQuitter()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
-        var paid = new ConcurrentQueue<JsonObject>();
-        var channel = RedisChannel.Literal("reward_tracks:ranked_set");
-        await _redis!.GetSubscriber().SubscribeAsync(channel, (_, m) =>
-        {
-            if (m.ToString().Contains(Prefix, StringComparison.Ordinal))
-            {
-                paid.Enqueue((JsonObject)JsonNode.Parse(m.ToString())!);
-            }
-        });
-        try
-        {
-            await SeedAsync(gamesPlayed: 1, team0: 2, team1: 0);
-            await Db.StringSetAsync($"ranked_disconnect:{P2}", Set);
+        await SeedAsync(gamesPlayed: 1, team0: 2, team1: 0);
+        await Db.StringSetAsync($"ranked_disconnect:{P2}", Set);
+        var before = (await Db.StreamRangeAsync(MatchResults.Stream, "-", "+", 1, Order.Descending)).Select(e => e.Id).FirstOrDefault();
 
-            var result = await Sets().GameEndedAsync(Set, [P1, P2], new JsonObject { ["players"] = Players(), ["mode"] = "1v1", ["matchId"] = Set }, counts: true);
-            for (int i = 0; i < 50 && paid.IsEmpty; i++)
-            {
-                await Task.Delay(20);
-            }
+        var result = await Sets().GameEndedAsync(Set, [P1, P2], new JsonObject { ["players"] = Players(), ["mode"] = "1v1", ["matchId"] = Set }, counts: true);
 
-            await Task.Delay(100);
-            Assert.Equal(GameEnd.Over, result.Kind);
-            Assert.Equal([P1], paid.Select(p => (string)p["playerId"]!));
-        }
-        finally
-        {
-            await _redis.GetSubscriber().UnsubscribeAsync(channel);
-        }
+        // The payment records this set appended to match:results (RankedSetXpPayout), for the match flow to pay.
+        var paid = (await Db.StreamRangeAsync(MatchResults.Stream, before.IsNull ? "-" : before, "+"))
+            .Where(e => e.Id != before && !e[RankedSetXpPayout.Field].IsNull)
+            .Select(e => (JsonObject)JsonNode.Parse((string)e[RankedSetXpPayout.Field]!)!)
+            .Where(p => ((string?)p["setKey"] ?? "").Contains(Set, StringComparison.Ordinal));
+        Assert.Equal(GameEnd.Over, result.Kind);
+        Assert.Equal([P1], paid.Select(p => (string)p["playerId"]!));
     }
 
     [SkippableFact]

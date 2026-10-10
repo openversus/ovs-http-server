@@ -16,7 +16,7 @@ using OpenVersus.Server.Http.Shared;
 // GameServerReadyNotification to its players.
 // And a match's end (MatchEnd), with its delayed websocket messages (DelayedMessages). And what a player's game closing its
 // websocket does to their match (MatchDisconnects, the realtime gateway's disconnects: a dodge, a set's leaver).
-// And End Game's ranked-set XP (reward_tracks:ranked_set, from the TS server and from C#'s set ratings).
+// And End Game's ranked-set XP (RankedSetXpPayer: the set_xp records of match:results, from the set ratings and FFA results).
 var builder = OpenVersusHost.CreateBuilder(KnownServices.MatchFlow, args);
 builder.AddGameHttp(typeof(Program).Assembly);
 builder.AddRewardTracks();

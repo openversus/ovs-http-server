@@ -1,7 +1,8 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
@@ -13,8 +14,9 @@ namespace OpenVersus.Server.Core.RewardTracks;
 
 // End Game's ranked-set XP. Whoever settles a ranked set (or a public FFA game) decides who is paid and whether they won
 // (RankedSetXpPayout, the rules of the TS server's rankedSetXpService.ts): nothing before a game is played, so a pregame
-// dodge pays nobody; after one, a player who quit gets nothing, everyone else is paid. It publishes {playerId, won,
-// character, setKey, source} for each player on reward_tracks:ranked_set.
+// dodge pays nobody; after one, a player who quit gets nothing, everyone else is paid. It appends {playerId, won,
+// character, setKey, source} for each player to match:results (field set_xp), and the match flow's consumer of that
+// stream (MatchResultStream) hands each record to the payer here.
 // Once per player and set:
 //
 //   - the battle pass (mrt_battlepass_season_five) gains RewardTracks:BattlePassSetXp, +BattlePassWinXp for a win;
@@ -30,16 +32,29 @@ namespace OpenVersus.Server.Core.RewardTracks;
 // only source of level XP in End Game: RewardTracks:MatchXp and RiftMatchXp are off there, so custom games and rifts
 // earn none.
 //
-// Redis, subscribed  reward_tracks:ranked_set
+// A record is paid, or it stays pending on the stream and is paid on its retry: the claim ranked_set_xp:{setKey}:{playerId}
+// is taken first and given back when nothing was paid (the score not written: an error, or the player's tracks kept
+// changing), and the record's failure is left to the stream. Once the score is written, a later failure (the tiers, the
+// game's update) is only logged: a retry would pay the XP twice.
+//
+// Redis, read        match:results set_xp records (through MatchResultStream)
 // Redis, written     ranked_set_xp:{setKey}:{playerId} NX EX 7 days (one payment per player and set)
 // Mongo, written     rewardtracks (RewardTrackService), playeritems / playercounters (RewardGrants)
 // Published          ws:send RewardTrackStatesUpdated
 
-/// <summary>Pays End Game's ranked-set XP (reward_tracks:ranked_set).</summary>
-internal sealed class RankedSetXpSubscriber(IServiceProvider services, IOptionsMonitor<RewardTrackSettings> settings,
-    IOptionsMonitor<MissionSettings> missions, IRewardTrackService tracks, IRewardGrants grants, ILogger<RankedSetXpSubscriber> log) : IHostedService
+/// <summary>Pays End Game's ranked-set XP, one set_xp record of match:results at a time (see the header).</summary>
+internal interface IRankedSetXpPayer
 {
-    internal const string Channel = "reward_tracks:ranked_set";
+    /// <summary>
+    /// Pays one record. Throws when nothing was paid and a retry may pay it (the stream keeps the record pending); returns
+    /// for a record paid, already paid, unreadable, or paid whose tiers or game update then failed.
+    /// </summary>
+    Task PayAsync(string record);
+}
+
+internal sealed class RankedSetXpPayer(IServiceProvider services, IOptionsMonitor<RewardTrackSettings> settings,
+    IOptionsMonitor<MissionSettings> missions, IRewardTrackService tracks, IRewardGrants grants, ILogger<RankedSetXpPayer> log) : IRankedSetXpPayer
+{
     internal const string BattlePass = "mrt_battlepass_season_five";
     internal const string Account = "mrt_mastery_account";
     // EMvsRewardTrackUpdateContext: XpReward shows a banner per track; Unknown updates the state only.
@@ -47,20 +62,22 @@ internal sealed class RankedSetXpSubscriber(IServiceProvider services, IOptionsM
     private const int Quiet = 0;
 
     // One payment at a time: a player's tracks are written read-modify-write (version-guarded, three tries), so two of
-    // their payments at once could lose one (eight at once lost four, 2026-10-05).
+    // their payments at once could lose one (eight at once lost four, 2026-10-05). The stream's consumer hands over one
+    // record at a time already; this keeps it so for any other caller.
     private readonly SemaphoreSlim _one = new(1, 1);
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public async Task PayAsync(string record)
     {
-        if (services.GetService<IConnectionMultiplexer>() is not { } redis)
+        await _one.WaitAsync();
+        try
         {
-            return;
+            await HandleAsync(record);
         }
-
-        await redis.GetSubscriber().SubscribeAsync(RedisChannel.Literal(Channel), (channel, message) => _ = OneAtATimeAsync(message.ToString()));
+        finally
+        {
+            _one.Release();
+        }
     }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     // AddScoreAsync answers no tracks when its write kept losing to other writes (another request for the player): tried
     // again a few times, a little later each time.
@@ -78,46 +95,55 @@ internal sealed class RankedSetXpSubscriber(IServiceProvider services, IOptionsM
         }
     }
 
-    internal async Task OneAtATimeAsync(string message)
-    {
-        await _one.WaitAsync();
-        try
-        {
-            await HandleAsync(message);
-        }
-        finally
-        {
-            _one.Release();
-        }
-    }
-
     internal async Task HandleAsync(string message)
     {
+        JsonNode? node;
         try
         {
-            if (JsonNode.Parse(message) is not JsonObject set || Text(set["playerId"]) is not { } playerId || !ObjectId.TryParse(playerId, out _)
-                || Text(set["setKey"]) is not { } setKey || services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis)
-            {
-                return;
-            }
+            node = JsonNode.Parse(message);
+        }
+        catch (JsonException e)
+        {
+            log.LogError("Ranked-set XP record {Message} cannot be read ({Error}); dropped", message, e.Message);
+            return;
+        }
 
-            if (!await redis.StringSetAsync($"ranked_set_xp:{setKey}:{playerId}", "1", TimeSpan.FromDays(7), When.NotExists))
-            {
-                return;
-            }
+        if (node is not JsonObject set || Text(set["playerId"]) is not { } playerId || !ObjectId.TryParse(playerId, out _) || Text(set["setKey"]) is not { } setKey)
+        {
+            log.LogError("Ranked-set XP record {Message} names no player or set; dropped", message);
+            return;
+        }
 
-            bool won = set["won"] is JsonValue w && w.TryGetValue(out bool b) && b;
-            string character = Text(set["character"]) ?? "";
-            var points = Points(settings.CurrentValue, won, character);
-            var changed = (await AddScoreAsync(playerId, points)).ToDictionary(t => t["TrackSlug"]!.GetValue<string>());
+        var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase() ?? throw new InvalidOperationException("this service has no Redis (REDIS)");
+        string claim = $"ranked_set_xp:{setKey}:{playerId}";
+        if (!await redis.StringSetAsync(claim, "1", TimeSpan.FromDays(7), When.NotExists))
+        {
+            return;
+        }
+
+        string source = Text(set["source"]) ?? setKey;
+        bool won = set["won"] is JsonValue w && w.TryGetValue(out bool b) && b;
+        string character = Text(set["character"]) ?? "";
+        var points = Points(settings.CurrentValue, won, character);
+        Dictionary<string, JsonObject> changed;
+        try
+        {
+            changed = (await AddScoreAsync(playerId, points)).ToDictionary(t => t["TrackSlug"]!.GetValue<string>());
             if (changed.Count == 0 && points.Count > 0)
             {
-                log.LogError("Ranked-set XP for {Player} from {Source} was not written (the player's tracks kept changing): not paid",
-                    playerId, Text(set["source"]) ?? setKey);
-                await redis.KeyDeleteAsync($"ranked_set_xp:{setKey}:{playerId}");
-                return;
+                throw new InvalidOperationException("the player's tracks kept changing");
             }
+        }
+        catch (Exception e)
+        {
+            // Nothing was paid: the claim is given back, and the record's retry pays.
+            await redis.KeyDeleteAsync(claim);
+            log.LogWarning("Ranked-set XP for {Player} from {Source} not paid yet ({Error}); the record stays pending", playerId, source, e.Message);
+            throw;
+        }
 
+        try
+        {
             // The levels' tiers are paid as they complete (their battle pass XP may move the battle pass again).
             var live = MissionContainers.Live(missions.CurrentValue.Containers);
             foreach (string level in points.Keys.Where(RewardTrackSettings.IsMastery).Where(changed.ContainsKey).ToList())
@@ -136,7 +162,7 @@ internal sealed class RankedSetXpSubscriber(IServiceProvider services, IOptionsM
                 }
             }
 
-            log.LogInformation("Ranked-set XP for {Player} from {Source} ({Character}, {Result}): {Points}", playerId, Text(set["source"]) ?? setKey,
+            log.LogInformation("Ranked-set XP for {Player} from {Source} ({Character}, {Result}): {Points}", playerId, source,
                 character, won ? "win" : "loss", string.Join(", ", points.Select(p => $"{p.Key} +{p.Value}")));
             // The game shows an XP banner for each track of an XpReward update. As live sent only the battle pass's, the
             // banners are the fighter's level and the battle pass; the account level is still paid, and its state sent
@@ -154,8 +180,8 @@ internal sealed class RankedSetXpSubscriber(IServiceProvider services, IOptionsM
         }
         catch (Exception e)
         {
-            // Nothing else would ever see it: this runs on the subscription's callback, not a request.
-            log.LogError(e, "Ranked-set XP from {Message} not paid: {Error}", message, e.Message);
+            // The XP is written: a retry would pay it twice, so the record is done.
+            log.LogError(e, "Ranked-set XP for {Player} from {Source} paid, but its tiers or the game's update failed: {Error}", playerId, source, e.Message);
         }
     }
 
@@ -183,11 +209,12 @@ internal sealed class RankedSetXpSubscriber(IServiceProvider services, IOptionsM
 
 public static class RankedSetXpHosting
 {
-    /// <summary>End Game's ranked-set XP (<see cref="RankedSetXpSubscriber"/>), for the match flow service. Needs
-    /// AddRewardTracks and AddMissionResults (the mission settings say which containers' tracks battle pass XP feeds).</summary>
+    /// <summary>End Game's ranked-set XP (<see cref="RankedSetXpPayer"/>), for the match flow service, whose consumer of
+    /// match:results hands it the records. Needs AddRewardTracks and AddMissionResults (the mission settings say which
+    /// containers' tracks battle pass XP feeds).</summary>
     public static WebApplicationBuilder AddRankedSetXp(this WebApplicationBuilder builder)
     {
-        builder.Services.AddHostedService<RankedSetXpSubscriber>();
+        builder.Services.TryAddSingleton<IRankedSetXpPayer, RankedSetXpPayer>();
         return builder;
     }
 }

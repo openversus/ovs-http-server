@@ -8,6 +8,7 @@ using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Missions;
+using OpenVersus.Server.Core.RewardTracks;
 using OpenVersus.Server.Core.Rifts;
 using OpenVersus.Server.Core.Seasons;
 using StackExchange.Redis;
@@ -172,8 +173,15 @@ public sealed class MatchResultsTests : IAsyncLifetime
         public Task LeftAsync(string matchId, string playerId) { Left.Add((matchId, playerId)); return Task.CompletedTask; }
     }
 
-    private MatchResultStream Stream(Missions missions, Rifts rifts, Stats stats, StatusEvents? events = null) =>
-        new(Services(), missions, new TestOptions<MissionSettings>(new MissionSettings { Enabled = true }), rifts, stats, events ?? new StatusEvents(), TimeProvider.System, NullLogger<MatchResultStream>.Instance);
+    private sealed class Payer(bool fail = false) : IRankedSetXpPayer
+    {
+        public List<string> Paid { get; } = [];
+        public Task PayAsync(string record) => fail ? throw new InvalidOperationException("not paid yet") : Task.Run(() => Paid.Add(record));
+    }
+
+    private MatchResultStream Stream(Missions missions, Rifts rifts, Stats stats, StatusEvents? events = null, Payer? payer = null) =>
+        new(payer is null ? Services() : new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).AddSingleton(Mongo)
+                .AddSingleton<IRankedSetXpPayer>(payer).BuildServiceProvider(), missions, new TestOptions<MissionSettings>(new MissionSettings { Enabled = true }), rifts, stats, events ?? new StatusEvents(), TimeProvider.System, NullLogger<MatchResultStream>.Instance);
 
     // A 1v1 (or a custom game with a spectator) as the matchmaker or lobby left it, with P1 and P2 in ranked set Set.
     private async Task SeedAsync(bool custom = false, bool spectator = false, bool set = true)
@@ -341,6 +349,32 @@ public sealed class MatchResultsTests : IAsyncLifetime
         Assert.Equal(2, await stream.ReadAsync(Db, default));
         Assert.Equal([(Match, P2)], events.Left);
         Assert.Empty((await Db.StreamPendingAsync(MatchResults.Stream, MatchResultStream.Group)).Consumers ?? []);
+    }
+
+    [SkippableFact]
+    // End Game's XP rides on the stream (RankedSetXpPayout): paid and acknowledged; a payer that throws (nothing paid yet)
+    // leaves the record pending for its retry.
+    public async Task AnXpRecordOnTheStreamIsPaidOrStaysPending()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        var outcome = new SetOutcome([P1], [P2], "1v1", 2, 0, 0, false, new Dictionary<string, string>(), Match);
+
+        var failing = new Payer(fail: true);
+        var stream = Stream(new Missions(), new Rifts(), new Stats(), payer: failing);
+        await stream.EnsureGroupAsync(Db);
+        await RankedSetXpPayout.AppendSetAsync(Db, outcome);
+        Assert.Equal(2, await stream.ReadAsync(Db, default));
+        Assert.Equal(2, (await Db.StreamPendingAsync(MatchResults.Stream, MatchResultStream.Group)).PendingMessageCount);
+
+        await Db.KeyDeleteAsync(MatchResults.Stream);
+        var payer = new Payer();
+        stream = Stream(new Missions(), new Rifts(), new Stats(), payer: payer);
+        await stream.EnsureGroupAsync(Db);
+        await RankedSetXpPayout.AppendSetAsync(Db, outcome);
+        Assert.Equal(2, await stream.ReadAsync(Db, default));
+        Assert.Equal(new[] { P1, P2 }.Order(), payer.Paid.Select(r => (string)JsonNode.Parse(r)!["playerId"]!).Order());
+        Assert.Equal(0, (await Db.StreamPendingAsync(MatchResults.Stream, MatchResultStream.Group)).PendingMessageCount);
     }
 
     [SkippableFact]

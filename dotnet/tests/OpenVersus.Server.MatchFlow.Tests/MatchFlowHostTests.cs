@@ -104,12 +104,11 @@ public sealed class MatchFlowHostTests : IClassFixture<ServiceFactory<Program>>
             .ToList();
 
         // NodeKeyCheck runs once at startup and returns: it logs whether the P2P node signing key is the expected one.
-        // RankedSetXpSubscriber pays End Game's ranked-set XP.
         // DelayedMessageSweep sends the match end's delayed websocket messages (realtime:due).
         // MatchLaunchStream tells each launched match's players about it (match:launched).
         // MatchDisconnects acts on a game that closed its websocket mid-match (realtime:connections).
         // FighterPassSync keeps this process's reward tracks on the FighterPass settings (the fighter tiers it pays).
-        Assert.Equal(["BannedPlayers", "ClusterSettingsSync", "DelayedMessageSweep", "FighterPassSync", "InstanceHeartbeat", "MatchDisconnects", "MatchLaunchStream", "MatchResultStream", "NodeKeyCheck", "RankedSetXpSubscriber"], hosted);
+        Assert.Equal(["BannedPlayers", "ClusterSettingsSync", "DelayedMessageSweep", "FighterPassSync", "InstanceHeartbeat", "MatchDisconnects", "MatchLaunchStream", "MatchResultStream", "NodeKeyCheck"], hosted);
     }
 
     [Fact]

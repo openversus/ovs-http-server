@@ -122,7 +122,9 @@ public sealed class RankedSetsTests : IAsyncLifetime
     private RankedSets Sets(Launcher? launcher = null, bool p2p = false)
     {
         var services = new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).AddSingleton(Mongo).BuildServiceProvider();
-        var ranked = new TestOptions<RankedSettings>(new RankedSettings());
+        // New players start at 0 here, not the default 1000: the ratings below were worked out from 0, and a loser held
+        // at the floor of 0 is one of the cases they check.
+        var ranked = new TestOptions<RankedSettings>(new RankedSettings { DefaultElo = 0 });
         var elo = new EloRatings(services, ranked, TimeProvider.System, NullLogger<EloRatings>.Instance);
         var ratings = new SetRatings(services, elo, ranked, TimeProvider.System, NullLogger<SetRatings>.Instance);
         return new RankedSets(services, launcher ?? new Launcher(), ratings, elo, new TestOptions<RollbackSettings>(new RollbackSettings { P2P = p2p }),

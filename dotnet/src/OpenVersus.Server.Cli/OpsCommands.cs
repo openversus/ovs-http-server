@@ -143,7 +143,8 @@ public sealed class MatchesCommand : AsyncCommand<MatchesSettings>
         using var client = ControlClient.For(settings);
         return OvsCtl.Report(_console, settings, await client.MatchesAsync(), matches =>
         {
-            _console.MarkupLineInterpolated($"[bold]{matches.Length}[/] match(es) in progress");
+            int finished = matches.Count(m => m.Finished);
+            _console.MarkupLineInterpolated($"[bold]{matches.Length - finished}[/] match(es) in progress, [bold]{finished}[/] finished in the last {MatchView.FinishedListedFor.TotalMinutes:0} minutes");
             if (matches.Length == 0)
             {
                 return;
@@ -156,7 +157,7 @@ public sealed class MatchesCommand : AsyncCommand<MatchesSettings>
                     .Select(t => string.Join(" & ", t.Value.Select(p => $"{p.Name} ({p.Character.Replace("character_", "")})"))));
                 table.AddRow(
                     Markup.Escape(m.Mode ?? "?"),
-                    Markup.Escape(string.Join(" - ", m.Scores)) + (m.Conceded ? " [yellow](conceded)[/]" : ""),
+                    Markup.Escape(string.Join(" - ", m.Scores)) + (m.Conceded ? " [yellow](conceded)[/]" : "") + (m.Finished ? " [grey](finished)[/]" : ""),
                     Markup.Escape(teams),
                     $"[grey]{Markup.Escape(m.SetId)}[/]");
             }

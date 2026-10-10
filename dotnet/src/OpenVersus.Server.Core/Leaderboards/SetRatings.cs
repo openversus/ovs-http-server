@@ -14,8 +14,10 @@ namespace OpenVersus.Server.Core.Leaderboards;
 // is decided before, in one place (RatedMatches); this only writes.
 //
 // The rating, per player: a character's rating when the player's character is known (characters_{mode}.{slug}), else
-// the mode's; against the other team's average (each player's own rating for that character, else the default). K is 64
-// for a player with fewer than 20 sets in the mode, then 32. A set 2-0 (or conceded) counts in full, a 2-1 at 0.85.
+// the mode's; against the other team's average (each player's own rating for that character, else the default), expected
+// = 1 / (1 + 10^((theirs - mine) / Ranked:EloDivisor (800))). K is Ranked:KProvisional (64) for a player with fewer than
+// Ranked:ProvisionalSets (20) sets in the mode, then Ranked:K1v1 or Ranked:K2v2 (32 both). A set 2-0 (or conceded) counts
+// in full, a 2-1 at 0.85.
 //   winner  delta = round(K (1 - expected) modifier (1 + streak bonus)), at least 6; the streak bonus is +20% from a
 //           streak of 3, +35% from 5, +50% from 7 (the streak counted with this win)
 //   loser   delta = round(K (0 - expected) modifier), between -24 and -3; the streak goes back to 0
@@ -69,7 +71,6 @@ public interface ISetRatings
 internal sealed class SetRatings(IServiceProvider services, EloRatings ratings, IOptionsMonitor<RankedSettings> settings, TimeProvider time,
     ILogger<SetRatings> log) : ISetRatings
 {
-    private const int ProvisionalSets = 20;
     private const double TossupLow = 0.44;
     private const double TossupHigh = 0.56;
 
@@ -78,7 +79,8 @@ internal sealed class SetRatings(IServiceProvider services, EloRatings ratings, 
         var mongo = services.GetService<IMongoDatabase>() ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)");
         var collection = mongo.GetCollection<BsonDocument>("eloratings");
         var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase();
-        double defaultElo = settings.CurrentValue.DefaultElo;
+        var ranked = settings.CurrentValue;
+        double defaultElo = ranked.DefaultElo;
         bool is1v1 = outcome.Mode == "1v1" || outcome.Mode.Contains("1v1", StringComparison.Ordinal);
         string mode = is1v1 ? "1v1" : "2v2";
         string eloField = $"elo_{mode}", winsField = $"wins_{mode}", lossesField = $"losses_{mode}", streakField = $"win_streak_{mode}", charsField = $"characters_{mode}";
@@ -117,8 +119,8 @@ internal sealed class SetRatings(IServiceProvider services, EloRatings ratings, 
             double charWins = data is null ? 0 : Number(data, "wins");
             double charLosses = data is null ? 0 : Number(data, "losses");
             double playerElo = slug.Length > 0 ? charElo : Number(rating, eloField);
-            double k = Number(rating, winsField) + Number(rating, lossesField) < ProvisionalSets ? 64 : 32;
-            double expected = 1 / (1 + Math.Pow(10, ((won ? avgLoserElo : avgWinnerElo) - playerElo) / 800));
+            double k = Number(rating, winsField) + Number(rating, lossesField) < ranked.ProvisionalSets ? ranked.KProvisional : is1v1 ? ranked.K1v1 : ranked.K2v2;
+            double expected = 1 / (1 + Math.Pow(10, ((won ? avgLoserElo : avgWinnerElo) - playerElo) / ranked.EloDivisor));
             expectedScores[id] = expected;
 
             double streak = 0;

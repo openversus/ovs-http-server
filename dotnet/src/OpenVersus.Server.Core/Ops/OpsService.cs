@@ -59,8 +59,13 @@ public sealed record OnlineView(long Count, IReadOnlyList<OnlinePlayer>? Players
 /// <summary>A player in a match.</summary>
 public sealed record MatchPlayer(string Id, string Name, string Character);
 
-/// <summary>A match (a ranked set, or a single game) in progress, as the website's /matches shows it.</summary>
-public sealed record MatchView(string SetId, string MatchId, string? Mode, IReadOnlyList<int> Scores, int GamesPlayed, bool Conceded, IReadOnlyDictionary<string, IReadOnlyList<MatchPlayer>> Teams);
+/// <summary>A match (a ranked set, or a single game) in progress, or finished within <see cref="FinishedListedFor"/>
+/// (<paramref name="Finished"/>), as the website's /matches shows it.</summary>
+public sealed record MatchView(string SetId, string MatchId, string? Mode, IReadOnlyList<int> Scores, int GamesPlayed, bool Conceded, IReadOnlyDictionary<string, IReadOnlyList<MatchPlayer>> Teams, bool Finished = false)
+{
+    /// <summary>How long a finished match stays in the list after its end.</summary>
+    public static readonly TimeSpan FinishedListedFor = TimeSpan.FromMinutes(5);
+}
 
 /// <summary>
 /// A custom lobby's member: the team (4: the spectators), id, name (a bot: its difficulty), LobbyPlayerIndex (the
@@ -220,8 +225,12 @@ internal sealed class OpsService : IOpsService
         return ControlResult<OnlineView>.Ok(new OnlineView(count, players.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList()));
     }
 
-    // The website's refreshMatchesCache (server.ts), both passes: games being played (match_started:*), then ranked
-    // sets between games (ranked_set:*), merged by set id; custom games are left out, as there.
+    // The website's refreshMatchesCache (server.ts), both passes: games (match_started:*), then ranked sets between games
+    // (ranked_set:*), merged by set id; custom games are left out, as there. Unlike there, a game that has ended
+    // (match_end:{game}, the time it ended) stays listed for MatchView.FinishedListedFor after its end, marked finished unless its
+    // set goes on (then it is the set, in progress), and then drops off; TS listed it until match_started:{game} expired,
+    // ten minutes after the start. A set's games are one entry: match_to_set:{game} outlives the set (player_ranked_set,
+    // TS's only way, is gone when the set ends), and the entry is the game being played, else the last to end.
     public async Task<ControlResult<IReadOnlyList<MatchView>>> MatchesAsync()
     {
         if (Redis is not { } redis)
@@ -229,36 +238,60 @@ internal sealed class OpsService : IOpsService
             return NoRedis<IReadOnlyList<MatchView>>();
         }
 
-        var results = new List<MatchView>();
-        var seen = new HashSet<string>();
+        long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var games = new Dictionary<string, (string MatchId, long? EndedAt)>();
         foreach (string key in await KeysAsync("match_started:*"))
         {
             string matchId = key["match_started:".Length..];
-            using var config = await JsonAsync(redis, matchId);
-            if (config is null || !config.RootElement.TryGetProperty("players", out var players) || players.ValueKind != JsonValueKind.Array)
+            long? endedAt = null;
+            if ((string?)await redis.StringGetAsync($"match_end:{matchId}") is { } end)
             {
-                continue;
+                if (!long.TryParse(end, out long at) || now - at > MatchView.FinishedListedFor.TotalMilliseconds)
+                {
+                    continue;
+                }
+
+                endedAt = at;
             }
 
-            if (config.RootElement.TryGetProperty("isCustomGame", out var custom) && custom.ValueKind == JsonValueKind.True)
+            using var config = await JsonAsync(redis, matchId);
+            if (config is null || !config.RootElement.TryGetProperty("players", out var players) || players.ValueKind != JsonValueKind.Array
+                || config.RootElement.TryGetProperty("isCustomGame", out var custom) && custom.ValueKind == JsonValueKind.True)
             {
                 continue;
             }
 
             string setId = matchId;
             string? first = players.EnumerateArray().Select(p => Str(p, "playerId")).FirstOrDefault(id => id is not null);
-            if (first is not null && (string?)await redis.StringGetAsync($"player_ranked_set:{first}") is { } mapped)
+            if ((string?)await redis.StringGetAsync($"match_to_set:{matchId}") is { Length: > 0 } set)
+            {
+                setId = set;
+            }
+            else if (first is not null && (string?)await redis.StringGetAsync($"player_ranked_set:{first}") is { } mapped)
             {
                 setId = mapped;
             }
 
-            if (!seen.Add(setId))
+            // The game being played wins, else the one that ended last.
+            if (!games.TryGetValue(setId, out var kept) || (kept.EndedAt is { } k && (endedAt is null || endedAt > k)))
+            {
+                games[setId] = (matchId, endedAt);
+            }
+        }
+
+        var results = new List<MatchView>();
+        var seen = new HashSet<string>();
+        foreach (var (setId, (matchId, endedAt)) in games)
+        {
+            using var config = await JsonAsync(redis, matchId);
+            if (config is null || !config.RootElement.TryGetProperty("players", out var players))
             {
                 continue;
             }
 
             using var set = await JsonAsync(redis, $"ranked_set:{setId}");
-            results.Add(await MatchAsync(redis, setId, matchId, Str(config.RootElement, "mode"), players, set?.RootElement));
+            seen.Add(setId);
+            results.Add(await MatchAsync(redis, setId, matchId, Str(config.RootElement, "mode"), players, set?.RootElement, finished: endedAt is not null && set is null));
         }
 
         foreach (string key in await KeysAsync("ranked_set:*"))
@@ -634,7 +667,7 @@ internal sealed class OpsService : IOpsService
             player.TryGetValue("profile_id", out var profile) && !profile.IsBsonNull ? profile.ToString() : null, online, status, connection, steam);
     }
 
-    private async Task<MatchView> MatchAsync(IDatabase redis, string setId, string matchId, string? mode, JsonElement players, JsonElement? set)
+    private async Task<MatchView> MatchAsync(IDatabase redis, string setId, string matchId, string? mode, JsonElement players, JsonElement? set, bool finished = false)
     {
         using var characters = await JsonAsync(redis, $"match_characters:{setId}");
         var teams = new Dictionary<string, List<MatchPlayer>>();
@@ -661,7 +694,7 @@ internal sealed class OpsService : IOpsService
 
         int games = set is { } g && g.TryGetProperty("gamesPlayed", out var gp) && gp.ValueKind == JsonValueKind.Number ? gp.GetInt32() : 0;
         bool conceded = set is { } cs && cs.TryGetProperty("conceded", out var cv) && cv.ValueKind == JsonValueKind.True;
-        return new MatchView(setId, matchId, mode, scores, games, conceded, teams.ToDictionary(t => t.Key, t => (IReadOnlyList<MatchPlayer>)t.Value));
+        return new MatchView(setId, matchId, mode, scores, games, conceded, teams.ToDictionary(t => t.Key, t => (IReadOnlyList<MatchPlayer>)t.Value), finished);
     }
 
     // The website's fallback chain: the display name, else the generated Hydra name, else "Unknown".

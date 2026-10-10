@@ -229,6 +229,49 @@ public sealed class OpsTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    public async Task AFinishedMatchStaysListedFiveMinutesAfterItsEndAndASetsGamesAreOneEntry()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        async Task Game(string id, long? endedMinutesAgo, string? set = null)
+        {
+            await Redis.StringSetAsync($"match_started:{id}", "1");
+            await Redis.StringSetAsync(id, """{"players":[{"playerId":"p1","teamIndex":0},{"playerId":"p2","teamIndex":1}],"mode":"1v1"}""");
+            if (endedMinutesAgo is { } ago)
+            {
+                await Redis.StringSetAsync($"match_end:{id}", now - ago * 60_000);
+            }
+
+            if (set is not null)
+            {
+                await Redis.StringSetAsync($"match_to_set:{id}", set);
+            }
+        }
+
+        // A single game that ended a minute ago, one that ended six minutes ago, and a set that is over (its ranked_set:
+        // gone) whose games ended three and one minutes ago; then a set whose first game has ended and that goes on.
+        await Game("f1", endedMinutesAgo: 1);
+        await Game("f2", endedMinutesAgo: 6);
+        await Game("g1", endedMinutesAgo: 3, set: "s3");
+        await Game("g2", endedMinutesAgo: 1, set: "s3");
+        await Game("h1", endedMinutesAgo: 1, set: "s4");
+        await Redis.StringSetAsync("ranked_set:s4", """{"players":[{"playerId":"p1","teamIndex":0},{"playerId":"p2","teamIndex":1}],"mode":"ranked-1v1","scores":[1,0],"gamesPlayed":1}""");
+
+        var matches = (await Ops.MatchesAsync()).Value!;
+
+        Assert.Equal(["f1", "s1", "s2", "s3", "s4"], matches.Select(m => m.SetId).Order());
+        Assert.True(matches.Single(m => m.SetId == "f1").Finished);
+        var s3 = matches.Single(m => m.SetId == "s3");
+        Assert.Equal("g2", s3.MatchId);
+        Assert.True(s3.Finished);
+        // Between games: in progress, with the set's score.
+        var s4 = matches.Single(m => m.SetId == "s4");
+        Assert.False(s4.Finished);
+        Assert.Equal([1, 0], s4.Scores);
+        Assert.False(matches.Single(m => m.SetId == "s1").Finished);
+    }
+
+    [SkippableFact]
     public async Task MatchesMergeGamesAndSetsAndLeaveOutCustomGames()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");

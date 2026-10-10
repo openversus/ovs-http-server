@@ -15,9 +15,10 @@
 #                   no chown and ovsctl runs as that user (or a member of the group); default the image's app user
 #   OVS_REGISTRY    "" to use local images, else "ghcr.io/<org>/" or the like; OVS_TAG the services' image tag
 #   OVS_GAME_PORT   the game's HTTP port on the host (8000); OVS_EDGE_PORT the game's websocket port (3001)
-#   OVS_RELAY_PORT  the relay's UDP port (41234); OVS_RENDEZVOUS_PORT the rendezvous's (41235); OVS_RELAY_ADDRESS the
-#                   address the rendezvous names the relay by to the nodes (the host's public address; 127.0.0.1 only
-#                   on a bench); OVS_RELAY_TAG the rollback image's tag
+#   OVS_RELAY_ADDRESS  REQUIRED: this host's public address, which the rendezvous names the relay by to the nodes. The
+#                   default, 127.0.0.1, is reachable only from this host (see ../README.md)
+#   OVS_RELAY_PORT  the relay's UDP port (41234); OVS_RENDEZVOUS_PORT the rendezvous's (41235); OVS_RELAY_TAG the
+#                   rollback image's tag
 #
 # Nothing but the router, the edge and the relay is reachable from outside; the services talk on `ovs`. The images
 # carry EXPOSE for their control ports; to reach one over TCP instead of its socket, add a 127.0.0.1 mapping here.

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,8 +49,30 @@ namespace OpenVersus.Server.Core.Leaderboards;
 /// <summary>Ranked settings.</summary>
 public sealed class RankedSettings
 {
-    [Description("The rating a player starts with in both modes (DEFAULT_ELO).")]
-    public double DefaultElo { get; set; }
+    [Description("The rating a player starts with in both modes, and a character with no rating of its own (DEFAULT_ELO). 1000, as production has always run with; the TS code's own fallback was 0.")]
+    public double DefaultElo { get; set; } = 1000;
+
+    // The rating arithmetic's knobs (SetRatings). Each default is what production rates with today: the TS server's .env
+    // names them (K_1V1, ...), but its rating code had used constants since the set ratings, so its K_2V2=24 never applied.
+    [Description("K for a 1v1 set of a player past their provisional sets (K_1V1).")]
+    [Range(double.Epsilon, double.MaxValue)]
+    public double K1v1 { get; set; } = 32;
+
+    [Description("K for a 2v2 set of a player past their provisional sets (K_2V2). 32, what production rates 2v2 with today, although its .env says 24.")]
+    [Range(double.Epsilon, double.MaxValue)]
+    public double K2v2 { get; set; } = 32;
+
+    [Description("K for a set of a player still in their provisional sets, either mode (K_PROVISIONAL).")]
+    [Range(double.Epsilon, double.MaxValue)]
+    public double KProvisional { get; set; } = 64;
+
+    [Description("How many sets in a mode a player's rating counts as provisional for (PROVISIONAL_GAME_THRESHOLD).")]
+    [Range(0, int.MaxValue)]
+    public int ProvisionalSets { get; set; } = 20;
+
+    [Description("The rating difference at which the expected score is 10 to 1 (ELO_DIVISOR).")]
+    [Range(double.Epsilon, double.MaxValue)]
+    public double EloDivisor { get; set; } = 800;
 }
 
 public interface IRankedDataService

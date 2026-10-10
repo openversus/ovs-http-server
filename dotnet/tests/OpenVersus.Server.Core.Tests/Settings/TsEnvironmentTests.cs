@@ -53,6 +53,32 @@ public sealed class TsEnvironmentTests
     public void FfaWeekendOnlyReadsAsEnvalidDoes(string value, string expected) =>
         Assert.Equal(expected, With(new() { ["FFA_WEEKEND_ONLY"] = value })["Ffa:WeekendOnly"]);
 
+    [Theory]
+    // MISSIONS_ENABLED is envalid's bool too (src/env/env.ts).
+    [InlineData("t", "true")]
+    [InlineData("0", "false")]
+    public void MissionsEnabledReadsAsEnvalidDoes(string value, string expected) =>
+        Assert.Equal(expected, With(new() { ["MISSIONS_ENABLED"] = value })["Missions:Enabled"]);
+
+    [Theory]
+    // The rating knobs a TS .env names: production's .env carries every one of them.
+    [InlineData("K_1V1", "Ranked:K1v1")]
+    [InlineData("K_2V2", "Ranked:K2v2")]
+    [InlineData("K_PROVISIONAL", "Ranked:KProvisional")]
+    [InlineData("PROVISIONAL_GAME_THRESHOLD", "Ranked:ProvisionalSets")]
+    [InlineData("ELO_DIVISOR", "Ranked:EloDivisor")]
+    [InlineData("DEFAULT_ELO", "Ranked:DefaultElo")]
+    public void TheRatingKnobsCarryOver(string tsName, string key) => Assert.Equal("24", With(new() { [tsName] = "24" })[key]);
+
+    [Fact]
+    public void TheAdminPasswordAndTheAssetTokenCarryOver()
+    {
+        // Production's .env names them so; without the alias the admin pages would keep Admin:Password's default.
+        var config = With(new() { ["ADMIN_PASSWORD"] = "from-env", ["DATA_ASSET_TOKEN"] = "token-from-env" });
+        Assert.Equal("from-env", config["Admin:Password"]);
+        Assert.Equal("token-from-env", config["Admin:DataAssetToken"]);
+    }
+
     [Fact]
     public void TheCatalogKeyWins() =>
         Assert.Equal("2.0", With(new() { ["MIN_CLIENT_VERSION"] = "1.0", ["Clients:MinimumVersion"] = "2.0" })["Clients:MinimumVersion"]);

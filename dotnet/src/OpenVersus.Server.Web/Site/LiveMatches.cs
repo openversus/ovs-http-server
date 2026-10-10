@@ -82,7 +82,7 @@ public sealed class LiveMatches(IServiceProvider services, IOpsService ops, IOpt
                 matches.Add(new JsonObject
                 {
                     ["setId"] = m.SetId, ["matchId"] = m.MatchId, ["mode"] = m.Mode, ["scores"] = new JsonArray([.. m.Scores.Select(s => (JsonNode?)s)]),
-                    ["gamesPlayed"] = m.GamesPlayed, ["conceded"] = m.Conceded, ["teams"] = teams,
+                    ["gamesPlayed"] = m.GamesPlayed, ["conceded"] = m.Conceded, ["teams"] = teams, ["finished"] = m.Finished,
                 });
             }
         }

@@ -38,7 +38,7 @@ namespace OpenVersus.Server.Core.Matches;
 // Redis, read     match_end:{match}; match_config:{player}; online_players; ssc_custom_lobby_match:{match}; {match};
 //                 match:{match}; player_ranked_set:{player}; player_lobby:{player}; lobby:{lobby} (and RankedSets' and
 //                 the rematch vote's: RematchVotes)
-// Redis, written  match_end:{match} NX EX 10 min (once per match); match_config:{player} deleted; player:{player} status;
+// Redis, written  match_end:{match} NX EX 10 min (once per match; the value is when it ended, in ms, for the ops match list); match_config:{player} deleted; player:{player} status;
 //                 lobby:{lobby}, player_lobby:{player} EX 8 h; party_ready:{lobby} deleted; rejoin_pending:{player} EX 45 s;
 //                 realtime:due (and RankedSets' and the rematch vote's)
 // Published       ws:send (each message, to its player)
@@ -72,7 +72,7 @@ internal sealed class MatchEnd(IServiceProvider services, IRankedSets sets, EloR
     public async Task EndAsync(string matchId, IReadOnlyList<string> playerIds, CancellationToken ct)
     {
         var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase() ?? throw new InvalidOperationException("this service has no Redis (REDIS)");
-        if (!await redis.StringSetAsync($"match_end:{matchId}", "1", s_onceTtl, When.NotExists))
+        if (!await redis.StringSetAsync($"match_end:{matchId}", time.GetUtcNow().ToUnixTimeMilliseconds(), s_onceTtl, When.NotExists))
         {
             log.LogInformation("Match {Match} already ended; ignoring", matchId);
             return;

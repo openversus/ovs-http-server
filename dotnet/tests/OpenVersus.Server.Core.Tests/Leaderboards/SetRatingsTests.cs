@@ -40,10 +40,10 @@ public sealed class SetRatingsTests : IAsyncLifetime
     private IMongoCollection<BsonDocument> Ratings => _mongo!.GetDatabase(TestMongoDb).GetCollection<BsonDocument>("eloratings");
     private IMongoCollection<BsonDocument> Stats => _mongo!.GetDatabase(TestMongoDb).GetCollection<BsonDocument>("playerstats");
 
-    private SetRatings Writer()
+    private SetRatings Writer(RankedSettings? settings = null)
     {
         var services = new ServiceCollection().AddSingleton(_mongo!.GetDatabase(TestMongoDb)).BuildServiceProvider();
-        var ranked = new TestOptions<RankedSettings>(new RankedSettings());
+        var ranked = new TestOptions<RankedSettings>(settings ?? new RankedSettings());
         return new SetRatings(services, new EloRatings(services, ranked, TimeProvider.System, NullLogger<EloRatings>.Instance), ranked, TimeProvider.System,
             NullLogger<SetRatings>.Instance);
     }
@@ -106,6 +106,35 @@ public sealed class SetRatingsTests : IAsyncLifetime
 
         Assert.Equal("Player A", (await Of(Ratings, A))["username"].AsString);
         Assert.Equal("", (await Of(Ratings, B))["username"].AsString);
+    }
+
+    [SkippableTheory]
+    // An established player's K: 32 in 1v1 whatever Ranked:K2v2 says, Ranked:K2v2 in 2v2 (32 unless set).
+    [InlineData("1v1", null, 16)]
+    [InlineData("1v1", 24.0, 16)]
+    [InlineData("2v2", null, 16)]
+    [InlineData("2v2", 24.0, 12)]
+    public async Task AnEstablishedPlayersKIs32In1v1AndRankedK2v2In2v2(string mode, double? k2v2, int gain)
+    {
+        Skip.If(_mongo is null, "set OVS_TEST_MONGO to run");
+        // 25 sets in the mode each (no longer provisional), even mode ratings and no character: expected 0.5, a 2-0.
+        foreach (string id in new[] { A, B, C, D })
+        {
+            await Ratings.InsertOneAsync(new BsonDocument
+            {
+                { "account_id", id }, { "username", "" }, { "elo_1v1", 500 }, { "elo_2v2", 500 }, { "wins_1v1", 25 }, { "losses_1v1", 0 },
+                { "wins_2v2", 25 }, { "losses_2v2", 0 }, { "win_streak_1v1", 0 }, { "win_streak_2v2", 0 }, { "updated_at", 0.0 }, { "__v", 0 },
+            });
+        }
+
+        var settings = k2v2 is { } k ? new RankedSettings { K2v2 = k } : null;
+        var outcome = mode == "1v1"
+            ? new SetOutcome([A], [B], "1v1", 2, 0, 0, false, Fighters(), "m")
+            : new SetOutcome([A, B], [C, D], "2v2", 2, 0, 0, false, Fighters(), "m");
+        var deltas = await Writer(settings).RateAsync(outcome, default);
+
+        Assert.Equal(gain, deltas[A]);
+        Assert.Equal(-gain, deltas[outcome.LoserIds[0]]);
     }
 
     [SkippableFact]

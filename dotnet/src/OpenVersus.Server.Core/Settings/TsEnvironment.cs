@@ -23,12 +23,20 @@ public static class TsEnvironment
         ("IP_BANS_FILE", "Bans:IpFile"),
         ("CIDR_BANS_FILE", "Bans:CidrFile"),
         ("HASHBANS_FILE", "Bans:HardwareFile"),
+        ("STEAMID_BANS_FILE", "Bans:SteamIdFile"),
+        ("EPICID_BANS_FILE", "Bans:EpicIdFile"),
+        ("MISSIONS_ENABLED", "Missions:Enabled"),
         ("MIN_CLIENT_VERSION", "Clients:MinimumVersion"),
         ("CLIENT_VERSION_CHECK", "Clients:VersionCheck"),
         ("CLIENT_RELEASE_REPO", "Clients:ReleaseRepo"),
         ("GAME_VERSION", "Lobbies:GameVersion"),
         ("LOCAL_PUBLIC_IP", "Lobbies:LocalPublicIp"),
         ("DEFAULT_ELO", "Ranked:DefaultElo"),
+        ("K_1V1", "Ranked:K1v1"),
+        ("K_2V2", "Ranked:K2v2"),
+        ("K_PROVISIONAL", "Ranked:KProvisional"),
+        ("PROVISIONAL_GAME_THRESHOLD", "Ranked:ProvisionalSets"),
+        ("ELO_DIVISOR", "Ranked:EloDivisor"),
         ("ROLLBACK_UDP_PORT_LOW", "Rollback:UdpPortLow"),
         ("ROLLBACK_UDP_PORT_HIGH", "Rollback:UdpPortHigh"),
         ("ON_DEMAND_ROLLBACK", "Rollback:OnDemand"),
@@ -50,11 +58,13 @@ public static class TsEnvironment
         ("P2P_NODE_PUBLIC_KEY", "Rollback:NodePublicKey"),
         ("FFA_WEEKEND_ONLY", "Ffa:WeekendOnly"),
         ("OVS_DEV_ACCOUNT_IDS", "Ownership:OvsDevAccountIds"),
+        ("ADMIN_PASSWORD", "Admin:Password"),
+        ("DATA_ASSET_TOKEN", "Admin:DataAssetToken"),
     ];
 
     // Values the TS server reads with envalid's bool (true/t/1, false/f/0), which .NET's binding does not; anything else
     // is passed on and refused at startup, as there.
-    private static readonly HashSet<string> s_booleans = ["CLIENT_VERSION_CHECK", "FFA_WEEKEND_ONLY"];
+    private static readonly HashSet<string> s_booleans = ["CLIENT_VERSION_CHECK", "FFA_WEEKEND_ONLY", "MISSIONS_ENABLED"];
 
     // Numbers the TS server compares with === 1 (envalid's num): 1 is on, any other number off; anything else is passed
     // on and refused at startup, as envalid refuses it.

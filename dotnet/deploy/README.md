@@ -18,10 +18,14 @@ take the data with it.
 The services run as `OVS_UID:OVS_GID`, the host user that owns those directories (an `openversus` user, say), so the
 bind mounts need no ownership tricks and that user, or its group, runs ovsctl.
 
-Put the directory variables, `OVS_UID`/`OVS_GID`, `OVS_REGISTRY`/`OVS_TAG` and the public ports in one `.env` and pass
-it to both projects with `--env-file` (Compose otherwise reads only the `.env` beside the compose file it was given, so
-`dbs/` would not see `services/.env`). Nothing under `deploy/` holds a secret or a host name; the `.env` and
-`OVS_ENV_DIR` do.
+Put the directory variables, `OVS_UID`/`OVS_GID`, `OVS_REGISTRY`/`OVS_TAG`, the public ports and `OVS_RELAY_ADDRESS`
+in one `.env` and pass it to both projects with `--env-file` (Compose otherwise reads only the `.env` beside the compose
+file it was given, so `dbs/` would not see `services/.env`). Nothing under `deploy/` holds a secret or a host name; the
+`.env` and `OVS_ENV_DIR` do.
+
+`OVS_RELAY_ADDRESS` is required: this host's public address, which the rendezvous hands every P2P node as the relay to
+fall back to. Left out it is 127.0.0.1, which only a node on this host can reach: everyone else's fallback goes nowhere.
+(It defaults to that rather than to any public relay, so a deployment never uses someone else's by accident.)
 
 ## Bringing it up
 

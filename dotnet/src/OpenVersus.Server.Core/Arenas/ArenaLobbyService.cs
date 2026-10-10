@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Lobbies;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Preferences;
 using StackExchange.Redis;
@@ -45,7 +46,7 @@ public interface IArenaLobbyService
 internal sealed class ArenaLobbyService(IServiceProvider services, IOptionsMonitor<LobbySettings> lobbies, TimeProvider time,
     ILogger<ArenaLobbyService> log) : IArenaLobbyService
 {
-    public const string Mode = "arena_lobby";
+    public const string Mode = ArenaLobby.TemplateName;
 
     /// <summary>The lobby's teams: eight of two (WB: "8 teams of 2").</summary>
     public const int TeamCount = 8;

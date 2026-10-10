@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Lobbies;
 using OpenVersus.Server.Core.Realtime;
 using StackExchange.Redis;
 
@@ -228,10 +229,7 @@ internal sealed class RollbackCallbacks(IServiceProvider services, IMatchLaunche
 
             foreach (string id in told)
             {
-                if ((string?)await redis.StringGetAsync($"player_lobby:{id}") is { Length: > 0 } lobby)
-                {
-                    await redis.KeyDeleteAsync($"party_ready:{lobby}");
-                }
+                await LobbyStore.ResetReadyOfAsync(redis, id);
             }
 
             log.LogError("Match {Match}: {Missing} not connected at game-server-instance-ready ({Reason}); nobody told, {Released} released",

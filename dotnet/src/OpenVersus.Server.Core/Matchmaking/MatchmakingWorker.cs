@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Lobbies;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.Settings;
@@ -373,10 +374,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
         await MatchmakingQueue.CancelAsync(redis, ticket.Players.Select(p => p.Id), ticket.Json["matchmakingRequestId"]?.DeepClone());
         foreach (var (id, _) in ticket.Players)
         {
-            if ((string?)await redis.StringGetAsync($"player_lobby:{id}") is { Length: > 0 } lobby)
-            {
-                await redis.KeyDeleteAsync($"party_ready:{lobby}");
-            }
+            await LobbyStore.ResetReadyOfAsync(redis, id);
         }
     }
 

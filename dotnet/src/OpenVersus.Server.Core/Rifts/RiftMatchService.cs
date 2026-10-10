@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Lobbies;
 using OpenVersus.Server.Core.Matches;
 using StackExchange.Redis;
 
@@ -65,17 +66,13 @@ internal sealed class RiftMatchService(IServiceProvider services, IRiftStateServ
             return Answer();
         }
 
-        var lobby = (await redis.StringGetAsync($"lobby:{lobbyId}")) is { HasValue: true } raw ? JsonNode.Parse(raw.ToString()) as JsonObject : null;
-        if (lobby is null || Str(lobby, "mode") != RiftLobbyService.Mode || lobby["playerIds"] is not JsonArray ids
-            || !ids.Any(n => n is JsonValue p && p.TryGetValue(out string? s) && s == playerId))
+        if (await LobbyStore.GetAsync(redis, lobbyId) is not RiftLobby lobby || !lobby.PlayerIds.Contains(playerId))
         {
             log.LogWarning("start_rift_node from {Player}: {Lobby} is not a rift lobby of theirs; no match started", playerId, lobbyId);
             return Answer();
         }
 
-        string slug = Str(lobby, "riftConfigSlug") ?? "";
-        int difficulty = lobby["chapterDifficulty"] is JsonValue d && d.TryGetValue(out double n) ? (int)n : 0;
-        await StartAsync(redis, playerId, lobbyId, slug, chapterId, nodeId, difficulty, null, ct);
+        await StartAsync(redis, playerId, lobbyId, lobby.RiftConfigSlug, chapterId, nodeId, lobby.ChapterDifficulty, null, ct);
         return Answer();
     }
 

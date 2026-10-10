@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Leaderboards;
+using OpenVersus.Server.Core.Lobbies;
 using OpenVersus.Server.Core.Realtime;
 using OpenVersus.Server.Core.Seasons;
 using OpenVersus.Server.Core.Settings;
@@ -224,18 +225,18 @@ internal sealed class MatchEnd(IServiceProvider services, IRankedSets sets, EloR
     // A player whose party has others in it keeps it through the end of the match (see the header).
     private async Task PreservePartyAsync(IDatabase redis, string playerId)
     {
-        if ((string?)await redis.StringGetAsync($"player_lobby:{playerId}") is not { Length: > 0 } lobbyId
-            || await RollbackCallbacks.JsonAsync(redis, $"lobby:{lobbyId}") is not { } lobby
-            || (lobby["playerIds"] as JsonArray)?.Count is not > 1)
+        // The lobby is written again unchanged: its 8 hours start over.
+        if (await LobbyStore.PointerAsync(redis, playerId) is not { } lobbyId
+            || await LobbyStore.UpdateAsync(redis, lobbyId, lobby => lobby.PlayerIds.Count > 1 ? LobbyWrite.SaveFor(s_lobbyTtl) : LobbyWrite.Keep)
+                is not { PlayerIds.Count: > 1 } kept)
         {
             return;
         }
 
-        await redis.StringSetAsync($"lobby:{lobbyId}", Js.Stringify(lobby), s_lobbyTtl);
-        await redis.StringSetAsync($"player_lobby:{playerId}", lobbyId, s_lobbyTtl);
-        await redis.KeyDeleteAsync($"party_ready:{lobbyId}");
+        await LobbyStore.SetPointerAsync(redis, playerId, lobbyId, s_lobbyTtl);
+        await LobbyStore.ResetReadyAsync(redis, lobbyId);
         await redis.StringSetAsync($"rejoin_pending:{playerId}", "1", s_rejoinWindow);
-        log.LogInformation("Post-match: player {Player} keeps party lobby {Lobby} ({Count} players)", playerId, lobbyId, (lobby["playerIds"] as JsonArray)!.Count);
+        log.LogInformation("Post-match: player {Player} keeps party lobby {Lobby} ({Count} players)", playerId, lobbyId, kept.PlayerIds.Count);
     }
 
     private static JsonObject Frm(string playerId) => new()

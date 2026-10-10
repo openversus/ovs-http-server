@@ -43,6 +43,7 @@ public abstract class PartyEndpoint : JsonBodyEndpoint
 
         var body = (await ReadBodyAsync(ct)) as JsonObject;
         var request = new PartyRequest(session.AccountId, session.Claims, ClientAddress.Of(HttpContext, stripMapped: true), body);
+        Logger.LogInformation("{Route} from {Player}: LobbyTemplate {Template}", Route, session.AccountId, LobbyTemplate(body));
         await BeforeAsync(request);
         var party = Resolve<IPartyService>();
         if (Shared && await party.CustomLobbyAsync(Route, request) is { } custom
@@ -54,4 +55,8 @@ public abstract class PartyEndpoint : JsonBodyEndpoint
 
         await SendJsonAsync(await AnswerAsync(party, request, ct), ct);
     }
+
+    /// <summary>The lobby template the game names in a lobby request (party_lobby, arena_lobby, ...), "none" when it names none.</summary>
+    internal static string LobbyTemplate(JsonObject? body) =>
+        body?["LobbyTemplate"] is JsonValue v && v.TryGetValue(out string? template) ? template : "none";
 }

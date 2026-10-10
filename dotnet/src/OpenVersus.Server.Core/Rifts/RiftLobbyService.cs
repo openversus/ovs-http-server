@@ -6,6 +6,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Lobbies;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Static;
 using OpenVersus.Server.Core.Preferences;
@@ -42,7 +43,7 @@ public interface IRiftLobbyService
 internal sealed class RiftLobbyService(IServiceProvider services, IRiftStateService states, IRiftProgressService progress,
     IOptionsMonitor<LobbySettings> lobbies, TimeProvider time, ILogger<RiftLobbyService> log) : IRiftLobbyService
 {
-    public const string Mode = "rift_lobby";
+    public const string Mode = RiftLobby.TemplateName;
     private const string Cluster = "ec2-us-east-1-dokken";
 
     private static readonly Lazy<JsonObject> s_runtimeData = new(() =>

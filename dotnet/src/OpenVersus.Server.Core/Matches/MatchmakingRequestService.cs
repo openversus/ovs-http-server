@@ -10,6 +10,7 @@ using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Cosmetics;
 using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Leaderboards;
+using OpenVersus.Server.Core.Lobbies;
 using OpenVersus.Server.Core.Settings;
 using StackExchange.Redis;
 
@@ -211,8 +212,8 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             return failure;
         }
 
-        string? lobbyId = (string?)await redis.StringGetAsync($"player_lobby:{id}");
-        var lobbyPlayers = lobbyId is null ? null : await PlayersOfAsync(redis, lobbyId);
+        string? lobbyId = await LobbyStore.PointerAsync(redis, id);
+        var lobbyPlayers = lobbyId is null ? null : await LobbyStore.PlayersOfAsync(redis, lobbyId);
         var all = lobbyPlayers ?? [id];
 
         if (await gate.BlockOutdatedAsync(all, log, "2v2 matchmaking"))
@@ -436,10 +437,7 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         {
             log.LogError("Error queueing player: {Error}", e.Message);
             await PublishCancelAsync(redis, [leader], requestId);
-            if ((string?)await redis.StringGetAsync($"player_lobby:{leader}") is { Length: > 0 } lobby)
-            {
-                await redis.KeyDeleteAsync($"party_ready:{lobby}");
-            }
+            await LobbyStore.ResetReadyOfAsync(redis, leader);
         }
     }
 
@@ -520,8 +518,8 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
     {
         var redis = Redis();
         string me = request.AccountId;
-        string? lobbyId = (string?)await redis.StringGetAsync($"player_lobby:{me}");
-        var players = (lobbyId is null ? null : await PlayersOfAsync(redis, lobbyId)) ?? [me];
+        string? lobbyId = await LobbyStore.PointerAsync(redis, me);
+        var players = (lobbyId is null ? null : await LobbyStore.PlayersOfAsync(redis, lobbyId)) ?? [me];
 
         await PublishCancelAsync(redis, players, requestId);
         log.LogInformation("Canceling matchmaking {Request} for all players: {Players}", requestId, string.Join(", ", players));
@@ -533,10 +531,7 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
 
         foreach (string pid in players)
         {
-            if ((string?)await redis.StringGetAsync($"player_lobby:{pid}") is { Length: > 0 } theirs)
-            {
-                await redis.KeyDeleteAsync($"party_ready:{theirs}");
-            }
+            await LobbyStore.ResetReadyOfAsync(redis, pid);
         }
 
         return new JsonObject { ["body"] = new JsonObject(), ["metadata"] = null, ["return_code"] = 0 };
@@ -695,28 +690,9 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         }
     }
 
+    // The players of the player's lobby (redisGetLobbyState); null when they are in none.
     private static async Task<List<string>?> LobbyPlayersAsync(IDatabase redis, string playerId) =>
-        (string?)await redis.StringGetAsync($"player_lobby:{playerId}") is { Length: > 0 } lobbyId ? await PlayersOfAsync(redis, lobbyId) : null;
-
-    // The players of lobby:{id} (redisGetLobbyState); null when there is no such lobby.
-    private static async Task<List<string>?> PlayersOfAsync(IDatabase redis, string lobbyId)
-    {
-        if ((string?)await redis.StringGetAsync($"lobby:{lobbyId}") is not { } raw)
-        {
-            return null;
-        }
-
-        try
-        {
-            return Js.Parse(raw)?["playerIds"] is JsonArray ids
-                ? ids.Select(n => n is JsonValue v && v.TryGetValue(out string? s) ? s : Js.Stringify(n)).ToList()
-                : null;
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            return null;
-        }
-    }
+        await LobbyStore.PointerAsync(redis, playerId) is { } lobbyId ? await LobbyStore.PlayersOfAsync(redis, lobbyId) : null;
 
     private static async Task<Dictionary<string, string>> HashAsync(IDatabase redis, string key) =>
         (await redis.HashGetAllAsync(key)).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());

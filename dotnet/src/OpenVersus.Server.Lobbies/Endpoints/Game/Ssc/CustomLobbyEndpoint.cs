@@ -31,6 +31,7 @@ public abstract class CustomLobbyEndpoint : JsonBodyEndpoint
 
         var body = (await ReadBodyAsync(ct)) as JsonObject;
         var request = new PartyRequest(session.AccountId, session.Claims, ClientAddress.Of(HttpContext, stripMapped: true), body);
+        Logger.LogInformation("{Route} from {Player}: LobbyTemplate {Template}", Route, session.AccountId, PartyEndpoint.LobbyTemplate(body));
         await SendJsonAsync(await OtherLobbyAsync(request, ct) ?? await Resolve<ICustomLobbyService>().AnswerAsync(Route, request, ct), ct);
     }
 

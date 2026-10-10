@@ -9,6 +9,7 @@ using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Cosmetics;
 using OpenVersus.Server.Core.FunFacts;
+using OpenVersus.Server.Core.Lobbies;
 using OpenVersus.Server.Core.Preferences;
 using OpenVersus.Server.Core.Realtime;
 using StackExchange.Redis;
@@ -22,8 +23,8 @@ namespace OpenVersus.Server.Core.Matches;
 // (CustomLobbies/); CustomLobbyAsync says which requests are.
 //
 // Redis, the TS server's keys (MIGRATION-BRIDGES.md 2):
-//   lobby:{id}                  JSON {lobbyId, ownerId, ownerUsername, mode, playerIds, createdAt (ms)} (+ joinable false
-//                               once not joinable); EX 8 h with 2+ players, else 1 h (the shared leave writes 1 h)
+//   lobby:{id}                  the lobby (Lobbies/Lobby.cs, read and changed through LobbyStore) (+ joinable false once
+//                               not joinable); EX 8 h with 2+ players, else 1 h (the shared leave writes 1 h)
 //   player_lobby:{player}       lobby id, EX 8 h (the shared leave writes 1 h)
 //   pending_join_lobby:{player} lobby id, EX 60 s: the lobby an invited (or left) player's next join goes to
 //   player:{player}:lobby:{id}  hash {id, created_at (ISO), mode, owner}, no TTL: the TS createLobby's record, which
@@ -103,8 +104,8 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
     internal static TimeSpan JoinNoticeDelay = TimeSpan.FromMilliseconds(500);
     internal static TimeSpan LockNoticeDelay = TimeSpan.FromMilliseconds(200);
 
-    private static readonly TimeSpan PartyTtl = TimeSpan.FromHours(8);
-    private static readonly TimeSpan SoloTtl = TimeSpan.FromHours(1);
+    private static readonly TimeSpan PartyTtl = LobbyStore.PartyTtl;
+    private static readonly TimeSpan SoloTtl = LobbyStore.SoloTtl;
 
     // The characters a lobby may not be made or locked with (ssc.ts); the lock's list adds the capitalised C022.
     private static readonly HashSet<string> s_disabledAtCreate = ["character_Meeseeks", "Meeseeks", "character_supershaggy", "supershaggy", "character_c022", "c022"];
@@ -172,34 +173,29 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         await redis.HashSetAsync($"player:{me}", [new("character", character), new("skin", skin), new("ip", ip), new("profileIcon", profileIcon)]);
 
         // REJOIN: the player is in a party lobby with others, all of them online.
-        if (await redis.StringGetAsync($"player_lobby:{me}") is { IsNullOrEmpty: false } existingId
-            && await LobbyAsync(redis, existingId!) is { } existing && existing.PlayerIds.Count > 1 && existing.PlayerIds.Contains(me))
+        if (await LobbyStore.PointerAsync(redis, me) is { } existingId
+            && await LobbyStore.GetAsync(redis, existingId) is { } existing && existing.PlayerIds.Count > 1 && existing.PlayerIds.Contains(me))
         {
             var online = (await redis.SetMembersAsync("online_players")).Select(v => v.ToString()).ToHashSet();
             if (existing.PlayerIds.Where(p => p != me).All(online.Contains))
             {
-                log.LogInformation("REJOIN: Player {Player} is already in multi-player lobby {Lobby}, returning existing lobby data", me, (string?)existingId);
-                await SaveLobbyAsync(redis, existing);
+                log.LogInformation("REJOIN: Player {Player} is already in multi-player lobby {Lobby}, returning existing lobby data", me, existingId);
+                existing = await LobbyStore.UpdateAsync(redis, existingId, _ => LobbyWrite.Save) ?? existing;
                 foreach (string pid in existing.PlayerIds)
                 {
-                    await redis.StringSetAsync($"player_lobby:{pid}", existing.Id, PartyTtl);
+                    await LobbyStore.SetPointerAsync(redis, pid, existing.Id, PartyTtl);
                 }
 
                 return LobbyDocuments.Answer(await LobbyOfAsync(redis, existing, ModeOf(existing), writeCosmetics: true, ct));
             }
 
-            log.LogInformation("REJOIN SKIPPED: Lobby {Lobby} has offline players, cleaning up stale data", (string?)existingId);
-            existing.PlayerIds.Remove(me);
-            if (existing.PlayerIds.Count == 0)
+            log.LogInformation("REJOIN SKIPPED: Lobby {Lobby} has offline players, cleaning up stale data", existingId);
+            await LobbyStore.UpdateAsync(redis, existingId, lobby =>
             {
-                await redis.KeyDeleteAsync($"lobby:{existing.Id}");
-            }
-            else
-            {
-                await SaveLobbyAsync(redis, existing);
-            }
-
-            await redis.KeyDeleteAsync($"player_lobby:{me}");
+                lobby.PlayerIds.Remove(me);
+                return lobby.PlayerIds.Count == 0 ? LobbyWrite.Delete : LobbyWrite.Save;
+            });
+            await LobbyStore.ClearPointerAsync(redis, me);
         }
 
         var lobby = await NewLobbyAsync(redis, me, connection);
@@ -212,8 +208,8 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
     {
         var redis = Redis();
         string me = request.AccountId;
-        string? lobbyId = await redis.StringGetAsync($"player_lobby:{me}");
-        if (string.IsNullOrEmpty(lobbyId))
+        string? lobbyId = await LobbyStore.PointerAsync(redis, me);
+        if (lobbyId is null)
         {
             lobbyId = (await NewLobbyAsync(redis, me, await HashAsync(redis, $"connections:{me}"))).Id;
             log.LogInformation("create_party: Created new lobby {Lobby} for player {Player}", lobbyId, me);
@@ -227,13 +223,12 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
     {
         var redis = Redis();
         string me = request.AccountId;
-        if (await redis.StringGetAsync($"player_lobby:{me}") is not { IsNullOrEmpty: false } lobbyIdValue)
+        if (await LobbyStore.PointerAsync(redis, me) is not { } lobbyId)
         {
             log.LogWarning("set_lobby_mode: No lobby found in Redis for player {Player}", me);
             return [];
         }
 
-        string lobbyId = lobbyIdValue!;
         var mode = request.Body?["ModeString"]?.DeepClone();
         string modeText = mode is JsonValue mv && mv.TryGetValue(out string? s) ? s : Js.Stringify(mode);
 
@@ -251,7 +246,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         {
             await redis.HashSetAsync($"player:{me}:lobby:{lobbyId}", "mode", modeText);
             // Everyone in the party hears of it (the TS server told only the player who changed it).
-            var party = await LobbyAsync(redis, lobbyId) is { } current && current.PlayerIds.Contains(me) ? current.PlayerIds : [me];
+            var party = await LobbyStore.GetAsync(redis, lobbyId) is { } current && current.PlayerIds.Contains(me) ? current.PlayerIds : [me];
             await PlayerMessages.SendAsync(redis, party, PlayerMessages.Update(new JsonObject
             {
                 ["template_id"] = "OnLobbyModeUpdated",
@@ -266,7 +261,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             }
         }
 
-        if (await LobbyAsync(redis, lobbyId) is { PlayerIds.Count: > 1 } lobby)
+        if (await LobbyStore.GetAsync(redis, lobbyId) is { PlayerIds.Count: > 1 } lobby)
         {
             log.LogInformation("set_lobby_mode: Lobby {Lobby} has {Count} players, returning full lobby data", lobbyId, lobby.PlayerIds.Count);
             return LobbyDocuments.Answer(await LobbyOfAsync(redis, lobby, mode, writeCosmetics: false, ct));
@@ -301,7 +296,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         }
 
         // The game does not always hide "+" once the party is full: refused here.
-        if (await LobbyAsync(redis, lobbyId) is { } lobby)
+        if (await LobbyStore.GetAsync(redis, lobbyId) is { } lobby)
         {
             if (lobby.PlayerIds.Count >= 2)
             {
@@ -339,7 +334,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         string me = request.AccountId;
         var body = request.Body;
         string? pending = await redis.StringGetAsync($"pending_join_lobby:{me}");
-        string? mapped = await redis.StringGetAsync($"player_lobby:{me}");
+        string? mapped = await LobbyStore.PointerAsync(redis, me);
         string? fromBody = new[] { "LobbyId", "lobbyId", "MatchID", "matchId" }.Select(k => Str(body, k)).FirstOrDefault(v => !string.IsNullOrEmpty(v));
         // An accepted invite (pending) wins over the player's own lobby, which wins over what the game sends.
         string? target = new[] { pending, mapped, fromBody }.FirstOrDefault(v => !string.IsNullOrEmpty(v));
@@ -350,7 +345,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             return LobbyDocuments.Ssc([], returnCode: 200);
         }
 
-        if (await LobbyAsync(redis, target) is not { } lobby)
+        if (await LobbyStore.GetAsync(redis, target) is not { } lobby)
         {
             log.LogWarning("join_party_lobby: Lobby {Lobby} not found: invite expired", target);
             return LobbyDocuments.Ssc([], returnCode: 1);
@@ -362,11 +357,14 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             log.LogWarning("join_party_lobby: Owner {Owner} is in custom lobby: returning stale lobby with just invitee", lobby.OwnerId);
             var connection = await HashAsync(redis, $"connections:{me}");
             var loadout = await HashAsync(redis, $"player:{me}");
-            lobby.PlayerIds.Clear();
-            lobby.PlayerIds.Add(me);
-            lobby.OwnerId = me;
-            await SaveLobbyAsync(redis, lobby);
-            await redis.StringSetAsync($"player_lobby:{me}", target, PartyTtl);
+            await LobbyStore.UpdateAsync(redis, target, stale =>
+            {
+                stale.PlayerIds.Clear();
+                stale.PlayerIds.Add(me);
+                stale.OwnerId = me;
+                return LobbyWrite.Save;
+            });
+            await LobbyStore.SetPointerAsync(redis, me, target, PartyTtl);
             if (!string.IsNullOrEmpty(pending))
             {
                 await redis.KeyDeleteAsync($"pending_join_lobby:{me}");
@@ -379,11 +377,19 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         if (!lobby.PlayerIds.Contains(me))
         {
             log.LogInformation("join_party_lobby: Adding player {Player} to lobby {Lobby}", me, target);
-            lobby.PlayerIds.Add(me);
-            await SaveLobbyAsync(redis, lobby);
         }
 
-        await redis.StringSetAsync($"player_lobby:{me}", target, PartyTtl);
+        lobby = await LobbyStore.UpdateAsync(redis, target, joined =>
+        {
+            if (joined.PlayerIds.Contains(me))
+            {
+                return LobbyWrite.Keep;
+            }
+
+            joined.PlayerIds.Add(me);
+            return LobbyWrite.Save;
+        }) ?? lobby;
+        await LobbyStore.SetPointerAsync(redis, me, target, PartyTtl);
         if (!string.IsNullOrEmpty(pending))
         {
             await redis.KeyDeleteAsync($"pending_join_lobby:{me}");
@@ -418,7 +424,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
                 foreach (string other in others)
                 {
                     await redis.StringSetAsync($"pending_join_lobby:{other}", target, TimeSpan.FromSeconds(60));
-                    await redis.StringSetAsync($"player_lobby:{other}", target, PartyTtl);
+                    await LobbyStore.SetPointerAsync(redis, other, target, PartyTtl);
                 }
             });
         }
@@ -433,66 +439,56 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         string me = request.AccountId;
 
         // The lobby the game names, when the player is in it: they leave it for a new solo lobby.
-        if (Str(request.Body, "LobbyId") is { } named && await LobbyAsync(redis, named) is { } left && left.PlayerIds.Contains(me))
+        if (Str(request.Body, "LobbyId") is { } named && await LobbyStore.GetAsync(redis, named) is { } left && left.PlayerIds.Contains(me))
         {
             log.LogInformation("leave_player_lobby: Player {Player} leaving party lobby {Lobby}", me, named);
-            left.PlayerIds.Remove(me);
-            if (left.PlayerIds.Count == 0)
+            var remaining = (await LobbyStore.UpdateAsync(redis, named, lobby =>
             {
-                await redis.KeyDeleteAsync($"lobby:{named}");
-            }
-            else
-            {
-                await redis.StringSetAsync($"lobby:{named}", left.ToJson(), SoloTtl);
-            }
+                lobby.PlayerIds.Remove(me);
+                return lobby.PlayerIds.Count == 0 ? LobbyWrite.Delete : LobbyWrite.SaveFor(SoloTtl);
+            }))?.PlayerIds ?? [];
 
-            await redis.KeyDeleteAsync($"player_lobby:{me}");
-            await redis.KeyDeleteAsync($"party_ready:{named}");
-            if (left.PlayerIds.Count > 0)
+            await LobbyStore.ClearPointerAsync(redis, me);
+            await LobbyStore.ResetReadyAsync(redis, named);
+            if (remaining.Count > 0)
             {
-                await PlayerMessages.SendAsync(redis, left.PlayerIds, PlayerLeftNotice(named, me, left.PlayerIds[0]));
+                await PlayerMessages.SendAsync(redis, remaining, PlayerLeftNotice(named, me, remaining[0]));
             }
 
             string soloId = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(12));
             var connection = await HashAsync(redis, $"connections:{me}");
             var loadout = await HashAsync(redis, $"player:{me}");
-            await redis.StringSetAsync($"lobby:{soloId}", new LobbyState(soloId, me, Or(Get(connection, "username"), Get(connection, "hydraUsername"), "Unknown"), "1v1", [me], NowMs(), null).ToJson(), SoloTtl);
-            await redis.StringSetAsync($"player_lobby:{me}", soloId, SoloTtl);
+            await LobbyStore.SaveAsync(redis, new PartyLobby(soloId, me, Or(Get(connection, "username"), Get(connection, "hydraUsername"), "Unknown"), "1v1", [me], NowMs()), SoloTtl);
+            await LobbyStore.SetPointerAsync(redis, me, soloId, SoloTtl);
             var member = new LobbyDocuments.Member(me, Now(), Preferences(connection),
                 Or(Get(loadout, "character"), Get(connection, "character"), "character_shaggy"), Or(Get(loadout, "skin"), Get(connection, "skin"), "skin_shaggy_default"));
             return LobbyDocuments.Answer(LobbyDocuments.Lobby([member], me, "local", "1v1", soloId));
         }
 
         // Otherwise the player's own lobby: a step of joining another (pending join), or a real leave.
-        if (await redis.StringGetAsync($"player_lobby:{me}") is not { IsNullOrEmpty: false } lobbyIdValue)
+        if (await LobbyStore.PointerAsync(redis, me) is not { } lobbyId)
         {
             log.LogInformation("leave_player_lobby: Player {Player} not in any lobby, returning OK", me);
             return LobbyDocuments.Ssc([]);
         }
 
-        string lobbyId = lobbyIdValue!;
-        if (await LobbyAsync(redis, lobbyId) is not { } lobby)
+        if (await LobbyStore.GetAsync(redis, lobbyId) is not { } lobby)
         {
             log.LogWarning("leave_player_lobby: Lobby {Lobby} not found, cleaning stale mapping", lobbyId);
-            await redis.KeyDeleteAsync($"player_lobby:{me}");
+            await LobbyStore.ClearPointerAsync(redis, me);
             return LobbyDocuments.Ssc([]);
         }
 
         if (await redis.StringGetAsync($"pending_join_lobby:{me}") is { IsNullOrEmpty: false } pendingJoin)
         {
             log.LogInformation("leave_player_lobby: JOIN TRANSITION for {Player} (pending_join={Pending})", me, (string?)pendingJoin);
-            lobby.PlayerIds.Remove(me);
-            await redis.KeyDeleteAsync($"player_lobby:{me}");
-            if (lobby.PlayerIds.Count > 0 || (string?)pendingJoin == lobbyId)
+            await LobbyStore.ClearPointerAsync(redis, me);
+            await LobbyStore.UpdateAsync(redis, lobbyId, left =>
             {
+                left.PlayerIds.Remove(me);
                 // An empty lobby the player is about to rejoin is kept for the join.
-                await SaveLobbyAsync(redis, lobby);
-            }
-            else
-            {
-                await redis.KeyDeleteAsync($"lobby:{lobbyId}");
-            }
-
+                return left.PlayerIds.Count > 0 || (string?)pendingJoin == lobbyId ? LobbyWrite.Save : LobbyWrite.Delete;
+            });
             return LobbyDocuments.Ssc([]);
         }
 
@@ -502,22 +498,27 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
 
     // performGenuineLeave: the owner keeps the lobby, everyone else gets a new solo lobby; the OpenVersus client is told
     // (party_left) and rejoins.
-    private async Task GenuineLeaveAsync(IDatabase redis, string leaving, LobbyState lobby)
+    private async Task GenuineLeaveAsync(IDatabase redis, string leaving, Lobby lobby)
     {
         if (lobby.PlayerIds.Count <= 1)
         {
-            await redis.KeyDeleteAsync($"player_lobby:{leaving}");
-            await redis.KeyDeleteAsync($"lobby:{lobby.Id}");
+            await LobbyStore.ClearPointerAsync(redis, leaving);
+            await LobbyStore.DeleteAsync(redis, lobby.Id);
             log.LogInformation("genuineLeave: Solo lobby {Lobby} deleted", lobby.Id);
             return;
         }
 
         string owner = lobby.OwnerId;
         var nonOwners = lobby.PlayerIds.Where(p => p != owner).ToList();
-        lobby.PlayerIds.Clear();
-        lobby.PlayerIds.Add(owner);
-        lobby.Mode = "1v1";
-        await SaveLobbyAsync(redis, lobby);
+        await LobbyStore.UpdateAsync(redis, lobby.Id, kept =>
+        {
+            owner = kept.OwnerId;
+            nonOwners = kept.PlayerIds.Where(p => p != kept.OwnerId).ToList();
+            kept.PlayerIds.Clear();
+            kept.PlayerIds.Add(kept.OwnerId);
+            kept.Mode = "1v1";
+            return LobbyWrite.Save;
+        });
         await redis.StringSetAsync($"pending_join_lobby:{owner}", lobby.Id, TimeSpan.FromSeconds(60));
         await PlayerMessages.NotifyClientAsync(redis, owner, "party_left", "Party Update", owner == leaving ? "Returning to solo lobby" : "Your party member left",
             new JsonObject { ["newLobbyId"] = lobby.Id }, NowMs());
@@ -562,8 +563,8 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
     public async Task PlayerDisconnectedAsync(string playerId)
     {
         var redis = Redis();
-        if ((string?)await redis.StringGetAsync($"player_lobby:{playerId}") is not { Length: > 0 } lobbyId
-            || await LobbyAsync(redis, lobbyId) is not { } lobby || lobby.PlayerIds.Count <= 1)
+        if (await LobbyStore.PointerAsync(redis, playerId) is not { } lobbyId
+            || await LobbyStore.GetAsync(redis, lobbyId) is not { } lobby || lobby.PlayerIds.Count <= 1)
         {
             return;
         }
@@ -577,11 +578,11 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
 
         log.LogInformation("Player {Player} disconnected from party lobby {Lobby}: disbanding it; remaining: [{Others}]", playerId, lobbyId, string.Join(", ", others));
         await PlayerMessages.SendAsync(redis, others, PlayerLeftNotice(lobbyId, playerId, others[0]));
-        await redis.KeyDeleteAsync($"party_ready:{lobbyId}");
+        await LobbyStore.ResetReadyAsync(redis, lobbyId);
         if (playerId == lobby.OwnerId)
         {
-            await redis.KeyDeleteAsync($"lobby:{lobbyId}");
-            await redis.KeyDeleteAsync($"player_lobby:{playerId}");
+            await LobbyStore.DeleteAsync(redis, lobbyId);
+            await LobbyStore.ClearPointerAsync(redis, playerId);
             foreach (string pid in others)
             {
                 // Each on its own, as there: one player's failure does not cost the others their lobby.
@@ -599,11 +600,14 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         else
         {
             // Every other member goes, not only this one: a party has two (InviteAsync refuses a third).
-            lobby.PlayerIds.Clear();
-            lobby.PlayerIds.Add(lobby.OwnerId);
-            lobby.Mode = "1v1";
-            await SaveLobbyAsync(redis, lobby);
-            await redis.KeyDeleteAsync($"player_lobby:{playerId}");
+            await LobbyStore.UpdateAsync(redis, lobbyId, kept =>
+            {
+                kept.PlayerIds.Clear();
+                kept.PlayerIds.Add(kept.OwnerId);
+                kept.Mode = "1v1";
+                return LobbyWrite.Save;
+            });
+            await LobbyStore.ClearPointerAsync(redis, playerId);
             await redis.StringSetAsync($"pending_join_lobby:{lobby.OwnerId}", lobbyId, TimeSpan.FromSeconds(60));
         }
     }
@@ -613,24 +617,17 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
     public async Task ForgetLobbyAsync(string playerId)
     {
         var redis = Redis();
-        if ((string?)await redis.StringGetAsync($"player_lobby:{playerId}") is not { Length: > 0 } lobbyId)
+        if (await LobbyStore.PointerAsync(redis, playerId) is not { } lobbyId)
         {
             return;
         }
 
-        await redis.KeyDeleteAsync($"player_lobby:{playerId}");
-        if (await LobbyAsync(redis, lobbyId) is { } lobby)
+        await LobbyStore.ClearPointerAsync(redis, playerId);
+        await LobbyStore.UpdateAsync(redis, lobbyId, lobby =>
         {
             lobby.PlayerIds.RemoveAll(p => p == playerId);
-            if (lobby.PlayerIds.Count == 0)
-            {
-                await redis.KeyDeleteAsync($"lobby:{lobbyId}");
-            }
-            else
-            {
-                await SaveLobbyAsync(redis, lobby);
-            }
-        }
+            return lobby.PlayerIds.Count == 0 ? LobbyWrite.Delete : LobbyWrite.Save;
+        });
 
         log.LogInformation("Cleaned up lobby data for disconnected player {Player}", playerId);
     }
@@ -638,20 +635,13 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
     // ── set_lobby_not_joinable (matchmaking starts: a stale join must fail) ──────────────────────────────────────────
     public async Task<JsonObject> SetNotJoinableAsync(PartyRequest request, CancellationToken ct)
     {
-        var redis = Redis();
-        if (Str(request.Body, "LobbyId") is { Length: > 0 } lobbyId && await redis.StringGetAsync($"lobby:{lobbyId}") is { HasValue: true } raw)
+        if (Str(request.Body, "LobbyId") is { Length: > 0 } lobbyId)
         {
-            try
+            await LobbyStore.UpdateAsync(Redis(), lobbyId, lobby =>
             {
-                if (Js.Parse(raw.ToString()) is JsonObject state)
-                {
-                    state["joinable"] = false;
-                    await redis.StringSetAsync($"lobby:{lobbyId}", Js.Stringify(state), SoloTtl);
-                }
-            }
-            catch (System.Text.Json.JsonException)
-            {
-            }
+                lobby.SetField("joinable", false);
+                return LobbyWrite.SaveFor(SoloTtl);
+            });
         }
 
         return LobbyDocuments.Ssc([]);
@@ -666,20 +656,11 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         var matchIdNode = (body?["MatchID"] is JsonValue m && Truthy(m) ? m : body?["LobbyId"])?.DeepClone();
         string matchId = matchIdNode is JsonValue mi && mi.TryGetValue(out string? text) ? text : Js.Stringify(matchIdNode);
         var ready = body?["Ready"];
-        string readyKey = $"party_ready:{matchId}";
-        var raw = await redis.StringGetAsync($"lobby:{matchId}");
-        JsonObject? state = null;
-        try
-        {
-            state = raw.HasValue ? Js.Parse(raw.ToString()) as JsonObject : null;
-        }
-        catch (System.Text.Json.JsonException)
-        {
-        }
-
-        var playerIds = state?["playerIds"] is JsonArray ids ? ids.Select(n => n?.ToString() ?? "").ToList() : null;
+        string readyKey = LobbyStore.ReadyKey(matchId);
+        var lobby = await LobbyStore.GetAsync(redis, matchId);
+        var playerIds = lobby?.PlayerIds;
         bool readying = ready is JsonValue r && Truthy(r);
-        bool riftLobby = Str(state, "mode") == Rifts.RiftLobbyService.Mode;
+        bool riftLobby = lobby is RiftLobby;
         if (readying && !riftLobby && await gate.BlockOutdatedAsync([me, .. playerIds ?? []], log, $"ready in party lobby {matchId}"))
         {
             return gate.FailureBody();
@@ -700,9 +681,9 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         bool allReady = readyCount >= total;
         log.LogInformation("set_ready_for_lobby: Player {Player} ready={Ready} in party lobby {Lobby} ({Count}/{Total}, allReady={All})", me, Js.Stringify(ready), matchId, readyCount, total, allReady);
 
-        if (state is not null)
+        if (lobby is not null)
         {
-            var targets = (playerIds ?? []).Where(p => p != me).ToList();
+            var targets = lobby.PlayerIds.Where(p => p != me).ToList();
             JsonObject Notice(JsonNode? readyValue, bool all) => PlayerMessages.Update(new JsonObject
             {
                 ["template_id"] = "PlayerReadyForLobby",
@@ -779,11 +760,10 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
                 new BsonDocument("$set", new BsonDocument { ["character"] = character, ["variant"] = skin }), cancellationToken: ct);
         }
 
-        if (await redis.StringGetAsync($"player_lobby:{me}") is { IsNullOrEmpty: false } partyId
-            && await LobbyAsync(redis, partyId!) is { PlayerIds.Count: > 1 } party)
+        if (await LobbyStore.PointerAsync(redis, me) is { } lobbyId
+            && await LobbyStore.GetAsync(redis, lobbyId) is { PlayerIds.Count: > 1 } party)
         {
             var others = party.PlayerIds.Where(p => p != me).ToList();
-            string lobbyId = partyId!;
             // After the answer: the game shows the lock first, then the other players' loadouts again (its answer
             // handling clears them from the view).
             After(LockNoticeDelay, async () =>
@@ -824,68 +804,8 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
 
     // ── shared ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>A lobby:{id} value: the TS server's fields, and any others kept as they were read.</summary>
-    private sealed class LobbyState(string id, string ownerId, string ownerUsername, string mode, List<string> playerIds, JsonNode? createdAt, JsonObject? read)
-    {
-        public string Id { get; } = id;
-        public string OwnerId { get; set; } = ownerId;
-        public string Mode { get; set; } = mode;
-        public List<string> PlayerIds { get; } = playerIds;
-        public JsonNode? CreatedAt { get; } = createdAt;
-
-        public string ToJson()
-        {
-            var json = read?.DeepClone().AsObject() ?? new JsonObject
-            {
-                ["lobbyId"] = Id,
-                ["ownerId"] = OwnerId,
-                ["ownerUsername"] = ownerUsername,
-                ["mode"] = Mode,
-                ["playerIds"] = null,
-                ["createdAt"] = CreatedAt?.DeepClone(),
-            };
-            json["ownerId"] = OwnerId;
-            json["mode"] = Mode;
-            json["playerIds"] = new JsonArray(PlayerIds.Select(p => (JsonNode?)p).ToArray());
-            return Js.Stringify(json);
-        }
-
-        /// <summary>When the lobby was made (whole seconds); a createdAt that is not a number is the TS server's NaN date, sent as 0.</summary>
-        public long CreatedSeconds => CreatedAt is JsonValue v && v.TryGetValue<double>(out double ms) && double.IsFinite(ms) ? (long)Math.Floor(ms / 1000) : 0;
-    }
-
-    private static async Task<LobbyState?> LobbyAsync(IDatabase redis, string lobbyId)
-    {
-        if (await redis.StringGetAsync($"lobby:{lobbyId}") is not { HasValue: true } raw)
-        {
-            return null;
-        }
-
-        JsonObject? json;
-        try
-        {
-            json = Js.Parse(raw.ToString()) as JsonObject;
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            return null;
-        }
-
-        if (json?["playerIds"] is not JsonArray ids)
-        {
-            return null;
-        }
-
-        return new LobbyState(lobbyId, Str(json, "ownerId") ?? "", Str(json, "ownerUsername") ?? "", Str(json, "mode") ?? "",
-            ids.Select(n => n is JsonValue v && v.TryGetValue(out string? s) ? s : Js.Stringify(n)).ToList(), json["createdAt"], json);
-    }
-
-    // redisSaveLobbyState: 8 h with 2+ players, else 1 h.
-    private static Task SaveLobbyAsync(IDatabase redis, LobbyState lobby) =>
-        redis.StringSetAsync($"lobby:{lobby.Id}", lobby.ToJson(), lobby.PlayerIds.Count >= 2 ? PartyTtl : SoloTtl);
-
     // The TS createLobby and the state saved with it: a new solo 1v1 lobby owned by the player.
-    private async Task<LobbyState> NewLobbyAsync(IDatabase redis, string owner, Dictionary<string, string> connection)
+    private async Task<Lobby> NewLobbyAsync(IDatabase redis, string owner, Dictionary<string, string> connection)
     {
         string id = ObjectId.GenerateNewId().ToString();
         var now = time.GetUtcNow();
@@ -897,16 +817,16 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             new("owner", owner),
         ]);
         await redis.HashSetAsync($"connections:{owner}", "lobby_id", id);
-        var lobby = new LobbyState(id, owner, Or(Get(connection, "username"), Get(connection, "hydraUsername"), "Unknown"), "1v1", [owner], now.ToUnixTimeMilliseconds(), null);
-        await SaveLobbyAsync(redis, lobby);
-        await redis.StringSetAsync($"player_lobby:{owner}", id, PartyTtl);
+        var lobby = new PartyLobby(id, owner, Or(Get(connection, "username"), Get(connection, "hydraUsername"), "Unknown"), "1v1", [owner], now.ToUnixTimeMilliseconds());
+        await LobbyStore.SaveAsync(redis, lobby);
+        await LobbyStore.SetPointerAsync(redis, owner, id, PartyTtl);
         log.LogInformation("Creating party lobby for {Player} - matchLobbyId:{Lobby}", owner, id);
         return lobby;
     }
 
     // Every player's entry, the first joined when the lobby was made and the rest now; their stored loadouts. Optionally
     // (re)writes each player's match copy of their cosmetics, as the rejoin and the join do.
-    private async Task<JsonObject> LobbyOfAsync(IDatabase redis, LobbyState lobby, JsonNode? mode, bool writeCosmetics, CancellationToken ct)
+    private async Task<JsonObject> LobbyOfAsync(IDatabase redis, Lobby lobby, JsonNode? mode, bool writeCosmetics, CancellationToken ct)
     {
         var members = new List<LobbyDocuments.Member>();
         for (int i = 0; i < lobby.PlayerIds.Count; i++)
@@ -929,7 +849,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
     }
 
     // playerIds.length >= 2 ? "2v2" : (mode || "1v1")
-    private static string ModeOf(LobbyState lobby) => lobby.PlayerIds.Count >= 2 ? "2v2" : Or(lobby.Mode, "1v1");
+    private static string ModeOf(Lobby lobby) => lobby.PlayerIds.Count >= 2 ? "2v2" : Or(lobby.Mode, "1v1");
 
     // The IP-keyed copy of the session gets lobby_id only while it is this player's (a household shares an IP).
     private static async Task MirrorLobbyIdAsync(IDatabase redis, string? ip, string playerId, string lobbyId)

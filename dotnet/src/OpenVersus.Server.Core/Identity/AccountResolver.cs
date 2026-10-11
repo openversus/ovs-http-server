@@ -7,17 +7,18 @@ using StackExchange.Redis;
 namespace OpenVersus.Server.Core.Identity;
 
 // Which player a request is from, ported from the TS server's resolveAccountFromRequest (services/identityService.ts,
-// branch infinity-war): the session token's id, then the Steam, Epic and install ids, then the IP.
+// branch infinity-war): the session token's id, then the Steam, Epic and install ids the token carries, then the IP.
+// Never by a request header: the TS server also took x-steam-id, x-epic-id and x-install-id alone, so anyone holding
+// any valid token whose own session was gone could act as any online player by their public Steam id.
 //
 // Redis, read     connections:{id} (the session hash; a hit is one with a non-empty id field, and that field is the
 //                 answer, not the key), identity:steam|epic|install:{id} (a player id)
 // Redis, written  active_ip_accounts:{ip}: entries older than 90 s are removed before it is read (as the TS server does)
 
-/// <summary>What the TS server reads from a request to find its player.</summary>
-/// <param name="Token">The session token's fields, or null when it has no id (the TS server then ignores it).</param>
-/// <param name="SteamHeader">x-steam-id; <paramref name="EpicHeader"/> x-epic-id; <paramref name="InstallHeader"/> x-install-id.</param>
+/// <summary>What a request's player is found by.</summary>
+/// <param name="Token">The verified token's fields, or null when it has no id (the TS server then ignores it).</param>
 /// <param name="RequestIp">The request's IPv4 address (TS GetReqIP), or null.</param>
-public sealed record AccountLookup(AccountLookup.TokenFields? Token, string? SteamHeader, string? EpicHeader, string? InstallHeader, string? RequestIp)
+public sealed record AccountLookup(AccountLookup.TokenFields? Token, string? RequestIp)
 {
     public sealed record TokenFields(string Id, string? SteamId, string? EpicId, string? InstallId, string? CurrentIp);
 }
@@ -48,15 +49,15 @@ internal sealed class AccountResolver(IServiceProvider services, TimeProvider ti
             return byToken;
         }
 
-        // req.header("x-steam-id") || token?.steamId, normalized; then the index it names.
-        foreach (var (kind, header, fromToken, source) in new[]
+        // The token's Steam, Epic and install ids (signed into it), normalized; then the index each names.
+        foreach (var (kind, fromToken, source) in new[]
         {
-            (IdentityKind.Steam, lookup.SteamHeader, token?.SteamId, "steam"),
-            (IdentityKind.Epic, lookup.EpicHeader, token?.EpicId, "epic"),
-            (IdentityKind.Install, lookup.InstallHeader, token?.InstallId, "install"),
+            (IdentityKind.Steam, token?.SteamId, "steam"),
+            (IdentityKind.Epic, token?.EpicId, "epic"),
+            (IdentityKind.Install, token?.InstallId, "install"),
         })
         {
-            string id = IdentityRules.Normalize(kind, string.IsNullOrEmpty(header) ? fromToken : header);
+            string id = IdentityRules.Normalize(kind, fromToken);
             if (id.Length > 0 && await redis.StringGetAsync($"identity:{source}:{id}") is { HasValue: true } accountId
                 && await ConnectionAsync(redis, accountId.ToString(), source) is { } byIndex)
             {

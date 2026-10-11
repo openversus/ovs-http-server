@@ -15,9 +15,9 @@ namespace OpenVersus.Server.Web.Endpoints.OpenVersus.Client;
 /// GET /ovs/notifications: the OpenVersus client polls it every 2 s for what is queued for its player
 /// (PlayerMessages.NotifyClientAsync: party invites, toasts, the web login code) and gets them all, as a JSON array ([]
 /// when there are none, or when nothing identifies the player). TS server: GET /ovs/notifications (server.ts). The player
-/// is found as everywhere else (IAccountResolver) but for the headers: the client's token (x-hydra-access-token: the one
-/// /api/identify signed, checked here as the TS server's decodeToken checks it), its Steam, Epic or install id, then the
-/// IP. The TS server also took x-steam-id, x-epic-id and x-install-id alone, which let anyone read any player's queue.
+/// is found as everywhere else (IAccountResolver): the client's token (x-hydra-access-token: the one /api/identify
+/// signed, checked here as the TS server's decodeToken checks it), its Steam, Epic or install id, then the IP. The TS
+/// server also took x-steam-id, x-epic-id and x-install-id alone, which let anyone read any player's queue.
 /// The same token
 /// keeps the IP's identity record alive while the client runs (IpIdentityRefresh), and a session that logged in while the
 /// record was missing is marked registered again.
@@ -41,10 +41,7 @@ public sealed class GetOvsNotifications : EndpointWithoutRequest
                 var redis = multiplexer.GetDatabase();
                 var claims = ClientClaims();
                 bool refreshed = await IpIdentityRefresh.RefreshAsync(redis, claims, ip, DateTimeOffset.UtcNow);
-                // Never by the x-steam-id, x-epic-id or x-install-id headers: anyone can send them, and what this answers is
-                // the player's queue (the web login code among it). The verified token and the IP only.
-                var lookup = AccountLookups.From(HttpContext, claims) with { SteamHeader = null, EpicHeader = null, InstallHeader = null };
-                if (await Resolve<IAccountResolver>().ResolveAsync(lookup) is { } player)
+                if (await Resolve<IAccountResolver>().ResolveAsync(AccountLookups.From(HttpContext, claims)) is { } player)
                 {
                     if (refreshed && player.Connection.FirstOrDefault(e => e.Name == "identityRegistered").Value != "1")
                     {

@@ -5,7 +5,10 @@ using OpenVersus.Server.Core.Identity;
 
 namespace OpenVersus.Server.Http.Shared.Hosting;
 
-/// <summary>What the TS server's resolveAccountFromRequest reads from a request (see <see cref="IAccountResolver"/>).</summary>
+/// <summary>
+/// What a request's player is found by (see <see cref="IAccountResolver"/>): its verified token and its IP. Never the
+/// x-steam-id, x-epic-id or x-install-id headers the TS server's resolveAccountFromRequest also read: anyone can send them.
+/// </summary>
 public static partial class AccountLookups
 {
     public static AccountLookup From(HttpContext context) => From(context, context.Session()?.Claims);
@@ -17,8 +20,7 @@ public static partial class AccountLookups
         var token = Str(claims, "id") is { Length: > 0 } id
             ? new AccountLookup.TokenFields(id, Str(claims, "steamId"), Str(claims, "epicId"), Str(claims, "installId"), Str(claims, "current_ip"))
             : null;
-        var headers = context.Request.Headers;
-        return new AccountLookup(token, Header(headers, "x-steam-id"), Header(headers, "x-epic-id"), Header(headers, "x-install-id"), RequestIp(context, Str(claims, "current_ip")));
+        return new AccountLookup(token, RequestIp(context, Str(claims, "current_ip")));
     }
 
     /// <summary>
@@ -39,10 +41,6 @@ public static partial class AccountLookups
 
     [GeneratedRegex(@"^(::ffff:)?(?<ip>(\d{1,3}\.){3}\d{1,3})$")]
     private static partial Regex Ipv4();
-
-    // Node joins a repeated header with ", ".
-    private static string? Header(IHeaderDictionary headers, string name) =>
-        headers.TryGetValue(name, out var values) && values.Count > 0 ? string.Join(", ", values.ToArray()) : null;
 
     private static string? Str(System.Text.Json.Nodes.JsonObject? claims, string name) =>
         claims?[name] is { } node && node.GetValueKind() == JsonValueKind.String ? node.GetValue<string>() : null;

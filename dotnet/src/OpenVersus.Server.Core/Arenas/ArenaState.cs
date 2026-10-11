@@ -226,9 +226,11 @@ public static class ArenaState
 
     /// <summary>
     /// The player's items as the match applies them: their gameplay config entry's Gems, one {Gem, ChargeLevel} per
-    /// owned slot (the item's gem slug; ChargeLevel = its level - 1, the 0-based index of the gem buff's 3 tiers). The
-    /// game's player parser reads exactly these two keys (0x14297caa0) and resolves Gem as a MvsGemHsda slug; with none
-    /// the items did nothing (bench, 2026-10-11). Archive arenas-protocol.md, "after the 9-round probe".
+    /// owned slot (the item's gem slug; ChargeLevel = its level - 1). The game's player parser reads exactly these two
+    /// keys (0x14297caa0) and resolves Gem as a MvsGemHsda slug. At spawn each gem buff gets the Payload of its tier
+    /// ChargeLevelData[min(ChargeLevel, tiers - 1)] (0x1424d3bd0, 0-based: level 1 is the first tier), which the item's
+    /// buff reads as its number (the chicken's seconds). Gems apply only under GemAttunement. Archive arenas-protocol.md,
+    /// "2026-10-11 (s48)".
     /// </summary>
     public static JsonArray Gems(ArenaRunPlayer player) => new([.. player.Inventory
         .Where(slot => !slot.IsEmpty && ArenaItems.Of(slot.Slug) is not null)
@@ -241,6 +243,14 @@ public static class ArenaState
     /// to 4 for a 2v2 when that is 0 (bench 2026-10-11: rounds ended at 4 stocks).
     /// </summary>
     public static JsonArray NoScoreTarget() => [new JsonObject { ["TargetScore"] = 0 }, new JsonObject { ["TargetScore"] = 0 }];
+
+    /// <summary>
+    /// The config's RiftNodeAttunement for an Arena round. The game applies a player's gems at spawn (0x142989190) only
+    /// when this tag is one of the gem's Attunements or is Attunements.Any (0x142755170); Arena gems carry no Attunements.
+    /// The base config's "Attunements:None" (and the parser's default when the key is absent) skipped every item (bench
+    /// 2026-10-11, three Arenas). The parser turns ':' into '.' before looking the tag up (0x140cd8c30).
+    /// </summary>
+    public const string GemAttunement = "Attunements:Any";
 
     /// <summary>
     /// OnArenaNextMatch's data: the round's match a player's game goes to from its post-match screen. Its reader

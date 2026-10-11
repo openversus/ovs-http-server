@@ -412,6 +412,7 @@ internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate 
         }
 
         configOverride["TeamData"] = ArenaState.NoScoreTarget();
+        configOverride["RiftNodeAttunement"] = ArenaState.GemAttunement;
 
         var fields = BotDefaults.UnrankedNotificationFields();
         fields["customMatchTime"] = Rules.RoundSeconds;

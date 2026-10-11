@@ -777,6 +777,9 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         Assert.Equal(0, (int)ready["data"]!["GameplayConfig"]!["ArenaModeInfo"]!["ShopTime"]!);
         Assert.Equal($"[{{\"Gem\":\"{ArenaItems.Of(bought)!.Gem}\",\"ChargeLevel\":0}}]", ready["data"]!["GameplayConfig"]!["Players"]![Me]!["Gems"]!.ToJsonString());
         Assert.All(_launcher.Launched!.Players.Where(p => p.IsBot), b => Assert.Empty(ready["data"]!["GameplayConfig"]!["Players"]![b.PlayerId]!["Gems"]!.AsArray()));
+        // The round's config is launched under Attunements.Any, the only node attunement under which the game applies
+        // Arena gems at spawn.
+        Assert.Equal(ArenaState.GemAttunement, (string?)_launcher.Launched!.GameplayConfigOverride!["RiftNodeAttunement"]);
         // The pages stay: a re-activated matchup screen opens the shop again and reads its first page.
         Assert.Equal(ArenaRules.Default.ShopPages, ready["data"]!["ArenaPlayerInfo"]!["CurrentShopLocal"]!.AsArray().Count);
         Assert.Contains(await Db.StreamRangeAsync(PlayerMessages.LogKey(Me)), e => e.Values.Any(v => v.Value.ToString().Contains("\"bReadyToStart\":true", StringComparison.Ordinal)));

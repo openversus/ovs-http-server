@@ -143,7 +143,9 @@ public sealed record MatchPlayer(string PlayerId, int PlayerIndex, int TeamIndex
 /// <summary>A match to start: its players (humans at the lowest player indexes), map and mode, and what the websocket's
 /// PvP gameplay config needs replaced. <paramref name="BotPerks"/> are what each bot's perks are locked as (none when
 /// null); <paramref name="NotificationFields"/> are added to the notification after rollbackPort (a custom game's
-/// settings).</summary>
+/// settings). <paramref name="MatchId"/>: the id the match starts under, when one was named before the launch (an Arena
+/// round's); null mints one. <paramref name="PlayerConfigData"/>: config data of a player's own, over <paramref name="ConfigData"/>
+/// in their copy only (an Arena round: each reader's ArenaPlayerInfo).</summary>
 public sealed record MatchLaunch(
     string MatchType,
     string Map,
@@ -154,7 +156,9 @@ public sealed record MatchLaunch(
     string? ConfigTemplate = null,
     JsonObject? ConfigData = null,
     JsonArray? BotPerks = null,
-    JsonObject? NotificationFields = null);
+    JsonObject? NotificationFields = null,
+    string? MatchId = null,
+    IReadOnlyDictionary<string, JsonObject>? PlayerConfigData = null);
 
 /// <summary>The started match.</summary>
 public sealed record LaunchedMatch(string MatchId, int RollbackPort);
@@ -194,7 +198,7 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
             return null;
         }
 
-        string matchId = ObjectId.GenerateNewId().ToString();
+        string matchId = launch.MatchId ?? ObjectId.GenerateNewId().ToString();
         string resultId = ObjectId.GenerateNewId().ToString();
         string matchmakingRequestId = ObjectId.GenerateNewId().ToString();
         long now = time.GetUtcNow().ToUnixTimeMilliseconds();
@@ -273,6 +277,11 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
         if (launch.ConfigData is not null)
         {
             notification["gameplayConfigData"] = launch.ConfigData.DeepClone();
+        }
+
+        if (launch.PlayerConfigData is not null)
+        {
+            notification["gameplayConfigDataByPlayer"] = new JsonObject(launch.PlayerConfigData.Select(e => KeyValuePair.Create(e.Key, (JsonNode?)e.Value.DeepClone())));
         }
 
         // As the TS server's redisOnGameplayConfigNotified, which every match config passes through: P2P decided once.

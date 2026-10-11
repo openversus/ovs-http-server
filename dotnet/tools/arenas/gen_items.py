@@ -5,9 +5,10 @@ assets (FModel JSON export of Content/Panda_Main/Arenas/Items, one MvsArenaItemH
     gen_items.py <fmodel export root>    (the directory holding MultiVersus/Content)
 
 Per item: slug, rarity (left out of the export when it is the class default: Common), the shop weight (StartingWeight,
-plus WeightPerRound for each round after the first) and the cost (CostPerLevel's first entry; left out when it is the
-class default, which the export does not hold: then the wiki's cost for its rarity, Common 4, Uncommon 6, Rare 8, Epic 10,
-Legendary 12, marked costSource "wiki").
+plus WeightPerRound for each round after the first), the cost (the wiki's cost for its rarity: Common 4, Uncommon 6,
+Rare 8, Epic 10, Legendary 12) and assetCost (CostPerLevel's first entry, only where the asset sets one; the export does
+not hold the class default). The assets' costs run higher than the wiki's and neither is confirmed: the shop charges the
+wiki's, and assetCost is kept as the alternative.
 """
 import json, pathlib, sys
 
@@ -26,8 +27,8 @@ for path in sorted(root.glob("*.json")):
             "rarity": rarity,
             "startingWeight": props.get("StartingWeight", 0),
             "weightPerRound": props.get("WeightPerRound", 0),
-            "cost": costs[0] if costs else WIKI_COST[rarity],
-            "costSource": "asset" if costs else "wiki",
+            "cost": WIKI_COST[rarity],
+            **({"assetCost": costs[0]} if costs else {}),
         })
 out = pathlib.Path(__file__).resolve().parents[2] / "src/OpenVersus.Server.Core/Arenas/arena-items.json"
 out.write_text(json.dumps({"_source": "tools/arenas/gen_items.py from the game's MvsArenaItemHsda assets", "items": items}, indent=1) + "\n")

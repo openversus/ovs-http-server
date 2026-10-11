@@ -13,4 +13,17 @@ public static class ArenaHosting
         builder.Services.AddSingleton<IArenaLobbyService, ArenaLobbyService>();
         return builder;
     }
+
+    /// <summary>
+    /// The Arena itself (<see cref="IArenaService"/>) and its deadline loop, for the arenas service. Needs AddMatchLauncher.
+    /// Bot-only matches are decided by <see cref="IArenaBotMatches"/> (a coin toss for now).
+    /// </summary>
+    public static WebApplicationBuilder AddArenas(this WebApplicationBuilder builder)
+    {
+        builder.Services.TryAddSingleton(TimeProvider.System);
+        builder.Services.TryAddSingleton<IArenaBotMatches, RandomArenaBotMatches>();
+        builder.Services.AddSingleton<IArenaService, ArenaService>();
+        builder.Services.AddHostedService<ArenaDeadlines>();
+        return builder;
+    }
 }

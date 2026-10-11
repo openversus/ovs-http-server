@@ -42,8 +42,9 @@ namespace OpenVersus.Server.Core.Matches;
 //     EventQueueSlug evtq_ffa, unranked, ModeString "FFA"; a custom game with the ovs_friendly_fire mutator has
 //     bModeGrantsProgress false, the marker the OVS client reads on every peer (retail clients drop the unknown
 //     mutator slug); then gameplayConfigOverride over the config, playerConfigOverrides over those players (not spectators),
-//     gameplayConfigTemplate as the template_id, gameplayConfigData over the message's data, in that order. A config with
-//     no players after all that is not kept (TS sends nothing).
+//     gameplayConfigTemplate as the template_id, gameplayConfigData over the message's data, in that order; then
+//     gameplayConfigDataByPlayer's entry over that player's own copy of the data (an Arena round: each reader's
+//     ArenaPlayerInfo; TS had none). A config with no players after all that is not kept (TS sends nothing).
 // The perks lock (PerksLock: {containerMatchId, playerIds}): each human of playerIds that holds this match's
 // config gets their locked perks (match:{match}:perks:{player}) into Players in every copy; the players' copies become
 // PerksLockedNotification when any perks merged, the spectators' always (TS sends the players theirs before it marks the
@@ -77,10 +78,12 @@ namespace OpenVersus.Server.Core.Matches;
 public interface IGameplayConfigs
 {
     /// <summary>
-    /// Builds <paramref name="notification"/>'s config and keeps it per player, with the TS websocket's writes beside it.
-    /// Returns the message, or null when there is none to keep.
+    /// Builds <paramref name="notification"/>'s config and keeps each holder's copy (every player but the bots, spectators
+    /// included, in the notification's order), with the TS websocket's writes beside it. The copies: the same message for
+    /// each, unless the notification gives a player config data of their own (gameplayConfigDataByPlayer), laid over their
+    /// copy's data. Null when there is none to keep.
     /// </summary>
-    Task<JsonObject?> BuildAsync(JsonObject notification, CancellationToken ct);
+    Task<IReadOnlyList<(string PlayerId, JsonObject Message)>?> BuildAsync(JsonObject notification, CancellationToken ct);
 
     /// <summary>
     /// Merges the locked perks of <paramref name="notification"/> ({containerMatchId, playerIds}) into the kept configs; the copies it
@@ -107,7 +110,7 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
 
     public static string Key(string playerId) => KeyPrefix + playerId;
 
-    public async Task<JsonObject?> BuildAsync(JsonObject n, CancellationToken ct)
+    public async Task<IReadOnlyList<(string PlayerId, JsonObject Message)>?> BuildAsync(JsonObject n, CancellationToken ct)
     {
         var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase() ?? throw new InvalidOperationException("this service has no Redis (REDIS)");
         var mongo = services.GetService<IMongoDatabase>() ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)");
@@ -264,14 +267,26 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
         }
 
         string json = Js.Stringify(message);
-        foreach (var player in players.Where(p => !RollbackCallbacks.Truthy(p["isBot"])))
+        var byPlayer = n["gameplayConfigDataByPlayer"] as JsonObject;
+        var copies = new List<(string PlayerId, JsonObject Message)>();
+        foreach (string id in players.Where(p => !RollbackCallbacks.Truthy(p["isBot"])).Select(p => Str(p["playerId"]) ?? ""))
         {
-            await redis.StringSetAsync(Key(Str(player["playerId"]) ?? ""), json, s_ttl);
+            var copy = message;
+            string copyJson = json;
+            if (byPlayer?[id] is JsonObject own)
+            {
+                copy = (JsonObject)message.DeepClone();
+                Assign((JsonObject)copy["data"]!, own);
+                copyJson = Js.Stringify(copy);
+            }
+
+            await redis.StringSetAsync(Key(id), copyJson, s_ttl);
+            copies.Add((id, copy));
         }
 
-        log.LogInformation("Match {Match}: gameplay config kept for {Players}", matchId,
-            string.Join(", ", players.Where(p => !RollbackCallbacks.Truthy(p["isBot"])).Select(p => Str(p["playerId"]))));
-        return message;
+        log.LogInformation("Match {Match}: gameplay config kept for {Players}{Own}", matchId, string.Join(", ", copies.Select(c => c.PlayerId)),
+            byPlayer is null ? "" : $" (data of their own for {string.Join(", ", copies.Select(c => c.PlayerId).Where(id => byPlayer[id] is JsonObject))})");
+        return copies;
     }
 
     public async Task<IReadOnlyList<(string PlayerId, JsonObject Message)>> PerksLockedAsync(JsonObject notification, CancellationToken ct)

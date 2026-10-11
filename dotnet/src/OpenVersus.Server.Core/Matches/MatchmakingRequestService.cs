@@ -86,9 +86,6 @@ public interface IMatchmakingRequestService
 
     /// <summary>casual_queue: the game stopped waiting in the Casual queue; its lobby plays bots instead.</summary>
     Task<JsonObject> CasualBotsAsync(PartyRequest request, CancellationToken ct);
-
-    /// <summary>start_arena_direct: the game stopped waiting in Arena matchmaking; its Arena lobby starts with bots.</summary>
-    Task<JsonObject> ArenaBotsAsync(PartyRequest request, CancellationToken ct);
 }
 
 internal sealed class MatchmakingRequestService(IServiceProvider services, IClientUpdateGate gate, ICosmeticsService cosmetics, EloRatings ratings, IMatchLauncher launcher,
@@ -673,7 +670,7 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
     }
 
     // A Medium bot playing fighter: its bot_config:{bot}, which the TS websocket builds a bot's config from (EX 1 day).
-    private static async Task<string> BotAsync(IDatabase redis, (string Character, string Skin) fighter)
+    internal static async Task<string> BotAsync(IDatabase redis, (string Character, string Skin) fighter)
     {
         string bot = "Bot" + Guid.NewGuid().ToString("N").ToUpperInvariant();
         string difficulty = BotDefaults.Difficulty["Medium"].ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -689,149 +686,6 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         return bot;
     }
 
-    // start_arena_direct (ArenaMatchmaking.cs): the Arena starts, always with all 16 places (8 teams of 2): the lobby's
-    // players on their teams, every empty place a Medium bot's; each team at 100 health, round 1, stored on the Arena
-    // lobby (once: a second start finds it started). Round 1 pairs the teams at random; each pair with a player in it
-    // plays its 2v2 on a node, started as casual_queue's match is and answered as it is (the TS catch-all, which the game
-    // takes as "match found"). NOT BUILT YET: the bot-only pairs' results, the rounds after the first, health lost, and
-    // the ArenaData the game reads beside the gameplay config.
-    public async Task<JsonObject> ArenaBotsAsync(PartyRequest request, CancellationToken ct)
-    {
-        var redis = Redis();
-        string me = request.AccountId;
-        string? lobbyId = request.Body?["ArenaLobbyId"] is JsonValue sent && sent.TryGetValue(out string? named) && named.Length > 0 ? named : await LobbyStore.PointerAsync(redis, me);
-        if (lobbyId is null || await LobbyStore.GetAsync(redis, lobbyId) is not ArenaLobby arena || !arena.PlayerIds.Contains(me))
-        {
-            log.LogWarning("start_arena_direct from {Player}: not in Arena lobby {Lobby}; nothing started", me, lobbyId);
-            return await TsCatchAll.AnswerAsync(services, ct);
-        }
-
-        if (arena.IsStarted)
-        {
-            log.LogInformation("start_arena_direct from {Player}: Arena lobby {Lobby} has started already", me, lobbyId);
-            return await TsCatchAll.AnswerAsync(services, ct);
-        }
-
-        if (await gate.BlockOutdatedAsync(arena.PlayerIds, log, "an Arena"))
-        {
-            return gate.FailureBody();
-        }
-
-        var bots = new List<string>();
-        foreach (var fighter in BotFighters.Pick(arena.EmptyPlaces, Random.Shared))
-        {
-            bots.Add(await BotAsync(redis, fighter));
-        }
-
-        var teams = arena.Roster(bots);
-        bool started = false;
-        await LobbyStore.UpdateAsync(redis, lobbyId, lobby =>
-        {
-            if (lobby is not ArenaLobby current || current.IsStarted)
-            {
-                return LobbyWrite.Keep;
-            }
-
-            current.Start(teams, time.GetUtcNow().ToUnixTimeMilliseconds());
-            started = true;
-            return LobbyWrite.Save;
-        });
-        if (!started)
-        {
-            log.LogInformation("start_arena_direct from {Player}: Arena lobby {Lobby} was started meanwhile", me, lobbyId);
-            return await TsCatchAll.AnswerAsync(services, ct);
-        }
-
-        foreach (string pid in arena.PlayerIds)
-        {
-            await RemoveTicketsAsync(redis, pid, [ArenaQueue.List2v2]);
-        }
-
-        log.LogInformation("Arena lobby {Lobby} started by {Player}: {Players} players, {Bots} bots; teams {Teams}", lobbyId, me, arena.PlayerIds.Count, bots.Count,
-            string.Join(" | ", teams.Select(t => string.Join(",", t))));
-        var humans = arena.PlayerIds.ToHashSet();
-
-        // The Arena as the game reads it (ArenaState.cs): each participant's name and fighter; a player is offered
-        // SelectableCount fighters.
-        var participants = new Dictionary<string, Arenas.ArenaState.Participant>();
-        foreach (string pid in teams.SelectMany(t => t))
-        {
-            if (humans.Contains(pid))
-            {
-                var connection = await HashAsync(redis, $"connections:{pid}");
-                var loadout = await HashAsync(redis, $"player:{pid}");
-                participants[pid] = new(pid, Or(Get(connection, "username"), Get(connection, "hydraUsername"), "Unknown"), false,
-                    Or(Get(loadout, "character"), "character_shaggy"), Or(Get(loadout, "skin"), "skin_shaggy_default"),
-                    [.. BotFighters.Pick(Arenas.ArenaState.SelectableCount, Random.Shared).Select(f => f.Character)]);
-            }
-            else
-            {
-                var config = await HashAsync(redis, $"bot_config:{pid}");
-                participants[pid] = new(pid, "Bot", true, Or(Get(config, "character"), BotDefaults.Character), Or(Get(config, "skin"), BotDefaults.Skin), []);
-            }
-        }
-
-        var arenaData = Arenas.ArenaState.Data(lobbyId, [.. teams.Select(t => (IReadOnlyList<Arenas.ArenaState.Participant>)[.. t.Select(p => participants[p])])],
-            [.. Enumerable.Repeat(ArenaLobby.StartingLife, ArenaLobby.TeamCount)], 1);
-        foreach (var pair in ArenaLobby.Pairings(Random.Shared))
-        {
-            if (!teams[pair.A].Concat(teams[pair.B]).Any(humans.Contains))
-            {
-                continue;
-            }
-
-            // A team with players first: on the even slots (match team 0), the other on the odd ones (casual_queue's layout);
-            // the first player hosts.
-            var (a, b) = teams[pair.A].Any(humans.Contains) ? (pair.A, pair.B) : (pair.B, pair.A);
-            var players = new List<MatchPlayer>();
-            string host = teams[a].Concat(teams[b]).First(humans.Contains);
-            foreach (var (team, side) in new[] { (teams[a], 0), (teams[b], 1) })
-            {
-                for (int i = 0; i < team.Count; i++)
-                {
-                    string pid = team[i];
-                    if (!humans.Contains(pid))
-                    {
-                        players.Add(new MatchPlayer(pid, i * 2 + side, side, IsHost: false, "", IsBot: true));
-                        continue;
-                    }
-
-                    var loadout = await HashAsync(redis, $"player:{pid}");
-                    if (Get(loadout, "character") is { Length: > 0 } character && Get(loadout, "skin") is { Length: > 0 } skin)
-                    {
-                        await PlayedLoadout.RecordAsync(redis, pid, character, skin, Get(loadout, "profileIcon"));
-                    }
-
-                    players.Add(new MatchPlayer(pid, i * 2 + side, side, IsHost: pid == host, Get(loadout, "ip") ?? "", IsBot: false));
-                }
-            }
-
-            log.LogInformation("Arena lobby {Lobby} round 1: team {A} ({TeamA}) against team {B} ({TeamB})", lobbyId, a, string.Join(",", teams[a]), b, string.Join(",", teams[b]));
-            // An Arena round: ArenaModeInfo in the config (its presence makes the match an Arena), timed; the Arena beside
-            // it. One message goes to every player of the match: ArenaPlayerInfo is the host's (a second player's game
-            // gets the host's: NOT RIGHT for a match of two players yet).
-            var configOverride = BotDefaults.UnrankedConfigOverride();
-            foreach (var (key, value) in Arenas.ArenaState.ModeInfo(Arenas.ArenaState.FaceoffWaitSeconds, Arenas.ArenaState.ShopSeconds, readyToStart: false))
-            {
-                configOverride[key] = value?.DeepClone();
-            }
-
-            var fields = BotDefaults.UnrankedNotificationFields();
-            fields["customMatchTime"] = Arenas.ArenaState.RoundSeconds;
-            // Timed, not a stock match: no ring-out target (0; PROBE: whether the game reads 0 as none is not known yet).
-            fields["customNumRingouts"] = 0;
-            var launched = await launcher.LaunchAsync(new MatchLaunch("2v2", Matchmaking.MatchmakingMaps.Pick("2v2", "casual", log), "2v2", players,
-                GameplayConfigOverride: configOverride, ConfigData: Arenas.ArenaState.ConfigData(arenaData, host), BotPerks: BotDefaults.PerksArray(),
-                NotificationFields: fields), ct);
-            if (launched is null)
-            {
-                log.LogError("Arena lobby {Lobby} round 1: team {A} against team {B} was not started", lobbyId, a, b);
-            }
-        }
-
-        return await TsCatchAll.AnswerAsync(services, ct);
-    }
-
     // The cancel (MatchmakingQueue); the TS server published matchmaking:cancel for its websocket.
     private Task PublishCancelAsync(IDatabase redis, IReadOnlyList<string> players, string requestId) =>
         MatchmakingQueue.CancelAsync(redis, players, requestId);
@@ -840,8 +694,10 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
     private static readonly string[] s_allLists = [Regular.List1v1, Regular.List2v2, FreeForAll.List1v1, Casual.List1v1, Casual.List2v2, TestingGroundsQueue.List1v1,
         ArenaQueue.List2v2];
 
+    private Task RemoveTicketsAsync(IDatabase redis, string playerId, IReadOnlyList<string> lists) => RemoveTicketsAsync(redis, playerId, lists, log);
+
     // redisRemoveExistingTicketsForPlayer: any ticket of the player's leaves the lists (TS: 1v1, 2v2 and FFA), with no notice.
-    private async Task RemoveTicketsAsync(IDatabase redis, string playerId, IReadOnlyList<string> lists)
+    internal static async Task RemoveTicketsAsync(IDatabase redis, string playerId, IReadOnlyList<string> lists, ILogger log)
     {
         try
         {

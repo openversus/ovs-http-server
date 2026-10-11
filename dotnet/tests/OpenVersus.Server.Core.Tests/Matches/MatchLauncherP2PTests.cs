@@ -7,8 +7,9 @@ using StackExchange.Redis;
 namespace OpenVersus.Server.Core.Tests.Matches;
 
 /// <summary>
-/// P2P as every C# match start decides it (MatchLauncher.LaunchAsync: custom lobbies, the Casual queue, rift nodes), on
-/// real Redis, database 15 (OVS_TEST_REDIS[_USER/_PW]), with servers deployed on demand so a deploy is visible.
+/// P2P as every C# match start decides it (MatchLauncher.LaunchAsync: custom lobbies, the Casual queue, rift nodes), and
+/// a match id named before the launch, on real Redis, database 15 (OVS_TEST_REDIS[_USER/_PW]), with servers deployed on
+/// demand so a deploy is visible.
 /// </summary>
 [Collection(RedisTestDatabase.Name)]
 public sealed class MatchLauncherP2PTests : IAsyncLifetime
@@ -104,5 +105,31 @@ public sealed class MatchLauncherP2PTests : IAsyncLifetime
         {
             Assert.Equal(p2p ? 0 : 1, webhook.Bodies.Count);
         }
+    }
+
+    [Fact]
+    // An id named before the launch (an Arena round's pre-match configs carry it) is the match's: its record, its
+    // notification, the answer.
+    public async Task AMatchNamedBeforeItsLaunchStartsUnderThatName()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        var launcher = new MatchLauncher(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis).BuildServiceProvider(),
+            new TestOptions<RollbackSettings>(new RollbackSettings { OnDemand = true, P2P = true }), new Webhook(), TimeProvider.System,
+            NullLogger<MatchLauncher>.Instance);
+        string named = MongoDB.Bson.ObjectId.GenerateNewId().ToString();
+
+        var launched = await launcher.LaunchAsync(new MatchLaunch("1v1", "M001_V3", "1v1", [Human(0, host: true), Bot(1)], MatchId: named), CancellationToken.None);
+
+        Assert.Equal(named, launched?.MatchId);
+        var db = _redis.GetDatabase();
+        var notification = JsonNode.Parse((await db.StringGetAsync(named)).ToString())!;
+        var match = JsonNode.Parse((await db.StringGetAsync($"match:{named}")).ToString())!;
+        await db.KeyDeleteAsync([named, $"match:{named}"]);
+        Assert.Equal(named, (string?)notification["matchId"]);
+        Assert.Equal(named, (string?)match["matchId"]);
     }
 }

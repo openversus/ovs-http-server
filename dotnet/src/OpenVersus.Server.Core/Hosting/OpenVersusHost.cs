@@ -93,7 +93,14 @@ public static class KnownServices
     public static readonly ServiceDefinition Steam = new("steam", PublicPortKey: null, DefaultPublicPort: 0, DefaultControlPort: 17811,
         ServiceStores.Redis);
 
-    public static IReadOnlyList<ServiceDefinition> All { get; } = [Http, Access, Social, Lobbies, Web, Realtime, Edge, Matchmaking, MatchFlow, Steam];
+    /// <summary>
+    /// The Arena from its start to its end (ARENAS_PORT): start_arena_direct and the Arena's own calls between its rounds.
+    /// The Arena lobby and its matchmaking ticket are the lobbies service's. Mongo: the game routes' pipeline reads it.
+    /// </summary>
+    public static readonly ServiceDefinition Arenas = new("arenas", "ARENAS_PORT", DefaultPublicPort: 8006, DefaultControlPort: 17812,
+        ServiceStores.Redis | ServiceStores.Mongo);
+
+    public static IReadOnlyList<ServiceDefinition> All { get; } = [Http, Access, Social, Lobbies, Web, Realtime, Edge, Matchmaking, MatchFlow, Steam, Arenas];
 
     public static ServiceDefinition? Find(string name) => All.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
 }

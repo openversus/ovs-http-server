@@ -103,6 +103,13 @@ services:
     environment:
       Serilog__WriteTo__0__Args__path: /var/log/openversus/matchflow-.log
 
+  arenas:
+    <<: *service
+    image: ${OVS_REGISTRY:-}ovs-arenas:${OVS_TAG:-latest}
+    build: { <<: *build, target: arenas }
+    environment:
+      Serilog__WriteTo__0__Args__path: /var/log/openversus/arenas-.log
+
   matchmaking:
     <<: *service
     image: ${OVS_REGISTRY:-}ovs-matchmaking:${OVS_TAG:-latest}

@@ -304,10 +304,10 @@ internal sealed class MatchLaunchStream(IServiceProvider services, IGameplayConf
             return;
         }
 
-        JsonObject? config = null;
+        IReadOnlyList<(string PlayerId, JsonObject Message)>? copies = null;
         try
         {
-            config = await configs.BuildAsync(notification, ct);
+            copies = await configs.BuildAsync(notification, ct);
         }
         catch (Exception e) when (e is not (OperationCanceledException or RedisException or TimeoutException))
         {
@@ -329,7 +329,7 @@ internal sealed class MatchLaunchStream(IServiceProvider services, IGameplayConf
             .Select(c => new MatchComplete([.. (c["playerIds"] as JsonArray ?? []).Select(RollbackCallbacks.Text).OfType<string>()], c["requestId"],
                 RollbackCallbacks.Truthy(c["searching"])))
             .ToList() ?? [];
-        if (config is null)
+        if (copies is null)
         {
             await AbandonAsync(redis, matchId, players, parties);
             return;
@@ -352,7 +352,11 @@ internal sealed class MatchLaunchStream(IServiceProvider services, IGameplayConf
             await PlayerMessages.SendAsync(redis, party.PlayerIds, MatchLauncher.MatchmakingComplete(matchId, party.RequestId, ObjectId.GenerateNewId().ToString()));
         }
 
-        await PlayerMessages.SendAsync(redis, players, config);
+        // Each holder their own copy, one send per distinct copy: without data of a player's own, one send to all of them.
+        foreach (var same in copies.GroupBy(c => Js.Stringify(c.Message)))
+        {
+            await PlayerMessages.SendAsync(redis, [.. same.Select(c => c.PlayerId)], same.First().Message);
+        }
     }
 
     // A match with no config is never played: it goes (and a set it was a game of), and its players' games are sent back

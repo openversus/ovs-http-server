@@ -193,7 +193,7 @@ NOT_GAME = re.compile(r"^/(appinfo|dynamicstore|events/|textfilter|dns-query|dok
 
 
 # The executables that answer routes (KnownServices names); owners.tsv gives each route one of them.
-OWNERS = ("http", "access", "social", "lobbies", "matchflow", "web")
+OWNERS = ("http", "access", "social", "lobbies", "matchflow", "web", "arenas")
 
 
 def load_owners():

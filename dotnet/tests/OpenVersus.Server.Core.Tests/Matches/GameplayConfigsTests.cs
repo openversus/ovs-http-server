@@ -107,6 +107,29 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
     private async Task<JsonObject> KeptAsync(string playerId) => (JsonObject)JsonNode.Parse((string)(await Db.StringGetAsync(GameplayConfigs.Key(playerId)))!)!;
 
     [SkippableFact]
+    // Config data of a player's own (an Arena round's ArenaPlayerInfo) goes over their copy only, kept and returned as
+    // such; without it every copy is the same message (the next test).
+    public async Task APlayersOwnDataGoesOverTheirCopyOnly()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        var notification = Notification(Match);
+        notification["gameplayConfigData"] = new JsonObject { ["ArenaId"] = "arena1" };
+        notification["gameplayConfigDataByPlayer"] = new JsonObject { [P2] = new JsonObject { ["ArenaPlayerInfo"] = new JsonObject { ["AccountID"] = P2 } } };
+
+        var copies = (await Configs().BuildAsync(notification, default))!;
+
+        var (mine, theirs) = (copies.Single(c => c.PlayerId == P1).Message, copies.Single(c => c.PlayerId == P2).Message);
+        Assert.Equal(("arena1", P2), ((string?)theirs["data"]!["ArenaId"], (string?)theirs["data"]!["ArenaPlayerInfo"]!["AccountID"]));
+        Assert.Null(mine["data"]!["ArenaPlayerInfo"]);
+        var without = (JsonObject)theirs.DeepClone();
+        ((JsonObject)without["data"]!).Remove("ArenaPlayerInfo");
+        Assert.Equal(Js.Stringify(mine), Js.Stringify(without));
+        Assert.Equal(Js.Stringify(theirs), (string?)await Db.StringGetAsync(GameplayConfigs.Key(P2)));
+        Assert.Equal(Js.Stringify(mine), (string?)await Db.StringGetAsync(GameplayConfigs.Key(P1)));
+    }
+
+    [SkippableFact]
     // Each player's config kept for the match's 20 minutes, and what the TS websocket wrote beside it: the fighters for the
     // set, a missing match copy of the cosmetics, a missing rating (made at 1000: Gold 1).
     public async Task TheBuildKeepsEachPlayersConfigAndWhatTheTsWebsocketWroteBesideIt()
@@ -114,9 +137,11 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         await SeedAsync();
 
-        var message = await Configs().BuildAsync(Notification(Match), default);
+        var copies = await Configs().BuildAsync(Notification(Match), default);
 
-        Assert.NotNull(message);
+        Assert.NotNull(copies);
+        var message = copies[0].Message;
+        Assert.Equal([(P1, message), (P2, message)], copies);
         foreach (string player in new[] { P1, P2 })
         {
             Assert.Equal(Js.Stringify(message), (string?)await Db.StringGetAsync(GameplayConfigs.Key(player)));
@@ -140,7 +165,7 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         await SeedAsync();
-        JsonNode Config(JsonObject? message) => message!["data"]!["GameplayConfig"]!;
+        JsonNode Config(IReadOnlyList<(string PlayerId, JsonObject Message)>? copies) => copies![0].Message["data"]!["GameplayConfig"]!;
 
         var ranked = Config(await Configs().BuildAsync(Notification(Match), default));
         Assert.Equal(("", true, true, "ranked-1v1"), ((string?)ranked["EventQueueSlug"], (bool)ranked["bIsRanked"]!, (bool)ranked["bModeGrantsProgress"]!, (string?)ranked["ModeString"]));
@@ -273,9 +298,9 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
             notification["players"]!.AsArray().Add(new JsonObject { ["playerId"] = bot, ["partyId"] = Match, ["playerIndex"] = 2, ["teamIndex"] = 1, ["isHost"] = false, ["ip"] = "", ["isBot"] = true });
         }
 
-        var message = await Configs().BuildAsync(notification, default);
+        var message = (await Configs().BuildAsync(notification, default))![0].Message;
 
-        var players = message!["data"]!["GameplayConfig"]!["Players"]!;
+        var players = message["data"]!["GameplayConfig"]!["Players"]!;
         // Number("hard") is NaN (null here), Number("") 0.
         Assert.Equal("character_arya", players[named]!["Character"]!.GetValue<string>());
         Assert.Null(players[named]!["BotDifficultyMin"]);

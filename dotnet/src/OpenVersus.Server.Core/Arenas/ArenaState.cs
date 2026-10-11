@@ -191,14 +191,7 @@ public static class ArenaState
             ["bIsBot"] = player.IsBot,
             ["AccountInfo"] = new JsonObject { ["Name"] = player.Username, ["Banner"] = "", ["RingOutVfx"] = "", ["ProfileIcon"] = "" },
             ["Loadout"] = new JsonObject { ["Character"] = player.Character ?? "", ["Skin"] = player.Skin ?? "" },
-            ["playerData"] = new JsonObject
-            {
-                ["Inventory"] = new JsonArray([.. player.Inventory.Select(i => (JsonNode?)Owned(i, rules))]),
-                ["CurrencyAmount"] = player.Coins,
-                ["InterestPer"] = rules.InterestPer,
-                ["ShopRerollCost"] = rules.ShopRerollCost,
-                ["FreeShopRerolls"] = 0,
-            },
+            ["playerData"] = PlayerData(player, rules),
             ["Stats"] = new JsonObject
             {
                 ["MatchStats"] = MatchStats(),
@@ -215,6 +208,30 @@ public static class ArenaState
             ["SelectableCharacters"] = new JsonArray([.. (selecting ? player.Pool : []).Select(c => (JsonNode?)c)]),
         };
     }
+
+    /// <summary>FMvsArenaPlayerData: what the player holds (their items, coins) and what the shop charges them.</summary>
+    public static JsonObject PlayerData(ArenaRunPlayer player, ArenaRules rules) => new()
+    {
+        ["Inventory"] = new JsonArray([.. player.Inventory.Select(i => (JsonNode?)Owned(i, rules))]),
+        ["CurrencyAmount"] = player.Coins,
+        ["InterestPer"] = rules.InterestPer,
+        ["ShopRerollCost"] = rules.ShopRerollCost,
+        ["FreeShopRerolls"] = 0,
+    };
+
+    /// <summary>The answer to an Arena call (FMvsArenaBaseResponse's two fields the game was seen to take, 2026-10-11).</summary>
+    public static JsonObject Answer(bool success, string playerId) => new() { ["bSuccess"] = success, ["playerId"] = playerId };
+
+    /// <summary>
+    /// The answer to arena_reroll_characters (FMvsArenaCharacterRerollResponse): the offer and the coins after it. The game
+    /// takes both from here (seen 2026-10-11: an answer without them emptied its offer and showed 0 coins).
+    /// </summary>
+    public static JsonObject RerollAnswer(bool success, ArenaRunPlayer player, ArenaRules rules) => new()
+    {
+        ["BaseResponse"] = new JsonObject { ["bSuccess"] = success, ["playerId"] = player.Id, ["FailureReason"] = success ? "" : "refused" },
+        ["SelectableCharacters"] = new JsonArray([.. player.Pool.Select(c => (JsonNode?)c)]),
+        ["playerData"] = PlayerData(player, rules),
+    };
 
     private static JsonObject Offer(string slug, ArenaRules rules)
     {

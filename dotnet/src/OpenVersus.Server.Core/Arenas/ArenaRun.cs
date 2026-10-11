@@ -18,17 +18,22 @@ namespace OpenVersus.Server.Core.Arenas;
 //   Shop             every player still in is offered ShopPages pages of OffersPerPage items (their game's local rerolls walk
 //                    the pages); purchases, sales and rerolls settle when the shop closes, from the game's summary (buying
 //                    nothing is a valid strategy: saving earns interest). All closed (or the deadline): the round's matches.
-//   Match            each pairing with a player in it is launched on a node (LaunchPairing); a pairing of bots only is
-//                    decided by IArenaBotMatches (random for now: an interface so a smarter rule can replace it). The
-//                    loser loses LifeLost(round). All decided: the round ends.
+//   Match            the shops have closed: each pairing with a player in it plays its node match (launched at the
+//                    round's start); a pairing of bots only is decided now by IArenaBotMatches (random for now: an
+//                    interface so a smarter rule can replace it). The loser loses LifeLost(round). All decided: the round
+//                    ends. A node's result that comes in while another player's shop is still open is kept.
 //   (round end)      a team at 0 health or below is out (its final rank: the teams left + 1, worse health ranked lower);
 //                    one team left (or none) ends the Arena; otherwise every player still in gains the round's coins,
-//                    interest on what they kept, a win's coins and their streak's, the next round is paired, and its shop
-//                    opens (no character select after the first round).
+//                    interest on what they kept, a win's coins and their streak's, the next round is paired and launched,
+//                    and its shop opens (no character select after the first round).
 //
 // Pairing: at the round's start, every team still in with another at random; an odd team out plays its own MIRROR (a bot
 // team copying it, Mirror = -1). Each team's Opponents keeps its opponent per round: the game's Arena Status reads the last
-// one before the match (crash 2026-10-11 when it was empty). Node launches happen at the shop's end.
+// one before the match (crash 2026-10-11 when it was empty). A pairing with a player is given its match id then (the
+// pre-match configs name it; the launch reuses it), and its team A is one with a player in it: the launch puts A on the
+// match's side 0, so the side a node reports as the winner is a team again (TeamOnSide). Its node match is launched then
+// too (LaunchPairing): the game's pre-match screens (character select, shop) run on that match's own config, as a normal
+// match's perks screen does, and the game loads the match by itself once its shop closes (seen 2026-10-11).
 //
 // UNPROBED (shapes taken from the binary, not yet seen on the wire): what the Random button sends with a full offer (the
 // edge passes chooseRandom), ShopPhaseDetails' ItemTransactions entries (purchase: LocalShopIndex = page, ItemIndex = offer;
@@ -102,6 +107,7 @@ public sealed class ArenaRunTeam
 /// <summary>One of a round's 2v2s.</summary>
 public sealed class ArenaRunPairing
 {
+    /// <summary>A team; one with a player in it when the pairing has one. The match's side 0.</summary>
     public int A { get; set; }
 
     /// <summary>The other team, or <see cref="ArenaRun.Mirror"/>.</summary>
@@ -110,10 +116,14 @@ public sealed class ArenaRunPairing
     /// <summary>A player is in it: it is played on a node; otherwise decided by IArenaBotMatches.</summary>
     public bool HasPlayer { get; set; }
 
+    /// <summary>Its node match's id, given when it is paired (a pairing with a player only).</summary>
     public string? MatchId { get; set; }
 
     /// <summary>The winning team (A, B or Mirror), once decided.</summary>
     public int? Winner { get; set; }
+
+    /// <summary>The team on the match's side <paramref name="side"/> (0: A, 1: B).</summary>
+    public int TeamOnSide(int side) => side == 0 ? A : B;
 }
 
 /// <summary>What a transition asks the worker to do.</summary>
@@ -122,7 +132,7 @@ public abstract record ArenaEffect;
 /// <summary>Send every player still in their config for the current phase (character select, shop).</summary>
 public sealed record SendPhaseConfigs : ArenaEffect;
 
-/// <summary>Launch the pairing's match on a node.</summary>
+/// <summary>Launch the pairing's match on a node, under its MatchId (at the round's start).</summary>
 public sealed record LaunchPairing(int Pairing) : ArenaEffect;
 
 /// <summary>The Arena has ended.</summary>
@@ -194,9 +204,9 @@ public sealed class ArenaRun
             }
         }
 
-        run.Pair(random);
+        run.Pair(random, nowMs);
         run.DeadlineMs = nowMs + (rules.CharacterSelectSeconds + rules.GraceSeconds) * 1000L;
-        return (run, new ArenaStep(true, [new SendPhaseConfigs()]));
+        return (run, new ArenaStep(true, [.. run.Launches(), new SendPhaseConfigs()]));
     }
 
     /// <summary>A character reroll: a new offer for <see cref="ArenaRules.CharacterRerollCost"/>, settled now.</summary>
@@ -293,21 +303,21 @@ public sealed class ArenaRun
         return new ArenaStep(true, PlayersIn.All(p => p.ShopDone) ? EndShop(rules, botMatches, random, nowMs) : []);
     }
 
-    /// <summary>A launched pairing's match id (the worker launched it).</summary>
-    public void AssignMatch(int pairing, string matchId) => Pairings[pairing].MatchId = matchId;
-
-    /// <summary>A node match's result: <paramref name="winnerTeam"/> won. The last result of the round ends it.</summary>
+    /// <summary>
+    /// A node match's result: <paramref name="winnerTeam"/> won. Kept while another player's shop is still open (their
+    /// game closed its shop and played); the last result once every shop has closed ends the round.
+    /// </summary>
     public ArenaStep MatchResult(string matchId, int winnerTeam, IReadOnlyList<(string Character, string[] Skins)> roster, ArenaRules rules,
         Random random, long nowMs)
     {
-        if (Phase != ArenaPhase.Match || Pairings.FirstOrDefault(p => p.MatchId == matchId) is not { Winner: null } pairing
+        if (Phase is not (ArenaPhase.Shop or ArenaPhase.Match) || Pairings.FirstOrDefault(p => p.MatchId == matchId) is not { Winner: null } pairing
             || (winnerTeam != pairing.A && winnerTeam != pairing.B))
         {
             return ArenaStep.Refused;
         }
 
         Decide(pairing, winnerTeam, rules);
-        return new ArenaStep(true, Pairings.All(p => p.Winner is not null) ? EndRound(rules, random, nowMs) : []);
+        return new ArenaStep(true, Phase == ArenaPhase.Match && Pairings.All(p => p.Winner is not null) ? EndRound(rules, random, nowMs) : []);
     }
 
     /// <summary>The deadline passed: whoever has not acted is decided for (absent pick; shop closed with nothing bought).</summary>
@@ -374,27 +384,22 @@ public sealed class ArenaRun
         return [new SendPhaseConfigs()];
     }
 
-    // The round's matches: node launches for the pairings with a player, bot pairings decided now.
+    // The round's matches: the bots' pairings decided now; the players' are played on the nodes launched at the round's start.
     private List<ArenaEffect> EndShop(ArenaRules rules, IArenaBotMatches botMatches, Random random, long nowMs)
     {
         Phase = ArenaPhase.Match;
         DeadlineMs = 0;
-        var effects = new List<ArenaEffect>();
-        for (int i = 0; i < Pairings.Count; i++)
+        foreach (var pairing in Pairings.Where(p => !p.HasPlayer))
         {
-            if (Pairings[i].HasPlayer)
-            {
-                effects.Add(new LaunchPairing(i));
-            }
-            else
-            {
-                Decide(Pairings[i], botMatches.Winner(this, Pairings[i], random), rules);
-            }
+            Decide(pairing, botMatches.Winner(this, pairing, random), rules);
         }
 
-        // No match on a node (no player in this round): the round ends at once.
-        return effects.Count > 0 ? effects : EndRound(rules, random, nowMs);
+        // Every match decided (no player in this round, or their results came in during the shop): the round ends now.
+        return Pairings.All(p => p.Winner is not null) ? EndRound(rules, random, nowMs) : [];
     }
+
+    // The node launches for the current round: its pairings with a player.
+    private List<ArenaEffect> Launches() => [.. Pairings.Select((p, i) => (p, i)).Where(x => x.p.HasPlayer).Select(x => (ArenaEffect)new LaunchPairing(x.i))];
 
     private void Decide(ArenaRunPairing pairing, int winner, ArenaRules rules)
     {
@@ -450,12 +455,15 @@ public sealed class ArenaRun
         }
 
         Round++;
-        Pair(random);
-        return OpenShop(rules, random, nowMs);
+        Pair(random, nowMs);
+        var effects = Launches();
+        effects.AddRange(OpenShop(rules, random, nowMs));
+        return effects;
     }
 
-    // Every team still in against another at random; an odd one out against its mirror.
-    private void Pair(Random random)
+    // Every team still in against another at random; an odd one out against its mirror. A pairing with a player: its id,
+    // and a team with a player as A.
+    private void Pair(Random random, long nowMs)
     {
         int[] order = [.. Teams.Where(t => t.In).Select(t => t.Index)];
         random.Shuffle(order);
@@ -463,7 +471,13 @@ public sealed class ArenaRun
         for (int i = 0; i < order.Length; i += 2)
         {
             int a = order[i], b = i + 1 < order.Length ? order[i + 1] : Mirror;
-            Pairings.Add(new ArenaRunPairing { A = a, B = b, HasPlayer = HasPlayer(a) || HasPlayer(b) });
+            if (!HasPlayer(a) && HasPlayer(b))
+            {
+                (a, b) = (b, a);
+            }
+
+            bool hasPlayer = HasPlayer(a);
+            Pairings.Add(new ArenaRunPairing { A = a, B = b, HasPlayer = hasPlayer, MatchId = hasPlayer ? NewMatchId(nowMs, random) : null });
             Teams[a].Opponents.Add(b);
             if (b != Mirror)
             {
@@ -536,4 +550,7 @@ public sealed class ArenaRun
         [.. roster.Select(f => f.Character).OrderBy(_ => random.Next()).Take(count)];
 
     private static int At(IReadOnlyList<int> table, int index) => table.Count == 0 ? 0 : table[Math.Clamp(index, 0, table.Count - 1)];
+
+    // An ObjectId's shape, as every match id has: its seconds, then 8 random bytes (an ObjectId's random and counter parts).
+    private static string NewMatchId(long nowMs, Random random) => $"{(uint)(nowMs / 1000):x8}{random.GetHexString(16, lowercase: true)}";
 }

@@ -90,12 +90,29 @@ public sealed class MatchLaunchesTests : IAsyncLifetime
     // A stand-in for GameplayConfigs: a config naming the match, a failure (Mongo), or none (no map, no players).
     private sealed class Configs(Build build) : IGameplayConfigs
     {
-        public Task<JsonObject?> BuildAsync(JsonObject notification, CancellationToken ct) => build switch
+        public Task<IReadOnlyList<(string PlayerId, JsonObject Message)>?> BuildAsync(JsonObject notification, CancellationToken ct) => build switch
         {
             Build.Fails => throw new InvalidOperationException("Mongo is down"),
-            Build.Nothing => Task.FromResult<JsonObject?>(null),
-            _ => Task.FromResult<JsonObject?>(new JsonObject { ["data"] = new JsonObject { ["MatchId"] = notification["matchId"]?.DeepClone(), ["template_id"] = "OnGameplayConfigNotified" } }),
+            Build.Nothing => Task.FromResult<IReadOnlyList<(string PlayerId, JsonObject Message)>?>(null),
+            _ => Task.FromResult<IReadOnlyList<(string PlayerId, JsonObject Message)>?>(Copies(notification)),
         };
+
+        // Every holder the same config, except a player the notification gives data of their own (as GameplayConfigs does).
+        private static List<(string PlayerId, JsonObject Message)> Copies(JsonObject notification)
+        {
+            var message = new JsonObject { ["data"] = new JsonObject { ["MatchId"] = notification["matchId"]?.DeepClone(), ["template_id"] = "OnGameplayConfigNotified" } };
+            return [.. (notification["players"] as JsonArray ?? []).OfType<JsonObject>().Where(p => p["isBot"]?.GetValue<bool>() != true).Select(p =>
+            {
+                string id = (string)p["playerId"]!;
+                var copy = (JsonObject)message.DeepClone();
+                if (notification["gameplayConfigDataByPlayer"]?[id] is JsonObject own)
+                {
+                    copy["data"]!["Own"] = own.DeepClone();
+                }
+
+                return (id, copy);
+            })];
+        }
 
         public Task<IReadOnlyList<(string PlayerId, JsonObject Message)>> PerksLockedAsync(JsonObject notification, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<(string PlayerId, JsonObject Message)>>([]);
@@ -188,6 +205,23 @@ public sealed class MatchLaunchesTests : IAsyncLifetime
         Assert.Equal("""{"data":{"MatchKey":"the-key","MatchID":"000000000000000000190100","Port":57003,"template_id":"GameServerReadyNotification","IPAddress":"203.0.113.50"},"payload":{"match":{"id":"000000000000000000190100"},"custom_notification":"realtime"},"header":"","cmd":"update"}""",
             Js.Stringify(sent[0]["message"]));
         Assert.Equal("OnGameplayConfigNotified", (string?)sent[4]["message"]!["data"]!["template_id"]);
+    }
+
+    [SkippableFact]
+    // A player given config data of their own (an Arena round's) is sent their own copy, after the others' shared one.
+    public async Task APlayerWithDataOfTheirOwnIsSentTheirOwnCopy()
+    {
+        Skip.If(_redis is null, "OVS_TEST_REDIS not set");
+        var notification = (JsonObject)JsonNode.Parse(Notification())!;
+        notification["gameplayConfigDataByPlayer"] = new JsonObject { [P2] = new JsonObject { ["ArenaPlayerInfo"] = "p2's" } };
+        string json = Js.Stringify(notification);
+        await Db.StringSetAsync(Match, json);
+        await Stream().AnnounceAsync(Db, Match, json, PartiesJson, CancellationToken.None);
+
+        var sent = await SentAsync(6);
+        Assert.Equal([P1, P2, Spectator, $"{P1},{P2}", $"{P1},{Spectator}", P2], sent.Select(Ids));
+        Assert.Null(sent[4]["message"]!["data"]!["Own"]);
+        Assert.Equal("p2's", (string?)sent[5]["message"]!["data"]!["Own"]!["ArenaPlayerInfo"]);
     }
 
     [SkippableFact]

@@ -32,7 +32,7 @@ public sealed class RouteMapTests : IClassFixture<GameAppFactory>
     public sealed record Route(string Method, string Path, string Kind, string Area, string Owner);
 
     /// <summary>The services that answer routes (owners.tsv, copied into routes.json by gen_routes.py).</summary>
-    internal static readonly string[] Owners = ["http", "access", "social", "lobbies", "matchflow", "web"];
+    internal static readonly string[] Owners = ["http", "access", "social", "lobbies", "matchflow", "web", "arenas"];
 
     /// <summary>Owners whose routes still live in this service: each moves out to its own executable (web, access and social have).</summary>
     internal static readonly string[] StillHere = ["http"];

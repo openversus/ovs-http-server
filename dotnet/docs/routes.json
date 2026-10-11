@@ -1978,7 +1978,7 @@
     "kind": "game",
     "in_game": true,
     "in_server": false,
-    "owner": "lobbies"
+    "owner": "arenas"
   },
   {
     "method": "PUT",
@@ -1994,7 +1994,7 @@
     "kind": "game",
     "in_game": true,
     "in_server": false,
-    "owner": "lobbies"
+    "owner": "arenas"
   },
   {
     "method": "PUT",
@@ -2010,7 +2010,7 @@
     "kind": "game",
     "in_game": true,
     "in_server": false,
-    "owner": "lobbies"
+    "owner": "arenas"
   },
   {
     "method": "PUT",
@@ -2026,7 +2026,7 @@
     "kind": "game",
     "in_game": true,
     "in_server": false,
-    "owner": "lobbies"
+    "owner": "arenas"
   },
   {
     "method": "PUT",
@@ -2042,7 +2042,7 @@
     "kind": "game",
     "in_game": true,
     "in_server": false,
-    "owner": "lobbies"
+    "owner": "arenas"
   },
   {
     "method": "PUT",
@@ -2058,7 +2058,7 @@
     "kind": "game",
     "in_game": true,
     "in_server": false,
-    "owner": "lobbies"
+    "owner": "arenas"
   },
   {
     "method": "PUT",
@@ -2074,7 +2074,7 @@
     "kind": "game",
     "in_game": true,
     "in_server": false,
-    "owner": "lobbies"
+    "owner": "arenas"
   },
   {
     "method": "PUT",
@@ -2090,7 +2090,7 @@
     "kind": "game",
     "in_game": true,
     "in_server": false,
-    "owner": "lobbies"
+    "owner": "arenas"
   },
   {
     "method": "PUT",
@@ -2106,7 +2106,7 @@
     "kind": "game",
     "in_game": true,
     "in_server": false,
-    "owner": "lobbies"
+    "owner": "arenas"
   },
   {
     "method": "PUT",
@@ -2122,7 +2122,7 @@
     "kind": "game",
     "in_game": true,
     "in_server": false,
-    "owner": "lobbies"
+    "owner": "arenas"
   },
   {
     "method": "POST",
@@ -3949,7 +3949,7 @@
     "kind": "game",
     "in_game": true,
     "in_server": false,
-    "owner": "lobbies"
+    "owner": "arenas"
   },
   {
     "method": "PUT",

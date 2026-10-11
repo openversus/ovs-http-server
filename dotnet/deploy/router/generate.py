@@ -2,7 +2,7 @@
 """Writes haproxy.cfg from docs/routes.json: the game's one URL, split by route owner.
 
 The game talks to one host and port. Each route in routes.json names the service that owns it (access, social,
-lobbies, matchflow, web, or http for the rest), so the router sends a request to that service by its path alone: no
+lobbies, matchflow, web, arenas, or http for the rest), so the router sends a request to that service by its path alone: no
 path has two owners (checked here), which also keeps x-hydra-http-method out of the routing. Exact paths are matched
 before templates ({id} segments become one path segment), and anything unlisted goes to the http service, as the game
 API's catch-all. Run from the repository's dotnet/ directory:
@@ -29,6 +29,7 @@ BACKENDS = {
     "lobbies": "lobbies:8003",
     "web": "web:8004",
     "matchflow": "matchflow:8005",
+    "arenas": "arenas:8006",
 }
 DEFAULT = "http"
 

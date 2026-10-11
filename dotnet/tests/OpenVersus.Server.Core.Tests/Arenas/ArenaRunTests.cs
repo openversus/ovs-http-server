@@ -21,7 +21,8 @@ public sealed class ArenaRunTests
 
     [Fact]
     // Sixteen places in eight teams at full health; the player offered fighters with the starting coins; round 1 paired
-    // (every team once, each with its opponent kept); the character select open until its deadline.
+    // (every team once, each with its opponent kept; the player's pairing with its match id and their team on side 0) and
+    // the player's match launched; the character select open until its deadline.
     public void AnArenaStartsInTheCharacterSelectWithRoundOnePaired()
     {
         var (run, step) = Start(new Random(1));
@@ -32,9 +33,14 @@ public sealed class ArenaRunTests
         Assert.Empty(run.Players["bot01"].Pool);
         Assert.Equal(Enumerable.Range(0, 8), run.Pairings.SelectMany(p => new[] { p.A, p.B }).Order());
         Assert.All(run.Teams, t => Assert.Single(t.Opponents));
-        Assert.Single(run.Pairings, p => p.HasPlayer);
+        var mine = Assert.Single(run.Pairings, p => p.HasPlayer);
+        Assert.Equal((0, 0), (mine.A, mine.TeamOnSide(0)));
+        // Whichever place the shuffle gave their team.
+        Assert.All(Enumerable.Range(100, 20), seed => Assert.Equal(0, Assert.Single(Start(new Random(seed)).Run.Pairings, p => p.HasPlayer).A));
+        Assert.Matches("^[0-9a-f]{24}$", mine.MatchId);
+        Assert.All(run.Pairings.Where(p => !p.HasPlayer), p => Assert.Null(p.MatchId));
         Assert.Equal(1_000 + (Rules.CharacterSelectSeconds + Rules.GraceSeconds) * 1000L, run.DeadlineMs);
-        Assert.Equal([new SendPhaseConfigs()], step.Effects);
+        Assert.Equal([new LaunchPairing(run.Pairings.IndexOf(mine)), new SendPhaseConfigs()], step.Effects);
     }
 
     [Fact]
@@ -102,13 +108,13 @@ public sealed class ArenaRunTests
         var step = run.Tick(run.DeadlineMs, Roster, Rules, Bots, new Random(13));
         Assert.Equal(ArenaPhase.Match, run.Phase);
         Assert.Empty(run.Players[Me].Inventory);
-        Assert.Single(step.Effects.OfType<LaunchPairing>());
+        Assert.Empty(step.Effects);
     }
 
     [Fact]
     // The shop's summary settles: rerolls cost ShopRerollCost each, a purchase its cost (a duplicate levels the item),
-    // a sale gives its value back. The last shop closed starts the matches: the player's pairing is launched, the bots'
-    // are decided at once (their losers lose health).
+    // a sale gives its value back. The last shop closed starts the matches: the player's is played (its node launched at
+    // the round's start), the bots' are decided at once (their losers lose health).
     public void TheShopSettlesFromItsSummaryAndTheMatchesStart()
     {
         var (run, _) = Start(new Random(14));
@@ -124,60 +130,100 @@ public sealed class ArenaRunTests
         Assert.Equal(100 - 2 * Rules.ShopRerollCost - 2 * attack - thorns + thorns / 2, me.Coins);
         Assert.Equal([("arenaitem_attackpower", 2)], me.Inventory.Select(i => (i.Slug, i.Level)));
         Assert.Equal(ArenaPhase.Match, run.Phase);
-        int mine = Assert.Single(step.Effects.OfType<LaunchPairing>()).Pairing;
-        Assert.True(run.Pairings[mine].HasPlayer);
+        Assert.Empty(step.Effects);
+        Assert.Null(Assert.Single(run.Pairings, p => p.HasPlayer).Winner);
         Assert.All(run.Pairings.Where(p => !p.HasPlayer), p => Assert.NotNull(p.Winner));
         Assert.Equal(3, run.Teams.Count(t => t.Life == 100 - Rules.LifeLost(1)));
         Assert.False(run.ShopClosed(Me, 1, 0, [], Rules, Bots, new Random(16), 3_000).Accepted);
     }
 
     [Fact]
-    // The last result ends the round: coins (interest on what was kept, the round's coins, a win's), round 2 paired, its
-    // shop open (no character select). A result for no launched match is refused.
+    // The last result ends the round: coins (interest on what was kept, the round's coins, a win's), round 2 paired and
+    // its player's match launched, its shop open (no character select). A result for no launched match is refused.
     public void TheLastResultEndsTheRound()
     {
         var (run, _) = Start(new Random(17));
         run.Select(Me, run.Players[Me].Pool[0], null, false, Roster, Rules, new Random(18), 2_000);
-        var launch = run.ShopAbsent(Me, 1, Rules, Bots, new Random(19), 3_000).Effects.OfType<LaunchPairing>().Single();
-        run.AssignMatch(launch.Pairing, "match1");
+        run.ShopAbsent(Me, 1, Rules, Bots, new Random(19), 3_000);
+        string match = run.Pairings.Single(p => p.HasPlayer).MatchId!;
 
-        Assert.False(run.MatchResult("match0", 0, Roster, Rules, new Random(20), 3_000).Accepted);
-        var step = run.MatchResult("match1", 0, Roster, Rules, new Random(20), 3_000);
+        Assert.False(run.MatchResult("000000000000000000000000", 0, Roster, Rules, new Random(20), 3_000).Accepted);
+        var step = run.MatchResult(match, 0, Roster, Rules, new Random(20), 3_000);
 
         Assert.Equal((ArenaPhase.Shop, 2), (run.Phase, run.Round));
         int kept = Rules.StartingCoins;
         Assert.Equal(kept + Rules.Interest(kept) + Rules.CurrencyPerRound[0] + Rules.CurrencyForWin + Rules.CurrencyForWinStreak[1], run.Players[Me].Coins);
         Assert.All(run.Teams, t => Assert.Equal(2, t.Opponents.Count));
-        Assert.Equal([new SendPhaseConfigs()], step.Effects);
+        int next = run.Pairings.FindIndex(p => p.HasPlayer);
+        Assert.NotEqual(match, run.Pairings[next].MatchId);
+        Assert.Equal([new LaunchPairing(next), new SendPhaseConfigs()], step.Effects);
     }
 
     [Fact]
-    // Played to its end: each team out gets a final rank, the last one in is 1st, every rank once; an odd number of teams
-    // puts one against its mirror.
+    // Played to its end: each team out gets a final rank, the last one in is 1st, every rank once.
     public void AnArenaPlayedOutRanksEveryTeamOnce()
     {
         var random = new Random(21);
         var (run, _) = Start(random);
         run.SelectAbsent(Me, Roster, Rules, random, 2_000);
-        bool mirrored = false;
         var effects = new List<ArenaEffect>();
         for (int round = 0; round < 100 && run.Phase != ArenaPhase.Ended; round++)
         {
-            var launches = run.PlayersIn.Any()
-                ? run.ShopAbsent(Me, run.Round, Rules, Bots, random, 3_000).Effects.OfType<LaunchPairing>().ToList()
-                : run.Tick(run.DeadlineMs, Roster, Rules, Bots, random).Effects.OfType<LaunchPairing>().ToList();
-            mirrored |= run.Pairings.Any(p => p.B == ArenaRun.Mirror);
-            foreach (var launch in launches)
+            effects.AddRange(run.PlayersIn.Any()
+                ? run.ShopAbsent(Me, run.Round, Rules, Bots, random, 3_000).Effects
+                : run.Tick(run.DeadlineMs, Roster, Rules, Bots, random).Effects);
+            foreach (var pairing in run.Pairings.Where(p => p.HasPlayer && p.Winner is null).ToList())
             {
-                run.AssignMatch(launch.Pairing, $"m{round}");
-                effects.AddRange(run.MatchResult($"m{round}", run.Pairings[launch.Pairing].B, Roster, Rules, random, 3_000).Effects);
+                effects.AddRange(run.MatchResult(pairing.MatchId!, pairing.B, Roster, Rules, random, 3_000).Effects);
             }
         }
 
         Assert.Equal(ArenaPhase.Ended, run.Phase);
         Assert.Equal(Enumerable.Range(1, 8), run.Teams.Select(t => t.FinalRank).Order());
-        Assert.True(mirrored);
         Assert.Contains(new ArenaFinished(), effects);
+    }
+
+    [Fact]
+    // Two players in different matches: the first one's game closes its shop and plays; its result, in before the other's
+    // shop has closed, is kept, and the round ends with the other match's result once that shop has closed.
+    public void AResultInBeforeTheLastShopClosesIsKept()
+    {
+        var (run, _) = ArenaRun.Start("arena1", [.. Enumerable.Range(0, 8).Select(t => (IReadOnlyList<(string, string, bool)>)
+            [.. Enumerable.Range(0, 2).Select(i => t < 2 && i == 0 ? (t == 0 ? Me : "two", "P", false) : ($"bot{t}{i}", "Bot", true))])],
+            Roster, Rules, new Random(27), 1_000);
+        var mine = run.Pairings.Single(p => p.A == 0 || p.B == 0);
+        var theirs = run.Pairings.Single(p => p.A == 1 || p.B == 1);
+        Assert.NotSame(mine, theirs);
+        run.SelectAbsent(Me, Roster, Rules, new Random(28), 2_000);
+        run.SelectAbsent("two", Roster, Rules, new Random(28), 2_000);
+        run.ShopAbsent(Me, 1, Rules, Bots, new Random(29), 3_000);
+
+        Assert.True(run.MatchResult(mine.MatchId!, 0, Roster, Rules, new Random(30), 4_000).Accepted);
+        Assert.Equal((ArenaPhase.Shop, 1, 1), (run.Phase, run.Round, run.Teams[0].Wins));
+        Assert.False(run.MatchResult(mine.MatchId!, 0, Roster, Rules, new Random(30), 4_000).Accepted);
+        Assert.Empty(run.ShopAbsent("two", 1, Rules, Bots, new Random(31), 5_000).Effects);
+        Assert.Equal(ArenaPhase.Match, run.Phase);
+        run.MatchResult(theirs.MatchId!, 1, Roster, Rules, new Random(32), 6_000);
+
+        Assert.Equal((ArenaPhase.Shop, 2, 1), (run.Phase, run.Round, run.Teams[0].Wins));
+    }
+
+    [Fact]
+    // Seven teams left: the odd one out plays its mirror, which it keeps as its opponent; the rest are paired once each.
+    public void AnOddTeamOutPlaysItsMirror()
+    {
+        var (run, _) = Start(new Random(23));
+        run.SelectAbsent(Me, Roster, Rules, new Random(24), 2_000);
+        // A bots' team at no health goes out when the round ends, whatever its match.
+        run.Teams[5].Life = -1_000;
+        run.ShopAbsent(Me, 1, Rules, Bots, new Random(25), 3_000);
+
+        run.MatchResult(run.Pairings.Single(p => p.HasPlayer).MatchId!, 0, Roster, Rules, new Random(26), 3_000);
+
+        Assert.Equal((2, 8), (run.Round, run.Teams[5].FinalRank));
+        var mirror = Assert.Single(run.Pairings, p => p.B == ArenaRun.Mirror);
+        Assert.Equal(ArenaRun.Mirror, run.Teams[mirror.A].Opponents.Last());
+        Assert.Equal([0, 1, 2, 3, 4, 6, 7], run.Pairings.SelectMany(p => new[] { p.A, p.B }).Where(t => t != ArenaRun.Mirror).Order());
     }
 
     [Fact]

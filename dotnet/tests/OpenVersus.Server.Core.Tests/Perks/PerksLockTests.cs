@@ -123,7 +123,7 @@ public sealed class PerksLockTests : IAsyncLifetime
     {
         public List<string> Locks { get; } = [];
 
-        public Task<JsonObject?> BuildAsync(JsonObject notification, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<(string PlayerId, JsonObject Message)>?> BuildAsync(JsonObject notification, CancellationToken ct) => throw new NotSupportedException();
 
         public Task<IReadOnlyList<(string PlayerId, JsonObject Message)>> PerksLockedAsync(JsonObject notification, CancellationToken ct)
         {

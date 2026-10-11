@@ -127,6 +127,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
 
         await Db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, MatchmakingWorker.Ffa, ArenaMatchmaking.List, $"connections:{Ip}"]);
         await Db.HashDeleteAsync(MatchmakingQueue.QueuedKey, [Me, Mate, Third, Fourth]);
+        await Db.SortedSetRemoveAsync(ArenaRunStore.DeadlinesKey, Lobby);
     }
 
     private IDatabase Db => _redis!.GetDatabase();
@@ -151,6 +152,41 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
             new TestOptions<LobbySettings>(new LobbySettings { GameVersion = "195303.1.1" }), new TestOptions<FfaSettings>(ffa ?? new FfaSettings { WeekendOnly = false }),
             time ?? TimeProvider.System, NullLogger<MatchmakingRequestService>.Instance);
     }
+
+    // start_arena_direct's (the arenas service's), on the same Redis, gate and launcher.
+    private ArenaService Arenas(TimeProvider? time = null) => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
+        _gate, _launcher, new RandomArenaBotMatches(), time ?? TimeProvider.System, NullLogger<ArenaService>.Instance);
+
+    // An Arena started for Me, and the config the match flow keeps for Me once its launch is announced (GameplayConfigs:
+    // the match's id in its payload, every participant in its Players).
+    private async Task<ArenaRun> ArenaStartedAsync()
+    {
+        await PlayerAsync(Me);
+        await ArenaLobbyAsync(Me);
+        await Arenas().StartAsync(Asking(Me) with { Body = new JsonObject { ["ArenaLobbyId"] = Lobby } }, CancellationToken.None);
+        var run = (await ArenaRunStore.GetAsync(Db, Lobby))!;
+        string match = run.Pairings.Single(p => p.HasPlayer).MatchId!;
+        var players = new JsonObject();
+        foreach (var participant in _launcher.Launched!.Players)
+        {
+            players[participant.PlayerId] = new JsonObject { ["Character"] = "character_lobby", ["Skin"] = "skin_lobby" };
+        }
+
+        await Db.StringSetAsync(GameplayConfigs.Key(Me), Js.Stringify(new JsonObject
+        {
+            ["data"] = new JsonObject { ["MatchId"] = match, ["GameplayConfig"] = new JsonObject { ["Players"] = players }, ["template_id"] = "OnGameplayConfigNotified" },
+            ["payload"] = new JsonObject { ["match"] = new JsonObject { ["id"] = match } },
+        }), TimeSpan.FromMinutes(20));
+        return run;
+    }
+
+    private PartyRequest Arena(JsonObject body)
+    {
+        body["ArenaLobbyId"] = Lobby;
+        return Asking(Me) with { Body = body };
+    }
+
+    private async Task<JsonObject> KeptConfigAsync() => (JsonObject)JsonNode.Parse((string)(await Db.StringGetAsync(GameplayConfigs.Key(Me)))!)!;
 
     private sealed class Clock(DateTimeOffset now) : TimeProvider
     {
@@ -641,8 +677,9 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    // start_arena_direct (the game's Arena timer ran out): the Arena starts with all 16 places, its player's team (them and
-    // a bot) plays its round-1 2v2 against a bot team; a second start starts nothing.
+    // start_arena_direct (the game's Arena timer ran out): the Arena starts with all 16 places and its run is kept (the
+    // character select open); its player's team (them and a bot) plays its round-1 2v2 against a bot team, launched now
+    // under the pairing's match id, with the player's own Arena data; a second start starts nothing.
     public async Task AnArenaStartsWithSixteenAndPlaysItsPlayersTeam()
     {
         Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
@@ -650,7 +687,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         await ArenaLobbyAsync(Me);
         var asking = Asking(Me) with { Body = new JsonObject { ["ArenaLobbyId"] = Lobby, ["MatchId"] = Lobby, ["Mode"] = "" } };
 
-        var answer = await Service().ArenaBotsAsync(asking, CancellationToken.None);
+        var answer = await Arenas().StartAsync(asking, CancellationToken.None);
 
         Assert.NotNull(answer["body"]!["Crc"]);
         var arena = Js.Parse((string)(await Db.StringGetAsync($"lobby:{Lobby}"))!)!["arena"]!;
@@ -670,6 +707,12 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         Assert.Equal(16, launch.ConfigData!["ArenaData"]!["Players"]!.AsArray().Count);
         Assert.Equal(Me, (string?)launch.ConfigData["ArenaPlayerInfo"]!["AccountID"]);
         Assert.Equal(ArenaState.SelectableCount, launch.ConfigData["ArenaPlayerInfo"]!["SelectableCharacters"]!.AsArray().Count);
+        var run = (await ArenaRunStore.GetAsync(Db, Lobby))!;
+        Assert.Equal((ArenaPhase.CharacterSelect, 1), (run.Phase, run.Round));
+        Assert.Equal(run.Pairings.Single(p => p.HasPlayer).MatchId, launch.MatchId);
+        Assert.Equal([Me], launch.PlayerConfigData!.Keys);
+        Assert.Equal(run.Players[Me].Pool, launch.PlayerConfigData[Me]["ArenaPlayerInfo"]!["SelectableCharacters"]!.AsArray().Select(c => (string)c!));
+        Assert.All(run.Players.Values.Where(p => p.IsBot), b => Assert.NotNull(b.Character));
         var characters = new List<string>();
         foreach (string bot in teams.SelectMany(t => t).Where(p => p != Me))
         {
@@ -679,9 +722,84 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
 
         Assert.Equal(15, characters.Distinct().Count());
 
-        await Service().ArenaBotsAsync(asking, CancellationToken.None);
+        await Arenas().StartAsync(asking, CancellationToken.None);
         Assert.Same(launch, _launcher.Launched);
         Assert.Equal(arena.ToJsonString(), Js.Parse((string)(await Db.StringGetAsync($"lobby:{Lobby}"))!)!["arena"]!.ToJsonString());
+    }
+
+    [SkippableFact]
+    // Round 1 from the game's calls: a reroll answered with the new offer and the coins after it; the pick opens the shop,
+    // and the player's kept config is patched (their Arena data: no offer, the shop's pages; their match's fighters as
+    // picked) and sent; the shop's summary starts the matches; a second summary is refused.
+    public async Task AnArenasRoundOneRunsFromTheGamesCalls()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await ArenaStartedAsync();
+        var arenas = Arenas();
+
+        var reroll = await arenas.AnswerAsync("arena_reroll_characters", Arena([]), CancellationToken.None);
+        var run = (await ArenaRunStore.GetAsync(Db, Lobby))!;
+        Assert.True((bool)reroll["BaseResponse"]!["bSuccess"]!);
+        Assert.Equal(run.Players[Me].Pool, reroll["SelectableCharacters"]!.AsArray().Select(c => (string)c!));
+        Assert.Equal(ArenaRules.Default.StartingCoins - ArenaRules.Default.CharacterRerollCost, (int)reroll["playerData"]!["CurrencyAmount"]!);
+
+        string pick = run.Players[Me].Pool[0];
+        var selected = await arenas.AnswerAsync("arena_select_character", Arena(new JsonObject { ["CharacterSlug"] = pick, ["SkinSlug"] = "" }), CancellationToken.None);
+        Assert.True((bool)selected["bSuccess"]!);
+        run = (await ArenaRunStore.GetAsync(Db, Lobby))!;
+        Assert.Equal(ArenaPhase.Shop, run.Phase);
+        var kept = await KeptConfigAsync();
+        var info = kept["data"]!["ArenaPlayerInfo"]!;
+        Assert.Empty(info["SelectableCharacters"]!.AsArray());
+        Assert.Equal(ArenaRules.Default.ShopPages, info["CurrentShopLocal"]!.AsArray().Count);
+        Assert.Equal(pick, (string?)kept["data"]!["GameplayConfig"]!["Players"]![Me]!["Character"]);
+        Assert.All(_launcher.Launched!.Players.Where(p => p.IsBot), b =>
+            Assert.Equal(run.Players[b.PlayerId].Character, (string?)kept["data"]!["GameplayConfig"]!["Players"]![b.PlayerId]!["Character"]));
+        var sent = await Db.StreamRangeAsync(PlayerMessages.LogKey(Me));
+        Assert.Contains(sent, e => e.Values.Any(v => v.Value.ToString().Contains("\"CurrentShopLocal\"", StringComparison.Ordinal)));
+        Assert.Equal(pick, (string?)await Db.HashGetAsync($"connections:{Me}", "character"));
+
+        var closed = new JsonObject { ["ArenaRound"] = 1, ["ShopPhaseDetails"] = new JsonObject { ["NumRerolls"] = 0, ["ItemTransactions"] = new JsonArray() } };
+        Assert.True((bool)(await arenas.AnswerAsync("arena_player_shop_closed", Arena(closed), CancellationToken.None))["bSuccess"]!);
+        Assert.Equal(ArenaPhase.Match, (await ArenaRunStore.GetAsync(Db, Lobby))!.Phase);
+        Assert.False((bool)(await arenas.AnswerAsync("arena_player_shop_closed", Arena((JsonObject)closed.DeepClone()), CancellationToken.None))["bSuccess"]!);
+        Assert.True((bool)(await arenas.AnswerAsync("arena_checkin", Arena(new JsonObject { ["ArenaRound"] = 1 }), CancellationToken.None))["bSuccess"]!);
+    }
+
+    [SkippableFact]
+    // A kept config of another match (the last round's, before this round's launch is announced) is never patched, and
+    // nothing is sent.
+    public async Task AnArenaNeverPatchesAnotherMatchsConfig()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        var run = await ArenaStartedAsync();
+        var other = await KeptConfigAsync();
+        other["payload"]!["match"]!["id"] = "0000000000000000000b0999";
+        await Db.StringSetAsync(GameplayConfigs.Key(Me), Js.Stringify(other));
+
+        await Arenas().AnswerAsync("arena_select_character", Arena(new JsonObject { ["CharacterSlug"] = run.Players[Me].Pool[0] }), CancellationToken.None);
+
+        Assert.Equal(ArenaPhase.Shop, (await ArenaRunStore.GetAsync(Db, Lobby))!.Phase);
+        Assert.Equal(Js.Stringify(other), (string?)await Db.StringGetAsync(GameplayConfigs.Key(Me)));
+        Assert.Empty(await Db.StreamRangeAsync(PlayerMessages.LogKey(Me)));
+    }
+
+    [SkippableFact]
+    // The character select runs out with no pick: the deadline loop picks for the player (no bonus) and sends them the shop.
+    public async Task AnArenasDeadlinePicksForAnAbsentPlayer()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        var started = await ArenaStartedAsync();
+
+        await Arenas(new Clock(DateTimeOffset.FromUnixTimeMilliseconds(started.DeadlineMs - 1))).DeadlinesAsync(CancellationToken.None);
+        Assert.Equal(ArenaPhase.CharacterSelect, (await ArenaRunStore.GetAsync(Db, Lobby))!.Phase);
+        await Arenas(new Clock(DateTimeOffset.FromUnixTimeMilliseconds(started.DeadlineMs))).DeadlinesAsync(CancellationToken.None);
+
+        var run = (await ArenaRunStore.GetAsync(Db, Lobby))!;
+        Assert.Equal((ArenaPhase.Shop, ArenaRules.Default.StartingCoins), (run.Phase, run.Players[Me].Coins));
+        Assert.Contains(run.Players[Me].Character, started.Players[Me].Pool);
+        Assert.Equal(run.DeadlineMs, await Db.SortedSetScoreAsync(ArenaRunStore.DeadlinesKey, Lobby));
+        Assert.Empty((await KeptConfigAsync())["data"]!["ArenaPlayerInfo"]!["SelectableCharacters"]!.AsArray());
     }
 
     [SkippableFact]

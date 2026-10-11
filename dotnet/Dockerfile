@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# The C# services' images: one image per service (http, access, social, lobbies, web, ws, edge, matchmaking, matchflow, steam), each with only its own executable and
+# The C# services' images: one image per service (http, access, social, lobbies, web, ws, edge, matchmaking, matchflow, steam, arenas), each with only its own executable and
 # ovsctl, built from one shared build of the solution. From this directory:
 #   docker build --target matchmaking --build-arg SOURCE_REVISION=$(git rev-parse HEAD) -t ovs-matchmaking .
 # build-images.sh builds them all.
@@ -26,12 +26,13 @@ COPY src/OpenVersus.Server.Realtime/OpenVersus.Server.Realtime.csproj src/OpenVe
 COPY src/OpenVersus.Server.Edge/OpenVersus.Server.Edge.csproj src/OpenVersus.Server.Edge/
 COPY src/OpenVersus.Server.Matchmaking/OpenVersus.Server.Matchmaking.csproj src/OpenVersus.Server.Matchmaking/
 COPY src/OpenVersus.Server.MatchFlow/OpenVersus.Server.MatchFlow.csproj src/OpenVersus.Server.MatchFlow/
+COPY src/OpenVersus.Server.Arenas/OpenVersus.Server.Arenas.csproj src/OpenVersus.Server.Arenas/
 COPY src/OpenVersus.Server.Cli/OpenVersus.Server.Cli.csproj src/OpenVersus.Server.Cli/
-RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking MatchFlow Identity.Steam Cli; do \
+RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking MatchFlow Arenas Identity.Steam Cli; do \
       dotnet restore src/OpenVersus.Server.$project/OpenVersus.Server.$project.csproj || exit 1; \
     done
 COPY src/ src/
-RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking MatchFlow Identity.Steam Cli; do \
+RUN for project in Http Access Social Lobbies Web Realtime Edge Matchmaking MatchFlow Arenas Identity.Steam Cli; do \
       dotnet publish src/OpenVersus.Server.$project/OpenVersus.Server.$project.csproj -c Release --no-restore \
         -p:SourceRevisionId=$SOURCE_REVISION -o /out/$project || exit 1; \
     done
@@ -122,6 +123,14 @@ ENV OVS_SERVICE=matchflow
 COPY --from=build /out/MatchFlow .
 EXPOSE 8005
 ENTRYPOINT ["dotnet", "OpenVersus.Server.MatchFlow.dll"]
+
+# The Arena from its start to its end: start_arena_direct and the Arena's own calls between its rounds (ARENAS_PORT,
+# 8006 by default).
+FROM runtime AS arenas
+ENV OVS_SERVICE=arenas
+COPY --from=build /out/Arenas .
+EXPOSE 8006
+ENTRYPOINT ["dotnet", "OpenVersus.Server.Arenas.dll"]
 
 # The Steam identity service: asks Steam about each registered client's ticket and holds the auth session while the game
 # runs (docs/IDENTIFY.md "Asking Steam"). No public port; outbound to Steam (TCP 27015-27050 and 443).

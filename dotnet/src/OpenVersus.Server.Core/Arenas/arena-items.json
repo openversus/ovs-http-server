@@ -6,352 +6,328 @@
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
-   "cost": 14,
-   "costSource": "asset"
+   "cost": 6,
+   "assetCost": 14
   },
   {
    "slug": "arenaitem_andanotherone",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
-   "cost": 6,
-   "costSource": "wiki"
+   "cost": 6
   },
   {
    "slug": "arenaitem_armorcrush",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
-   "cost": 12,
-   "costSource": "asset"
+   "cost": 8,
+   "assetCost": 12
   },
   {
    "slug": "arenaitem_attackpower",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
-   "cost": 4,
-   "costSource": "wiki"
+   "cost": 4
   },
   {
    "slug": "arenaitem_bladeandshield",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
-   "cost": 6,
-   "costSource": "wiki"
+   "cost": 6
   },
   {
    "slug": "arenaitem_brainandbrawn",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
-   "cost": 6,
-   "costSource": "wiki"
+   "cost": 6
   },
   {
    "slug": "arenaitem_bulletproofjuggernaut",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
-   "cost": 8,
-   "costSource": "wiki"
+   "cost": 8
   },
   {
    "slug": "arenaitem_cementshoes",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
-   "cost": 16,
-   "costSource": "asset"
+   "cost": 6,
+   "assetCost": 16
   },
   {
    "slug": "arenaitem_coldbreeze",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
-   "cost": 8,
-   "costSource": "wiki"
+   "cost": 8
   },
   {
    "slug": "arenaitem_dashingconfidence",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
-   "cost": 12,
-   "costSource": "asset"
+   "cost": 8,
+   "assetCost": 12
   },
   {
    "slug": "arenaitem_defensepower",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
-   "cost": 4,
-   "costSource": "wiki"
+   "cost": 4
   },
   {
    "slug": "arenaitem_devilishcontract",
    "rarity": "Legendary",
    "startingWeight": 0,
    "weightPerRound": 2,
-   "cost": 12,
-   "costSource": "wiki"
+   "cost": 12
   },
   {
    "slug": "arenaitem_dodger",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
-   "cost": 16,
-   "costSource": "asset"
+   "cost": 8,
+   "assetCost": 16
   },
   {
    "slug": "arenaitem_doubletake",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
-   "cost": 10,
-   "costSource": "wiki"
+   "cost": 10
   },
   {
    "slug": "arenaitem_embracetheelements",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
-   "cost": 8,
-   "costSource": "wiki"
+   "cost": 8
   },
   {
    "slug": "arenaitem_emergencygadget",
    "rarity": "Legendary",
    "startingWeight": 0,
    "weightPerRound": 2,
-   "cost": 12,
-   "costSource": "wiki"
+   "cost": 12
   },
   {
    "slug": "arenaitem_empatheticresponse",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
-   "cost": 16,
-   "costSource": "asset"
+   "cost": 10,
+   "assetCost": 16
   },
   {
    "slug": "arenaitem_emptypockets",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
-   "cost": 7,
-   "costSource": "asset"
+   "cost": 8,
+   "assetCost": 7
   },
   {
    "slug": "arenaitem_enragedresponse",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
-   "cost": 16,
-   "costSource": "asset"
+   "cost": 10,
+   "assetCost": 16
   },
   {
    "slug": "arenaitem_explosivepanic",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
-   "cost": 7,
-   "costSource": "asset"
+   "cost": 6,
+   "assetCost": 7
   },
   {
    "slug": "arenaitem_finishthem",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
-   "cost": 8,
-   "costSource": "wiki"
+   "cost": 8
   },
   {
    "slug": "arenaitem_goldsuit",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
-   "cost": 7,
-   "costSource": "asset"
+   "cost": 10,
+   "assetCost": 7
   },
   {
    "slug": "arenaitem_groundpound",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
-   "cost": 16,
-   "costSource": "asset"
+   "cost": 10,
+   "assetCost": 16
   },
   {
    "slug": "arenaitem_heroiclanding",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
-   "cost": 16,
-   "costSource": "asset"
+   "cost": 8,
+   "assetCost": 16
   },
   {
    "slug": "arenaitem_homingrockets",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
-   "cost": 10,
-   "costSource": "wiki"
+   "cost": 10
   },
   {
    "slug": "arenaitem_hotandcold",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
-   "cost": 8,
-   "costSource": "wiki"
+   "cost": 8
   },
   {
    "slug": "arenaitem_ddd",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
-   "cost": 7,
-   "costSource": "asset"
+   "cost": 6,
+   "assetCost": 7
   },
   {
    "slug": "arenaitem_iwantyoutohitme",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
-   "cost": 6,
-   "costSource": "wiki"
+   "cost": 6
   },
   {
    "slug": "arenaitem_interestboost",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
-   "cost": 7,
-   "costSource": "asset"
+   "cost": 4,
+   "assetCost": 7
   },
   {
    "slug": "arenaitem_notoutyet",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
-   "cost": 10,
-   "costSource": "wiki"
+   "cost": 10
   },
   {
    "slug": "arenaitem_passinggas",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
-   "cost": 7,
-   "costSource": "asset"
+   "cost": 6,
+   "assetCost": 7
   },
   {
    "slug": "arenaitem_projectiledamageincrease",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
-   "cost": 4,
-   "costSource": "wiki"
+   "cost": 4
   },
   {
    "slug": "arenaitem_punchyobuns",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
-   "cost": 4,
-   "costSource": "wiki"
+   "cost": 4
   },
   {
    "slug": "arenaitem_reactiveplating",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
-   "cost": 16,
-   "costSource": "asset"
+   "cost": 8,
+   "assetCost": 16
   },
   {
    "slug": "arenaitem_regen",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
-   "cost": 12,
-   "costSource": "asset"
+   "cost": 10,
+   "assetCost": 12
   },
   {
    "slug": "arenaitem_rerollshop",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
-   "cost": 8,
-   "costSource": "asset"
+   "cost": 6,
+   "assetCost": 8
   },
   {
    "slug": "arenaitem_ringoutheal",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
-   "cost": 12,
-   "costSource": "asset"
+   "cost": 4,
+   "assetCost": 12
   },
   {
    "slug": "arenaitem_thebiggertheyare",
    "rarity": "Legendary",
    "startingWeight": 0,
    "weightPerRound": 2,
-   "cost": 12,
-   "costSource": "wiki"
+   "cost": 12
   },
   {
    "slug": "arenaitem_thorns",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
-   "cost": 6,
-   "costSource": "wiki"
+   "cost": 6
   },
   {
    "slug": "arenaitem_triggerhappy",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
-   "cost": 6,
-   "costSource": "wiki"
+   "cost": 6
   },
   {
    "slug": "arenaitem_vampire",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
-   "cost": 16,
-   "costSource": "asset"
+   "cost": 10,
+   "assetCost": 16
   },
   {
    "slug": "arenaitem_verticalattackpower",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
-   "cost": 4,
-   "costSource": "wiki"
+   "cost": 4
   },
   {
    "slug": "arenaitem_wallthemout",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
-   "cost": 4,
-   "costSource": "wiki"
+   "cost": 4
   },
   {
    "slug": "arenaitem_whatachicken",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
-   "cost": 6,
-   "costSource": "wiki"
+   "cost": 6
   }
  ]
 }

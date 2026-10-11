@@ -74,11 +74,18 @@ public sealed record ArenaRules
     /// <summary>P.</summary>
     public IReadOnlyList<int> CurrencyPerRingout { get; init; } = [.. Enumerable.Repeat(1, 13)];
 
-    /// <summary>R: patch 1.4.1, "1 for level 2, 3 for level 3".</summary>
-    public IReadOnlyList<int> ItemXpPerLevel { get; init; } = [1, 3];
+    /// <summary>
+    /// The experience (duplicate purchases) an item needs to go from a level to the next, BY LEVEL: the game's local shop
+    /// reads entry [Level] and takes Level >= Count as the top (0x1427cd7b0, 2026-10-11), so entry 0 is never read and
+    /// items run 1 to Count. R: patch 1.4.1, "1 for level 2, 3 for level 3"; the shape is inferred from that note.
+    /// </summary>
+    public IReadOnlyList<int> ItemXpPerLevel { get; init; } = [0, 1, 3];
 
-    /// <summary>P.</summary>
-    public int MaxItemsInInventory { get; init; } = 6;
+    /// <summary>
+    /// The inventory's slots per player: 4 (game rule, seen 2026-10-11: 6 ran off the shop's screen). The game's local
+    /// shop fills the first empty slot and buys nothing new when none is left.
+    /// </summary>
+    public int MaxItemsInInventory { get; init; } = 4;
 
     /// <summary>R: the wiki, the shop "shows 4 upgrades".</summary>
     public int OffersPerPage { get; init; } = 4;

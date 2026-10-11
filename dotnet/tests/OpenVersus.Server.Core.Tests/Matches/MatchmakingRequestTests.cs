@@ -728,9 +728,10 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    // Round 1 from the game's calls: a reroll answered with the new offer and the coins after it; the pick opens the shop,
-    // and the player's kept config is patched (their Arena data: no offer, the shop's pages; their match's fighters as
-    // picked) and sent; the shop's summary starts the matches; a second summary is refused.
+    // Round 1 from the game's calls: a reroll answered (under Result) with the new offer and the coins after it; the pick
+    // opens the shop, and the player's kept config is patched (their Arena data: no offer, the shop's pages; their match's
+    // fighters as picked) and sent; the shop's summary starts the matches, the config sent again ready to start; a second
+    // summary is refused.
     public async Task AnArenasRoundOneRunsFromTheGamesCalls()
     {
         Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
@@ -739,9 +740,9 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
 
         var reroll = await arenas.AnswerAsync("arena_reroll_characters", Arena([]), CancellationToken.None);
         var run = (await ArenaRunStore.GetAsync(Db, Lobby))!;
-        Assert.True((bool)reroll["BaseResponse"]!["bSuccess"]!);
-        Assert.Equal(run.Players[Me].Pool, reroll["SelectableCharacters"]!.AsArray().Select(c => (string)c!));
-        Assert.Equal(ArenaRules.Default.StartingCoins - ArenaRules.Default.CharacterRerollCost, (int)reroll["playerData"]!["CurrencyAmount"]!);
+        Assert.True((bool)reroll["Result"]!["BaseResponse"]!["bSuccess"]!);
+        Assert.Equal(run.Players[Me].Pool, reroll["Result"]!["SelectableCharacters"]!.AsArray().Select(c => (string)c!));
+        Assert.Equal(ArenaRules.Default.StartingCoins - ArenaRules.Default.CharacterRerollCost, (int)reroll["Result"]!["playerData"]!["CurrencyAmount"]!);
 
         string pick = run.Players[Me].Pool[0];
         var selected = await arenas.AnswerAsync("arena_select_character", Arena(new JsonObject { ["CharacterSlug"] = pick, ["SkinSlug"] = "" }), CancellationToken.None);
@@ -762,6 +763,11 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         var closed = new JsonObject { ["ArenaRound"] = 1, ["ShopPhaseDetails"] = new JsonObject { ["NumRerolls"] = 0, ["ItemTransactions"] = new JsonArray() } };
         Assert.True((bool)(await arenas.AnswerAsync("arena_player_shop_closed", Arena(closed), CancellationToken.None))["bSuccess"]!);
         Assert.Equal(ArenaPhase.Match, (await ArenaRunStore.GetAsync(Db, Lobby))!.Phase);
+        var ready = await KeptConfigAsync();
+        Assert.True((bool)ready["data"]!["GameplayConfig"]!["ArenaModeInfo"]!["bReadyToStart"]!);
+        // The pages stay: a re-activated matchup screen opens the shop again and reads its first page.
+        Assert.Equal(ArenaRules.Default.ShopPages, ready["data"]!["ArenaPlayerInfo"]!["CurrentShopLocal"]!.AsArray().Count);
+        Assert.Contains(await Db.StreamRangeAsync(PlayerMessages.LogKey(Me)), e => e.Values.Any(v => v.Value.ToString().Contains("\"bReadyToStart\":true", StringComparison.Ordinal)));
         Assert.False((bool)(await arenas.AnswerAsync("arena_player_shop_closed", Arena((JsonObject)closed.DeepClone()), CancellationToken.None))["bSuccess"]!);
         Assert.True((bool)(await arenas.AnswerAsync("arena_checkin", Arena(new JsonObject { ["ArenaRound"] = 1 }), CancellationToken.None))["bSuccess"]!);
     }

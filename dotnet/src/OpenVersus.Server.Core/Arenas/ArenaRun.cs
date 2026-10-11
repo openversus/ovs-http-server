@@ -17,7 +17,12 @@ namespace OpenVersus.Server.Core.Arenas;
 //                    random fighter, and the shop opens.
 //   Shop             every player still in is offered ShopPages pages of OffersPerPage items (their game's local rerolls walk
 //                    the pages); purchases, sales and rerolls settle when the shop closes, from the game's summary (buying
-//                    nothing is a valid strategy: saving earns interest). All closed (or the deadline): the round's matches.
+//                    nothing is a valid strategy: saving earns interest), replayed as the game's local shop made them: the
+//                    inventory is MaxItemsInInventory slots (an empty one: Slug ""), a purchase levels a slot holding the
+//                    same item or fills the first empty slot (none: no purchase), a sale empties its slot in place and pays
+//                    that slot's SellValue (the sum of what each copy added). All closed (or the deadline): every player is
+//                    sent their config again, ready to start (bReadyToStart: the game goes from its shop to the match only
+//                    then), and the round's matches are played.
 //   Match            the shops have closed: each pairing with a player in it plays its node match (launched at the
 //                    round's start); a pairing of bots only is decided now by IArenaBotMatches (random for now: an
 //                    interface so a smarter rule can replace it). The loser loses LifeLost(round). All decided: the round
@@ -75,12 +80,18 @@ public sealed class ArenaRunPlayer
     public List<List<string>> ShopPages { get; set; } = [];
 }
 
-/// <summary>An item a player owns.</summary>
+/// <summary>An inventory slot: an item a player owns, or empty (Slug "").</summary>
 public sealed class ArenaOwnedItem
 {
     public string Slug { get; set; } = "";
-    public int Level { get; set; } = 1;
+    public int Level { get; set; }
     public int Xp { get; set; }
+
+    /// <summary>What selling it pays: what each copy bought added (half its cost).</summary>
+    public int SellValue { get; set; }
+
+    [JsonIgnore]
+    public bool IsEmpty => Slug.Length == 0;
 }
 
 /// <summary>A team of two.</summary>
@@ -200,6 +211,7 @@ public sealed class ArenaRun
                 {
                     Id = pid, Username = username, IsBot = isBot, Team = t, Coins = isBot ? 0 : rules.StartingCoins,
                     Pool = isBot ? [] : Offer(roster, rules.SelectableCount, random),
+                    Inventory = [.. Enumerable.Range(0, rules.MaxItemsInInventory).Select(_ => new ArenaOwnedItem())],
                 };
             }
         }
@@ -395,7 +407,8 @@ public sealed class ArenaRun
         }
 
         // Every match decided (no player in this round, or their results came in during the shop): the round ends now.
-        return Pairings.All(p => p.Winner is not null) ? EndRound(rules, random, nowMs) : [];
+        // Otherwise every player is sent their config ready to start.
+        return Pairings.All(p => p.Winner is not null) ? EndRound(rules, random, nowMs) : [new SendPhaseConfigs()];
     }
 
     // The node launches for the current round: its pairings with a player.
@@ -498,45 +511,43 @@ public sealed class ArenaRun
 
         if (player.Inventory.FirstOrDefault(i => i.Slug == item.Slug) is { } owned)
         {
-            // A duplicate is experience toward its next level (ItemXpPerLevel: the experience each level needs).
-            if (owned.Level - 1 >= rules.ItemXpPerLevel.Count)
+            // A duplicate is experience toward its next level (ItemXpPerLevel, by level); at the top it is not bought.
+            if (owned.Level >= rules.ItemXpPerLevel.Count)
             {
                 return;
             }
 
             player.Coins -= item.Cost;
             owned.Xp++;
-            if (owned.Xp >= rules.ItemXpPerLevel[owned.Level - 1])
+            owned.SellValue += item.Cost / 2;
+            if (owned.Xp >= rules.ItemXpPerLevel[owned.Level])
             {
-                owned.Xp -= rules.ItemXpPerLevel[owned.Level - 1];
+                owned.Xp = 0;
                 owned.Level++;
             }
 
             return;
         }
 
-        if (player.Inventory.Count >= rules.MaxItemsInInventory)
+        if (player.Inventory.FirstOrDefault(i => i.IsEmpty) is not { } free)
         {
             return;
         }
 
         player.Coins -= item.Cost;
-        player.Inventory.Add(new ArenaOwnedItem { Slug = item.Slug });
+        (free.Slug, free.Level, free.Xp, free.SellValue) = (item.Slug, 1, 0, item.Cost / 2);
     }
 
     private static void Sell(ArenaRunPlayer player, int slot)
     {
-        if (slot < 0 || slot >= player.Inventory.Count)
+        if (slot < 0 || slot >= player.Inventory.Count || player.Inventory[slot] is not { IsEmpty: false } sold)
         {
             return;
         }
 
-        player.Coins += SellValue(player.Inventory[slot]);
-        player.Inventory.RemoveAt(slot);
+        player.Coins += sold.SellValue;
+        player.Inventory[slot] = new ArenaOwnedItem();
     }
-
-    /// <summary>What an owned item sells for. P: half its cost per level.</summary>
-    public static int SellValue(ArenaOwnedItem owned) => (ArenaItems.Of(owned.Slug)?.Cost ?? 0) * owned.Level / 2;
 
     private static void Pick(ArenaRunPlayer player, string character, string? skin, IReadOnlyList<(string Character, string[] Skins)> roster)
     {

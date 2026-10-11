@@ -181,8 +181,10 @@ public static class ArenaState
     private static JsonObject Player(ArenaRun run, ArenaRunPlayer player, ArenaRules rules)
     {
         bool selecting = run.Phase == ArenaPhase.CharacterSelect && player.Character is null;
-        bool shopping = run.Phase == ArenaPhase.Shop && !player.IsBot;
-        var pages = shopping ? player.ShopPages : [];
+        // The round's shop pages from the shop's opening to the next round's: the game's matchup screen, re-activated (back
+        // from Arena Status, say), starts its pre-match states again, opens the shop for a player with no fighters on offer,
+        // and reads its first page unchecked (crash 2026-10-11 with none, in the Match phase).
+        var pages = !player.IsBot && !selecting ? player.ShopPages : [];
         return new JsonObject
         {
             ["Username"] = player.Username,
@@ -226,11 +228,15 @@ public static class ArenaState
     /// The answer to arena_reroll_characters (FMvsArenaCharacterRerollResponse): the offer and the coins after it. The game
     /// takes both from here (seen 2026-10-11: an answer without them emptied its offer and showed 0 coins).
     /// </summary>
+    /// <remarks>Under "Result": the game's handler (0x142a536f0) reads the answer's body.Result (archive arenas-protocol.md).</remarks>
     public static JsonObject RerollAnswer(bool success, ArenaRunPlayer player, ArenaRules rules) => new()
     {
-        ["BaseResponse"] = new JsonObject { ["bSuccess"] = success, ["playerId"] = player.Id, ["FailureReason"] = success ? "" : "refused" },
-        ["SelectableCharacters"] = new JsonArray([.. player.Pool.Select(c => (JsonNode?)c)]),
-        ["playerData"] = PlayerData(player, rules),
+        ["Result"] = new JsonObject
+        {
+            ["BaseResponse"] = new JsonObject { ["bSuccess"] = success, ["playerId"] = player.Id, ["FailureReason"] = success ? "" : "refused" },
+            ["SelectableCharacters"] = new JsonArray([.. player.Pool.Select(c => (JsonNode?)c)]),
+            ["playerData"] = PlayerData(player, rules),
+        },
     };
 
     private static JsonObject Offer(string slug, ArenaRules rules)
@@ -240,20 +246,23 @@ public static class ArenaState
         {
             ["Item"] = new JsonObject
             {
-                ["Slug"] = slug, ["Level"] = 1, ["XP"] = 0, ["NextLevelXp"] = rules.ItemXpPerLevel.Count > 0 ? rules.ItemXpPerLevel[0] : 0, ["SellValue"] = cost / 2,
+                ["Slug"] = slug, ["Level"] = 1, ["XP"] = 0, ["NextLevelXp"] = NextLevelXp(1, rules), ["SellValue"] = cost / 2,
             },
             ["Cost"] = cost,
         };
     }
 
+    // A slot (FMvsArenaItemData); an empty one has Slug "" (the game's local shop fills the first of those).
     private static JsonObject Owned(ArenaOwnedItem owned, ArenaRules rules) => new()
     {
         ["Slug"] = owned.Slug,
         ["Level"] = owned.Level,
         ["XP"] = owned.Xp,
-        ["NextLevelXp"] = owned.Level - 1 < rules.ItemXpPerLevel.Count ? rules.ItemXpPerLevel[owned.Level - 1] : 0,
-        ["SellValue"] = ArenaRun.SellValue(owned),
+        ["NextLevelXp"] = owned.IsEmpty ? 0 : NextLevelXp(owned.Level, rules),
+        ["SellValue"] = owned.SellValue,
     };
+
+    private static int NextLevelXp(int level, ArenaRules rules) => level < rules.ItemXpPerLevel.Count ? rules.ItemXpPerLevel[level] : 0;
 
     private static JsonObject MatchStats() => new()
     {

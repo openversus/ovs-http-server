@@ -107,8 +107,9 @@ public sealed class ArenaRunTests
 
         var step = run.Tick(run.DeadlineMs, Roster, Rules, Bots, new Random(13));
         Assert.Equal(ArenaPhase.Match, run.Phase);
-        Assert.Empty(run.Players[Me].Inventory);
-        Assert.Empty(step.Effects);
+        Assert.Equal(Rules.MaxItemsInInventory, run.Players[Me].Inventory.Count);
+        Assert.All(run.Players[Me].Inventory, i => Assert.True(i.IsEmpty));
+        Assert.Equal([new SendPhaseConfigs()], step.Effects);
     }
 
     [Fact]
@@ -128,13 +129,54 @@ public sealed class ArenaRunTests
 
         Assert.True(step.Accepted);
         Assert.Equal(100 - 2 * Rules.ShopRerollCost - 2 * attack - thorns + thorns / 2, me.Coins);
-        Assert.Equal([("arenaitem_attackpower", 2)], me.Inventory.Select(i => (i.Slug, i.Level)));
+        Assert.Equal([("arenaitem_attackpower", 2)], me.Inventory.Where(i => !i.IsEmpty).Select(i => (i.Slug, i.Level)));
         Assert.Equal(ArenaPhase.Match, run.Phase);
-        Assert.Empty(step.Effects);
+        Assert.Equal([new SendPhaseConfigs()], step.Effects);
         Assert.Null(Assert.Single(run.Pairings, p => p.HasPlayer).Winner);
         Assert.All(run.Pairings.Where(p => !p.HasPlayer), p => Assert.NotNull(p.Winner));
         Assert.Equal(3, run.Teams.Count(t => t.Life == 100 - Rules.LifeLost(1)));
         Assert.False(run.ShopClosed(Me, 1, 0, [], Rules, Bots, new Random(16), 3_000).Accepted);
+    }
+
+    [Fact]
+    // The inventory as the game's local shop keeps it: MaxItemsInInventory slots; a purchase fills the first empty slot, a
+    // copy of an owned item adds to its slot (experience, sell value); a sale empties its slot in place and pays its sell
+    // value; the next purchase fills that slot; a full inventory buys nothing new.
+    public void TheInventoryIsTheGamesSlots()
+    {
+        var (run, _) = Start(new Random(33));
+        run.Select(Me, run.Players[Me].Pool[0], null, false, Roster, Rules, new Random(34), 2_000);
+        var me = run.Players[Me];
+        me.Coins = 1_000;
+        string[] slugs = [.. ArenaItems.All.Where(i => i.Rarity == "Common").Take(Rules.MaxItemsInInventory + 1).Select(i => i.Slug)];
+        me.ShopPages = [[.. slugs]];
+        int cost = ArenaItems.Of(slugs[0])!.Cost;
+
+        run.ShopClosed(Me, 1, 0, [.. Enumerable.Range(0, Rules.MaxItemsInInventory + 1).Select(i => new ArenaTransaction(true, 0, i)),
+            new(true, 0, 0), new(false, 0, 1), new(true, 0, Rules.MaxItemsInInventory)], Rules, Bots, new Random(35), 3_000);
+
+        Assert.Equal([slugs[0], slugs[Rules.MaxItemsInInventory], .. slugs[2..Rules.MaxItemsInInventory]], me.Inventory.Select(i => i.Slug));
+        Assert.Equal((2, 0, cost / 2 * 2), (me.Inventory[0].Level, me.Inventory[0].Xp, me.Inventory[0].SellValue));
+        Assert.Equal(1_000 - cost * (Rules.MaxItemsInInventory + 2) + cost / 2, me.Coins);
+    }
+
+    [Fact]
+    // The inventory lasts the whole Arena: what round 1's shop bought is there in round 2's shop, and in its config.
+    public void TheInventoryLastsTheWholeArena()
+    {
+        var (run, _) = Start(new Random(36));
+        run.Select(Me, run.Players[Me].Pool[0], null, false, Roster, Rules, new Random(37), 2_000);
+        var me = run.Players[Me];
+        string bought = me.ShopPages[0][0];
+        me.Coins = 100;
+        run.ShopClosed(Me, 1, 0, [new(true, 0, 0)], Rules, Bots, new Random(38), 3_000);
+
+        run.MatchResult(run.Pairings.Single(p => p.HasPlayer).MatchId!, 0, Roster, Rules, new Random(39), 4_000);
+
+        Assert.Equal((ArenaPhase.Shop, 2), (run.Phase, run.Round));
+        Assert.Equal(bought, me.Inventory[0].Slug);
+        var slots = ArenaState.ConfigData(run, Me, Rules)["ArenaPlayerInfo"]!["playerData"]!["Inventory"]!.AsArray();
+        Assert.Equal((Rules.MaxItemsInInventory, bought), (slots.Count, (string?)slots[0]!["Slug"]));
     }
 
     [Fact]
@@ -201,7 +243,7 @@ public sealed class ArenaRunTests
         Assert.True(run.MatchResult(mine.MatchId!, 0, Roster, Rules, new Random(30), 4_000).Accepted);
         Assert.Equal((ArenaPhase.Shop, 1, 1), (run.Phase, run.Round, run.Teams[0].Wins));
         Assert.False(run.MatchResult(mine.MatchId!, 0, Roster, Rules, new Random(30), 4_000).Accepted);
-        Assert.Empty(run.ShopAbsent("two", 1, Rules, Bots, new Random(31), 5_000).Effects);
+        Assert.Equal([new SendPhaseConfigs()], run.ShopAbsent("two", 1, Rules, Bots, new Random(31), 5_000).Effects);
         Assert.Equal(ArenaPhase.Match, run.Phase);
         run.MatchResult(theirs.MatchId!, 1, Roster, Rules, new Random(32), 6_000);
 

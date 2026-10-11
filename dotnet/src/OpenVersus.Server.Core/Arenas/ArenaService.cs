@@ -27,7 +27,9 @@ namespace OpenVersus.Server.Core.Arenas;
 //                     Arena round: ArenaModeInfo in the config (its presence makes the match an Arena), timed
 //                     (RoundSeconds), no ring-out target; each player's own Arena data beside it (ArenaState.ConfigData).
 //   SendPhaseConfigs  every player still in is sent their kept config (match_config:{player}) with their Arena data and
-//                     the match's fighters as the run has them now: the character select's end opens the shop this way.
+//                     the match's fighters as the run has them now: the character select's end opens the shop this way,
+//                     and the shops' end (the Match phase) sends it with ArenaModeInfo.bReadyToStart true, the only thing
+//                     that takes the game from its shop to the match (ShopBaseState 0x1426a1dc0, archive).
 //                     A player whose match was launched by the same step is skipped (the launch carries their data); a
 //                     kept config of another match (the last round's) is never patched: an error, logged.
 //   ArenaFinished     logged only (what the game is sent at the end is unprobed).
@@ -364,6 +366,16 @@ internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate 
                         fields["Skin"] = participant.Skin ?? "";
                     }
                 }
+            }
+
+            if (run.Phase == ArenaPhase.Match && data["GameplayConfig"] is JsonObject config)
+            {
+                if (config["ArenaModeInfo"] is not JsonObject modeInfo)
+                {
+                    config["ArenaModeInfo"] = modeInfo = ArenaState.ModeInfo(Rules.FaceoffWaitSeconds, Rules.ShopSeconds, readyToStart: true)["ArenaModeInfo"]!.DeepClone().AsObject();
+                }
+
+                modeInfo["bReadyToStart"] = true;
             }
 
             if (player.Character is { Length: > 0 } picked)

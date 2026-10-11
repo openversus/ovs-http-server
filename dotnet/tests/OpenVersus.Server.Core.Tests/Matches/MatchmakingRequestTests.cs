@@ -825,6 +825,37 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // The end of a player's Arena (here their team out: their game gone, no report): they are sent ArenaPlayerEndPayload
+    // with their Arena data beside its id, and an absent report from their game after that is answered with the same body
+    // under return_code 13, which the game hands to the same handler.
+    public async Task APlayerWhoseArenaEndedIsToldSo()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        var run = await ArenaStartedAsync();
+        var arenas = Arenas();
+        await arenas.AnswerAsync("arena_select_character", Arena(new JsonObject { ["CharacterSlug"] = run.Players[Me].Pool[0] }), CancellationToken.None);
+        await arenas.AnswerAsync("arena_player_shop_closed", Arena(new JsonObject { ["ArenaRound"] = 1, ["ShopPhaseDetails"] = new JsonObject() }), CancellationToken.None);
+        string match = run.Pairings.Single(p => p.HasPlayer).MatchId!;
+
+        await arenas.MatchEndedAsync(Lobby, match, null, CancellationToken.None);
+
+        run = (await ArenaRunStore.GetAsync(Db, Lobby))!;
+        Assert.False(run.Teams[run.Players[Me].Team].In);
+        string told = Assert.Single((await Db.StreamRangeAsync(PlayerMessages.LogKey(Me))).Select(e => e.Values.Select(v => v.Value.ToString())
+            .FirstOrDefault(v => v.Contains("ArenaPlayerEndPayload", StringComparison.Ordinal))).OfType<string>());
+        Assert.Contains($"\"ArenaId\":\"{Lobby}\"", told, StringComparison.Ordinal);
+        Assert.Contains("\"ArenaData\":{", told, StringComparison.Ordinal);
+
+        var absent = Asking(Me) with { Body = new JsonObject { ["ArenaParentId"] = Lobby, ["ArenaRound"] = 1, ["ContainerMatchId"] = match } };
+        var answer = await arenas.AnswerAsync("arena_match_absent", absent, CancellationToken.None);
+        Assert.Equal(ArenaAnswer.PlayerEnded, answer.ReturnCode);
+        Assert.Equal("ArenaPlayerEndPayload", (string?)answer.Body["template_id"]);
+        Assert.Equal(Lobby, (string?)answer.Body["ArenaId"]);
+        Assert.Equal(run.Teams[run.Players[Me].Team].FinalRank,
+            (int)answer.Body["ArenaData"]!["TeamInfo"]!.AsObject().Select(t => t.Value!).Single(t => t["Players"]!.AsArray().Any(p => (string?)p == Me))["FinalRank"]!);
+    }
+
+    [SkippableFact]
     // A kept config of another match (the last round's, before this round's launch is announced) is never patched, and
     // nothing is sent.
     public async Task AnArenaNeverPatchesAnotherMatchsConfig()

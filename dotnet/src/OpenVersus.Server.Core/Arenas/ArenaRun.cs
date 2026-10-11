@@ -168,6 +168,9 @@ public sealed record LaunchPairing(int Pairing) : ArenaEffect;
 /// <summary>The Arena has ended.</summary>
 public sealed record ArenaFinished : ArenaEffect;
 
+/// <summary>These teams' Arena has ended (out this round, or the winner at the end): each of their players is told so.</summary>
+public sealed record TeamsEnded(IReadOnlyList<int> Teams) : ArenaEffect;
+
 /// <summary>A transition's outcome: whether the call was taken, and the effects.</summary>
 public sealed record ArenaStep(bool Accepted, IReadOnlyList<ArenaEffect> Effects)
 {
@@ -536,17 +539,19 @@ public sealed class ArenaRun
             outNow[i].FinalRank = left + 1 + i;
         }
 
+        var ended = outNow.Select(t => t.Index).ToList();
         var stillIn = Teams.Where(t => t.In).ToList();
         if (stillIn.Count <= 1)
         {
             if (stillIn.Count == 1)
             {
                 stillIn[0].FinalRank = 1;
+                ended.Insert(0, stillIn[0].Index);
             }
 
             Phase = ArenaPhase.Ended;
             DeadlineMs = 0;
-            return [new ArenaFinished()];
+            return [new TeamsEnded(ended), new ArenaFinished()];
         }
 
         foreach (var player in PlayersIn)
@@ -559,7 +564,13 @@ public sealed class ArenaRun
 
         Phase = ArenaPhase.Results;
         DeadlineMs = nowMs + rules.CheckinSeconds * 1000L;
-        return AllCheckedIn() ? StartRound(rules, random, nowMs) : [];
+        List<ArenaEffect> effects = ended.Count > 0 ? [new TeamsEnded(ended)] : [];
+        if (AllCheckedIn())
+        {
+            effects.AddRange(StartRound(rules, random, nowMs));
+        }
+
+        return effects;
     }
 
     // The next round: paired, its players' matches launched, its shop open.

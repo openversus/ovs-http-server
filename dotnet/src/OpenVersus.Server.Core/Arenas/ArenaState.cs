@@ -265,6 +265,20 @@ public static class ArenaState
     };
 
     /// <summary>
+    /// ArenaPlayerEndPayload's data: the end of a reader's Arena (their team out, or the winner). The game's handler
+    /// (0x1426f62f0, reached from the template and from an arena_match_absent answer with return_code 13 through
+    /// 0x1426f7d00's template_id test) needs ArenaData and ArenaId beside it, refreshes the Arena from them, marks the
+    /// player's Arena ended (the subsystem's +0xe0, cleared by the next Arena config), and the post-match screen leaves on
+    /// that mark. No ClientReturnData: the game then shows no Arena points or rewards. Archive arenas-protocol.md, "2026-10-11 (s48)".
+    /// </summary>
+    public static JsonObject PlayerEnd(ArenaRun run, string reader, ArenaRules rules)
+    {
+        var data = ConfigData(run, reader, rules);
+        data["template_id"] = "ArenaPlayerEndPayload";
+        return data;
+    }
+
+    /// <summary>
     /// The answer to arena_reroll_characters (FMvsArenaCharacterRerollResponse): the offer and the coins after it. The game
     /// takes both from here (seen 2026-10-11: an answer without them emptied its offer and showed 0 coins).
     /// </summary>

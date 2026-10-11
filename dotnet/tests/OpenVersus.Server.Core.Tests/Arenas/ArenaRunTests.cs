@@ -299,10 +299,11 @@ public sealed class ArenaRunTests
         var mine = run.Pairings.Single(p => p.HasPlayer);
         int bots = mine.B;
 
-        run.MatchResult(mine.MatchId!, null, new HashSet<string>(), Rules, new Random(58), 4_000);
+        var step = run.MatchResult(mine.MatchId!, null, new HashSet<string>(), Rules, new Random(58), 4_000);
 
         Assert.Equal((bots, 0), (mine.Winner, run.Teams[0].Life));
         Assert.Equal(8, run.Teams[0].FinalRank);
+        Assert.Contains(0, step.Effects.OfType<TeamsEnded>().First().Teams);
         Assert.Single(run.Teams[0].Opponents);
         // No player left in: the bots' Arena is decided to its end at once, the winning bots playing on in it.
         Assert.Equal(ArenaPhase.Ended, run.Phase);
@@ -352,12 +353,16 @@ public sealed class ArenaRunTests
         var match = run.Pairings.Single(p => p.HasPlayer);
         int sideOfTwo = match.A == 1 ? 0 : 1;
 
-        run.MatchResult(match.MatchId!, sideOfTwo, new HashSet<string> { Me }, Rules, new Random(61), 4_000);
+        var step = run.MatchResult(match.MatchId!, sideOfTwo, new HashSet<string> { Me }, Rules, new Random(61), 4_000);
 
         Assert.Equal(1, match.Winner);
         Assert.Equal((1, 100 - Rules.LifeLost(1)), (run.Teams[0].Losses, run.Teams[0].Life));
         Assert.True(run.Teams[1].FinalRank > 0);
         Assert.True(run.Teams[0].In);
+        // The team out is told its Arena has ended at the round's end; the team still in is not.
+        var ended = Assert.Single(step.Effects.OfType<TeamsEnded>());
+        Assert.Contains(1, ended.Teams);
+        Assert.DoesNotContain(0, ended.Teams);
     }
 
     [Fact]
@@ -402,6 +407,10 @@ public sealed class ArenaRunTests
         Assert.Equal(ArenaPhase.Ended, run.Phase);
         Assert.Equal(Enumerable.Range(1, 8), run.Teams.Select(t => t.FinalRank).Order());
         Assert.Contains(new ArenaFinished(), effects);
+        // Each team is told once that its Arena has ended: as it goes out, and the winner with the last one out.
+        var ended = effects.OfType<TeamsEnded>().ToList();
+        Assert.Equal(Enumerable.Range(0, 8), ended.SelectMany(e => e.Teams).Order());
+        Assert.Equal(run.Teams.Single(t => t.FinalRank == 1).Index, ended[^1].Teams[0]);
     }
 
     [Fact]

@@ -36,7 +36,9 @@ namespace OpenVersus.Server.Core.Arenas;
 //                     that takes the game from its shop to the match (ShopBaseState 0x1426a1dc0, archive).
 //                     A player whose match was launched by the same step is skipped (the launch carries their data); a
 //                     kept config of another match (the last round's) is never patched: an error, logged.
-//   ArenaFinished     logged only (what the game is sent at the end, ArenaPlayerEndPayload, is not read yet).
+//   TeamsEnded        each player of a team whose Arena has ended (out this round, or the winner at the end) is sent
+//                     ArenaPlayerEndPayload (ArenaState.PlayerEnd: their Arena data); their post-match screen leaves on it.
+//   ArenaFinished     logged.
 //
 // The Arena's own calls (AnswerAsync), each a transition of the run named by ArenaLobbyId (ArenaParentId for the round's
 // check-ins), applied under compare-and-set, its effects carried out, and answered {bSuccess, playerId} (bSuccess: the
@@ -51,7 +53,8 @@ namespace OpenVersus.Server.Core.Arenas;
 //   arena_checkin                  Checkin {ArenaParentId, ArenaRound}: the game left its match (it sends this itself when
 //                                  its post-match countdown runs out); answered success (the game then waits)
 //   arena_match_absent             Checkin too (the game is still waiting); return_code 2 while the run waits for the next
-//                                  round, which the game takes as "keep waiting" (it reports absent again later)
+//                                  round, which the game takes as "keep waiting" (it reports absent again later); from a
+//                                  player whose Arena has ended, return_code 13 with the ArenaPlayerEndPayload body
 //   the others                     answered success, not acted on: arena_purchase_item, arena_sell_item, arena_reroll_shop
 //                                  (the shop runs in the game while ArenaShopLocalOperations is on).
 // A node match's end (MatchEndedAsync, from the arena:results stream, ArenaResults): the run's MatchResult with the side
@@ -61,9 +64,8 @@ namespace OpenVersus.Server.Core.Arenas;
 // without the games that never checked in) and its effects carried out; a run gone (expired) loses its deadline entry.
 //
 // KNOWN GAPS: the effects run after the run's write, so a crash between the two loses that step's launches and configs; a
-// launch that fails (no rollback port) leaves its pairing to the Match deadline; a player who is out, or whose Arena has
-// ended, is sent nothing yet (their game waits on its post-match screen); the taunts in the config are the lobby fighter's,
-// not the pick's.
+// launch that fails (no rollback port) leaves its pairing to the Match deadline; what becomes of the Arena lobby after a
+// player's Arena has ended is not handled here; the taunts in the config are the lobby fighter's, not the pick's.
 
 public interface IArenaService
 {
@@ -85,6 +87,9 @@ public sealed record ArenaAnswer(JsonObject Body, int ReturnCode = 0)
 {
     /// <summary>arena_match_absent's "keep waiting": the game reports absent again later (0x14285bcd0, archive s47).</summary>
     public const int KeepWaiting = 2;
+
+    /// <summary>arena_match_absent's "your Arena has ended": the game hands the body to its ArenaPlayerEndPayload handler (archive s48).</summary>
+    public const int PlayerEnded = 13;
 }
 
 internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate gate, IMatchLauncher launcher, IArenaBotMatches botMatches,
@@ -235,6 +240,9 @@ internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate 
             "arena_reroll_characters" when run.Players.TryGetValue(me, out var player) => new(ArenaState.RerollAnswer(step.Accepted, player, Rules)),
             // A check-in is answered success whether it was the first or not: the game only waits on it.
             "arena_checkin" => new(ArenaState.Answer(true, me)),
+            // A player whose Arena has ended is told so again: their game missed the notification (or reports first).
+            "arena_match_absent" when run.Players.TryGetValue(me, out var player) && !player.IsBot && !run.Teams[player.Team].In =>
+                new(ArenaState.PlayerEnd(run, me, Rules), ArenaAnswer.PlayerEnded),
             "arena_match_absent" => new(ArenaState.Answer(true, me), run.Awaits(me, round) ? ArenaAnswer.KeepWaiting : 0),
             _ => new(ArenaState.Answer(step.Accepted, me)),
         };
@@ -339,6 +347,15 @@ internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate 
                     break;
                 case SendPhaseConfigs:
                     await SendPhaseConfigsAsync(redis, run, launched);
+                    break;
+                case TeamsEnded ended:
+                    foreach (var player in run.Players.Values.Where(p => !p.IsBot && ended.Teams.Contains(p.Team)))
+                    {
+                        await ProfileNotifications.SendAsync(redis, player.Id, ArenaState.PlayerEnd(run, player.Id, Rules));
+                        log.LogInformation("Arena {Run} round {Round}: {Player}'s Arena has ended (team {Team}, rank {Rank}); told", run.Id, run.Round,
+                            player.Id, player.Team, run.Teams[player.Team].FinalRank);
+                    }
+
                     break;
                 case ArenaFinished:
                     log.LogInformation("Arena {Run} finished after round {Round}: {Ranks}", run.Id, run.Round,

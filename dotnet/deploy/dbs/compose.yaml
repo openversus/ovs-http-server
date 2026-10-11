@@ -48,4 +48,4 @@ volumes:
 
 networks:
   ovs:
-    name: ovs
+    name: ${OVS_NETWORK:-ovs}

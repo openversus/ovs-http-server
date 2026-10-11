@@ -164,6 +164,20 @@ public sealed class ArenaRunTests
     }
 
     [Fact]
+    // The items as the match applies them: one gem per owned slot, the item's gem slug at its level - 1; empty slots none.
+    public void APlayersItemsAreTheirGemsAtTheirLevel()
+    {
+        var player = new ArenaRunPlayer
+        {
+            Inventory = [new() { Slug = "arenaitem_whatachicken", Level = 2 }, new(), new() { Slug = "arenaitem_interestboost", Level = 1 }, new()],
+        };
+
+        Assert.Equal("[{\"Gem\":\"Gem_arena_whatachicken\",\"ChargeLevel\":1},{\"Gem\":\"Gem_arena_investor\",\"ChargeLevel\":0}]",
+            ArenaState.Gems(player).ToJsonString());
+        Assert.Empty(ArenaState.Gems(new ArenaRunPlayer { Inventory = [new(), new()] }));
+    }
+
+    [Fact]
     // The inventory lasts the whole Arena: what round 1's shop bought is there in round 2's shop, and in its config.
     public void TheInventoryLastsTheWholeArena()
     {

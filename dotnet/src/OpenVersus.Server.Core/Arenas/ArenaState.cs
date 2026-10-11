@@ -225,6 +225,24 @@ public static class ArenaState
     public static JsonObject Answer(bool success, string playerId) => new() { ["bSuccess"] = success, ["playerId"] = playerId };
 
     /// <summary>
+    /// The player's items as the match applies them: their gameplay config entry's Gems, one {Gem, ChargeLevel} per
+    /// owned slot (the item's gem slug; ChargeLevel = its level - 1, the 0-based index of the gem buff's 3 tiers). The
+    /// game's player parser reads exactly these two keys (0x14297caa0) and resolves Gem as a MvsGemHsda slug; with none
+    /// the items did nothing (bench, 2026-10-11). Archive arenas-protocol.md, "after the 9-round probe".
+    /// </summary>
+    public static JsonArray Gems(ArenaRunPlayer player) => new([.. player.Inventory
+        .Where(slot => !slot.IsEmpty && ArenaItems.Of(slot.Slug) is not null)
+        .Select(slot => (JsonNode?)new JsonObject { ["Gem"] = ArenaItems.Of(slot.Slug)!.Gem, ["ChargeLevel"] = Math.Max(0, slot.Level - 1) })]);
+
+    /// <summary>
+    /// The config's TeamData for an Arena round: no score target for either side, so only the timer ends the match and
+    /// the most stocks taken wins. The game's match setup (0x1429886e0) takes TeamData's targets per team and never ends a
+    /// match on a target of 0 or less (OnScoreChanged 0x142968280); with TeamData empty it falls back to NumRingouts, and
+    /// to 4 for a 2v2 when that is 0 (bench 2026-10-11: rounds ended at 4 stocks).
+    /// </summary>
+    public static JsonArray NoScoreTarget() => [new JsonObject { ["TargetScore"] = 0 }, new JsonObject { ["TargetScore"] = 0 }];
+
+    /// <summary>
     /// OnArenaNextMatch's data: the round's match a player's game goes to from its post-match screen. Its reader
     /// (0x142678860, reached from the Arena post-match state's binding of the template) takes MatchId and Cluster; the
     /// PriorMatchId test before it is skipped for an Arena (archive arenas-protocol.md, "2026-10-11 (s47)").

@@ -703,6 +703,8 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         // An Arena round: ArenaModeInfo in the config (its presence makes the match an Arena), timed, no ring-out target;
         // the Arena beside the config, with the player's own entry.
         Assert.False((bool)launch.GameplayConfigOverride!["ArenaModeInfo"]!["bReadyToStart"]!);
+        // No score target for either side: only the timer ends a round.
+        Assert.Equal("[{\"TargetScore\":0},{\"TargetScore\":0}]", launch.GameplayConfigOverride["TeamData"]!.ToJsonString());
         Assert.Equal((90, 0), ((int)launch.NotificationFields!["customMatchTime"]!, (int)launch.NotificationFields["customNumRingouts"]!));
         Assert.Equal(16, launch.ConfigData!["ArenaData"]!["Players"]!.AsArray().Count);
         Assert.Equal(Me, (string?)launch.ConfigData["ArenaPlayerInfo"]!["AccountID"]);
@@ -760,11 +762,21 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         Assert.Contains(sent, e => e.Values.Any(v => v.Value.ToString().Contains("\"CurrentShopLocal\"", StringComparison.Ordinal)));
         Assert.Equal(pick, (string?)await Db.HashGetAsync($"connections:{Me}", "character"));
 
-        var closed = new JsonObject { ["ArenaRound"] = 1, ["ShopPhaseDetails"] = new JsonObject { ["NumRerolls"] = 0, ["ItemTransactions"] = new JsonArray() } };
+        // A purchase the player can afford (their coins after the reroll), from whichever page offers one.
+        run = (await ArenaRunStore.GetAsync(Db, Lobby))!;
+        var (page, offer) = run.Players[Me].ShopPages.SelectMany((p, i) => p.Select((slug, j) => (i, j, slug)))
+            .Where(o => ArenaItems.Of(o.slug)!.Cost <= run.Players[Me].Coins).Select(o => (o.i, o.j)).First();
+        string bought = run.Players[Me].ShopPages[page][offer];
+        var closed = new JsonObject { ["ArenaRound"] = 1, ["ShopPhaseDetails"] = new JsonObject { ["NumRerolls"] = 0, ["ItemTransactions"] = new JsonArray(
+            new JsonObject { ["bPurchase"] = true, ["LocalShopIndex"] = page, ["ItemIndex"] = offer }) } };
         Assert.True((bool)(await arenas.AnswerAsync("arena_player_shop_closed", Arena(closed), CancellationToken.None)).Body["bSuccess"]!);
         Assert.Equal(ArenaPhase.Match, (await ArenaRunStore.GetAsync(Db, Lobby))!.Phase);
         var ready = await KeptConfigAsync();
         Assert.True((bool)ready["data"]!["GameplayConfig"]!["ArenaModeInfo"]!["bReadyToStart"]!);
+        // No shop time left (a re-shown matchup screen's shop closes at once), and the bought item as the player's gem.
+        Assert.Equal(0, (int)ready["data"]!["GameplayConfig"]!["ArenaModeInfo"]!["ShopTime"]!);
+        Assert.Equal($"[{{\"Gem\":\"{ArenaItems.Of(bought)!.Gem}\",\"ChargeLevel\":0}}]", ready["data"]!["GameplayConfig"]!["Players"]![Me]!["Gems"]!.ToJsonString());
+        Assert.All(_launcher.Launched!.Players.Where(p => p.IsBot), b => Assert.Empty(ready["data"]!["GameplayConfig"]!["Players"]![b.PlayerId]!["Gems"]!.AsArray()));
         // The pages stay: a re-activated matchup screen opens the shop again and reads its first page.
         Assert.Equal(ArenaRules.Default.ShopPages, ready["data"]!["ArenaPlayerInfo"]!["CurrentShopLocal"]!.AsArray().Count);
         Assert.Contains(await Db.StreamRangeAsync(PlayerMessages.LogKey(Me)), e => e.Values.Any(v => v.Value.ToString().Contains("\"bReadyToStart\":true", StringComparison.Ordinal)));

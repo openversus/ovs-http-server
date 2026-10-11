@@ -3,6 +3,7 @@
  "items": [
   {
    "slug": "arenaitem_airspecialist",
+   "gem": "Gem_arena_airspecialist",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
@@ -11,6 +12,7 @@
   },
   {
    "slug": "arenaitem_andanotherone",
+   "gem": "Gem_arena_andanotherone",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
@@ -18,6 +20,7 @@
   },
   {
    "slug": "arenaitem_armorcrush",
+   "gem": "Gem_arena_armorcrush",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
@@ -26,6 +29,7 @@
   },
   {
    "slug": "arenaitem_attackpower",
+   "gem": "Gem_arena_attackpower",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
@@ -33,6 +37,7 @@
   },
   {
    "slug": "arenaitem_bladeandshield",
+   "gem": "Gem_arena_bladeandshield",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
@@ -40,6 +45,7 @@
   },
   {
    "slug": "arenaitem_brainandbrawn",
+   "gem": "Gem_arena_brainandbrawn",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
@@ -47,6 +53,7 @@
   },
   {
    "slug": "arenaitem_bulletproofjuggernaut",
+   "gem": "Gem_arena_bulletproofjuggernaut",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
@@ -54,6 +61,7 @@
   },
   {
    "slug": "arenaitem_cementshoes",
+   "gem": "Gem_arena_cementshoes",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
@@ -62,6 +70,7 @@
   },
   {
    "slug": "arenaitem_coldbreeze",
+   "gem": "Gem_arena_coldbreeze",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
@@ -69,6 +78,7 @@
   },
   {
    "slug": "arenaitem_dashingconfidence",
+   "gem": "Gem_arena_dashingconfidence",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
@@ -77,6 +87,7 @@
   },
   {
    "slug": "arenaitem_defensepower",
+   "gem": "Gem_arena_defensepower",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
@@ -84,6 +95,7 @@
   },
   {
    "slug": "arenaitem_devilishcontract",
+   "gem": "Gem_arena_devilishcontract",
    "rarity": "Legendary",
    "startingWeight": 0,
    "weightPerRound": 2,
@@ -91,6 +103,7 @@
   },
   {
    "slug": "arenaitem_dodger",
+   "gem": "Gem_arena_dodger",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
@@ -99,6 +112,7 @@
   },
   {
    "slug": "arenaitem_doubletake",
+   "gem": "Gem_arena_doubletake",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
@@ -106,6 +120,7 @@
   },
   {
    "slug": "arenaitem_embracetheelements",
+   "gem": "Gem_arena_embracetheelements",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
@@ -113,6 +128,7 @@
   },
   {
    "slug": "arenaitem_emergencygadget",
+   "gem": "Gem_arena_emergencygadget",
    "rarity": "Legendary",
    "startingWeight": 0,
    "weightPerRound": 2,
@@ -120,6 +136,7 @@
   },
   {
    "slug": "arenaitem_empatheticresponse",
+   "gem": "Gem_arena_empatheticresponse",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
@@ -128,6 +145,7 @@
   },
   {
    "slug": "arenaitem_emptypockets",
+   "gem": "Gem_arena_emptypockets",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
@@ -136,6 +154,7 @@
   },
   {
    "slug": "arenaitem_enragedresponse",
+   "gem": "Gem_arena_enragedresponse",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
@@ -144,6 +163,7 @@
   },
   {
    "slug": "arenaitem_explosivepanic",
+   "gem": "Gem_arena_explosivepanic",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
@@ -152,6 +172,7 @@
   },
   {
    "slug": "arenaitem_finishthem",
+   "gem": "Gem_arena_finishthem",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
@@ -159,6 +180,7 @@
   },
   {
    "slug": "arenaitem_goldsuit",
+   "gem": "Gem_arena_goldsuit",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
@@ -167,6 +189,7 @@
   },
   {
    "slug": "arenaitem_groundpound",
+   "gem": "Gem_arena_groundpound",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
@@ -175,6 +198,7 @@
   },
   {
    "slug": "arenaitem_heroiclanding",
+   "gem": "Gem_arena_heroiclanding",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
@@ -183,6 +207,7 @@
   },
   {
    "slug": "arenaitem_homingrockets",
+   "gem": "Gem_arena_homingrockets",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
@@ -190,6 +215,7 @@
   },
   {
    "slug": "arenaitem_hotandcold",
+   "gem": "Gem_arena_hotandcold",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
@@ -197,6 +223,7 @@
   },
   {
    "slug": "arenaitem_ddd",
+   "gem": "Gem_arena_hotfoot",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
@@ -205,6 +232,7 @@
   },
   {
    "slug": "arenaitem_iwantyoutohitme",
+   "gem": "Gem_arena_iwantyoutohitme",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
@@ -212,6 +240,7 @@
   },
   {
    "slug": "arenaitem_interestboost",
+   "gem": "Gem_arena_investor",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
@@ -220,6 +249,7 @@
   },
   {
    "slug": "arenaitem_notoutyet",
+   "gem": "Gem_arena_notoutyet",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
@@ -227,6 +257,7 @@
   },
   {
    "slug": "arenaitem_passinggas",
+   "gem": "Gem_arena_passinggas",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
@@ -235,6 +266,7 @@
   },
   {
    "slug": "arenaitem_projectiledamageincrease",
+   "gem": "Gem_arena_projectiledamageincrease",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
@@ -242,6 +274,7 @@
   },
   {
    "slug": "arenaitem_punchyobuns",
+   "gem": "Gem_arena_punchyobuns",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
@@ -249,6 +282,7 @@
   },
   {
    "slug": "arenaitem_reactiveplating",
+   "gem": "Gem_arena_reactiveplating",
    "rarity": "Rare",
    "startingWeight": 35,
    "weightPerRound": 1,
@@ -257,6 +291,7 @@
   },
   {
    "slug": "arenaitem_regen",
+   "gem": "Gem_arena_regen",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
@@ -265,6 +300,7 @@
   },
   {
    "slug": "arenaitem_rerollshop",
+   "gem": "Gem_arena_rerollshop",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
@@ -273,6 +309,7 @@
   },
   {
    "slug": "arenaitem_ringoutheal",
+   "gem": "Gem_arena_ringoutheal",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
@@ -281,6 +318,7 @@
   },
   {
    "slug": "arenaitem_thebiggertheyare",
+   "gem": "Gem_arena_thebiggertheyare",
    "rarity": "Legendary",
    "startingWeight": 0,
    "weightPerRound": 2,
@@ -288,6 +326,7 @@
   },
   {
    "slug": "arenaitem_thorns",
+   "gem": "Gem_arena_thorns",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
@@ -295,6 +334,7 @@
   },
   {
    "slug": "arenaitem_triggerhappy",
+   "gem": "Gem_arena_triggerhappy",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,
@@ -302,6 +342,7 @@
   },
   {
    "slug": "arenaitem_vampire",
+   "gem": "Gem_arena_vampire",
    "rarity": "Epic",
    "startingWeight": 20,
    "weightPerRound": 1,
@@ -310,6 +351,7 @@
   },
   {
    "slug": "arenaitem_verticalattackpower",
+   "gem": "Gem_arena_verticalattackpower",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
@@ -317,6 +359,7 @@
   },
   {
    "slug": "arenaitem_wallthemout",
+   "gem": "Gem_arena_wallthemout",
    "rarity": "Common",
    "startingWeight": 70,
    "weightPerRound": -2,
@@ -324,6 +367,7 @@
   },
   {
    "slug": "arenaitem_whatachicken",
+   "gem": "Gem_arena_whatachicken",
    "rarity": "Uncommon",
    "startingWeight": 55,
    "weightPerRound": -2,

@@ -411,6 +411,8 @@ internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate 
             configOverride[key] = value?.DeepClone();
         }
 
+        configOverride["TeamData"] = ArenaState.NoScoreTarget();
+
         var fields = BotDefaults.UnrankedNotificationFields();
         fields["customMatchTime"] = Rules.RoundSeconds;
         // Timed, not a stock match: no ring-out target (0; PROBE: whether the game reads 0 as none is not known yet).
@@ -454,11 +456,19 @@ internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate 
             {
                 foreach (var (id, entry) in entries)
                 {
-                    if (entry is JsonObject fields && run.Players.TryGetValue(id, out var participant) && participant.Character is { Length: > 0 } character)
+                    if (entry is not JsonObject fields || !run.Players.TryGetValue(id, out var participant))
+                    {
+                        continue;
+                    }
+
+                    if (participant.Character is { Length: > 0 } character)
                     {
                         fields["Character"] = character;
                         fields["Skin"] = participant.Skin ?? "";
                     }
+
+                    // Everyone's items in everyone's copy: each game of a P2P match runs the match itself.
+                    fields["Gems"] = ArenaState.Gems(participant);
                 }
             }
 
@@ -470,6 +480,10 @@ internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate 
                 }
 
                 modeInfo["bReadyToStart"] = true;
+                // No shop time left: the matchup screen restarts its pre-match steps whenever it is shown again (after
+                // Arena Status, 0x142a52db0), and the shop's entry (0x142a566f0) closes at once on a ShopTime of 0 instead
+                // of opening a second shop (bench 2026-10-11).
+                modeInfo["ShopTime"] = 0;
             }
 
             if (player.Character is { Length: > 0 } picked)

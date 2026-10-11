@@ -71,6 +71,12 @@ public interface IArenaLobbyService
     Task<string?> LeaveAsync(string playerId, string lobbyId, bool bringPartners = true);
 
     /// <summary>
+    /// <paramref name="playerId"/>'s game is gone (LobbyDisconnects): they leave Arena lobby <paramref name="lobbyId"/> (the
+    /// lead passes, the others are told) and their party is disbanded.
+    /// </summary>
+    Task GoneAsync(string playerId, string lobbyId);
+
+    /// <summary>
     /// The lobby_code answer when <paramref name="request"/>'s LobbyId is an Arena lobby ({LobbyCode}, null for someone not
     /// in it), else null: the request is another lobby's.
     /// </summary>
@@ -512,7 +518,22 @@ internal sealed class ArenaLobbyService(IServiceProvider services, IOptionsMonit
         return home;
     }
 
-    // The kicked player's party ends: they leave their home party lobby (deleted when it is left empty) and their pointer.
+    public async Task GoneAsync(string playerId, string lobbyId)
+    {
+        if (services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis
+            || await LobbyStore.GetAsync(redis, lobbyId) is not ArenaLobby lobby || !lobby.PlayerIds.Contains(playerId))
+        {
+            return;
+        }
+
+        string? home = lobby.HomeOf(playerId);
+        await LeaveAsync(playerId, lobbyId, bringPartners: false);
+        await DisbandAsync(redis, playerId, home);
+        log.LogInformation("{Player}'s game is gone: left arena lobby {Lobby}; their party (lobby {Home}) is disbanded", playerId, lobbyId, home);
+    }
+
+    // The player's party ends (a kick, or their game gone): they leave their home party lobby (deleted when it is left empty;
+    // its lead passes as in every lobby) and their pointer.
     private static async Task DisbandAsync(IDatabase redis, string kickee, string? home)
     {
         if (home is not null)
@@ -520,6 +541,12 @@ internal sealed class ArenaLobbyService(IServiceProvider services, IOptionsMonit
             await LobbyStore.UpdateAsync(redis, home, party =>
             {
                 party.PlayerIds.Remove(kickee);
+                if (party.OwnerId == kickee && party.PlayerIds.Count > 0)
+                {
+                    // The one lead rule: the longest-tenured player still in it.
+                    party.OwnerId = party.PlayerIds[0];
+                }
+
                 return party.PlayerIds.Count == 0 ? LobbyWrite.Delete : LobbyWrite.Save;
             });
         }

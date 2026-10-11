@@ -231,6 +231,25 @@ public sealed class ArenaLobbyJoinTests : IAsyncLifetime
         Assert.Null(await Service().ByCodeAsync("NOPE1", CancellationToken.None));
     }
 
+    [SkippableFact]
+    public async Task AGameThatIsGoneLeavesTheArenaWhichStaysAndItsPartyEnds()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS to run");
+        var (party, arena) = await PartyInArenaAsync();
+
+        await Service().GoneAsync(Me, arena);
+
+        var stored = JsonNode.Parse((string)(await Redis.StringGetAsync($"lobby:{arena}"))!)!;
+        Assert.Equal(Other, (string?)stored["ownerId"]);
+        Assert.Equal([Other], stored["playerIds"]!.AsArray().Select(p => (string)p!));
+        var home = JsonNode.Parse((string)(await Redis.StringGetAsync($"lobby:{party}"))!)!;
+        Assert.Equal([Other], home["playerIds"]!.AsArray().Select(p => (string)p!));
+        Assert.Equal(Other, (string?)home["ownerId"]);
+        Assert.False(await Redis.KeyExistsAsync($"player_lobby:{Me}"));
+        // Nobody is invited anywhere.
+        Assert.False(await Redis.KeyExistsAsync($"pending_join_lobby:{Other}"));
+    }
+
     private sealed class StaticMonitor(LobbySettings value) : IOptionsMonitor<LobbySettings>
     {
         public LobbySettings CurrentValue => value;

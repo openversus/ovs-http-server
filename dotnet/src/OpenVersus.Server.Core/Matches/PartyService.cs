@@ -491,16 +491,22 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
                 }
             }
 
-            string soloId = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(12));
-            var connection = await HashAsync(redis, $"connections:{me}");
-            var loadout = await HashAsync(redis, $"player:{me}");
             // The mode they last played stays theirs (KeptMode).
-            string kept = KeptMode(left);
-            await LobbyStore.SaveAsync(redis, new PartyLobby(soloId, me, Or(Get(connection, "username"), Get(connection, "hydraUsername"), "Unknown"), kept, [me], NowMs()), SoloTtl);
-            await LobbyStore.SetPointerAsync(redis, me, soloId, SoloTtl);
-            var member = new LobbyDocuments.Member(me, Now(), Preferences(connection),
-                Or(Get(loadout, "character"), Get(connection, "character"), "character_shaggy"), Or(Get(loadout, "skin"), Get(connection, "skin"), "skin_shaggy_default"));
-            return LobbyDocuments.Answer(LobbyDocuments.Lobby([member], me, "local", kept, soloId));
+            return await SoloAnswerAsync(redis, me, KeptMode(left));
+        }
+
+        // An Arena lobby that is already gone (its owner's game went away while this game still showed it): the game still
+        // leaves it, and is answered its party lobby, the one it is in, else a new solo one.
+        if (Str(request.Body, "LobbyTemplate") == ArenaLobby.TemplateName && Str(request.Body, "LobbyId") is { } gone
+            && await LobbyStore.GetAsync(redis, gone) is null)
+        {
+            log.LogInformation("leave_player_lobby: Player {Player} leaving arena lobby {Lobby}, which is gone", me, gone);
+            if (await LobbyStore.PointerAsync(redis, me) is { } current && await LobbyStore.GetAsync(redis, current) is PartyLobby party && party.PlayerIds.Contains(me))
+            {
+                return LobbyDocuments.Answer(await LobbyOfAsync(redis, party, ModeOf(party), writeCosmetics: false, ct));
+            }
+
+            return await SoloAnswerAsync(redis, me, PartyLobby.LoginMode);
         }
 
         // Otherwise the player's own lobby: a step of joining another (pending join), or a real leave.
@@ -532,6 +538,19 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
 
         await GenuineLeaveAsync(redis, me, lobby);
         return LobbyDocuments.Ssc([]);
+    }
+
+    // A new solo party lobby for the player, in <paramref name="mode"/>, as a leave answers it.
+    private async Task<JsonObject> SoloAnswerAsync(IDatabase redis, string me, string mode)
+    {
+        string soloId = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(12));
+        var connection = await HashAsync(redis, $"connections:{me}");
+        var loadout = await HashAsync(redis, $"player:{me}");
+        await LobbyStore.SaveAsync(redis, new PartyLobby(soloId, me, Or(Get(connection, "username"), Get(connection, "hydraUsername"), "Unknown"), mode, [me], NowMs()), SoloTtl);
+        await LobbyStore.SetPointerAsync(redis, me, soloId, SoloTtl);
+        var member = new LobbyDocuments.Member(me, Now(), Preferences(connection),
+            Or(Get(loadout, "character"), Get(connection, "character"), "character_shaggy"), Or(Get(loadout, "skin"), Get(connection, "skin"), "skin_shaggy_default"));
+        return LobbyDocuments.Answer(LobbyDocuments.Lobby([member], me, "local", mode, soloId));
     }
 
     // performGenuineLeave: the owner keeps the lobby, everyone else gets a new solo lobby; the OpenVersus client is told
@@ -603,6 +622,14 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         if (await LobbyStore.PointerAsync(redis, playerId) is not { } lobbyId
             || await LobbyStore.GetAsync(redis, lobbyId) is not { } lobby || lobby.PlayerIds.Count <= 1)
         {
+            return;
+        }
+
+        // A game gone from an Arena lobby leaves it like any leave (the lead passes, the others are told; the lobby stays),
+        // and its party ends (a crash or quit disbands a party).
+        if (lobby is ArenaLobby)
+        {
+            await services.GetRequiredService<Arenas.IArenaLobbyService>().GoneAsync(playerId, lobbyId);
             return;
         }
 

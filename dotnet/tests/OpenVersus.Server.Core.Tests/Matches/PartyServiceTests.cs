@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using OpenVersus.Server.Core.Arenas;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Cosmetics;
@@ -121,6 +122,8 @@ public sealed class PartyServiceTests : IAsyncLifetime
         var services = new ServiceCollection()
             .AddSingleton<IConnectionMultiplexer>(_redis!)
             .AddSingleton(_mongo!.GetDatabase(TestMongoDb))
+            .AddSingleton<IArenaLobbyService>(provider => new ArenaLobbyService(provider,
+                new TestOptions<LobbySettings>(new LobbySettings()), TimeProvider.System, NullLogger<ArenaLobbyService>.Instance))
             .BuildServiceProvider();
         return new PartyService(services, new Cosmetics(), new NoFacts(), _gate, new TestOptions<LobbySettings>(new LobbySettings()), TimeProvider.System, NullLogger<PartyService>.Instance);
     }
@@ -546,6 +549,24 @@ public sealed class PartyServiceTests : IAsyncLifetime
         string solo = answer["body"]!["lobby"]!["MatchID"]!.GetValue<string>();
         Assert.Equal("2v2", (string?)answer["body"]!["lobby"]!["ModeString"]);
         Assert.Equal("2v2", (string?)JsonNode.Parse(await LobbyJson(solo))!["mode"]);
+    }
+
+    [Fact]
+    // An Arena lobby the server already ended (its owner's game went away) is still left by the game showing it: it is
+    // answered a party lobby, not an empty body that leaves it stuck on the Arena screen.
+    public async Task LeavingAnArenaLobbyThatIsGoneAnswersAPartyLobby()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await Db.KeyDeleteAsync($"player_lobby:{Guest}");
+        var answer = await Service().LeaveAsync(Asking(Guest, """{"LobbyId": "0000000000000000000e0999", "LobbyTemplate": "arena_lobby"}"""));
+
+        string solo = answer["body"]!["lobby"]!["MatchID"]!.GetValue<string>();
+        Assert.Equal("2v2", (string?)answer["body"]!["lobby"]!["ModeString"]);
+        Assert.Equal(solo, (string?)await Db.StringGetAsync($"player_lobby:{Guest}"));
     }
 
     [Fact]

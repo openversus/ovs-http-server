@@ -25,8 +25,8 @@ services take these (environment form `Section__Key`):
 | `Ownership:OvsDevAccountIds` | the dev accounts (TS `OVS_DEV_ACCOUNT_IDS`) | the OVS Dev badge and its stat |
 | `Ffa:WeekendOnly` | `true` (default; TS `FFA_WEEKEND_ONLY`) | the public FFA queue runs Friday to Sunday, US Eastern |
 
-The catalog rows End Game needs go in once, through the TS server's `POST /syncAsset`:
-`DATA_ASSET_TOKEN=... node dotnet/tools/assets/sync_assets.mjs <tsUrl> --apply` (`end-game-assets.json`).
+The catalog rows End Game needs go in once, through the server's `POST /syncAsset` (web):
+`DATA_ASSET_TOKEN=... node dotnet/tools/assets/sync_assets.mjs <serverUrl> --apply` (`end-game-assets.json`).
 
 Sources, each item says which: the game data the servers already send (HISS, `hiss-amalgamation.json`; the calendar,
 `Static/ssc-get-hiss-calendar-events.json`), the client binary (build `f97148ff`; headers in the UHT and jmap dumps),

@@ -532,5 +532,29 @@
     "assetType": "TauntData",
     "assetPath": "/OVS/Rewards/Taunts/TwerkItOut/taunt_morty_twerkitout.taunt_morty_twerkitout",
     "character_slug": "character_c019"
+  },
+  {
+    "slug": "ovs_2v2_individual_stocks",
+    "assetType": "MvsMetaWorldBuffHsda",
+    "assetPath": "/OVS/Mutators/IndividualStocks/ovs_2v2_individual_stocks.ovs_2v2_individual_stocks",
+    "character_slug": ""
+  },
+  {
+    "slug": "ovs_friendly_fire",
+    "assetType": "MvsMetaWorldBuffHsda",
+    "assetPath": "/OVS/Mutators/FriendlyFire/ovs_friendly_fire.ovs_friendly_fire",
+    "character_slug": ""
+  },
+  {
+    "slug": "ovs_beta_speed",
+    "assetType": "MvsMetaWorldBuffHsda",
+    "assetPath": "/OVS/Mutators/BetaSpeed/ovs_beta_speed.ovs_beta_speed",
+    "character_slug": ""
+  },
+  {
+    "slug": "ovs_shield_hp",
+    "assetType": "MvsMetaWorldBuffHsda",
+    "assetPath": "/OVSExperimental/Mutators/ShieldHP/ovs_shield_hp.ovs_shield_hp",
+    "character_slug": ""
   }
 ]

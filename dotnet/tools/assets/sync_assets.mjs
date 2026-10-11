@@ -1,12 +1,13 @@
-// Puts the catalog rows in a manifest into a server's dataassets, through its POST /syncAsset (the TS server's, in
-// dataAssetSync.ts: an upsert by assetPath that reloads the assets and bumps the CRC, so the hiss of both servers
-// picks the rows up). Run from the repository root:
+// Puts the catalog rows in a manifest into a server's dataassets, through its POST /syncAsset (the web service's, as the
+// TS server's dataAssetSync.ts did: an upsert by assetPath that bumps the CRC, so the hiss picks the rows up). Run from
+// the repository root, with the server's public URL (the router sends /syncAsset to web):
 //
-//   DATA_ASSET_TOKEN=<the server's DATA_ASSET_TOKEN> node dotnet/tools/assets/sync_assets.mjs <tsUrl> [manifest] [--apply]
+//   DATA_ASSET_TOKEN=<the server's DATA_ASSET_TOKEN> node dotnet/tools/assets/sync_assets.mjs <serverUrl> [manifest] [--apply]
 //
 // Without --apply it only lists what it would send. The manifest defaults to end-game-assets.json beside this file:
 // every catalog row the End Game update needs (its battle pass, Fighter Passes, Chromium and other OVS skins, emotes,
-// profile icons, taunts, announcer pack and badge, with the game's unreleased cosmetics in the pass), each
+// profile icons, taunts, announcer pack and badge, with the game's unreleased cosmetics in the pass) and the OVS mutators
+// (Individual Stocks, Friendly Fire, Beta Speed, and Shield HP from the experimental pak), each
 // { slug, assetType, assetPath, character_slug } as tested in game. Every row is sent enabled.
 import fs from "node:fs";
 import path from "node:path";
@@ -15,7 +16,7 @@ const args = process.argv.slice(2);
 const apply = args.includes("--apply");
 const [baseUrl, manifestArg] = args.filter((a) => a !== "--apply");
 if (!baseUrl) {
-  console.error("usage: DATA_ASSET_TOKEN=... node dotnet/tools/assets/sync_assets.mjs <tsUrl> [manifest] [--apply]");
+  console.error("usage: DATA_ASSET_TOKEN=... node dotnet/tools/assets/sync_assets.mjs <serverUrl> [manifest] [--apply]");
   process.exit(2);
 }
 const token = process.env.DATA_ASSET_TOKEN;

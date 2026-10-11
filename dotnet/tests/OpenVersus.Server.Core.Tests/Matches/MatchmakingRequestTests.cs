@@ -738,14 +738,14 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         await ArenaStartedAsync();
         var arenas = Arenas();
 
-        var reroll = await arenas.AnswerAsync("arena_reroll_characters", Arena([]), CancellationToken.None);
+        var reroll = (await arenas.AnswerAsync("arena_reroll_characters", Arena([]), CancellationToken.None)).Body;
         var run = (await ArenaRunStore.GetAsync(Db, Lobby))!;
         Assert.True((bool)reroll["Result"]!["BaseResponse"]!["bSuccess"]!);
         Assert.Equal(run.Players[Me].Pool, reroll["Result"]!["SelectableCharacters"]!.AsArray().Select(c => (string)c!));
         Assert.Equal(ArenaRules.Default.StartingCoins - ArenaRules.Default.CharacterRerollCost, (int)reroll["Result"]!["playerData"]!["CurrencyAmount"]!);
 
         string pick = run.Players[Me].Pool[0];
-        var selected = await arenas.AnswerAsync("arena_select_character", Arena(new JsonObject { ["CharacterSlug"] = pick, ["SkinSlug"] = "" }), CancellationToken.None);
+        var selected = (await arenas.AnswerAsync("arena_select_character", Arena(new JsonObject { ["CharacterSlug"] = pick, ["SkinSlug"] = "" }), CancellationToken.None)).Body;
         Assert.True((bool)selected["bSuccess"]!);
         run = (await ArenaRunStore.GetAsync(Db, Lobby))!;
         Assert.Equal(ArenaPhase.Shop, run.Phase);
@@ -761,15 +761,52 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         Assert.Equal(pick, (string?)await Db.HashGetAsync($"connections:{Me}", "character"));
 
         var closed = new JsonObject { ["ArenaRound"] = 1, ["ShopPhaseDetails"] = new JsonObject { ["NumRerolls"] = 0, ["ItemTransactions"] = new JsonArray() } };
-        Assert.True((bool)(await arenas.AnswerAsync("arena_player_shop_closed", Arena(closed), CancellationToken.None))["bSuccess"]!);
+        Assert.True((bool)(await arenas.AnswerAsync("arena_player_shop_closed", Arena(closed), CancellationToken.None)).Body["bSuccess"]!);
         Assert.Equal(ArenaPhase.Match, (await ArenaRunStore.GetAsync(Db, Lobby))!.Phase);
         var ready = await KeptConfigAsync();
         Assert.True((bool)ready["data"]!["GameplayConfig"]!["ArenaModeInfo"]!["bReadyToStart"]!);
         // The pages stay: a re-activated matchup screen opens the shop again and reads its first page.
         Assert.Equal(ArenaRules.Default.ShopPages, ready["data"]!["ArenaPlayerInfo"]!["CurrentShopLocal"]!.AsArray().Count);
         Assert.Contains(await Db.StreamRangeAsync(PlayerMessages.LogKey(Me)), e => e.Values.Any(v => v.Value.ToString().Contains("\"bReadyToStart\":true", StringComparison.Ordinal)));
-        Assert.False((bool)(await arenas.AnswerAsync("arena_player_shop_closed", Arena((JsonObject)closed.DeepClone()), CancellationToken.None))["bSuccess"]!);
-        Assert.True((bool)(await arenas.AnswerAsync("arena_checkin", Arena(new JsonObject { ["ArenaRound"] = 1 }), CancellationToken.None))["bSuccess"]!);
+        Assert.False((bool)(await arenas.AnswerAsync("arena_player_shop_closed", Arena((JsonObject)closed.DeepClone()), CancellationToken.None)).Body["bSuccess"]!);
+    }
+
+    [SkippableFact]
+    // Round 2 from the match's end: the round's match is named an Arena's before its launch; while it is still on, the
+    // game's absent report is answered "keep waiting" (return_code 2) and counts as its check-in; the match's end (the
+    // arena:results record's side, the player connected) is the round's last result, so round 2 starts at once: paired,
+    // its match launched under its own id after the game is sent OnArenaNextMatch with it, its shop open. A report for
+    // round 1 after that is plain success.
+    public async Task AnArenasNextRoundStartsFromTheMatchsEnd()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        var run = await ArenaStartedAsync();
+        var arenas = Arenas();
+        await arenas.AnswerAsync("arena_select_character", Arena(new JsonObject { ["CharacterSlug"] = run.Players[Me].Pool[0] }), CancellationToken.None);
+        await arenas.AnswerAsync("arena_player_shop_closed", Arena(new JsonObject { ["ArenaRound"] = 1, ["ShopPhaseDetails"] = new JsonObject() }), CancellationToken.None);
+        string match = run.Pairings.Single(p => p.HasPlayer).MatchId!;
+        Assert.Equal(Lobby, await ArenaResults.RunOfAsync(Db, match));
+        var absent = Asking(Me) with { Body = new JsonObject { ["ArenaParentId"] = Lobby, ["ArenaRound"] = 1, ["ContainerMatchId"] = match } };
+
+        var waiting = await arenas.AnswerAsync("arena_match_absent", absent, CancellationToken.None);
+        Assert.Equal(ArenaAnswer.KeepWaiting, waiting.ReturnCode);
+        Assert.True((bool)waiting.Body["bSuccess"]!);
+        Assert.Equal((ArenaPhase.Match, 1), ((await ArenaRunStore.GetAsync(Db, Lobby))!.Phase, (await ArenaRunStore.GetAsync(Db, Lobby))!.Players[Me].CheckedInRound));
+
+        await Db.SetAddAsync("online_players", Me);
+        await arenas.MatchEndedAsync(Lobby, match, 0, CancellationToken.None);
+
+        run = (await ArenaRunStore.GetAsync(Db, Lobby))!;
+        Assert.Equal((ArenaPhase.Shop, 2, 1), (run.Phase, run.Round, run.Teams[0].Wins));
+        string next = run.Pairings.Single(p => p.HasPlayer).MatchId!;
+        Assert.NotEqual(match, next);
+        Assert.Equal(next, _launcher.Launched!.MatchId);
+        // The game's next check-in names the round its config says.
+        Assert.Equal(2, (int)_launcher.Launched.PlayerConfigData![Me]["ArenaData"]!["CurrentRound"]!);
+        Assert.Equal(Lobby, await ArenaResults.RunOfAsync(Db, next));
+        var nextMatch = Assert.Single((await Db.StreamRangeAsync(PlayerMessages.LogKey(Me))).Select(e => e.Values.Select(v => v.Value.ToString()).FirstOrDefault(v => v.Contains("OnArenaNextMatch", StringComparison.Ordinal))).OfType<string>());
+        Assert.Contains($"\"MatchId\":\"{next}\"", nextMatch, StringComparison.Ordinal);
+        Assert.Equal(0, (await arenas.AnswerAsync("arena_match_absent", absent, CancellationToken.None)).ReturnCode);
     }
 
     [SkippableFact]

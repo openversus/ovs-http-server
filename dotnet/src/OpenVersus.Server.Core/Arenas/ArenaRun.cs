@@ -26,11 +26,23 @@ namespace OpenVersus.Server.Core.Arenas;
 //   Match            the shops have closed: each pairing with a player in it plays its node match (launched at the
 //                    round's start); a pairing of bots only is decided now by IArenaBotMatches (random for now: an
 //                    interface so a smarter rule can replace it). The loser loses LifeLost(round). All decided: the round
-//                    ends. A node's result that comes in while another player's shop is still open is kept.
+//                    ends. A node's result that comes in while another player's shop is still open is kept. A node match
+//                    is decided by its end (MatchResult, below), or by the Match deadline as one with no report.
 //   (round end)      a team at 0 health or below is out (its final rank: the teams left + 1, worse health ranked lower);
 //                    one team left (or none) ends the Arena; otherwise every player still in gains the round's coins,
-//                    interest on what they kept, a win's coins and their streak's, the next round is paired and launched,
-//                    and its shop opens (no character select after the first round).
+//                    interest on what they kept, a win's coins and their streak's.
+//   Results          the round is over (the game rule's floor for the next one: every match of this round resolved). The
+//                    next round starts once every player still in has had their game check in (arena_checkin, which the
+//                    game sends BY ITSELF when its post-match countdown runs out; only from then on does it listen for
+//                    the next round, archive "2026-10-11 (s47)"), or at the check-in deadline: it is paired and launched,
+//                    and its shop opens (no character select after the first round), for everyone at once. A check-in that
+//                    comes before the round is over (their match ended first) is kept.
+//
+// A node match's end (game rules, 2026-10-11): the reports decide it (the winner MatchWinner resolves from them, by the
+// match's side). With no report: a match with players on one side only (against bots) is won by that side; with players on
+// both sides, both teams take a loss. Whatever the result, a team with players of which none is connected any more (their
+// games are gone) is OUT: its health goes to 0, so the round's end ranks it out and it is never paired again; its opponent
+// keeps what the result gave it (against a gone team with no report, the bots' side wins and plays on).
 //
 // Pairing: at the round's start, every team still in with another at random; an odd team out plays its own MIRROR (a bot
 // team copying it, Mirror = -1). Each team's Opponents keeps its opponent per round: the game's Arena Status reads the last
@@ -42,7 +54,8 @@ namespace OpenVersus.Server.Core.Arenas;
 //
 // UNPROBED (shapes taken from the binary, not yet seen on the wire): what the Random button sends with a full offer (the
 // edge passes chooseRandom), ShopPhaseDetails' ItemTransactions entries (purchase: LocalShopIndex = page, ItemIndex = offer;
-// sale: ItemIndex = inventory slot), round 2's messages (arena_checkin, OnArenaNextMatch), a match that never reports.
+// sale: ItemIndex = inventory slot), round 2's messages (OnArenaNextMatch at the round's start; arena_match_absent's
+// "keep waiting" answer), what a player's game is sent when they are out or the Arena ends (ArenaPlayerEndPayload).
 
 /// <summary>Where an Arena run is.</summary>
 public enum ArenaPhase
@@ -50,6 +63,9 @@ public enum ArenaPhase
     CharacterSelect,
     Shop,
     Match,
+
+    /// <summary>The round is over; the next starts once every player still in has checked in (or at the deadline).</summary>
+    Results,
     Ended,
 }
 
@@ -73,6 +89,9 @@ public sealed class ArenaRunPlayer
 
     /// <summary>Their shop has closed this round.</summary>
     public bool ShopDone { get; set; }
+
+    /// <summary>The last round whose match their game has left (its arena_checkin or arena_match_absent); 0: none yet.</summary>
+    public int CheckedInRound { get; set; }
 
     public List<ArenaOwnedItem> Inventory { get; set; } = [];
 
@@ -130,7 +149,7 @@ public sealed class ArenaRunPairing
     /// <summary>Its node match's id, given when it is paired (a pairing with a player only).</summary>
     public string? MatchId { get; set; }
 
-    /// <summary>The winning team (A, B or Mirror), once decided.</summary>
+    /// <summary>The winning team (A, B or Mirror), or <see cref="ArenaRun.BothLost"/>, once decided.</summary>
     public int? Winner { get; set; }
 
     /// <summary>The team on the match's side <paramref name="side"/> (0: A, 1: B).</summary>
@@ -176,6 +195,9 @@ public sealed class ArenaRun
 {
     /// <summary>The opponent of a team playing its own mirror.</summary>
     public const int Mirror = -1;
+
+    /// <summary>A pairing's <see cref="ArenaRunPairing.Winner"/> when both teams took a loss (players on both sides, no report).</summary>
+    public const int BothLost = -2;
 
     public string Id { get; set; } = "";
     public int Round { get; set; }
@@ -316,24 +338,49 @@ public sealed class ArenaRun
     }
 
     /// <summary>
-    /// A node match's result: <paramref name="winnerTeam"/> won. Kept while another player's shop is still open (their
-    /// game closed its shop and played); the last result once every shop has closed ends the round.
+    /// A node match's end: <paramref name="winnerSide"/> is the match's side its reports name the winner (null: no report),
+    /// <paramref name="connected"/> the players whose games are still connected (see the header for the rules). Kept while
+    /// another player's shop is still open; the last result once every shop has closed ends the round.
     /// </summary>
-    public ArenaStep MatchResult(string matchId, int winnerTeam, IReadOnlyList<(string Character, string[] Skins)> roster, ArenaRules rules,
-        Random random, long nowMs)
+    public ArenaStep MatchResult(string matchId, int? winnerSide, IReadOnlySet<string> connected, ArenaRules rules, Random random, long nowMs)
     {
         if (Phase is not (ArenaPhase.Shop or ArenaPhase.Match) || Pairings.FirstOrDefault(p => p.MatchId == matchId) is not { Winner: null } pairing
-            || (winnerTeam != pairing.A && winnerTeam != pairing.B))
+            || winnerSide is not (null or 0 or 1))
         {
             return ArenaStep.Refused;
         }
 
-        Decide(pairing, winnerTeam, rules);
+        Settle(pairing, winnerSide, connected, rules);
         return new ArenaStep(true, Phase == ArenaPhase.Match && Pairings.All(p => p.Winner is not null) ? EndRound(rules, random, nowMs) : []);
     }
 
-    /// <summary>The deadline passed: whoever has not acted is decided for (absent pick; shop closed with nothing bought).</summary>
-    public ArenaStep Tick(long nowMs, IReadOnlyList<(string Character, string[] Skins)> roster, ArenaRules rules, IArenaBotMatches botMatches, Random random)
+    /// <summary>
+    /// A player's game has left the match of <paramref name="round"/> (arena_checkin, or arena_match_absent: it waits on its
+    /// post-match screen). The last player still in to check in, once the round is over, starts the next round.
+    /// </summary>
+    public ArenaStep Checkin(string playerId, int round, ArenaRules rules, Random random, long nowMs)
+    {
+        if (Phase is not (ArenaPhase.Shop or ArenaPhase.Match or ArenaPhase.Results) || round != Round || !Players.TryGetValue(playerId, out var player)
+            || player.IsBot || !Teams[player.Team].In || player.CheckedInRound == round)
+        {
+            return ArenaStep.Refused;
+        }
+
+        player.CheckedInRound = round;
+        return new ArenaStep(true, Phase == ArenaPhase.Results && AllCheckedIn() ? StartRound(rules, random, nowMs) : []);
+    }
+
+    /// <summary>The run waits for this player's game to be sent the round after <paramref name="round"/> (its absent answer: keep waiting).</summary>
+    public bool Awaits(string playerId, int round) => round == Round && Phase is ArenaPhase.Match or ArenaPhase.Results
+        && Players.TryGetValue(playerId, out var player) && !player.IsBot && Teams[player.Team].In;
+
+    /// <summary>
+    /// The deadline passed: whoever has not acted is decided for (absent pick; shop closed with nothing bought; a node match
+    /// that never ended, as one with no report, <paramref name="connected"/> naming the games still connected; a game that
+    /// never checked in is not waited for).
+    /// </summary>
+    public ArenaStep Tick(long nowMs, IReadOnlyList<(string Character, string[] Skins)> roster, ArenaRules rules, IArenaBotMatches botMatches, Random random,
+        IReadOnlySet<string> connected)
     {
         if (DeadlineMs == 0 || nowMs < DeadlineMs)
         {
@@ -356,12 +403,23 @@ public sealed class ArenaRun
                 }
 
                 return new ArenaStep(true, EndShop(rules, botMatches, random, nowMs));
+            case ArenaPhase.Match:
+                foreach (var pairing in Pairings.Where(p => p.Winner is null))
+                {
+                    Settle(pairing, null, connected, rules);
+                }
+
+                return new ArenaStep(true, EndRound(rules, random, nowMs));
+            case ArenaPhase.Results:
+                return new ArenaStep(true, StartRound(rules, random, nowMs));
             default:
                 return ArenaStep.Refused;
         }
     }
 
     private bool AllPicked() => PlayersIn.All(p => p.Character is not null);
+
+    private bool AllCheckedIn() => PlayersIn.All(p => p.CheckedInRound == Round);
 
     // Bots take a random fighter; every player still in gets this round's shop pages.
     private List<ArenaEffect> EndCharacterSelect(IReadOnlyList<(string Character, string[] Skins)> roster, ArenaRules rules, Random random, long nowMs)
@@ -400,7 +458,7 @@ public sealed class ArenaRun
     private List<ArenaEffect> EndShop(ArenaRules rules, IArenaBotMatches botMatches, Random random, long nowMs)
     {
         Phase = ArenaPhase.Match;
-        DeadlineMs = 0;
+        DeadlineMs = nowMs + rules.MatchDeadlineSeconds * 1000L;
         foreach (var pairing in Pairings.Where(p => !p.HasPlayer))
         {
             Decide(pairing, botMatches.Winner(this, pairing, random), rules);
@@ -417,7 +475,6 @@ public sealed class ArenaRun
     private void Decide(ArenaRunPairing pairing, int winner, ArenaRules rules)
     {
         pairing.Winner = winner;
-        int loser = winner == pairing.A ? pairing.B : pairing.A;
         if (winner != Mirror)
         {
             var won = Teams[winner];
@@ -426,13 +483,46 @@ public sealed class ArenaRun
             won.LoseStreak = 0;
         }
 
-        if (loser != Mirror)
+        Lose(winner == pairing.A ? pairing.B : pairing.A, rules);
+    }
+
+    private void Lose(int team, ArenaRules rules)
+    {
+        if (team == Mirror)
         {
-            var lost = Teams[loser];
-            lost.Losses++;
-            lost.LoseStreak++;
-            lost.WinStreak = 0;
-            lost.Life -= rules.LifeLost(Round);
+            return;
+        }
+
+        var lost = Teams[team];
+        lost.Losses++;
+        lost.LoseStreak++;
+        lost.WinStreak = 0;
+        lost.Life -= rules.LifeLost(Round);
+    }
+
+    // A node match's end by the rules in the header: the reports' side, else the players' side against bots, else both
+    // lose; then a team whose players are all gone is out.
+    private void Settle(ArenaRunPairing pairing, int? winnerSide, IReadOnlySet<string> connected, ArenaRules rules)
+    {
+        bool Gone(int team) => HasPlayer(team) && !Teams[team].Members.Any(connected.Contains);
+        if (winnerSide is { } side)
+        {
+            Decide(pairing, pairing.TeamOnSide(side), rules);
+        }
+        else if (!HasPlayer(pairing.B))
+        {
+            Decide(pairing, Gone(pairing.A) ? pairing.B : pairing.A, rules);
+        }
+        else
+        {
+            pairing.Winner = BothLost;
+            Lose(pairing.A, rules);
+            Lose(pairing.B, rules);
+        }
+
+        foreach (int team in new[] { pairing.A, pairing.B }.Where(Gone))
+        {
+            Teams[team].Life = 0;
         }
     }
 
@@ -467,6 +557,14 @@ public sealed class ArenaRun
                 + At(rules.CurrencyForWinStreak, team.WinStreak) + At(rules.CurrencyForLoseStreak, team.LoseStreak);
         }
 
+        Phase = ArenaPhase.Results;
+        DeadlineMs = nowMs + rules.CheckinSeconds * 1000L;
+        return AllCheckedIn() ? StartRound(rules, random, nowMs) : [];
+    }
+
+    // The next round: paired, its players' matches launched, its shop open.
+    private List<ArenaEffect> StartRound(ArenaRules rules, Random random, long nowMs)
+    {
         Round++;
         Pair(random, nowMs);
         var effects = Launches();

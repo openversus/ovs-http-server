@@ -225,6 +225,18 @@ public static class ArenaState
     public static JsonObject Answer(bool success, string playerId) => new() { ["bSuccess"] = success, ["playerId"] = playerId };
 
     /// <summary>
+    /// OnArenaNextMatch's data: the round's match a player's game goes to from its post-match screen. Its reader
+    /// (0x142678860, reached from the Arena post-match state's binding of the template) takes MatchId and Cluster; the
+    /// PriorMatchId test before it is skipped for an Arena (archive arenas-protocol.md, "2026-10-11 (s47)").
+    /// </summary>
+    public static JsonObject NextMatch(string matchId) => new()
+    {
+        ["template_id"] = "OnArenaNextMatch",
+        ["MatchId"] = matchId,
+        ["Cluster"] = Matches.LobbyDocuments.Cluster,
+    };
+
+    /// <summary>
     /// The answer to arena_reroll_characters (FMvsArenaCharacterRerollResponse): the offer and the coins after it. The game
     /// takes both from here (seen 2026-10-11: an answer without them emptied its offer and showed 0 coins).
     /// </summary>

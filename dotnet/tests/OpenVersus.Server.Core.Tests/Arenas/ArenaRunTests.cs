@@ -10,6 +10,9 @@ public sealed class ArenaRunTests
     private static readonly ArenaRules Rules = ArenaRules.Default;
     private static readonly IArenaBotMatches Bots = new RandomArenaBotMatches();
 
+    // Every player's game still connected.
+    private static readonly IReadOnlySet<string> Connected = new HashSet<string> { Me, "two", "mate" };
+
     private static readonly IReadOnlyList<(string Character, string[] Skins)> Roster =
         [.. Enumerable.Range(1, 12).Select(n => ($"character_{n}", new[] { $"skin_{n}_default", $"skin_{n}_gold" }))];
 
@@ -99,13 +102,13 @@ public sealed class ArenaRunTests
     public void DeadlinesDecideForWhoeverHasNotActed()
     {
         var (run, _) = Start(new Random(11));
-        Assert.False(run.Tick(run.DeadlineMs - 1, Roster, Rules, Bots, new Random(12)).Accepted);
+        Assert.False(run.Tick(run.DeadlineMs - 1, Roster, Rules, Bots, new Random(12), Connected).Accepted);
 
-        run.Tick(run.DeadlineMs, Roster, Rules, Bots, new Random(12));
+        run.Tick(run.DeadlineMs, Roster, Rules, Bots, new Random(12), Connected);
         Assert.Equal(ArenaPhase.Shop, run.Phase);
         Assert.Equal(Rules.StartingCoins, run.Players[Me].Coins);
 
-        var step = run.Tick(run.DeadlineMs, Roster, Rules, Bots, new Random(13));
+        var step = run.Tick(run.DeadlineMs, Roster, Rules, Bots, new Random(13), Connected);
         Assert.Equal(ArenaPhase.Match, run.Phase);
         Assert.Equal(Rules.MaxItemsInInventory, run.Players[Me].Inventory.Count);
         Assert.All(run.Players[Me].Inventory, i => Assert.True(i.IsEmpty));
@@ -171,7 +174,8 @@ public sealed class ArenaRunTests
         me.Coins = 100;
         run.ShopClosed(Me, 1, 0, [new(true, 0, 0)], Rules, Bots, new Random(38), 3_000);
 
-        run.MatchResult(run.Pairings.Single(p => p.HasPlayer).MatchId!, 0, Roster, Rules, new Random(39), 4_000);
+        run.Checkin(Me, 1, Rules, new Random(39), 3_500);
+        run.MatchResult(run.Pairings.Single(p => p.HasPlayer).MatchId!, 0, Connected, Rules, new Random(39), 4_000);
 
         Assert.Equal((ArenaPhase.Shop, 2), (run.Phase, run.Round));
         Assert.Equal(bought, me.Inventory[0].Slug);
@@ -180,8 +184,10 @@ public sealed class ArenaRunTests
     }
 
     [Fact]
-    // The last result ends the round: coins (interest on what was kept, the round's coins, a win's), round 2 paired and
-    // its player's match launched, its shop open (no character select). A result for no launched match is refused.
+    // The last result ends the round: coins (interest on what was kept, the round's coins, a win's); then the run waits for
+    // the player's game to check in (until the check-in deadline), and the check-in starts round 2: paired, its player's
+    // match launched, its shop open (no character select). A result for no launched match, or a side that is not 0 or 1,
+    // is refused.
     public void TheLastResultEndsTheRound()
     {
         var (run, _) = Start(new Random(17));
@@ -189,16 +195,170 @@ public sealed class ArenaRunTests
         run.ShopAbsent(Me, 1, Rules, Bots, new Random(19), 3_000);
         string match = run.Pairings.Single(p => p.HasPlayer).MatchId!;
 
-        Assert.False(run.MatchResult("000000000000000000000000", 0, Roster, Rules, new Random(20), 3_000).Accepted);
-        var step = run.MatchResult(match, 0, Roster, Rules, new Random(20), 3_000);
+        Assert.False(run.MatchResult("000000000000000000000000", 0, Connected, Rules, new Random(20), 3_000).Accepted);
+        Assert.False(run.MatchResult(match, 2, Connected, Rules, new Random(20), 3_000).Accepted);
+        var step = run.MatchResult(match, 0, Connected, Rules, new Random(20), 3_000);
 
-        Assert.Equal((ArenaPhase.Shop, 2), (run.Phase, run.Round));
+        Assert.Equal((ArenaPhase.Results, 1, 3_000 + Rules.CheckinSeconds * 1000L), (run.Phase, run.Round, run.DeadlineMs));
+        Assert.Empty(step.Effects);
         int kept = Rules.StartingCoins;
         Assert.Equal(kept + Rules.Interest(kept) + Rules.CurrencyPerRound[0] + Rules.CurrencyForWin + Rules.CurrencyForWinStreak[1], run.Players[Me].Coins);
+        Assert.True(run.Awaits(Me, 1));
+
+        step = run.Checkin(Me, 1, Rules, new Random(21), 4_000);
+
+        Assert.Equal((ArenaPhase.Shop, 2), (run.Phase, run.Round));
+        Assert.False(run.Awaits(Me, 1));
         Assert.All(run.Teams, t => Assert.Equal(2, t.Opponents.Count));
         int next = run.Pairings.FindIndex(p => p.HasPlayer);
         Assert.NotEqual(match, run.Pairings[next].MatchId);
         Assert.Equal([new LaunchPairing(next), new SendPhaseConfigs()], step.Effects);
+        Assert.Equal(4_000 + (Rules.ShopSeconds + Rules.GraceSeconds) * 1000L, run.DeadlineMs);
+    }
+
+    [Fact]
+    // A game that never checks in (it closed) is not waited for past the check-in deadline: round 2 starts without it.
+    public void TheNextRoundStartsAtTheCheckinDeadline()
+    {
+        var (run, _) = Start(new Random(40));
+        run.SelectAbsent(Me, Roster, Rules, new Random(41), 2_000);
+        run.ShopAbsent(Me, 1, Rules, Bots, new Random(42), 3_000);
+        run.MatchResult(run.Pairings.Single(p => p.HasPlayer).MatchId!, 1, Connected, Rules, new Random(43), 4_000);
+
+        Assert.False(run.Tick(run.DeadlineMs - 1, Roster, Rules, Bots, new Random(44), Connected).Accepted);
+        var step = run.Tick(run.DeadlineMs, Roster, Rules, Bots, new Random(44), Connected);
+
+        Assert.Equal((ArenaPhase.Shop, 2), (run.Phase, run.Round));
+        Assert.Contains(new LaunchPairing(run.Pairings.FindIndex(p => p.HasPlayer)), step.Effects);
+    }
+
+    [Fact]
+    // A check-in counts once per round, for a player still in, for the round they played: a second one, a bot's, or one
+    // for another round is refused. One that comes before the round is over is kept; the round's last result then starts
+    // the next round at once.
+    public void ACheckinCountsOncePerRoundAndIsKeptUntilTheRoundIsOver()
+    {
+        var (run, _) = Start(new Random(45));
+        Assert.False(run.Checkin(Me, 1, Rules, new Random(47), 1_500).Accepted);
+        run.SelectAbsent(Me, Roster, Rules, new Random(46), 2_000);
+        run.ShopAbsent(Me, 1, Rules, Bots, new Random(47), 3_000);
+
+        Assert.False(run.Checkin("bot01", 1, Rules, new Random(48), 3_500).Accepted);
+        Assert.False(run.Checkin(Me, 2, Rules, new Random(48), 3_500).Accepted);
+        Assert.True(run.Checkin(Me, 1, Rules, new Random(48), 3_500).Accepted);
+        Assert.False(run.Checkin(Me, 1, Rules, new Random(48), 3_600).Accepted);
+        Assert.Equal(ArenaPhase.Match, run.Phase);
+        Assert.True(run.Awaits(Me, 1));
+
+        run.MatchResult(run.Pairings.Single(p => p.HasPlayer).MatchId!, 0, Connected, Rules, new Random(49), 4_000);
+
+        Assert.Equal((ArenaPhase.Shop, 2), (run.Phase, run.Round));
+    }
+
+    [Fact]
+    // No report: the players against bots win if still connected. A team of two players is still connected while one is.
+    public void WithNoReportThePlayersAgainstBotsWinWhileConnected()
+    {
+        var (run, _) = ArenaRun.Start("arena1", [.. Enumerable.Range(0, 8).Select(t => (IReadOnlyList<(string, string, bool)>)
+            [.. Enumerable.Range(0, 2).Select(i => t == 0 ? (i == 0 ? Me : "mate", "P", false) : ($"bot{t}{i}", "Bot", true))])],
+            Roster, Rules, new Random(50), 1_000);
+        run.SelectAbsent(Me, Roster, Rules, new Random(51), 2_000);
+        run.SelectAbsent("mate", Roster, Rules, new Random(51), 2_000);
+        run.ShopAbsent(Me, 1, Rules, Bots, new Random(52), 3_000);
+        run.ShopAbsent("mate", 1, Rules, Bots, new Random(52), 3_000);
+        var mine = run.Pairings.Single(p => p.HasPlayer);
+
+        run.MatchResult(mine.MatchId!, null, new HashSet<string> { "mate" }, Rules, new Random(53), 4_000);
+
+        Assert.Equal((0, 1, 100), (mine.Winner, run.Teams[0].Wins, run.Teams[0].Life));
+        Assert.Equal(1, run.Teams[mine.B].Losses);
+    }
+
+    [Fact]
+    // Game rule: a team whose players' games are all gone is out (health 0, ranked out at the round's end, never paired
+    // again); with no report, the bots' side wins and plays on in the Arena.
+    public void AGoneTeamIsOutAndTheBotsWinAndPlayOn()
+    {
+        var (run, _) = Start(new Random(55));
+        run.SelectAbsent(Me, Roster, Rules, new Random(56), 2_000);
+        run.ShopAbsent(Me, 1, Rules, Bots, new Random(57), 3_000);
+        var mine = run.Pairings.Single(p => p.HasPlayer);
+        int bots = mine.B;
+
+        run.MatchResult(mine.MatchId!, null, new HashSet<string>(), Rules, new Random(58), 4_000);
+
+        Assert.Equal((bots, 0), (mine.Winner, run.Teams[0].Life));
+        Assert.Equal(8, run.Teams[0].FinalRank);
+        Assert.Single(run.Teams[0].Opponents);
+        // No player left in: the bots' Arena is decided to its end at once, the winning bots playing on in it.
+        Assert.Equal(ArenaPhase.Ended, run.Phase);
+        Assert.True(run.Teams[bots].Opponents.Count > 1);
+        Assert.DoesNotContain(0, run.Teams.Where(t => t.Index != 0).SelectMany(t => t.Opponents.Skip(1)));
+    }
+
+    // Me (team 0) and "two" (team 1) paired against each other in round 1, bots everywhere else.
+    private static ArenaRun TwoPlayersPaired()
+    {
+        for (int seed = 0; ; seed++)
+        {
+            var (run, _) = ArenaRun.Start("arena1", [.. Enumerable.Range(0, 8).Select(t => (IReadOnlyList<(string, string, bool)>)
+                [.. Enumerable.Range(0, 2).Select(i => t < 2 && i == 0 ? (t == 0 ? Me : "two", "P", false) : ($"bot{t}{i}", "Bot", true))])],
+                Roster, Rules, new Random(seed), 1_000);
+            if (run.Pairings.Any(p => (p.A, p.B) is (0, 1) or (1, 0)))
+            {
+                run.SelectAbsent(Me, Roster, Rules, new Random(seed), 2_000);
+                run.SelectAbsent("two", Roster, Rules, new Random(seed), 2_000);
+                run.ShopAbsent(Me, 1, Rules, Bots, new Random(seed), 3_000);
+                run.ShopAbsent("two", 1, Rules, Bots, new Random(seed), 3_000);
+                return run;
+            }
+        }
+    }
+
+    [Fact]
+    // Game rule: players on both sides and no report: both teams take a loss.
+    public void WithPlayersOnBothSidesAndNoReportBothLose()
+    {
+        var run = TwoPlayersPaired();
+        var match = run.Pairings.Single(p => p.HasPlayer);
+
+        run.MatchResult(match.MatchId!, null, Connected, Rules, new Random(60), 4_000);
+
+        Assert.Equal(ArenaRun.BothLost, match.Winner);
+        int life = 100 - Rules.LifeLost(1);
+        Assert.Equal([(0, 1, life), (0, 1, life)], new[] { run.Teams[0], run.Teams[1] }.Select(t => (t.Wins, t.Losses, t.Life)));
+    }
+
+    [Fact]
+    // Game rule: the one report names the team whose games are gone as the winner: the team still connected takes the loss
+    // (they lost), and the gone team is out.
+    public void AReportForAGoneTeamStandsAndTheGoneTeamIsOut()
+    {
+        var run = TwoPlayersPaired();
+        var match = run.Pairings.Single(p => p.HasPlayer);
+        int sideOfTwo = match.A == 1 ? 0 : 1;
+
+        run.MatchResult(match.MatchId!, sideOfTwo, new HashSet<string> { Me }, Rules, new Random(61), 4_000);
+
+        Assert.Equal(1, match.Winner);
+        Assert.Equal((1, 100 - Rules.LifeLost(1)), (run.Teams[0].Losses, run.Teams[0].Life));
+        Assert.True(run.Teams[1].FinalRank > 0);
+        Assert.True(run.Teams[0].In);
+    }
+
+    [Fact]
+    // A node match that never ends (no launch, a node gone) is decided at the Match deadline as one with no report.
+    public void ANodeMatchThatNeverEndsIsDecidedAtTheMatchDeadline()
+    {
+        var (run, _) = Start(new Random(62));
+        run.SelectAbsent(Me, Roster, Rules, new Random(63), 2_000);
+        run.ShopAbsent(Me, 1, Rules, Bots, new Random(64), 3_000);
+        Assert.Equal(3_000 + Rules.MatchDeadlineSeconds * 1000L, run.DeadlineMs);
+
+        Assert.False(run.Tick(run.DeadlineMs - 1, Roster, Rules, Bots, new Random(65), Connected).Accepted);
+        run.Tick(run.DeadlineMs, Roster, Rules, Bots, new Random(65), Connected);
+
+        Assert.Equal((ArenaPhase.Results, 0, 1), (run.Phase, run.Pairings.Single(p => p.HasPlayer).Winner, run.Teams[0].Wins));
     }
 
     [Fact]
@@ -213,10 +373,15 @@ public sealed class ArenaRunTests
         {
             effects.AddRange(run.PlayersIn.Any()
                 ? run.ShopAbsent(Me, run.Round, Rules, Bots, random, 3_000).Effects
-                : run.Tick(run.DeadlineMs, Roster, Rules, Bots, random).Effects);
+                : run.Tick(run.DeadlineMs, Roster, Rules, Bots, random, Connected).Effects);
             foreach (var pairing in run.Pairings.Where(p => p.HasPlayer && p.Winner is null).ToList())
             {
-                effects.AddRange(run.MatchResult(pairing.MatchId!, pairing.B, Roster, Rules, random, 3_000).Effects);
+                effects.AddRange(run.MatchResult(pairing.MatchId!, 1, Connected, Rules, random, 3_000).Effects);
+            }
+
+            if (run.Phase == ArenaPhase.Results)
+            {
+                effects.AddRange(run.Checkin(Me, run.Round, Rules, random, 3_000).Effects);
             }
         }
 
@@ -240,14 +405,19 @@ public sealed class ArenaRunTests
         run.SelectAbsent("two", Roster, Rules, new Random(28), 2_000);
         run.ShopAbsent(Me, 1, Rules, Bots, new Random(29), 3_000);
 
-        Assert.True(run.MatchResult(mine.MatchId!, 0, Roster, Rules, new Random(30), 4_000).Accepted);
+        Assert.True(run.MatchResult(mine.MatchId!, 0, Connected, Rules, new Random(30), 4_000).Accepted);
         Assert.Equal((ArenaPhase.Shop, 1, 1), (run.Phase, run.Round, run.Teams[0].Wins));
-        Assert.False(run.MatchResult(mine.MatchId!, 0, Roster, Rules, new Random(30), 4_000).Accepted);
+        Assert.False(run.MatchResult(mine.MatchId!, 0, Connected, Rules, new Random(30), 4_000).Accepted);
         Assert.Equal([new SendPhaseConfigs()], run.ShopAbsent("two", 1, Rules, Bots, new Random(31), 5_000).Effects);
         Assert.Equal(ArenaPhase.Match, run.Phase);
-        run.MatchResult(theirs.MatchId!, 1, Roster, Rules, new Random(32), 6_000);
+        run.Checkin(Me, 1, Rules, new Random(32), 5_500);
+        run.MatchResult(theirs.MatchId!, 0, Connected, Rules, new Random(32), 6_000);
 
-        Assert.Equal((ArenaPhase.Shop, 2, 1), (run.Phase, run.Round, run.Teams[0].Wins));
+        // Waits for the other player's game to check in.
+        Assert.Equal((ArenaPhase.Results, 1, 1, 1), (run.Phase, run.Round, run.Teams[0].Wins, run.Teams[1].Wins));
+        run.Checkin("two", 1, Rules, new Random(33), 7_000);
+
+        Assert.Equal((ArenaPhase.Shop, 2), (run.Phase, run.Round));
     }
 
     [Fact]
@@ -260,7 +430,8 @@ public sealed class ArenaRunTests
         run.Teams[5].Life = -1_000;
         run.ShopAbsent(Me, 1, Rules, Bots, new Random(25), 3_000);
 
-        run.MatchResult(run.Pairings.Single(p => p.HasPlayer).MatchId!, 0, Roster, Rules, new Random(26), 3_000);
+        run.Checkin(Me, 1, Rules, new Random(26), 2_500);
+        run.MatchResult(run.Pairings.Single(p => p.HasPlayer).MatchId!, 0, Connected, Rules, new Random(26), 3_000);
 
         Assert.Equal((2, 8), (run.Round, run.Teams[5].FinalRank));
         var mirror = Assert.Single(run.Pairings, p => p.B == ArenaRun.Mirror);

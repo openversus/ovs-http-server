@@ -14,7 +14,8 @@ namespace OpenVersus.Server.Arenas.Endpoints.Game.Ssc;
 /// from the client binary (archive arenas-protocol.md), e.g. arena_select_character {ArenaLobbyId, CharacterSlug},
 /// arena_player_shop_closed {ArenaLobbyId, ArenaRound, ShopPhaseDetails}, arena_checkin {ArenaParentId, ArenaRound}.
 /// Each is answered by the run (<see cref="IArenaService.AnswerAsync"/>; which ones act on it: the header of
-/// ArenaService.cs) and logged whole (Debug). Seen in: bench (2026-10-11: reroll, select, select absent, shop closed).
+/// ArenaService.cs; the envelope's return_code is the answer's: arena_match_absent's "keep waiting" is 2) and logged whole
+/// (Debug). Seen in: bench (2026-10-11: reroll, select, select absent, shop closed, checkin, match absent).
 /// The TS server answers none of them.
 /// </summary>
 public sealed class PutArenaCalls : JsonBodyEndpoint
@@ -46,6 +47,7 @@ public sealed class PutArenaCalls : JsonBodyEndpoint
         // The whole request, for reading what the game sends (it carries account ids: Debug, off unless Log:Level is raised).
         Logger.LogDebug("{Call} body: {Body}", call, body?.ToJsonString() ?? "none");
         var request = new PartyRequest(session.AccountId, session.Claims, ClientAddress.Of(HttpContext, stripMapped: true), body);
-        await SendJsonAsync(LobbyDocuments.Ssc(await Resolve<IArenaService>().AnswerAsync(call, request, ct)), ct);
+        var answer = await Resolve<IArenaService>().AnswerAsync(call, request, ct);
+        await SendJsonAsync(LobbyDocuments.Ssc(answer.Body, answer.ReturnCode), ct);
     }
 }

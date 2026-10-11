@@ -22,6 +22,9 @@ namespace OpenVersus.Server.Core.Matches;
 //      then dropped; a player online is set idle (player:{id} status).
 //   2. A custom lobby's match (ssc_custom_lobby_match:{match}): its rematch vote opens (Rematches), and nothing more
 //      happens here (no set, no party preservation), even after a crash, as there. The lobby gone: nothing at all.
+//      An Arena's match (arena_match:{match}, ArenaResults): its end goes to the arenas service on arena:results, with the
+//      side the reports name (MatchWinner; null: no report), and nothing more happens here: the next round is the run's
+//      (no Casual rematch vote, no set, no party preservation; the Arena lobby is the arenas service's).
 //   3. The set (RankedSets.GameEndedAsync): a match that crashed sends everyone back to the menus (an empty config,
 //      +500 ms); a set game with no set (orphan) or a set already resolved: MatchSetLeaverNotification (+1000 ms) and the
 //      empty config (+1500 ms); a set that goes on: nothing (the game shows its check-in); a set over: each rated
@@ -36,12 +39,13 @@ namespace OpenVersus.Server.Core.Matches;
 // A crash, an orphan or a resolved set ends there (no party preservation), as there.
 // Delayed messages go through DelayedMessages (Redis, swept every 100 ms), never an in-process timer.
 //
-// Redis, read     match_end:{match}; match_config:{player}; online_players; ssc_custom_lobby_match:{match}; {match};
+// Redis, read     match_end:{match}; match_config:{player}; online_players; ssc_custom_lobby_match:{match}; arena_match:{match};
+//                 match_results:{match}; {match};
 //                 match:{match}; player_ranked_set:{player}; player_lobby:{player}; lobby:{lobby} (and RankedSets' and
 //                 the rematch vote's: RematchVotes)
 // Redis, written  match_end:{match} NX EX 10 min (once per match; the value is when it ended, in ms, for the ops match list); match_config:{player} deleted; player:{player} status;
 //                 lobby:{lobby}, player_lobby:{player} EX 8 h; party_ready:{lobby} deleted; rejoin_pending:{player} EX 45 s;
-//                 realtime:due (and RankedSets' and the rematch vote's)
+//                 realtime:due; arena:results (XADD) (and RankedSets' and the rematch vote's)
 // Published       ws:send (each message, to its player)
 // Mongo           FullRankUpdate's reads (eloratings made when missing), and RankedSets' ratings
 //
@@ -95,6 +99,15 @@ internal sealed class MatchEnd(IServiceProvider services, IRankedSets sets, EloR
                 log.LogWarning("Match {Match} ended in custom lobby {Lobby}, which is gone", matchId, lobby);
             }
 
+            return;
+        }
+
+        if (await Arenas.ArenaResults.RunOfAsync(redis, matchId) is { } run)
+        {
+            int? winner = MatchWinner.Resolve(await MatchResults.ReportsAsync(redis, matchId));
+            await Arenas.ArenaResults.AppendAsync(redis, run, matchId, winner);
+            log.LogInformation("Arena match {Match} (Arena {Run}) ended, reports' winner side {Winner}: sent to the arenas service", matchId, run,
+                winner?.ToString() ?? "none");
             return;
         }
 

@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using OpenVersus.Server.Core.Arenas;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Matches;
@@ -106,6 +107,44 @@ public sealed class MatchEndTests : IAsyncLifetime
         {
             return _sent.Count;
         }
+    }
+
+    [SkippableFact]
+    // An Arena's match (arena_match:{match}) goes to its run on arena:results with the side its reports name (none: null)
+    // after the echo, and nothing else happens here: no set, no Casual rematch vote, no party preservation.
+    public async Task AnArenasMatchEndGoesToItsRunAndNothingElse()
+    {
+        Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
+        var services = new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider();
+        var sets = new Sets();
+        IMatchEnd end = new MatchEnd(services, sets, new EloRatings(services, new TestOptions<RankedSettings>(new RankedSettings()), TimeProvider.System,
+            NullLogger<EloRatings>.Instance), new TestOptions<SeasonSettings>(new SeasonSettings()), TimeProvider.System, NullLogger<MatchEnd>.Instance);
+        string run = Id(900), unreported = Id(101);
+        await Db.KeyDeleteAsync(ArenaResults.Stream);
+        foreach (string match in new[] { Match, unreported })
+        {
+            await ArenaResults.NameMatchAsync(Db, match, run);
+            // A Casual config: without the Arena's branch, its rematch vote would open.
+            await Db.StringSetAsync(match, Js.Stringify(new JsonObject { ["mode"] = "2v2", ["isCustomGame"] = true, ["players"] = new JsonArray() }));
+        }
+
+        await Db.StringSetAsync(GameplayConfigs.Key(P1), Js.Stringify(new JsonObject
+        {
+            ["data"] = new JsonObject { ["GameplayConfig"] = new JsonObject { ["MatchId"] = Match } },
+            ["payload"] = new JsonObject { ["match"] = new JsonObject { ["id"] = Match } },
+        }));
+        await Db.HashSetAsync(MatchResults.ReportsKey(Match), P1, Js.Stringify(new JsonObject { ["order"] = 1, ["spectator"] = false, ["winner"] = 0 }));
+
+        await end.EndAsync(Match, [P1]);
+        await end.EndAsync(unreported, [P1]);
+
+        Assert.Equal(0, sets.Ended);
+        Assert.Equal(1, await SentAsync(1));
+        Assert.Contains("EndOfMatchPayload", _sent[0], StringComparison.Ordinal);
+        var records = (await Db.StreamRangeAsync(ArenaResults.Stream)).Select(e => Js.Parse((string)e[ArenaResults.Field]!)!).ToList();
+        Assert.Equal([(run, Match, (int?)0), (run, unreported, null)], records.Select(r => ((string)r["runId"]!, (string)r["matchId"]!, (int?)r["winnerSide"])));
+        Assert.False(await Db.KeyExistsAsync(RematchVotes.CasualKey(Match)));
+        await Db.KeyDeleteAsync(ArenaResults.Stream);
     }
 
     [SkippableFact]

@@ -50,6 +50,22 @@ public sealed record ArenaRules
     /// <summary>P: how long past a phase's deadline the server still takes a game's late call before deciding for it.</summary>
     public int GraceSeconds { get; init; } = 5;
 
+    /// <summary>
+    /// P: how long the next round waits, once a round is over, for a game still on its results screen to check in
+    /// (arena_checkin, sent by the game itself when its post-match countdown runs out: 3 s after its node's end on the
+    /// bench, 2026-10-11) before it starts without it.
+    /// </summary>
+    public int CheckinSeconds { get; init; } = 30;
+
+    /// <summary>
+    /// P: past the faceoff and the match, how long a node match may take to end (loading, the results) before it is decided
+    /// as one with no report (bench, 2026-10-11: about 100 s from the ready config to the node's end).
+    /// </summary>
+    public int MatchGraceSeconds { get; init; } = 120;
+
+    /// <summary>From the shops' end, when a node match that never ended is decided as one with no report.</summary>
+    public int MatchDeadlineSeconds => FaceoffWaitSeconds + RoundSeconds + MatchGraceSeconds;
+
     /// <summary>R: the wiki, "winners play up to 13 rounds": the per-round tables' length.</summary>
     public int MaxRounds { get; init; } = 13;
 

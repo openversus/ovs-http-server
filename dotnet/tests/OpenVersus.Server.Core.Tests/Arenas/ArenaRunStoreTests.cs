@@ -87,8 +87,8 @@ public sealed class ArenaRunStoreTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    // An accepted transition is written with its new deadline (the shop's), and the match phase has none; a refused one
-    // writes nothing; no run, nothing.
+    // An accepted transition is written with its new deadline (the shop's, then the match's), and one that leaves the run
+    // with none removes its entry; a refused one writes nothing; no run, nothing.
     public async Task ATransitionIsWrittenOnlyWhenAccepted()
     {
         Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
@@ -108,8 +108,14 @@ public sealed class ArenaRunStoreTests : IAsyncLifetime
         var (match, step) = await ArenaRunStore.UpdateAsync(Db, Run, r => r.ShopAbsent(Me, 1, Rules, Bots, new Random(8), 3_000));
         Assert.True(step.Accepted);
         Assert.Equal(ArenaPhase.Match, match!.Phase);
-        Assert.Null(await Db.SortedSetScoreAsync(ArenaRunStore.DeadlinesKey, Run));
+        Assert.Equal(match.DeadlineMs, await Db.SortedSetScoreAsync(ArenaRunStore.DeadlinesKey, Run));
         Assert.Equal(ArenaPhase.Match, (await ArenaRunStore.GetAsync(Db, Run))!.Phase);
+        await ArenaRunStore.UpdateAsync(Db, Run, r =>
+        {
+            r.DeadlineMs = 0;
+            return new ArenaStep(true, []);
+        });
+        Assert.Null(await Db.SortedSetScoreAsync(ArenaRunStore.DeadlinesKey, Run));
 
         var (none, nothing) = await ArenaRunStore.UpdateAsync(Db, "0000000000000000000c0003", r => new ArenaStep(true, []));
         Assert.Null(none);

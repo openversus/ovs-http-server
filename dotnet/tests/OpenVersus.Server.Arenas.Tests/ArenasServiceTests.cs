@@ -30,13 +30,14 @@ public sealed class ArenasServiceTests : IClassFixture<ServiceFactory<Program>>
     }
 
     [Fact]
-    public void RunsTheArenaDeadlinesAndNoOtherBackgroundServiceOfItsOwn()
+    public void RunsTheArenaDeadlinesAndResultsAndNoOtherBackgroundServiceOfItsOwn()
     {
         var hosted = _factory.Services.GetServices<IHostedService>().Select(s => s.GetType())
             .Where(t => t.Namespace?.StartsWith("OpenVersus.", StringComparison.Ordinal) == true).Select(t => t.Name).Order().ToList();
 
-        // ArenaDeadlines acts on the runs whose character select or shop has run out of time (arena_run:deadlines).
-        Assert.Equal(["ArenaDeadlines", "BannedPlayers", "ClusterSettingsSync", "InstanceHeartbeat"], hosted);
+        // ArenaDeadlines acts on the runs whose phase has run out of time (arena_run:deadlines); ArenaResultStream reads the
+        // ends of the Arena's node matches (arena:results).
+        Assert.Equal(["ArenaDeadlines", "ArenaResultStream", "BannedPlayers", "ClusterSettingsSync", "InstanceHeartbeat"], hosted);
     }
 
     [Fact]

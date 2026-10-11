@@ -21,7 +21,11 @@ namespace OpenVersus.Server.Core.Arenas;
 // launched, the character select open). Answered with the TS catch-all, which the game takes as "match found".
 //
 // The effects, after the run is written:
-//   LaunchPairing     the pairing's 2v2 on a node, under its MatchId: team A on side 0 (even player indexes), B on side 1;
+//   LaunchPairing     the pairing's 2v2 on a node, under its MatchId, named an Arena's (arena_match:{match} -> the run,
+//                     ArenaResults: its end comes back to the run, never as a Casual rematch); from round 2 on, each of its
+//                     players' games is first sent OnArenaNextMatch {MatchId, Cluster} (its post-match screen listens for it
+//                     after its check-in and leaves for the next match on it; archive "2026-10-11 (s47)"). Then the match:
+//                     team A on side 0 (even player indexes), B on side 1;
 //                     a mirror (B = Mirror) is fresh bots copying A's fighters. Each player goes in with their pick (before
 //                     the first pick: their lobby loadout), recorded as their played loadout, which the config reads. An
 //                     Arena round: ArenaModeInfo in the config (its presence makes the match an Arena), timed
@@ -32,11 +36,11 @@ namespace OpenVersus.Server.Core.Arenas;
 //                     that takes the game from its shop to the match (ShopBaseState 0x1426a1dc0, archive).
 //                     A player whose match was launched by the same step is skipped (the launch carries their data); a
 //                     kept config of another match (the last round's) is never patched: an error, logged.
-//   ArenaFinished     logged only (what the game is sent at the end is unprobed).
+//   ArenaFinished     logged only (what the game is sent at the end, ArenaPlayerEndPayload, is not read yet).
 //
 // The Arena's own calls (AnswerAsync), each a transition of the run named by ArenaLobbyId (ArenaParentId for the round's
 // check-ins), applied under compare-and-set, its effects carried out, and answered {bSuccess, playerId} (bSuccess: the
-// run took it):
+// run took it) with the envelope's return_code 0 unless said:
 //   arena_reroll_characters        RerollCharacters; answered with the new offer and the coins (RerollAnswer)
 //   arena_select_character         Select {CharacterSlug, SkinSlug} (Random's +2 is not paid: what the Random button sends
 //                                  with a full offer is unprobed; only "" with an empty one was seen)
@@ -44,26 +48,43 @@ namespace OpenVersus.Server.Core.Arenas;
 //   arena_player_shop_closed       ShopClosed {ArenaRound, ShopPhaseDetails {NumRerolls, ItemTransactions [{bPurchase,
 //                                  LocalShopIndex, ItemIndex}]}}
 //   arena_shop_absent              ShopAbsent {ArenaRound}
+//   arena_checkin                  Checkin {ArenaParentId, ArenaRound}: the game left its match (it sends this itself when
+//                                  its post-match countdown runs out); answered success (the game then waits)
+//   arena_match_absent             Checkin too (the game is still waiting); return_code 2 while the run waits for the next
+//                                  round, which the game takes as "keep waiting" (it reports absent again later)
 //   the others                     answered success, not acted on: arena_purchase_item, arena_sell_item, arena_reroll_shop
-//                                  (the shop runs in the game while ArenaShopLocalOperations is on); arena_checkin,
-//                                  arena_match_absent (round 2's messages are unprobed).
+//                                  (the shop runs in the game while ArenaShopLocalOperations is on).
+// A node match's end (MatchEndedAsync, from the arena:results stream, ArenaResults): the run's MatchResult with the side
+// the reports name and the run's players still connected (online_players), its effects carried out.
 // The deadlines (DeadlinesAsync, the arenas service's loop): each run whose phase's deadline has passed is ticked (absent
-// picks, shops closed with nothing bought) and its effects carried out; a run gone (expired) loses its deadline entry.
+// picks, shops closed with nothing bought, node matches that never ended decided as with no report, the next round started
+// without the games that never checked in) and its effects carried out; a run gone (expired) loses its deadline entry.
 //
 // KNOWN GAPS: the effects run after the run's write, so a crash between the two loses that step's launches and configs; a
-// launch that fails (no rollback port) leaves its pairing with a match that never reports, and the Match phase has no
-// deadline; the taunts in the config are the lobby fighter's, not the pick's.
+// launch that fails (no rollback port) leaves its pairing to the Match deadline; a player who is out, or whose Arena has
+// ended, is sent nothing yet (their game waits on its post-match screen); the taunts in the config are the lobby fighter's,
+// not the pick's.
 
 public interface IArenaService
 {
     /// <summary>start_arena_direct: the game stopped waiting in Arena matchmaking; its Arena lobby starts with bots.</summary>
     Task<JsonObject> StartAsync(PartyRequest request, CancellationToken ct);
 
-    /// <summary>One of the Arena's own calls (<paramref name="call"/>, e.g. arena_select_character): its answer's body.</summary>
-    Task<JsonObject> AnswerAsync(string call, PartyRequest request, CancellationToken ct);
+    /// <summary>One of the Arena's own calls (<paramref name="call"/>, e.g. arena_select_character): its answer.</summary>
+    Task<ArenaAnswer> AnswerAsync(string call, PartyRequest request, CancellationToken ct);
+
+    /// <summary>An Arena node match's end (ArenaResults): <paramref name="winnerSide"/> the side its reports name, null for none.</summary>
+    Task MatchEndedAsync(string runId, string matchId, int? winnerSide, CancellationToken ct);
 
     /// <summary>Acts on every run whose deadline has passed (see the header).</summary>
     Task DeadlinesAsync(CancellationToken ct);
+}
+
+/// <summary>An Arena call's answer: the body, and the SSC envelope's return_code (the game's post-match screen reads it).</summary>
+public sealed record ArenaAnswer(JsonObject Body, int ReturnCode = 0)
+{
+    /// <summary>arena_match_absent's "keep waiting": the game reports absent again later (0x14285bcd0, archive s47).</summary>
+    public const int KeepWaiting = 2;
 }
 
 internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate gate, IMatchLauncher launcher, IArenaBotMatches botMatches,
@@ -167,7 +188,7 @@ internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate 
         return await TsCatchAll.AnswerAsync(services, ct);
     }
 
-    public async Task<JsonObject> AnswerAsync(string call, PartyRequest request, CancellationToken ct)
+    public async Task<ArenaAnswer> AnswerAsync(string call, PartyRequest request, CancellationToken ct)
     {
         var redis = Redis();
         string me = request.AccountId;
@@ -183,19 +204,20 @@ internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate 
             "arena_player_shop_closed" => run => run.ShopClosed(me, round, Number(body["ShopPhaseDetails"]?["NumRerolls"]), Transactions(body["ShopPhaseDetails"]?["ItemTransactions"]),
                 Rules, botMatches, random, now),
             "arena_shop_absent" => run => run.ShopAbsent(me, round, Rules, botMatches, random, now),
+            "arena_checkin" or "arena_match_absent" => run => run.Checkin(me, round, Rules, random, now),
             _ => null,
         };
         if (transition is null || (Text(body["ArenaLobbyId"]) ?? Text(body["ArenaParentId"])) is not { } runId)
         {
             log.LogInformation("{Call} from {Player}: not acted on (answered success)", call, me);
-            return ArenaState.Answer(true, me);
+            return new(ArenaState.Answer(true, me));
         }
 
         var (run, step) = await ArenaRunStore.UpdateAsync(redis, runId, transition);
         if (run is null)
         {
             log.LogWarning("{Call} from {Player}: no Arena {Run}; refused", call, me, runId);
-            return ArenaState.Answer(false, me);
+            return new(ArenaState.Answer(false, me));
         }
 
         if (step.Accepted)
@@ -208,9 +230,42 @@ internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate 
             log.LogInformation("Arena {Run} round {Round} ({Phase}): {Call} from {Player} refused", run.Id, run.Round, run.Phase, call, me);
         }
 
-        return call == "arena_reroll_characters" && run.Players.TryGetValue(me, out var player)
-            ? ArenaState.RerollAnswer(step.Accepted, player, Rules)
-            : ArenaState.Answer(step.Accepted, me);
+        return call switch
+        {
+            "arena_reroll_characters" when run.Players.TryGetValue(me, out var player) => new(ArenaState.RerollAnswer(step.Accepted, player, Rules)),
+            // A check-in is answered success whether it was the first or not: the game only waits on it.
+            "arena_checkin" => new(ArenaState.Answer(true, me)),
+            "arena_match_absent" => new(ArenaState.Answer(true, me), run.Awaits(me, round) ? ArenaAnswer.KeepWaiting : 0),
+            _ => new(ArenaState.Answer(step.Accepted, me)),
+        };
+    }
+
+    public async Task MatchEndedAsync(string runId, string matchId, int? winnerSide, CancellationToken ct)
+    {
+        var redis = Redis();
+        if (await ArenaRunStore.GetAsync(redis, runId) is not { } current)
+        {
+            log.LogWarning("Arena match {Match} ended, but its Arena {Run} is gone", matchId, runId);
+            return;
+        }
+
+        var connected = await ConnectedAsync(redis, current);
+        ArenaRunPairing? pairing = null;
+        var (run, step) = await ArenaRunStore.UpdateAsync(redis, runId, r =>
+        {
+            pairing = r.Pairings.FirstOrDefault(p => p.MatchId == matchId);
+            return r.MatchResult(matchId, winnerSide, connected, Rules, Random.Shared, time.GetUtcNow().ToUnixTimeMilliseconds());
+        });
+        if (run is null || pairing is null || !step.Accepted)
+        {
+            log.LogInformation("Arena {Run}: the end of match {Match} (winner side {Side}) not taken: decided already, or not this round's", runId, matchId,
+                winnerSide?.ToString() ?? "none");
+            return;
+        }
+
+        log.LogInformation("Arena {Run}: match {Match} ended, reports' winner side {Side}: {Outcome}; now round {Round} {Phase}", runId, matchId,
+            winnerSide?.ToString() ?? "none", Outcome(run, pairing), run.Round, run.Phase);
+        await CarryOutAsync(redis, run, step.Effects, ct);
     }
 
     public async Task DeadlinesAsync(CancellationToken ct)
@@ -219,7 +274,8 @@ internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate 
         long now = time.GetUtcNow().ToUnixTimeMilliseconds();
         foreach (string runId in await ArenaRunStore.DueAsync(redis, now))
         {
-            var (run, step) = await ArenaRunStore.UpdateAsync(redis, runId, r => r.Tick(now, BotFighters.All, Rules, botMatches, Random.Shared));
+            var connected = await ArenaRunStore.GetAsync(redis, runId) is { } current ? await ConnectedAsync(redis, current) : new HashSet<string>();
+            var (run, step) = await ArenaRunStore.UpdateAsync(redis, runId, r => r.Tick(now, BotFighters.All, Rules, botMatches, Random.Shared, connected));
             if (run is null)
             {
                 await ArenaRunStore.ForgetDeadlineAsync(redis, runId);
@@ -239,6 +295,34 @@ internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate 
         .Select(t => new ArenaTransaction(t["bPurchase"] is JsonValue b && b.TryGetValue(out bool purchase) && purchase, Number(t["LocalShopIndex"]), Number(t["ItemIndex"])))];
 
     private static int Number(JsonNode? node) => node is JsonValue v && v.TryGetValue(out int n) ? n : 0;
+
+    // The run's players whose games are connected (their websocket is up: online_players).
+    private static async Task<IReadOnlySet<string>> ConnectedAsync(IDatabase redis, ArenaRun run)
+    {
+        var connected = new HashSet<string>();
+        foreach (var player in run.Players.Values.Where(p => !p.IsBot))
+        {
+            if (await redis.SetContainsAsync("online_players", player.Id))
+            {
+                connected.Add(player.Id);
+            }
+        }
+
+        return connected;
+    }
+
+    // How a pairing was decided, for the log: each team's health now, and the winner.
+    private static string Outcome(ArenaRun run, ArenaRunPairing pairing)
+    {
+        string Team(int team) => team == ArenaRun.Mirror ? "the mirror" : $"team {team} ({run.Teams[team].Life} health{(run.Teams[team].In && run.Teams[team].Life > 0 ? "" : ", out")})";
+        string winner = pairing.Winner switch
+        {
+            ArenaRun.BothLost => "both lost",
+            { } w => $"{Team(w)} won",
+            null => "undecided",
+        };
+        return $"{Team(pairing.A)} against {Team(pairing.B)}: {winner}";
+    }
 
     private static string? Text(JsonNode? node) => node is JsonValue v && v.TryGetValue(out string? s) && s.Length > 0 ? s : null;
 
@@ -308,6 +392,16 @@ internal sealed class ArenaService(IServiceProvider services, IClientUpdateGate 
                 }
 
                 players.Add(new MatchPlayer(pid, i * 2 + side, side, IsHost: pid == host, Get(loadout, "ip") ?? "", IsBot: false));
+            }
+        }
+
+        // Named an Arena's before it exists, so that its end is the run's whatever happens to the launch.
+        await ArenaResults.NameMatchAsync(redis, pairing.MatchId!, run.Id);
+        if (run.Round > 1)
+        {
+            foreach (string pid in humans)
+            {
+                await ProfileNotifications.SendAsync(redis, pid, ArenaState.NextMatch(pairing.MatchId!));
             }
         }
 

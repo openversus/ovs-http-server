@@ -179,9 +179,9 @@ public sealed class RollbackCallbacksTests : IAsyncLifetime
     private static JsonObject Body(string? key = Key) => new() { ["matchId"] = Match, ["key"] = key };
 
     [Fact]
-    public void ABetaSpeedMatchRunsAt72FramesASecond()
+    public void ABetaSpeedMatchRunsAt66FramesASecond()
     {
-        Assert.Equal(72, RollbackCallbacks.TickRate(new JsonObject { ["worldBuffs"] = new JsonArray("ovs_friendly_fire", "ovs_beta_speed") }));
+        Assert.Equal(66, RollbackCallbacks.TickRate(new JsonObject { ["worldBuffs"] = new JsonArray("ovs_friendly_fire", "ovs_beta_speed") }));
         Assert.Null(RollbackCallbacks.TickRate(new JsonObject { ["worldBuffs"] = new JsonArray("ovs_friendly_fire") }));
         Assert.Null(RollbackCallbacks.TickRate(new JsonObject { ["worldBuffs"] = null }));
         Assert.Null(RollbackCallbacks.TickRate(new JsonObject()));

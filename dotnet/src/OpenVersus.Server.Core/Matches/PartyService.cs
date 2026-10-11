@@ -79,7 +79,8 @@ namespace OpenVersus.Server.Core.Matches;
 //     the player into Shaggy (seen leaving an Arena lobby, 2026-10-10).
 
 /// <summary>Who is asking: the session's account id and token claims, their address, and the request body.</summary>
-public sealed record PartyRequest(string AccountId, JsonObject? Claims, string ClientIp, JsonObject? Body);
+/// <param name="Paks">The client's X-OVS-Paks header (its experimental paks, name=sha256 of the .utoc), for the queues that need them.</param>
+public sealed record PartyRequest(string AccountId, JsonObject? Claims, string ClientIp, JsonObject? Body, string? Paks = null);
 
 public interface IPartyService
 {

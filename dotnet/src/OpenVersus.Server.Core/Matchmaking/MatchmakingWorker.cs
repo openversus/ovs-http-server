@@ -570,9 +570,11 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
 
         if (testingGrounds)
         {
-            // Beta Speed: the rollback registry gives the match tick_rate 72 from worldBuffs; every client runs it at 1.2x.
-            notification["worldBuffs"] = TestingGrounds.WorldBuffs();
-            notification["gameplayConfigOverride"] = TestingGrounds.ConfigOverride();
+            // Its mutators: with Beta Speed the rollback registry gives the match tick_rate 66 from worldBuffs, and every
+            // client runs it at 1.1x.
+            var rules = TestingGrounds.Of(services);
+            notification["worldBuffs"] = TestingGrounds.WorldBuffs(rules);
+            notification["gameplayConfigOverride"] = TestingGrounds.ConfigOverride(rules);
         }
 
         // As the TS worker's markP2P: a P2P match gets no rollback server unless its nodes find no direct path.

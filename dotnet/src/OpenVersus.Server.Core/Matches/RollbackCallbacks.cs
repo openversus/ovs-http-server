@@ -23,7 +23,7 @@ namespace OpenVersus.Server.Core.Matches;
 //   /ovs_register   the registry, for the rollback server, or for a node to learn its role: the humans and spectators,
 //                   never the bots (they have no client to connect; the game makes them), max_players their count (the
 //                   rollback server sizes its inputs from it and indexes them by player_index), match_duration 36000,
-//                   tick_rate 72 for a Beta Speed match (its frames a second; the clients run 1.2x and the rollback
+//                   tick_rate 66 for a Beta Speed match (its frames a second; the clients run 1.1x and the rollback
 //                   server must pace them at that rate, or its rift correction pulls them back to 60),
 //                   each player's name and fighter from their connection ("Unknown" without). Sent as JSON signed over its
 //                   exact bytes (X-OVS-Signature, INodeConfig: a node hosts only on a config the server signed; a relay

@@ -12,8 +12,9 @@ using OpenVersus.Server.TestSupport;
 namespace OpenVersus.Server.Web.Tests;
 
 /// <summary>
-/// GET /ovs/client-version with a release of this test's own in GitHub's place, and GET /ovs/all-players against a real
-/// Mongo (a database of its own, dropped: OVS_TEST_MONGO; Redis database 10, OVS_TEST_REDIS, for the host).
+/// GET /ovs/client-version with a release of this test's own in GitHub's place, GET /ovs/client-settings, and GET
+/// /ovs/all-players against a real Mongo (a database of its own, dropped: OVS_TEST_MONGO; Redis database 10,
+/// OVS_TEST_REDIS, for the host).
 /// </summary>
 public sealed class ClientRoutesTests : IAsyncLifetime
 {
@@ -38,7 +39,7 @@ public sealed class ClientRoutesTests : IAsyncLifetime
         }
     }
 
-    private sealed class Factory(IClientReleases releases, bool stores, string minimumVersion = "", bool versionCheck = true) : ServiceFactory<Program>
+    private sealed class Factory(IClientReleases releases, bool stores, string minimumVersion = "", bool versionCheck = true, string? betaSpeed = null) : ServiceFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -58,6 +59,11 @@ public sealed class ClientRoutesTests : IAsyncLifetime
             builder.UseSetting("Control:Socket", "off");
             builder.UseSetting("Clients:MinimumVersion", minimumVersion);
             builder.UseSetting("Clients:VersionCheck", versionCheck ? "true" : "false");
+            if (betaSpeed is not null)
+            {
+                builder.UseSetting("BetaSpeed:Percent", betaSpeed);
+            }
+
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IClientReleases>();
@@ -201,6 +207,32 @@ public sealed class ClientRoutesTests : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.OK, status);
         Assert.Empty(body.AsArray());
+    }
+
+    [Theory]
+    [InlineData(null, 110)]
+    [InlineData("120", 120)]
+    // The Beta Speed the client runs (BetaSpeed:Percent), with no token and no stores.
+    public async Task GivesTheClientItsSettings(string? betaSpeed, int percent)
+    {
+        await using var factory = new Factory(new FakeReleases(() => []), stores: false, betaSpeed: betaSpeed);
+
+        var response = await factory.CreateClient().GetAsync("/ovs/client-settings");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal($$"""{"betaSpeedPercent":{{percent}}}""", await response.Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [InlineData("300")]
+    [InlineData("49")]
+    // A speed outside 50 to 200 stops the service at startup, as any setting its validation refuses.
+    public async Task ASpeedOutOfRangeIsRefusedAtStartup(string betaSpeed)
+    {
+        await using var factory = new Factory(new FakeReleases(() => []), stores: false, betaSpeed: betaSpeed);
+
+        var refused = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
+        Assert.Contains("BetaSpeedSettings", refused.ToString());
     }
 
     private static async Task<(HttpStatusCode Status, JsonNode Body)> GetAsync(Factory factory, string path)

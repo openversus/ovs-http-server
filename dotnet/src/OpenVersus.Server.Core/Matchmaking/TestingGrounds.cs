@@ -7,10 +7,11 @@ namespace OpenVersus.Server.Core.Matchmaking;
 
 // 1v1 Testing Grounds, the game's own event queue (evtq_1v1testinggrounds, matchmaking criteria EVT_2_Player_1, solo
 // only), as OpenVersus runs it: OpenVersus's own mode, unranked 1v1s with its mutators (TestingGrounds:Mutators: Beta
-// Speed, the whole match at 1.1x, and Shield HP, Smash-style shields), open whenever the FFA queue is not, so the menu's
-// event slot is Testing Grounds on weekdays and Free For All on the weekend (FfaSchedule); closed while Twosday is on
-// (its window, Tuesday evenings: every 1v1 goes to 2v2 then). A mutator that lives in a pak needs every player to have
-// that exact pak (TestingGrounds:RequiredPaks, checked against the client's X-OVS-Paks header), or the match desyncs.
+// Speed, the whole match at BetaSpeed:Percent, and Shield HP, Smash-style shields), open whenever the FFA queue is not,
+// so the menu's event slot is Testing Grounds on weekdays and Free For All on the weekend (FfaSchedule); closed while
+// Twosday is on (its window, Tuesday evenings: every 1v1 goes to 2v2 then). A mutator that lives in a pak needs every
+// player to have that exact pak (TestingGrounds:RequiredPaks, checked against the client's X-OVS-Paks header), and Beta
+// Speed needs every player's game to run the server's speed (checked against X-OVS-BetaSpeed), or the match desyncs.
 // The hiss shows the open one only (its feature toggles) and its Crc differs between the two, so a client takes the
 // other catalog at its next login; a request outside the queue's window is refused, and its queued tickets are
 // cancelled when it closes, as FFA's are.
@@ -76,6 +77,13 @@ public static class TestingGrounds
         return null;
     }
 
+    /// <summary>
+    /// Whether the settings' mutators include Beta Speed and <paramref name="header"/> (the client's X-OVS-BetaSpeed) does
+    /// not report <paramref name="betaSpeed"/>'s speed: missing (an older client), or read before a change.
+    /// </summary>
+    public static bool WrongBetaSpeed(TestingGroundsSettings settings, Matches.BetaSpeedSettings betaSpeed, string? header) =>
+        MutatorsOf(settings).Contains(Matches.GameplayConfigs.BetaSpeedMutator) && !Matches.BetaSpeed.Reports(header, betaSpeed.Percent);
+
     private static Dictionary<string, string> Pairs(string? text)
     {
         var pairs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -132,6 +140,10 @@ public static class TestingGrounds
     /// <summary>The answer to a player without a required pak (<see cref="MissingPak"/>): restart the game to update.</summary>
     public static JsonObject PakFailure() => Failure("testing_grounds_pak_required", "PakRequired",
         "Testing Grounds needs this week's OpenVersus experimental pak. Restart the game to update it, then queue again.");
+
+    /// <summary>The answer to a player whose game runs another Beta Speed (<see cref="WrongBetaSpeed"/>): restart the game to update.</summary>
+    public static JsonObject BetaSpeedFailure() => Failure("testing_grounds_beta_speed_changed", "BetaSpeedChanged",
+        "Beta Speed changed: restart the game to update, then queue again.");
 
     private static JsonObject Failure(string error, string code, string message) => new()
     {

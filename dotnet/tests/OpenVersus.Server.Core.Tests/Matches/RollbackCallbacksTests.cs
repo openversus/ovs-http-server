@@ -118,12 +118,18 @@ public sealed class RollbackCallbacksTests : IAsyncLifetime
 
     private IDatabase Db => _redis!.GetDatabase();
 
-    private RollbackCallbacks Callbacks(Launcher? launcher = null, Signer? signer = null, RollbackSettings? settings = null, IMatchEnd? matchEnd = null)
+    private RollbackCallbacks Callbacks(Launcher? launcher = null, Signer? signer = null, RollbackSettings? settings = null, IMatchEnd? matchEnd = null,
+        BetaSpeedSettings? betaSpeed = null)
     {
         var services = new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!);
         if (matchEnd is not null)
         {
             services.AddSingleton(matchEnd);
+        }
+
+        if (betaSpeed is not null)
+        {
+            services.AddSingleton<IOptionsMonitor<BetaSpeedSettings>>(new TestOptions<BetaSpeedSettings>(betaSpeed));
         }
 
         return new(services.BuildServiceProvider(),
@@ -178,13 +184,17 @@ public sealed class RollbackCallbacksTests : IAsyncLifetime
 
     private static JsonObject Body(string? key = Key) => new() { ["matchId"] = Match, ["key"] = key };
 
-    [Fact]
-    public void ABetaSpeedMatchRunsAt66FramesASecond()
+    [Theory]
+    [InlineData(110, 66)]
+    [InlineData(120, 72)]
+    [InlineData(100, 60)]
+    // BetaSpeed:Percent of 60 frames a second; a match without the mutator runs at the server's own.
+    public void ABetaSpeedMatchRunsAtItsSpeedsFrameRate(int percent, int tickRate)
     {
-        Assert.Equal(66, RollbackCallbacks.TickRate(new JsonObject { ["worldBuffs"] = new JsonArray("ovs_friendly_fire", "ovs_beta_speed") }));
-        Assert.Null(RollbackCallbacks.TickRate(new JsonObject { ["worldBuffs"] = new JsonArray("ovs_friendly_fire") }));
-        Assert.Null(RollbackCallbacks.TickRate(new JsonObject { ["worldBuffs"] = null }));
-        Assert.Null(RollbackCallbacks.TickRate(new JsonObject()));
+        Assert.Equal(tickRate, RollbackCallbacks.TickRate(new JsonObject { ["worldBuffs"] = new JsonArray("ovs_friendly_fire", "ovs_beta_speed") }, percent));
+        Assert.Null(RollbackCallbacks.TickRate(new JsonObject { ["worldBuffs"] = new JsonArray("ovs_friendly_fire") }, percent));
+        Assert.Null(RollbackCallbacks.TickRate(new JsonObject { ["worldBuffs"] = null }, percent));
+        Assert.Null(RollbackCallbacks.TickRate(new JsonObject(), percent));
     }
 
     [SkippableFact]
@@ -244,6 +254,21 @@ public sealed class RollbackCallbacksTests : IAsyncLifetime
             """{"player_index":5,"player_name":"Unknown","player_character":"Unknown","is_host":null,"is_spectator":false}]}""",
             Encoding.UTF8.GetString(registration!.Body));
         Assert.Equal($$"""["{{P2}}",null]""", registration.Ready!.PlayerIds.ToJsonString());
+    }
+
+    [SkippableFact]
+    // The tick rate comes from the service's BetaSpeed:Percent.
+    public async Task ABetaSpeedMatchsRegistryHasItsTickRate()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS to run");
+        await SeedAsync();
+        var config = (JsonObject)Js.Parse((string)(await Db.StringGetAsync(Match))!)!;
+        config["worldBuffs"] = new JsonArray("ovs_beta_speed", "ovs_shield_hp");
+        await Db.StringSetAsync(Match, Js.Stringify(config));
+
+        var registration = await Callbacks(betaSpeed: new BetaSpeedSettings { Percent = 120 }).RegisterAsync(Body());
+
+        Assert.Equal(72, (int)JsonNode.Parse(registration!.Body)!["tick_rate"]!);
     }
 
     [SkippableFact]

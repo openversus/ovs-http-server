@@ -80,7 +80,8 @@ namespace OpenVersus.Server.Core.Matches;
 
 /// <summary>Who is asking: the session's account id and token claims, their address, and the request body.</summary>
 /// <param name="Paks">The client's X-OVS-Paks header (its experimental paks, name=sha256 of the .utoc), for the queues that need them.</param>
-public sealed record PartyRequest(string AccountId, JsonObject? Claims, string ClientIp, JsonObject? Body, string? Paks = null);
+/// <param name="BetaSpeed">The client's X-OVS-BetaSpeed header (the Beta Speed its game runs, in percent), for the queues that run it.</param>
+public sealed record PartyRequest(string AccountId, JsonObject? Claims, string ClientIp, JsonObject? Body, string? Paks = null, string? BetaSpeed = null);
 
 public interface IPartyService
 {

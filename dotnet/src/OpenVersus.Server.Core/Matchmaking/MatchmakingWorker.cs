@@ -570,8 +570,8 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
 
         if (testingGrounds)
         {
-            // Its mutators: with Beta Speed the rollback registry gives the match tick_rate 66 from worldBuffs, and every
-            // client runs it at 1.1x.
+            // Its mutators: with Beta Speed the rollback registry gives the match its tick_rate from worldBuffs (66 at
+            // BetaSpeed:Percent 110), and every client runs it at that speed.
             var rules = TestingGrounds.Of(services);
             notification["worldBuffs"] = TestingGrounds.WorldBuffs(rules);
             notification["gameplayConfigOverride"] = TestingGrounds.ConfigOverride(rules);

@@ -17,9 +17,9 @@ override header, not on the wire method. `?` means the method is not known yet.
 **Websockets** (not in the tables): the Hydra realtime socket (the ws service; binary Hydra messages; the
 server pings `0x0c` every 20 s and the game answers `0x0a`).
 
-**Totals.** 254 routes. The game can call 211 Hydra/engine/social routes and SSC functions; the TS
+**Totals.** 255 routes. The game can call 211 Hydra/engine/social routes and SSC functions; the TS
 server answers 115. Not answered: 33 routes and 63 SSC functions.
-OpenVersus's own, not the game: openversus client mod 10, rollback server 11, website (browser) 18, admin and data sync 4.
+OpenVersus's own, not the game: openversus client mod 11, rollback server 11, website (browser) 18, admin and data sync 4.
 
 Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ovs-client`,
 `ovs-rollback`, `ovs-web`, `ovs-admin`). The skeleton's endpoint folders follow the same split.
@@ -136,6 +136,7 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 |---|---|---|---|---|---|
 | POST | `/api/identify` | web | capture ×10 | yes | capture only; server only |
 | GET | `/ovs/all-players` | web | — | yes | server only |
+| GET | `/ovs/client-settings` | web | — | **no** | C# only: what the OpenVersus client reads at startup (BetaSpeed:Percent) |
 | GET | `/ovs/client-version` | web | capture ×10 | yes | capture only; server only |
 | POST | `/ovs/friends/accept` | social | — | yes | server only |
 | POST | `/ovs/friends/block` | social | — | yes | server only |

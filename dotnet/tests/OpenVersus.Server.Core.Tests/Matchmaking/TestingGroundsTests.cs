@@ -6,7 +6,8 @@ namespace OpenVersus.Server.Core.Tests.Matchmaking;
 
 /// <summary>
 /// 1v1 Testing Grounds (OpenVersus's mode: Beta Speed + Shield HP) takes FFA's place on weekdays: open exactly while the
-/// FFA queue is closed, the hiss shows the open one only, and a player without the mode's pak is refused. Needs no stores.
+/// FFA queue is closed, the hiss shows the open one only, and a player without the mode's pak, or whose game runs another
+/// Beta Speed, is refused. Needs no stores.
 /// </summary>
 public sealed class TestingGroundsTests
 {
@@ -79,6 +80,22 @@ public sealed class TestingGroundsTests
         var failure = TestingGrounds.PakFailure();
         Assert.Equal(1, failure["return_code"]!.GetValue<int>());
         Assert.Equal("PakRequired", failure["body"]!["ErrorCode"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void WithBetaSpeedAPlayerMustRunTheServersSpeed()
+    {
+        var settings = new TestingGroundsSettings();
+        var betaSpeed = new OpenVersus.Server.Core.Matches.BetaSpeedSettings { Percent = 120 };
+        Assert.False(TestingGrounds.WrongBetaSpeed(settings, betaSpeed, "120"));
+        // Another speed (read before a change), or none (an older client).
+        Assert.True(TestingGrounds.WrongBetaSpeed(settings, betaSpeed, "110"));
+        Assert.True(TestingGrounds.WrongBetaSpeed(settings, betaSpeed, null));
+        // Without the mutator the speed does not matter.
+        Assert.False(TestingGrounds.WrongBetaSpeed(new TestingGroundsSettings { Mutators = "ovs_shield_hp" }, betaSpeed, null));
+        var failure = TestingGrounds.BetaSpeedFailure();
+        Assert.Equal(1, failure["return_code"]!.GetValue<int>());
+        Assert.Equal("BetaSpeedChanged", failure["body"]!["ErrorCode"]!.GetValue<string>());
     }
 
     [Theory]

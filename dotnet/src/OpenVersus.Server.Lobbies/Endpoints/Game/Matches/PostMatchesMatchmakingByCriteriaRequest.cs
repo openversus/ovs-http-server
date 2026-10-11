@@ -33,7 +33,8 @@ public sealed class PostMatchesMatchmakingByCriteriaRequest : JsonBodyEndpoint
         }
 
         var request = new PartyRequest(session.AccountId, session.Claims, ClientAddress.Of(HttpContext, stripMapped: true), (await ReadBodyAsync(ct)) as System.Text.Json.Nodes.JsonObject,
-            HttpContext.Request.Headers[Core.Matchmaking.TestingGrounds.PaksHeader].ToString() is { Length: > 0 } paks ? paks : null);
+            HttpContext.Request.Headers[Core.Matchmaking.TestingGrounds.PaksHeader].ToString() is { Length: > 0 } paks ? paks : null,
+            HttpContext.Request.Headers[BetaSpeed.Header].ToString() is { Length: > 0 } betaSpeed ? betaSpeed : null);
         if (await Resolve<IMatchmakingRequestService>().RequestAsync(Route<string>("criteria") ?? "", request, ct) is not { } answer)
         {
             await SendTsCatchAllAsync(ct);

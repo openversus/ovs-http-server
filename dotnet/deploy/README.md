@@ -4,6 +4,39 @@ Two Compose projects: `dbs/` (MongoDB, Redis, the `ovs` network) and `services/`
 in front of them, the rollback relay). The stores are their own project so that taking the services down can never
 take the data with it.
 
+## The short way: build.sh and ovs.sh
+
+On a machine with this repository, the ovs-rollback-server repository beside it, and Docker:
+
+```
+deploy/build.sh            # the services' images + the relay image -> deploy/out/openversus-deploy-<tag>.tar
+```
+
+The tarball is this directory with the images inside (`images-<tag>.tar.zst`, and `images.env` naming the tags), so
+the host needs neither the source nor the SDK. On the host:
+
+```
+tar -xf openversus-deploy-<tag>.tar && cd deploy
+cp env/deploy.env.example .env      # first time: directories, ports, OVS_PROJECT, OVS_NETWORK, OVS_RELAY_ADDRESS
+./ovs.sh setup                      # directories, env templates into OVS_ENV_DIR (never overwritten), images, checks
+#   edit the files setup copied (services.env, relay.env, mongo.env, redis.conf), put the node config key pair in
+#   OVS_KEYS_DIR and the ban files and name lists in OVS_DATA_DIR, then:
+./ovs.sh check                      # what would stop a start: template values, short secrets, missing keys, ports
+./ovs.sh up                         # the stores, then the services (`up services` when the stores run elsewhere)
+./ovs.sh restore prod.archive.zst   # a prod mongodump (the TS `test` database) into the stores, Redis flushed
+./ovs.sh status | logs [service] | down [services|dbs|all] [--now]
+```
+
+An update is the same: build a new tarball, extract it over the old directory (its `.env` stays), `./ovs.sh setup`
+(loads the new images; the env files are left alone), `./ovs.sh up`. `check` compares what `.env` publishes with
+what `services.env` and `relay.env` tell the games and the nodes (the edge port, the relay port, the relay's way back
+to the router), so a host on non-default ports says so before anything starts. `./ovs.sh compose dbs|services ...`
+runs any other Compose command with the same settings (`./ovs.sh compose services exec matchflow ovsctl settings
+list`).
+
+Two stacks on one host (a testing one beside prod) need their own `OVS_PROJECT` (the project and volume names),
+`OVS_NETWORK`, ports and directories.
+
 ## Layout on the host
 
 ```
@@ -41,8 +74,8 @@ the host's own network. Everything else stays on `ovs`.
 
 ## Moving onto an existing host
 
-The dbs project is not needed where MongoDB and Redis already run: attach the services project to that network
-(`networks.ovs.name`) and point `MONGODB_URI` and `REDIS*` at them. The TS server kept its data in the database named
+The dbs project is not needed where MongoDB and Redis already run: set `OVS_NETWORK` to their network and point
+`MONGODB_URI` and `REDIS*` at them, then `./ovs.sh up services`. The TS server kept its data in the database named
 `test`; `MONGODB_URI`'s path must say so, or the services start from an empty database.
 
 ## A bench

@@ -19,6 +19,7 @@
 #                   default, 127.0.0.1, is reachable only from this host (see ../README.md)
 #   OVS_RELAY_PORT  the relay's UDP port (41234); OVS_RENDEZVOUS_PORT the rendezvous's (41235); OVS_RELAY_TAG the
 #                   rollback image's tag
+#   OVS_NETWORK     the stores' network this project joins (ovs, the dbs project's); another name joins existing stores
 #
 # Nothing but the router, the edge and the relay is reachable from outside; the services talk on `ovs`. The images
 # carry EXPOSE for their control ports; to reach one over TCP instead of its socket, add a 127.0.0.1 mapping here.
@@ -179,5 +180,5 @@ services:
 
 networks:
   ovs:
-    name: ovs
+    name: ${OVS_NETWORK:-ovs}
     external: true

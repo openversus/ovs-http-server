@@ -25,6 +25,7 @@
     <EmbeddedResource Include="Static/*.json" LogicalName="OpenVersus.Server.Core.Static.%(Filename)%(Extension)" />
     <EmbeddedResource Include="FileStorage/*.json" LogicalName="OpenVersus.Server.Core.FileStorage.%(Filename)%(Extension)" />
     <EmbeddedResource Include="Inventory/*.json" LogicalName="OpenVersus.Server.Core.Inventory.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Arenas/*.json" LogicalName="OpenVersus.Server.Core.Arenas.%(Filename)%(Extension)" />
     <!-- A copy of the TS server's src/data/node-config.json (the image's build context is dotnet/ alone); NodeConfigTests
          fails when the two differ, so both servers hand P2P nodes the same settings update by default. -->
     <EmbeddedResource Include="Matches/node-config.json" LogicalName="OpenVersus.Server.Core.Matches.node-config.json" />

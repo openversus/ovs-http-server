@@ -123,6 +123,121 @@ public static class ArenaState
         ["SelectableCharacters"] = new JsonArray([.. participant.Selectable.Select(c => (JsonNode?)c)]),
     };
 
+    /// <summary>
+    /// ArenaData for <paramref name="run"/> as it stands: each player's offer (in the character select, until they pick),
+    /// fighter, coins, items and this round's shop pages (in the shop); each team's health, record, streaks, opponents
+    /// (RoundOpponents, read by the game's Arena Status before the match; a mirror opponent is written as the team's own
+    /// TeamId, P) and rank.
+    /// </summary>
+    public static JsonObject Data(ArenaRun run, ArenaRules rules)
+    {
+        var players = new JsonArray();
+        var playerInfo = new JsonObject();
+        var teamInfo = new JsonObject();
+        var standing = run.Teams.Where(t => t.In).OrderByDescending(t => t.Life).Select(t => t.Index).ToList();
+        foreach (var team in run.Teams)
+        {
+            foreach (string id in team.Members)
+            {
+                players.Add(id);
+                playerInfo[id] = Player(run, run.Players[id], rules);
+            }
+
+            teamInfo[TeamId(team.Index)] = new JsonObject
+            {
+                ["TeamId"] = TeamId(team.Index),
+                ["TeamIndex"] = team.Index,
+                ["LifeRemaining"] = Math.Max(0, team.Life),
+                ["FinalRank"] = team.FinalRank,
+                ["Stats"] = new JsonObject
+                {
+                    ["Wins"] = team.Wins, ["Losses"] = team.Losses, ["Draws"] = 0, ["WinStreak"] = team.WinStreak, ["LoseStreak"] = team.LoseStreak,
+                    ["MatchStats"] = MatchStats(),
+                },
+                ["Players"] = new JsonArray([.. team.Members.Select(m => (JsonNode?)m)]),
+                ["RoundOpponents"] = new JsonArray([.. team.Opponents.Select(o => (JsonNode?)TeamId(o == ArenaRun.Mirror ? team.Index : o))]),
+                ["Rank"] = team.In ? standing.IndexOf(team.Index) + 1 : team.FinalRank,
+            };
+        }
+
+        return new JsonObject
+        {
+            ["ArenaId"] = run.Id,
+            ["Players"] = players,
+            ["PlayerInfo"] = playerInfo,
+            ["TeamInfo"] = teamInfo,
+            ["CurrentRound"] = run.Round,
+        };
+    }
+
+    /// <summary>What a reader's config carries beside it for <paramref name="run"/>: <see cref="ConfigData(JsonObject, string)"/> of its ArenaData.</summary>
+    public static JsonObject ConfigData(ArenaRun run, string reader, ArenaRules rules)
+    {
+        var data = ConfigData(Data(run, rules), reader);
+        data["ArenaConstants"] = rules.Constants();
+        return data;
+    }
+
+    private static JsonObject Player(ArenaRun run, ArenaRunPlayer player, ArenaRules rules)
+    {
+        bool selecting = run.Phase == ArenaPhase.CharacterSelect && player.Character is null;
+        bool shopping = run.Phase == ArenaPhase.Shop && !player.IsBot;
+        var pages = shopping ? player.ShopPages : [];
+        return new JsonObject
+        {
+            ["Username"] = player.Username,
+            ["AccountID"] = player.Id,
+            ["TeamId"] = TeamId(player.Team),
+            ["bIsBot"] = player.IsBot,
+            ["AccountInfo"] = new JsonObject { ["Name"] = player.Username, ["Banner"] = "", ["RingOutVfx"] = "", ["ProfileIcon"] = "" },
+            ["Loadout"] = new JsonObject { ["Character"] = player.Character ?? "", ["Skin"] = player.Skin ?? "" },
+            ["playerData"] = new JsonObject
+            {
+                ["Inventory"] = new JsonArray([.. player.Inventory.Select(i => (JsonNode?)Owned(i, rules))]),
+                ["CurrencyAmount"] = player.Coins,
+                ["InterestPer"] = rules.InterestPer,
+                ["ShopRerollCost"] = rules.ShopRerollCost,
+                ["FreeShopRerolls"] = 0,
+            },
+            ["Stats"] = new JsonObject
+            {
+                ["MatchStats"] = MatchStats(),
+                ["InterestGained"] = 0, ["CurrencySpent"] = 0, ["ItemsLeveled"] = 0, ["ItemsPurchased"] = 0, ["ItemsSold"] = 0, ["ShopRerolls"] = 0,
+                ["bRandomCharacter"] = player.RandomPick,
+            },
+            ["CurrentShop"] = new JsonArray([.. (pages.Count > 0 ? pages[0] : []).Select(slug => (JsonNode?)Offer(slug, rules))]),
+            // The game reads the first page unchecked when its shop opens (crash 2026-10-11 when it was empty).
+            ["CurrentShopLocal"] = new JsonArray([.. pages.Select(page => (JsonNode?)new JsonObject
+            {
+                ["CurrentShop"] = new JsonArray([.. page.Select(slug => (JsonNode?)Offer(slug, rules))]),
+            })]),
+            // The game opens the character select while its reader has fighters on offer, else the shop.
+            ["SelectableCharacters"] = new JsonArray([.. (selecting ? player.Pool : []).Select(c => (JsonNode?)c)]),
+        };
+    }
+
+    private static JsonObject Offer(string slug, ArenaRules rules)
+    {
+        int cost = ArenaItems.Of(slug)?.Cost ?? 0;
+        return new JsonObject
+        {
+            ["Item"] = new JsonObject
+            {
+                ["Slug"] = slug, ["Level"] = 1, ["XP"] = 0, ["NextLevelXp"] = rules.ItemXpPerLevel.Count > 0 ? rules.ItemXpPerLevel[0] : 0, ["SellValue"] = cost / 2,
+            },
+            ["Cost"] = cost,
+        };
+    }
+
+    private static JsonObject Owned(ArenaOwnedItem owned, ArenaRules rules) => new()
+    {
+        ["Slug"] = owned.Slug,
+        ["Level"] = owned.Level,
+        ["XP"] = owned.Xp,
+        ["NextLevelXp"] = owned.Level - 1 < rules.ItemXpPerLevel.Count ? rules.ItemXpPerLevel[owned.Level - 1] : 0,
+        ["SellValue"] = ArenaRun.SellValue(owned),
+    };
+
     private static JsonObject MatchStats() => new()
     {
         ["RINGOUTS"] = 0, ["Damage"] = 0, ["DamagedAdded"] = 0, ["DamageMitigated"] = 0, ["KnockbackAdded"] = 0, ["KnockbackMitigated"] = 0,
@@ -142,48 +257,11 @@ public static class ArenaState
         ["ArenaConstants"] = Constants(),
     };
 
-    /// <summary>The rounds a run can last (the wiki: "winners play up to 13 rounds"): the per-round tables' length.</summary>
-    public const int MaxRounds = 13;
+    /// <summary>The rounds a run can last: the per-round tables' length (<see cref="ArenaRules.MaxRounds"/>).</summary>
+    public static int MaxRounds => ArenaRules.Default.MaxRounds;
 
-    /// <summary>
-    /// FMvsArenaConstantInfo. R = reconstructed from a source (docs/ARENAS.md: WB's rules text, the wiki, patch 1.4.1,
-    /// WB's Developer Series Q&A); P = PLACEHOLDER, no source, to become settings once the flow works.
-    /// </summary>
-    public static JsonObject Constants()
-    {
-        static JsonArray Rounds(Func<int, JsonNode> value) => new([.. Enumerable.Range(0, MaxRounds).Select(value)]);
-        return new JsonObject
-        {
-            ["RoundLength"] = RoundSeconds,                                          // R: "Played Out Over 90 Seconds"
-            ["HealthRoundValues"] = Rounds(r => 15 + 5 * r),                         // P: rising ("the later the rounds, the more damage")
-            ["HealthRoundScalars"] = Rounds(_ => 1.0),                               // P
-            ["CurrencyPerRound"] = Rounds(_ => 5),                                   // P
-            ["CurrencyForWin"] = 3,                                                  // P
-            ["CurrencyForWinStreak"] = new JsonArray(0, 1, 2, 3),                    // P
-            ["CurrencyForLoseStreak"] = new JsonArray(0, 1, 2, 3),                   // P
-            ["CurrencyPerRingout"] = Rounds(_ => 1),                                 // P
-            ["CharacterSelectTime"] = 30,                                            // P
-            ["ShopCharacterRerollCost"] = 3,                                         // R: wiki, "reroll 3 coins"
-            ["ShopRerollCost"] = ShopRerollCost,                                     // P
-            ["CurrencyForRandomCharacterSelect"] = 2,                                // R: wiki "2 coins" + the game's text (a random fighter GAINS coins)
-            ["InterestPer"] = InterestPer,                                           // R: patch 1.4.1 "1 per 6"
-            ["MaxInterest"] = 10,                                                    // R: patch 1.4.1 "more at max (10)"
-            ["FaceoffWaitTime"] = FaceoffWaitSeconds,                                // P
-            ["ItemXpPerLevel"] = new JsonArray(1, 3),                                // R: patch 1.4.1 "1 for level 2, 3 for level 3"
-            ["MaxItemsInInventory"] = 6,                                             // P
-            // P: weights by rarity per round, rarer later ("Rarer and more powerful items will show up in later rounds").
-            ["ShopLevelWeights"] = Rounds(r => new JsonObject
-            {
-                ["RarityWeight"] = new JsonObject
-                {
-                    ["Common"] = Math.Max(0, 50 - 5 * r), ["Uncommon"] = 30, ["Rare"] = 10 + 3 * r, ["Epic"] = 2 * r, ["Legendary"] = Math.Max(0, r - 4),
-                },
-            }),
-            // P: the shared pool's copies per rarity ("the shop's inventory is shared between all players").
-            ["ItemAmountsByRarity"] = new JsonObject { ["Common"] = 10, ["Uncommon"] = 8, ["Rare"] = 6, ["Epic"] = 4, ["Legendary"] = 2 },
-            ["InterestPerBoost"] = new JsonArray(),                                  // P
-        };
-    }
+    /// <summary>FMvsArenaConstantInfo for the default rules (<see cref="ArenaRules.Constants"/>).</summary>
+    public static JsonObject Constants() => ArenaRules.Default.Constants();
 
     /// <summary>The gameplay config fields that make a match an Arena round: ArenaModeInfo (its presence decides).</summary>
     public static JsonObject ModeInfo(int faceoffWaitSeconds, int shopSeconds, bool readyToStart) => new()

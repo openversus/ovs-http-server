@@ -1,0 +1,357 @@
+{
+ "_source": "tools/arenas/gen_items.py from the game's MvsArenaItemHsda assets",
+ "items": [
+  {
+   "slug": "arenaitem_airspecialist",
+   "rarity": "Uncommon",
+   "startingWeight": 55,
+   "weightPerRound": -2,
+   "cost": 14,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_andanotherone",
+   "rarity": "Uncommon",
+   "startingWeight": 55,
+   "weightPerRound": -2,
+   "cost": 6,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_armorcrush",
+   "rarity": "Rare",
+   "startingWeight": 35,
+   "weightPerRound": 1,
+   "cost": 12,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_attackpower",
+   "rarity": "Common",
+   "startingWeight": 70,
+   "weightPerRound": -2,
+   "cost": 4,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_bladeandshield",
+   "rarity": "Uncommon",
+   "startingWeight": 55,
+   "weightPerRound": -2,
+   "cost": 6,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_brainandbrawn",
+   "rarity": "Uncommon",
+   "startingWeight": 55,
+   "weightPerRound": -2,
+   "cost": 6,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_bulletproofjuggernaut",
+   "rarity": "Rare",
+   "startingWeight": 35,
+   "weightPerRound": 1,
+   "cost": 8,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_cementshoes",
+   "rarity": "Uncommon",
+   "startingWeight": 55,
+   "weightPerRound": -2,
+   "cost": 16,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_coldbreeze",
+   "rarity": "Rare",
+   "startingWeight": 35,
+   "weightPerRound": 1,
+   "cost": 8,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_dashingconfidence",
+   "rarity": "Rare",
+   "startingWeight": 35,
+   "weightPerRound": 1,
+   "cost": 12,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_defensepower",
+   "rarity": "Common",
+   "startingWeight": 70,
+   "weightPerRound": -2,
+   "cost": 4,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_devilishcontract",
+   "rarity": "Legendary",
+   "startingWeight": 0,
+   "weightPerRound": 2,
+   "cost": 12,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_dodger",
+   "rarity": "Rare",
+   "startingWeight": 35,
+   "weightPerRound": 1,
+   "cost": 16,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_doubletake",
+   "rarity": "Epic",
+   "startingWeight": 20,
+   "weightPerRound": 1,
+   "cost": 10,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_embracetheelements",
+   "rarity": "Rare",
+   "startingWeight": 35,
+   "weightPerRound": 1,
+   "cost": 8,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_emergencygadget",
+   "rarity": "Legendary",
+   "startingWeight": 0,
+   "weightPerRound": 2,
+   "cost": 12,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_empatheticresponse",
+   "rarity": "Epic",
+   "startingWeight": 20,
+   "weightPerRound": 1,
+   "cost": 16,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_emptypockets",
+   "rarity": "Rare",
+   "startingWeight": 35,
+   "weightPerRound": 1,
+   "cost": 7,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_enragedresponse",
+   "rarity": "Epic",
+   "startingWeight": 20,
+   "weightPerRound": 1,
+   "cost": 16,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_explosivepanic",
+   "rarity": "Uncommon",
+   "startingWeight": 55,
+   "weightPerRound": -2,
+   "cost": 7,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_finishthem",
+   "rarity": "Rare",
+   "startingWeight": 35,
+   "weightPerRound": 1,
+   "cost": 8,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_goldsuit",
+   "rarity": "Epic",
+   "startingWeight": 20,
+   "weightPerRound": 1,
+   "cost": 7,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_groundpound",
+   "rarity": "Epic",
+   "startingWeight": 20,
+   "weightPerRound": 1,
+   "cost": 16,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_heroiclanding",
+   "rarity": "Rare",
+   "startingWeight": 35,
+   "weightPerRound": 1,
+   "cost": 16,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_homingrockets",
+   "rarity": "Epic",
+   "startingWeight": 20,
+   "weightPerRound": 1,
+   "cost": 10,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_hotandcold",
+   "rarity": "Rare",
+   "startingWeight": 35,
+   "weightPerRound": 1,
+   "cost": 8,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_ddd",
+   "rarity": "Uncommon",
+   "startingWeight": 55,
+   "weightPerRound": -2,
+   "cost": 7,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_iwantyoutohitme",
+   "rarity": "Uncommon",
+   "startingWeight": 55,
+   "weightPerRound": -2,
+   "cost": 6,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_interestboost",
+   "rarity": "Common",
+   "startingWeight": 70,
+   "weightPerRound": -2,
+   "cost": 7,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_notoutyet",
+   "rarity": "Epic",
+   "startingWeight": 20,
+   "weightPerRound": 1,
+   "cost": 10,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_passinggas",
+   "rarity": "Uncommon",
+   "startingWeight": 55,
+   "weightPerRound": -2,
+   "cost": 7,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_projectiledamageincrease",
+   "rarity": "Common",
+   "startingWeight": 70,
+   "weightPerRound": -2,
+   "cost": 4,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_punchyobuns",
+   "rarity": "Common",
+   "startingWeight": 70,
+   "weightPerRound": -2,
+   "cost": 4,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_reactiveplating",
+   "rarity": "Rare",
+   "startingWeight": 35,
+   "weightPerRound": 1,
+   "cost": 16,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_regen",
+   "rarity": "Epic",
+   "startingWeight": 20,
+   "weightPerRound": 1,
+   "cost": 12,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_rerollshop",
+   "rarity": "Uncommon",
+   "startingWeight": 55,
+   "weightPerRound": -2,
+   "cost": 8,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_ringoutheal",
+   "rarity": "Common",
+   "startingWeight": 70,
+   "weightPerRound": -2,
+   "cost": 12,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_thebiggertheyare",
+   "rarity": "Legendary",
+   "startingWeight": 0,
+   "weightPerRound": 2,
+   "cost": 12,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_thorns",
+   "rarity": "Uncommon",
+   "startingWeight": 55,
+   "weightPerRound": -2,
+   "cost": 6,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_triggerhappy",
+   "rarity": "Uncommon",
+   "startingWeight": 55,
+   "weightPerRound": -2,
+   "cost": 6,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_vampire",
+   "rarity": "Epic",
+   "startingWeight": 20,
+   "weightPerRound": 1,
+   "cost": 16,
+   "costSource": "asset"
+  },
+  {
+   "slug": "arenaitem_verticalattackpower",
+   "rarity": "Common",
+   "startingWeight": 70,
+   "weightPerRound": -2,
+   "cost": 4,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_wallthemout",
+   "rarity": "Common",
+   "startingWeight": 70,
+   "weightPerRound": -2,
+   "cost": 4,
+   "costSource": "wiki"
+  },
+  {
+   "slug": "arenaitem_whatachicken",
+   "rarity": "Uncommon",
+   "startingWeight": 55,
+   "weightPerRound": -2,
+   "cost": 6,
+   "costSource": "wiki"
+  }
+ ]
+}

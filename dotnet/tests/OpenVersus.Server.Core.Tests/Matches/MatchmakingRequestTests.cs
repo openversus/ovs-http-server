@@ -3,11 +3,13 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenVersus.Server.Core.Hiss;
+using OpenVersus.Server.Core.Arenas;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Cosmetics;
 using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Core.Leaderboards;
+using OpenVersus.Server.Core.Lobbies;
 using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Matchmaking;
 using OpenVersus.Server.Core.Realtime;
@@ -25,6 +27,8 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     private static readonly string? s_redis = Environment.GetEnvironmentVariable("OVS_TEST_REDIS");
     private const string Me = "0000000000000000000b0001";
     private const string Mate = "0000000000000000000b0002";
+    // An Arena lobby's third and fourth players.
+    private const string Third = "0000000000000000000b0003", Fourth = "0000000000000000000b0004";
     private const string Lobby = "0000000000000000000b0100";
     private const string Ip = "198.51.100.31";
 
@@ -121,8 +125,8 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
             await Db.KeyDeleteAsync(key);
         }
 
-        await Db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, MatchmakingWorker.Ffa, $"connections:{Ip}"]);
-        await Db.HashDeleteAsync(MatchmakingQueue.QueuedKey, [Me, Mate]);
+        await Db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, MatchmakingWorker.Ffa, ArenaMatchmaking.List, $"connections:{Ip}"]);
+        await Db.HashDeleteAsync(MatchmakingQueue.QueuedKey, [Me, Mate, Third, Fourth]);
     }
 
     private IDatabase Db => _redis!.GetDatabase();
@@ -173,7 +177,21 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         }
     }
 
-    private static readonly string[] s_lists = ["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2];
+    private static readonly string[] s_lists = ["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, ArenaMatchmaking.List];
+
+    // An Arena lobby led by <paramref name="players"/>[0], as ArenaLobbyService stores one.
+    private async Task ArenaLobbyAsync(params string[] players)
+    {
+        await Db.StringSetAsync($"lobby:{Lobby}", Js.Stringify(new JsonObject
+        {
+            ["lobbyId"] = Lobby, ["ownerId"] = players[0], ["ownerUsername"] = "Leader", ["mode"] = ArenaLobby.TemplateName,
+            ["playerIds"] = new JsonArray([.. players.Select(p => (JsonNode?)p)]), ["createdAt"] = 0,
+        }));
+        foreach (string p in players)
+        {
+            await Db.StringSetAsync($"player_lobby:{p}", Lobby);
+        }
+    }
 
     // This class's tickets in the queues' lists.
     private async Task<List<string>> TicketsAsync()
@@ -596,18 +614,115 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         Assert.Equal([Me], _gate.Modals);
     }
 
-    [Theory]
+    [SkippableTheory]
     [InlineData("arena-retail")]
     [InlineData("arena")]
-    // The Arena lobby's Start Matchmaking: refused as a closed queue is, never the catch-all (no ticket: the game waits
-    // with every button disabled). Needs no Redis: nothing is read.
-    public async Task AnArenaRequestIsRefusedNotLeftWithoutATicket(string criteria)
+    // The Arena lobby's Start Matchmaking (its leader's): the whole lobby, every player, on one ticket on the arena list,
+    // which no worker matches; the game's own timer cancels it and starts the Arena with bots.
+    public async Task AnArenaLeadersRequestQueuesTheWholeLobbyAsOneTicket(string criteria)
     {
-        var answer = (await Service(withRedis: false).RequestAsync(criteria, Asking(Me), CancellationToken.None))!;
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        foreach (string p in (string[])[Me, Mate, Third, Fourth])
+        {
+            await PlayerAsync(p);
+        }
 
-        Assert.Equal((200, Js.Stringify(OpenVersus.Server.Core.Arenas.ArenaMatchmaking.Unavailable())), (answer.Status, Js.Stringify(answer.Body)));
-        Assert.Equal(1, (int)answer.Body["return_code"]!);
-        Assert.Null(answer.After);
+        await ArenaLobbyAsync(Me, Mate, Third, Fourth);
+
+        var answer = (await Service().RequestAsync(criteria, Asking(Me), CancellationToken.None))!;
+
+        Assert.Equal(("arena-retail", Lobby, 4), ((string?)answer.Body["criteria_slug"], (string?)answer.Body["party_id"], (int)answer.Body["data"]!["player_count"]!));
+        Assert.Equal([Me, Mate, Third, Fourth], answer.Body["players"]!.AsObject().Select(e => e.Key));
+        await answer.After!();
+        var ticket = Js.Parse(await QueuedAsync())!;
+        Assert.Equal((ArenaMatchmaking.List, Me), ((string?)ticket["matchType"], (string?)ticket["partyLeaderId"]));
+        Assert.Equal([Me, Mate, Third, Fourth], ticket["players"]!.AsArray().Select(p => (string)p!["id"]!));
+        Assert.Single(await TicketsAsync());
+    }
+
+    [SkippableFact]
+    // start_arena_direct (the game's Arena timer ran out): the Arena starts with all 16 places, its player's team (them and
+    // a bot) plays its round-1 2v2 against a bot team; a second start starts nothing.
+    public async Task AnArenaStartsWithSixteenAndPlaysItsPlayersTeam()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await PlayerAsync(Me);
+        await ArenaLobbyAsync(Me);
+        var asking = Asking(Me) with { Body = new JsonObject { ["ArenaLobbyId"] = Lobby, ["MatchId"] = Lobby, ["Mode"] = "" } };
+
+        var answer = await Service().ArenaBotsAsync(asking, CancellationToken.None);
+
+        Assert.NotNull(answer["body"]!["Crc"]);
+        var arena = Js.Parse((string)(await Db.StringGetAsync($"lobby:{Lobby}"))!)!["arena"]!;
+        var teams = arena["teams"]!.AsArray().Select(t => t!.AsArray().Select(p => (string)p!).ToList()).ToList();
+        Assert.Equal(16, teams.SelectMany(t => t).Distinct().Count());
+        Assert.All(teams, t => Assert.Equal(2, t.Count));
+        Assert.Equal(Me, teams[0][0]);
+        var launch = _launcher.Launched!;
+        Assert.Equal("2v2", launch.Mode);
+        Assert.Equal([(Me, 0, 0, true)], launch.Players.Where(p => !p.IsBot).Select(p => (p.PlayerId, p.PlayerIndex, p.TeamIndex, p.IsHost)));
+        Assert.Equal([(1, 1), (2, 0), (3, 1)], launch.Players.Where(p => p.IsBot).Select(p => (p.PlayerIndex, p.TeamIndex)).Order());
+        Assert.Contains(launch.Players.Single(p => p.TeamIndex == 0 && p.IsBot).PlayerId, teams[0]);
+        // An Arena round: ArenaModeInfo in the config (its presence makes the match an Arena), timed, no ring-out target;
+        // the Arena beside the config, with the player's own entry.
+        Assert.False((bool)launch.GameplayConfigOverride!["ArenaModeInfo"]!["bReadyToStart"]!);
+        Assert.Equal((90, 0), ((int)launch.NotificationFields!["customMatchTime"]!, (int)launch.NotificationFields["customNumRingouts"]!));
+        Assert.Equal(16, launch.ConfigData!["ArenaData"]!["Players"]!.AsArray().Count);
+        Assert.Equal(Me, (string?)launch.ConfigData["ArenaPlayerInfo"]!["AccountID"]);
+        Assert.Equal(ArenaState.SelectableCount, launch.ConfigData["ArenaPlayerInfo"]!["SelectableCharacters"]!.AsArray().Count);
+        var characters = new List<string>();
+        foreach (string bot in teams.SelectMany(t => t).Where(p => p != Me))
+        {
+            characters.Add((string)(await Db.HashGetAsync($"bot_config:{bot}", "character"))!);
+            await Db.KeyDeleteAsync($"bot_config:{bot}");
+        }
+
+        Assert.Equal(15, characters.Distinct().Count());
+
+        await Service().ArenaBotsAsync(asking, CancellationToken.None);
+        Assert.Same(launch, _launcher.Launched);
+        Assert.Equal(arena.ToJsonString(), Js.Parse((string)(await Db.StringGetAsync($"lobby:{Lobby}"))!)!["arena"]!.ToJsonString());
+    }
+
+    [SkippableFact]
+    // Only an Arena lobby's leader has Start Matchmaking: a member's request, or one from outside an Arena lobby, is refused
+    // as a closed queue is, never the catch-all (no ticket: the game waits with every button disabled).
+    public async Task AnArenaRequestFromAnyoneButItsLeaderIsRefused()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await PlayerAsync(Me);
+        await PlayerAsync(Mate);
+        await ArenaLobbyAsync(Me, Mate);
+
+        var member = (await Service().RequestAsync("arena-retail", Asking(Mate), CancellationToken.None))!;
+        await LobbyAsync(Me, Mate);
+        var party = (await Service().RequestAsync("arena-retail", Asking(Me), CancellationToken.None))!;
+
+        foreach (var answer in (MatchmakingAnswer[])[member, party])
+        {
+            Assert.Equal((200, Js.Stringify(ArenaMatchmaking.Unavailable())), (answer.Status, Js.Stringify(answer.Body)));
+            Assert.Null(answer.After);
+        }
+
+        Assert.Empty(await TicketsAsync());
+    }
+
+    [SkippableFact]
+    // The game's cancel (its bot timer's, or Cancel Matchmaking) takes the Arena lobby's ticket out, held by a connected
+    // game or not.
+    public async Task ACancelTakesTheArenaLobbysTicketOut()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await PlayerAsync(Me);
+        await PlayerAsync(Mate);
+        await ArenaLobbyAsync(Me, Mate);
+        var answer = (await Service().RequestAsync("arena-retail", Asking(Me), CancellationToken.None))!;
+        await answer.After!();
+        await QueuedAsync();
+
+        await Service().CancelAsync((string)answer.Body["id"]!, Asking(Mate), CancellationToken.None);
+
+        Assert.Empty(await TicketsAsync());
     }
 
     [Fact]

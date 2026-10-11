@@ -123,7 +123,18 @@ upgrade_track_to_premium retry_current_rift_node""".split()
 SSC_BENCH = {"retry_current_rift_node": ("PUT", "bench proxy log 2026-09-30 (Retry on a rift match's results)"),
              "casual_queue": ("PUT", "bench proxy log 2026-10-02 (the Casual queue's fall back to bots)"),
              "create_arena_lobby": ("PUT", "bench log 2026-10-10 (the mode select's Arena button)"),
-             "join_arena_lobby": ("PUT", "bench log 2026-10-10 (accepting an invite with ContextData.LobbyType Arena)")}
+             "join_arena_lobby": ("PUT", "bench log 2026-10-10 (accepting an invite with ContextData.LobbyType Arena)"),
+             "start_arena_direct": ("PUT", "bench 2026-10-11 (the Arena matchmaking bot timer's call after its cancel, 0x1425d96e0)"),
+             "arena_select_character": ("PUT", "client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"),
+             "arena_select_character_absent": ("PUT", "client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"),
+             "arena_reroll_characters": ("PUT", "client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"),
+             "arena_purchase_item": ("PUT", "client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"),
+             "arena_sell_item": ("PUT", "client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"),
+             "arena_reroll_shop": ("PUT", "client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"),
+             "arena_player_shop_closed": ("PUT", "client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"),
+             "arena_shop_absent": ("PUT", "client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"),
+             "arena_checkin": ("PUT", "client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"),
+             "arena_match_absent": ("PUT", "client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11")}
 
 # Routes only the C# server has (no TS route, capture or binary string): method, path, note.
 CSHARP_ONLY = [("POST", "/ovs_match_inputs", "C# only: the rollback server's recording of a match's inputs (its InputRecording settings)")]

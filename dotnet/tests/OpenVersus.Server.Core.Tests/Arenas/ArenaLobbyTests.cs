@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
 using OpenVersus.Server.Core.Arenas;
+using OpenVersus.Server.Core.Compat;
+using OpenVersus.Server.Core.Lobbies;
 
 namespace OpenVersus.Server.Core.Tests.Arenas;
 
@@ -52,5 +54,60 @@ public sealed class ArenaLobbyTests
         // GameplayPreferences is the value it is given, 0 included (see GameplayPreferences.Of).
         Assert.Equal(448, (int)lobby["PlayerGameplayPreferences"]![Me]!);
         Assert.Equal("character_batman", (string)lobby["LockedLoadouts"]![Me]!["Character"]!);
+    }
+    // An Arena lobby as stored: its players and their teams.
+    private static ArenaLobby Stored(params (string Id, int Team)[] players) => (ArenaLobby)Lobby.FromJson("0000000000000000000a0100", Js.Stringify(new JsonObject
+    {
+        ["lobbyId"] = "0000000000000000000a0100", ["ownerId"] = players[0].Id, ["ownerUsername"] = "Leader", ["mode"] = ArenaLobby.TemplateName,
+        ["playerIds"] = new JsonArray([.. players.Select(p => (JsonNode?)p.Id)]), ["createdAt"] = 0,
+        ["teams"] = new JsonObject([.. players.Select(p => KeyValuePair.Create(p.Id, (JsonNode?)p.Team))]),
+    }))!;
+
+    [Fact]
+    // An Arena always starts with all 16 places: the players on their teams, in lobby order, every empty place a bot's.
+    public void TheRosterFillsEveryEmptyPlaceWithABot()
+    {
+        var lobby = Stored(("a", 0), ("b", 3), ("c", 0));
+        Assert.Equal(13, lobby.EmptyPlaces);
+        string[] bots = [.. Enumerable.Range(1, 13).Select(n => $"bot{n}")];
+
+        var teams = lobby.Roster(bots);
+
+        Assert.Equal(ArenaLobby.TeamCount, teams.Count);
+        Assert.All(teams, t => Assert.Equal(ArenaLobby.TeamSize, t.Count));
+        Assert.Equal(["a", "c"], teams[0]);
+        Assert.Equal(["bot1", "bot2"], teams[1]);
+        Assert.Equal(["b", "bot5"], teams[3]);
+        Assert.Equal(ArenaLobby.Capacity, teams.SelectMany(t => t).Distinct().Count());
+    }
+
+    [Fact]
+    public void AStartedArenaKeepsItsTeamsEachAt100Health()
+    {
+        var lobby = Stored(("a", 0));
+        var teams = lobby.Roster([.. Enumerable.Range(1, 15).Select(n => $"bot{n}")]);
+        Assert.False(lobby.IsStarted);
+
+        lobby.Start(teams, 1_000);
+
+        Assert.True(lobby.IsStarted);
+        var read = (ArenaLobby)Lobby.FromJson(lobby.Id, lobby.ToJson())!;
+        Assert.Equal(teams, read.ArenaTeams);
+        var arena = JsonNode.Parse(lobby.ToJson())!["arena"]!;
+        Assert.Equal(Enumerable.Repeat(100, 8), arena["life"]!.AsArray().Select(l => (int)l!));
+        Assert.Equal(1, (int)arena["round"]!);
+        Assert.Throws<ArgumentException>(() => lobby.Start([.. teams.Take(7)], 1_000));
+    }
+
+    [Fact]
+    // Each round's 2v2s: every team in exactly one.
+    public void APairingHasEveryTeamOnce()
+    {
+        for (int seed = 0; seed < 50; seed++)
+        {
+            var pairs = ArenaLobby.Pairings(new Random(seed));
+            Assert.Equal(4, pairs.Count);
+            Assert.Equal(Enumerable.Range(0, 8), pairs.SelectMany(p => new[] { p.A, p.B }).Order());
+        }
     }
 }

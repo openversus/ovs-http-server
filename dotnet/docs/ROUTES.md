@@ -17,8 +17,8 @@ override header, not on the wire method. `?` means the method is not known yet.
 **Websockets** (not in the tables): the Hydra realtime socket (the ws service; binary Hydra messages; the
 server pings `0x0c` every 20 s and the game answers `0x0a`).
 
-**Totals.** 255 routes. The game can call 212 Hydra/engine/social routes and SSC functions; the TS
-server answers 115. Not answered: 33 routes and 64 SSC functions.
+**Totals.** 266 routes. The game can call 223 Hydra/engine/social routes and SSC functions; the TS
+server answers 115. Not answered: 33 routes and 75 SSC functions.
 OpenVersus's own, not the game: openversus client mod 10, rollback server 11, website (browser) 18, admin and data sync 4.
 
 Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ovs-client`,
@@ -67,6 +67,16 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 | Method | Route | Owner | Game source | TS server | Notes |
 |---|---|---|---|---|---|
 | ? | `/ssc/invoke/activate_timed_boost` | http | binary `ssc name` | **no** | ssc: binary |
+| PUT | `/ssc/invoke/arena_checkin` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_match_absent` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_player_shop_closed` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_purchase_item` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_reroll_characters` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_reroll_shop` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_select_character` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_select_character_absent` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_sell_item` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_shop_absent` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
 | PUT | `/ssc/invoke/bot_queue` | lobbies | binary `ssc name`, capture ×1 | **no** | ssc: binary |
 | PUT | `/ssc/invoke/casual_queue` | lobbies | binary `ssc name` | **no** | ssc: binary; method from the bench proxy log 2026-10-02 (the Casual queue's fall back to bots) |
 | ? | `/ssc/invoke/check_leaver_punishment` | http | binary `ssc name` | **no** | ssc: binary |
@@ -124,6 +134,7 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 | ? | `/ssc/invoke/set_chapter_difficulty` | http | binary `ssc name` | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/set_joinable` | lobbies | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/skip_rift_node` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/start_arena_direct` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the bench 2026-10-11 (the Arena matchmaking bot timer's call after its cancel, 0x1425d96e0) |
 | PUT | `/ssc/invoke/start_rift_node` | http | binary `ssc name`, capture ×1 | **no** | ssc: binary (probable) |
 | ? | `/ssc/invoke/sync_match_config` | matchflow | binary `ssc name` | **no** | ssc: binary |
 | ? | `/ssc/invoke/unlock_ftue_character` | http | binary `ssc name` | **no** | ssc: binary |
@@ -287,6 +298,16 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 |---|---|---|---|---|---|
 | ? | `/ssc/invoke/activate_timed_boost` | http | binary `ssc name` | **no** | ssc: binary |
 | PUT | `/ssc/invoke/add_custom_game_bot` | lobbies | binary `ssc name` | yes | ssc: binary |
+| PUT | `/ssc/invoke/arena_checkin` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_match_absent` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_player_shop_closed` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_purchase_item` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_reroll_characters` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_reroll_shop` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_select_character` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_select_character_absent` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_sell_item` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
+| PUT | `/ssc/invoke/arena_shop_absent` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11 |
 | POST | `/ssc/invoke/attempt_daily_refresh` | http | binary `ssc name`, capture ×11 | yes | ssc: server/capture |
 | PUT | `/ssc/invoke/autoparty_join` | lobbies | binary `ssc name` | yes | ssc: server/capture |
 | PUT | `/ssc/invoke/bot_queue` | lobbies | binary `ssc name`, capture ×1 | **no** | ssc: binary |
@@ -400,6 +421,7 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 | PUT | `/ssc/invoke/set_ready_for_lobby` | lobbies | binary `ssc name`, capture ×10 | yes | ssc: server/capture |
 | PUT | `/ssc/invoke/set_world_buffs_for_custom_game` | lobbies | binary `ssc name` | yes | ssc: binary |
 | ? | `/ssc/invoke/skip_rift_node` | http | binary `ssc name` | **no** | ssc: binary (probable) |
+| PUT | `/ssc/invoke/start_arena_direct` | lobbies | binary `ssc name` | **no** | ssc: server/capture; method from the bench 2026-10-11 (the Arena matchmaking bot timer's call after its cancel, 0x1425d96e0) |
 | PUT | `/ssc/invoke/start_custom_match` | lobbies | binary `ssc name` | yes | ssc: server/capture; not a whole string in the exe (likely built inline); the server implements it because the game calls it |
 | PUT | `/ssc/invoke/start_rift_node` | http | binary `ssc name`, capture ×1 | **no** | ssc: binary (probable) |
 | PUT | `/ssc/invoke/submit_end_of_match_stats` | http | binary `ssc name`, capture ×9 | yes | ssc: server/capture |

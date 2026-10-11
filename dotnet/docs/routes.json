@@ -1965,6 +1965,166 @@
     "owner": "lobbies"
   },
   {
+    "method": "PUT",
+    "path": "/ssc/invoke/arena_checkin",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: server/capture",
+      "method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false,
+    "owner": "lobbies"
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/arena_match_absent",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: server/capture",
+      "method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false,
+    "owner": "lobbies"
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/arena_player_shop_closed",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: server/capture",
+      "method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false,
+    "owner": "lobbies"
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/arena_purchase_item",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: server/capture",
+      "method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false,
+    "owner": "lobbies"
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/arena_reroll_characters",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: server/capture",
+      "method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false,
+    "owner": "lobbies"
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/arena_reroll_shop",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: server/capture",
+      "method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false,
+    "owner": "lobbies"
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/arena_select_character",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: server/capture",
+      "method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false,
+    "owner": "lobbies"
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/arena_select_character_absent",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: server/capture",
+      "method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false,
+    "owner": "lobbies"
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/arena_sell_item",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: server/capture",
+      "method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false,
+    "owner": "lobbies"
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/arena_shop_absent",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: server/capture",
+      "method from the client binary 2026-10-10 (arenas-protocol.md); routed for logging 2026-10-11"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false,
+    "owner": "lobbies"
+  },
+  {
     "method": "POST",
     "path": "/ssc/invoke/attempt_daily_refresh",
     "area": "ssc",
@@ -3774,6 +3934,22 @@
     "in_game": true,
     "in_server": false,
     "owner": "http"
+  },
+  {
+    "method": "PUT",
+    "path": "/ssc/invoke/start_arena_direct",
+    "area": "ssc",
+    "binary": "ssc name",
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "ssc: server/capture",
+      "method from the bench 2026-10-11 (the Arena matchmaking bot timer's call after its cancel, 0x1425d96e0)"
+    ],
+    "kind": "game",
+    "in_game": true,
+    "in_server": false,
+    "owner": "lobbies"
   },
   {
     "method": "PUT",

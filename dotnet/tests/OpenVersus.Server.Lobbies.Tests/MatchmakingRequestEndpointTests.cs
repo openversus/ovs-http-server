@@ -30,6 +30,7 @@ public sealed class MatchmakingRequestEndpointTests(ServiceFactory<Program> fact
         public Task<JsonObject> CancelAsync(string requestId, PartyRequest request, CancellationToken ct) => throw new NotSupportedException();
 
         public Task<JsonObject> CasualBotsAsync(PartyRequest request, CancellationToken ct) => throw new NotSupportedException();
+        public Task<JsonObject> ArenaBotsAsync(PartyRequest request, CancellationToken ct) => throw new NotSupportedException();
     }
 
     private static readonly string? s_redis = Environment.GetEnvironmentVariable("OVS_TEST_REDIS");

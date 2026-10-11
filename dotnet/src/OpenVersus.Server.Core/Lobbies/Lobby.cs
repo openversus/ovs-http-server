@@ -198,6 +198,74 @@ public sealed class ArenaLobby : Lobby
 
     public bool IsFull => PlayerIds.Count >= Capacity;
 
+    /// <summary>The health every team starts the Arena with (WB: "Each team starts at 100 Health").</summary>
+    public const int StartingLife = 100;
+
+    /// <summary>Whether the Arena has started: its teams are set (the "arena" field).</summary>
+    public bool IsStarted => Field("arena") is JsonObject;
+
+    /// <summary>The started Arena's teams, by team index: each its participants, players and bots.</summary>
+    public IReadOnlyList<IReadOnlyList<string>> ArenaTeams =>
+        Field("arena")?["teams"] is JsonArray teams
+            ? [.. teams.Select(t => (IReadOnlyList<string>)[.. (t as JsonArray ?? []).Select(p => p?.GetValue<string>() ?? "")])]
+            : [];
+
+    /// <summary>The started Arena's teams' health, by team index.</summary>
+    public IReadOnlyList<int> ArenaLife => Field("arena")?["life"] is JsonArray life ? [.. life.Select(l => l?.GetValue<int>() ?? 0)] : [];
+
+    /// <summary>The started Arena's round (0 before it starts).</summary>
+    public int ArenaRound => Field("arena")?["round"] is JsonValue r && r.TryGetValue(out int round) ? round : 0;
+
+    /// <summary>The places no player holds: as many bots fill them when the Arena starts.</summary>
+    public int EmptyPlaces => Enumerable.Range(0, TeamCount).Sum(t => TeamSize - Math.Min(TeamSize, PlayerIds.Count(p => TeamOf(p) == t)));
+
+    /// <summary>
+    /// The Arena's teams as it starts, always all <see cref="Capacity"/> places: each team's players (in lobby order), its
+    /// empty places taken by <paramref name="bots"/> in order (<see cref="EmptyPlaces"/> of them).
+    /// </summary>
+    public IReadOnlyList<IReadOnlyList<string>> Roster(IReadOnlyList<string> bots)
+    {
+        int next = 0;
+        var teams = new List<IReadOnlyList<string>>();
+        for (int t = 0; t < TeamCount; t++)
+        {
+            var team = PlayerIds.Where(p => TeamOf(p) == t).Take(TeamSize).ToList();
+            while (team.Count < TeamSize)
+            {
+                team.Add(bots[next++]);
+            }
+
+            teams.Add(team);
+        }
+
+        return teams;
+    }
+
+    /// <summary>Starts the Arena: <paramref name="teams"/> (all its places), each at <see cref="StartingLife"/>, round 1.</summary>
+    public void Start(IReadOnlyList<IReadOnlyList<string>> teams, long startedAtMs)
+    {
+        if (teams.Count != TeamCount || teams.Any(t => t.Count != TeamSize))
+        {
+            throw new ArgumentException($"an Arena starts with {TeamCount} teams of {TeamSize}", nameof(teams));
+        }
+
+        SetField("arena", new JsonObject
+        {
+            ["teams"] = new JsonArray([.. teams.Select(t => (JsonNode?)new JsonArray([.. t.Select(p => (JsonNode?)JsonValue.Create(p))]))]),
+            ["life"] = new JsonArray([.. Enumerable.Repeat((JsonNode?)null, TeamCount).Select(_ => (JsonNode?)JsonValue.Create(StartingLife))]),
+            ["round"] = 1,
+            ["startedAt"] = startedAtMs,
+        });
+    }
+
+    /// <summary>A round's 2v2s: the teams paired at random (all <see cref="TeamCount"/> of them, in pairs).</summary>
+    public static IReadOnlyList<(int A, int B)> Pairings(Random random)
+    {
+        int[] order = [.. Enumerable.Range(0, TeamCount)];
+        random.Shuffle(order);
+        return [.. Enumerable.Range(0, TeamCount / 2).Select(i => (order[i * 2], order[i * 2 + 1]))];
+    }
+
     /// <summary>The team <paramref name="playerId"/> is on.</summary>
     public int TeamOf(string playerId) => Field("teams")?[playerId] is JsonValue v && v.TryGetValue(out int team) ? team : 0;
 

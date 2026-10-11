@@ -1410,6 +1410,21 @@
   },
   {
     "method": "GET",
+    "path": "/ovs/client-settings",
+    "area": "ovs",
+    "binary": null,
+    "capture": 0,
+    "server": [],
+    "notes": [
+      "C# only: what the OpenVersus client reads at startup (BetaSpeed:Percent)"
+    ],
+    "kind": "ovs-client",
+    "in_game": false,
+    "in_server": false,
+    "owner": "web"
+  },
+  {
+    "method": "GET",
     "path": "/ovs/client-version",
     "area": "ovs",
     "binary": null,

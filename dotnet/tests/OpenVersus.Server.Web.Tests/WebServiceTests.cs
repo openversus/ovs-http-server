@@ -26,6 +26,7 @@ public sealed class WebServiceTests : IClassFixture<ServiceFactory<Program>>
 
     [Theory]
     [InlineData("GET", "/ovs/notifications")]
+    [InlineData("GET", "/ovs/client-settings")]
     [InlineData("GET", "/home")]
     public async Task ItsRoutesNeedNoSessionToken(string method, string path)
     {

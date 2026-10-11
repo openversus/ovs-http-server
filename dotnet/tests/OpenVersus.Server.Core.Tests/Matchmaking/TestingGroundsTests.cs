@@ -5,8 +5,9 @@ using OpenVersus.Server.Core.Matchmaking;
 namespace OpenVersus.Server.Core.Tests.Matchmaking;
 
 /// <summary>
-/// 1v1 Testing Grounds (Beta Speed) takes FFA's place on weekdays: open exactly while the FFA queue is closed, and the
-/// hiss shows the open one only. Needs no stores.
+/// 1v1 Testing Grounds (OpenVersus's mode: Beta Speed + Shield HP) takes FFA's place on weekdays: open exactly while the
+/// FFA queue is closed, the hiss shows the open one only, and a player without the mode's pak, or whose game runs another
+/// Beta Speed, is refused. Needs no stores.
 /// </summary>
 public sealed class TestingGroundsTests
 {
@@ -44,15 +45,57 @@ public sealed class TestingGroundsTests
     }
 
     [Fact]
-    public void ItsMatchesRunBetaSpeedUnranked()
+    public void ItsMatchesRunBetaSpeedAndShieldHpUnranked()
     {
-        var config = TestingGrounds.ConfigOverride();
+        var config = TestingGrounds.ConfigOverride(new TestingGroundsSettings());
         Assert.False(config["bIsCustomGame"]!.GetValue<bool>());
         // No XP and no missions (MissionService reads it), whatever RewardTracks:MatchXp says.
         Assert.False(config["bModeGrantsProgress"]!.GetValue<bool>());
         Assert.Equal("evtq_1v1testinggrounds", config["EventQueueSlug"]!.GetValue<string>());
-        Assert.Equal(["ovs_beta_speed"], config["WorldBuffs"]!.AsArray().Select(b => b!.GetValue<string>()));
-        Assert.Equal(TestingGrounds.Mutator, OpenVersus.Server.Core.Matches.GameplayConfigs.BetaSpeedMutator);
+        Assert.Equal(["ovs_beta_speed", "ovs_shield_hp"], config["WorldBuffs"]!.AsArray().Select(b => b!.GetValue<string>()));
+        Assert.Contains(OpenVersus.Server.Core.Matches.GameplayConfigs.BetaSpeedMutator, TestingGrounds.MutatorsOf(new TestingGroundsSettings()));
+    }
+
+    [Fact]
+    public void ItsMutatorsComeFromTheSettings()
+    {
+        var settings = new TestingGroundsSettings { Mutators = " ovs_beta_speed , ,ovs_friendly_fire,ovs_beta_speed" };
+        Assert.Equal(["ovs_beta_speed", "ovs_friendly_fire"], TestingGrounds.MutatorsOf(settings));
+        Assert.Empty(TestingGrounds.MutatorsOf(new TestingGroundsSettings { Mutators = "" }));
+    }
+
+    [Fact]
+    public void APlayerNeedsEveryRequiredPakWithTheSameHash()
+    {
+        var none = new TestingGroundsSettings();
+        Assert.Null(TestingGrounds.MissingPak(none, null));
+        Assert.Null(TestingGrounds.MissingPak(none, "anything=1"));
+
+        var settings = new TestingGroundsSettings { RequiredPaks = "OVS_Experimental_50_P=ABCD; OVS_Balance_51_P=ef01" };
+        Assert.Equal("OVS_Experimental_50_P", TestingGrounds.MissingPak(settings, null));
+        Assert.Equal("OVS_Experimental_50_P", TestingGrounds.MissingPak(settings, "OVS_Experimental_50_P=abce;OVS_Balance_51_P=EF01"));
+        Assert.Equal("OVS_Balance_51_P", TestingGrounds.MissingPak(settings, "OVS_Experimental_50_P=abcd"));
+        // Hashes compare without case; extra paks are fine.
+        Assert.Null(TestingGrounds.MissingPak(settings, "ovs_experimental_50_p=abcd;OVS_Balance_51_P=EF01;OVS_Other_60_P=99"));
+        var failure = TestingGrounds.PakFailure();
+        Assert.Equal(1, failure["return_code"]!.GetValue<int>());
+        Assert.Equal("PakRequired", failure["body"]!["ErrorCode"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void WithBetaSpeedAPlayerMustRunTheServersSpeed()
+    {
+        var settings = new TestingGroundsSettings();
+        var betaSpeed = new OpenVersus.Server.Core.Matches.BetaSpeedSettings { Percent = 120 };
+        Assert.False(TestingGrounds.WrongBetaSpeed(settings, betaSpeed, "120"));
+        // Another speed (read before a change), or none (an older client).
+        Assert.True(TestingGrounds.WrongBetaSpeed(settings, betaSpeed, "110"));
+        Assert.True(TestingGrounds.WrongBetaSpeed(settings, betaSpeed, null));
+        // Without the mutator the speed does not matter.
+        Assert.False(TestingGrounds.WrongBetaSpeed(new TestingGroundsSettings { Mutators = "ovs_shield_hp" }, betaSpeed, null));
+        var failure = TestingGrounds.BetaSpeedFailure();
+        Assert.Equal(1, failure["return_code"]!.GetValue<int>());
+        Assert.Equal("BetaSpeedChanged", failure["body"]!["ErrorCode"]!.GetValue<string>());
     }
 
     [Theory]
@@ -61,14 +104,14 @@ public sealed class TestingGroundsTests
     public void TheHissShowsTheOpenQueueOnly(bool open)
     {
         var answer = HissService.Fill(HissService.Values(1, 2, []));
-        TestingGrounds.ApplyTo(answer, open);
+        TestingGrounds.ApplyTo(answer, open, new TestingGroundsSettings());
         var data = answer["body"]!["Data"]!;
         var toggles = data["feature-toggles"]!["_hydra_compressed"]!;
         Assert.Equal(open, toggles["evtq_1v1testinggrounds"]!.GetValue<bool>());
         Assert.Equal(!open, toggles["FFA"]!.GetValue<bool>());
         Assert.Equal(open, data["event-queue-config"]!["_hydra_compressed"]!["evtq_1v1testinggrounds"]!["data"]!["bAlwaysAvailable"]!.GetValue<bool>());
         var mode = data["game-mode-config"]!["_hydra_compressed"]!["gm_1v1shields"]!["data"]!;
-        Assert.Equal(["ovs_beta_speed"], mode["GameModeData"]!["RequiredWorldBuffs"]!.AsArray().Select(b => b!.GetValue<string>()));
+        Assert.Equal(["ovs_beta_speed", "ovs_shield_hp"], mode["GameModeData"]!["RequiredWorldBuffs"]!.AsArray().Select(b => b!.GetValue<string>()));
         // The 2v2 queue stays off either way.
         Assert.False(toggles["evtq_2v2testinggrounds"]!.GetValue<bool>());
     }

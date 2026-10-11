@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Arenas;
 using OpenVersus.Server.Core.Clients;
@@ -133,9 +134,20 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     private IDatabase Db => _redis!.GetDatabase();
 
     // FFA always open unless a test says otherwise (FfaScheduleTests has the window).
-    private MatchmakingRequestService Service(MongoDB.Driver.IMongoDatabase? mongo = null, FfaSettings? ffa = null, TimeProvider? time = null, bool withRedis = true)
+    private MatchmakingRequestService Service(MongoDB.Driver.IMongoDatabase? mongo = null, FfaSettings? ffa = null, TimeProvider? time = null, bool withRedis = true,
+        TestingGroundsSettings? testingGrounds = null, BetaSpeedSettings? betaSpeed = null)
     {
         var collection = new ServiceCollection();
+        if (testingGrounds is not null)
+        {
+            collection.AddSingleton<IOptionsMonitor<TestingGroundsSettings>>(new TestOptions<TestingGroundsSettings>(testingGrounds));
+        }
+
+        if (betaSpeed is not null)
+        {
+            collection.AddSingleton<IOptionsMonitor<BetaSpeedSettings>>(new TestOptions<BetaSpeedSettings>(betaSpeed));
+        }
+
         if (withRedis && _redis is not null)
         {
             collection.AddSingleton<IConnectionMultiplexer>(_redis);
@@ -648,6 +660,30 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         answer = (await service.RequestAsync("ffa", Asking(Me), CancellationToken.None))!;
         Assert.Equal("client_update_required", (string?)answer.Body["body"]!["error"]);
         Assert.Equal([Me], _gate.Modals);
+    }
+
+    [Theory]
+    [InlineData("120", true)]
+    [InlineData("110", false)]
+    [InlineData(null, false)]
+    // Testing Grounds runs Beta Speed: a game that reports another speed than BetaSpeed:Percent (it read the speed before
+    // a change), or none (an older client), is told to restart. Needs no Redis: a refusal reads nothing, and an accepted
+    // request goes on to the queue, the first thing that needs it.
+    public async Task ATestingGroundsRequestMustRunTheServersBetaSpeed(string? reported, bool accepted)
+    {
+        var service = Service(withRedis: false, testingGrounds: new TestingGroundsSettings { AlwaysOpen = true }, betaSpeed: new BetaSpeedSettings { Percent = 120 });
+        var request = Asking(Me) with { BetaSpeed = reported };
+
+        if (accepted)
+        {
+            var past = await Assert.ThrowsAsync<InvalidOperationException>(() => service.RequestAsync(TestingGrounds.Criteria, request, CancellationToken.None));
+            Assert.Contains("no Redis", past.Message);
+            return;
+        }
+
+        var answer = (await service.RequestAsync(TestingGrounds.Criteria, request, CancellationToken.None))!;
+        Assert.Equal((200, Js.Stringify(TestingGrounds.BetaSpeedFailure())), (answer.Status, Js.Stringify(answer.Body)));
+        Assert.Null(answer.After);
     }
 
     [SkippableTheory]

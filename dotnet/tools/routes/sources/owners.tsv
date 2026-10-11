@@ -88,6 +88,7 @@ PUT	/objects/{type}/unique/{id}/upsert	http
 GET	/objects/{type}/unique/{id}/{key}	http
 PUT	/objects/{type}/unique/{id}/{key}/upsert	http
 GET	/ovs/all-players	web
+GET	/ovs/client-settings	web
 GET	/ovs/client-version	web
 POST	/ovs/friends/accept	social
 POST	/ovs/friends/block	social

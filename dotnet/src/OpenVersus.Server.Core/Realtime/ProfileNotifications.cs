@@ -40,4 +40,17 @@ public static class ProfileNotifications
         ["RewardTrackStates"] = new JsonArray(states.Select(s => (JsonNode?)s.DeepClone()).ToArray()),
         ["UpdateContext"] = updateContext,
     };
+
+    /// <summary>
+    /// OnRewardsGranted {Context, RewardsGranted}: the rewards just paid (RewardGrants.GrantAsync's RewardsGranted), so the
+    /// game adds them to its own inventory. Context is EMvsRewardContext's name: Default, RewardTrack, Missions, Autoclaim,
+    /// EndOfGameAutoclaim, ... Without it a claimed battle pass item stayed locked in the locker until the next login
+    /// (Tuggernuts, local stack, 2026-10-12: checked in the pass, locked in the inventory, unlocked after a restart).
+    /// </summary>
+    public static JsonObject RewardsGranted(JsonArray rewards, string context) => new()
+    {
+        ["template_id"] = "OnRewardsGranted",
+        ["Context"] = context,
+        ["RewardsGranted"] = rewards.DeepClone(),
+    };
 }

@@ -63,6 +63,10 @@ public sealed class AnyClaimMilestoneRewardTrackTiers : JsonBodyEndpoint
                 if (claimed.Count > 0 && TryResolve<IConnectionMultiplexer>() is { } redis)
                 {
                     await ProfileNotifications.SendAsync(redis.GetDatabase(), accountId, ProfileNotifications.RewardTrackStatesUpdated(changed.Values, 1));
+                    if (paid.RewardsGranted.Count > 0)
+                    {
+                        await ProfileNotifications.SendAsync(redis.GetDatabase(), accountId, ProfileNotifications.RewardsGranted(paid.RewardsGranted, "RewardTrack"));
+                    }
                 }
             }
         }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -166,5 +167,41 @@ public sealed class RankedSetXpPayerTests : IAsyncLifetime
         // Every completed tier's rewards are claimed: nothing is left to claim by hand.
         var (_, left) = await services.GetRequiredService<IRewardTrackService>().ClaimAllAsync(player, "mrt_mastery_shaggy", default);
         Assert.Empty(left);
+    }
+
+    [SkippableFact]
+    // A Fighter Pass tier paid after a set reaches the game's own inventory at once (OnRewardsGranted): its Chromium skin was
+    // missing from the fighter's variants until the next login, though the pass showed it claimed (Tuggernuts, local
+    // stack, 2026-10-12).
+    public async Task AChromiumSkinPaidAfterASetIsAnnouncedToTheGame()
+    {
+        Skip.If(_mongo is null, "set OVS_TEST_MONGO and OVS_TEST_REDIS to run");
+        using var services = Services();
+        var subscriber = Subscriber(services);
+        string player = ObjectId.GenerateNewId().ToString();
+        var heard = new ConcurrentQueue<JsonObject>();
+        await _redis!.GetSubscriber().SubscribeAsync(RedisChannel.Literal("ws:send"), (_, message) =>
+        {
+            if (JsonNode.Parse(message.ToString()) is JsonObject sent && sent["playerIds"]!.ToJsonString().Contains(player))
+            {
+                heard.Enqueue(sent);
+            }
+        });
+        // 24,500 on Banana Guard's level, then a won set (+600) crosses its last tier (25,000: the Chromium skin).
+        await services.GetRequiredService<IRewardTrackService>().AddScoreAsync(player, new Dictionary<string, int> { ["mrt_mastery_banana_guard"] = 24_500 }, default);
+        await services.GetRequiredService<IRewardTrackService>().ClaimAllAsync(player, "mrt_mastery_banana_guard", default);
+        await subscriber.HandleAsync(Set(player, true, "character_BananaGuard", $"ranked:{Guid.NewGuid()}"));
+
+        JsonObject? granted = null;
+        for (int i = 0; i < 50 && granted is null; i++)
+        {
+            granted = heard.Select(m => m["message"]?["data"] as JsonObject).FirstOrDefault(d => (string?)d?["template_id"] == "OnRewardsGranted");
+            await Task.Delay(50);
+        }
+
+        Assert.NotNull(granted);
+        Assert.Equal("EndOfGameAutoclaim", (string?)granted!["Context"]);
+        Assert.Contains(granted["RewardsGranted"]!.AsArray(), r => (string?)r?["InventoryHsda"] == "skin_ovs_chromium_bananaguard");
+        await _redis.GetDatabase().KeyDeleteAsync($"realtime:out:{player}");
     }
 }

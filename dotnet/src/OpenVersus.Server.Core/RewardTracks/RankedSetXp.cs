@@ -146,6 +146,7 @@ internal sealed class RankedSetXpPayer(IServiceProvider services, IOptionsMonito
         {
             // The levels' tiers are paid as they complete (their battle pass XP may move the battle pass again).
             var live = MissionContainers.Live(missions.CurrentValue.Containers);
+            var granted = new JsonArray();
             foreach (string level in points.Keys.Where(RewardTrackSettings.IsMastery).Where(changed.ContainsKey).ToList())
             {
                 var (track, claimed) = await tracks.ClaimAllAsync(playerId, level, CancellationToken.None);
@@ -156,6 +157,11 @@ internal sealed class RankedSetXpPayer(IServiceProvider services, IOptionsMonito
 
                 changed[level] = track;
                 var paid = await grants.GrantAsync(playerId, claimed, live, CancellationToken.None);
+                foreach (var reward in paid.RewardsGranted)
+                {
+                    granted.Add(reward?.DeepClone());
+                }
+
                 foreach (var moved in paid.ChangedTracks)
                 {
                     changed[moved["TrackSlug"]!.GetValue<string>()] = moved;
@@ -176,6 +182,14 @@ internal sealed class RankedSetXpPayer(IServiceProvider services, IOptionsMonito
             if (changed.TryGetValue(Account, out var account))
             {
                 await ProfileNotifications.SendAsync(redis, playerId, ProfileNotifications.RewardTrackStatesUpdated([account], Quiet));
+            }
+
+            // What the levels' tiers paid (a Chromium skin, toasts...), so the game's own inventory has it at once: without
+            // it a Chromium skin paid after a set was missing from the fighter's variants until the next login, though
+            // the Fighter Pass showed it claimed (Tuggernuts, local stack, 2026-10-12).
+            if (granted.Count > 0)
+            {
+                await ProfileNotifications.SendAsync(redis, playerId, ProfileNotifications.RewardsGranted(granted, "EndOfGameAutoclaim"));
             }
         }
         catch (Exception e)

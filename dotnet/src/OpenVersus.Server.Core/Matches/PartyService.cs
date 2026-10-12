@@ -91,6 +91,12 @@ public interface IPartyService
     Task<JsonObject> CreatePartyLobbyAsync(PartyRequest request, CancellationToken ct = default);
     Task<JsonObject> CreatePartyAsync(PartyRequest request, CancellationToken ct = default);
     Task<JsonObject> SetModeAsync(PartyRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// The lobby a player who has just left a custom lobby is answered: the party lobby they are in, else a new solo one,
+    /// saved. The game makes no party lobby after that leave; it shows this one and names it in its next requests.
+    /// </summary>
+    Task<JsonObject> LobbyAfterCustomLeaveAsync(string playerId, CancellationToken ct = default);
     Task<JsonObject> InviteAsync(PartyRequest request, CancellationToken ct = default);
     Task<JsonObject> JoinAsync(PartyRequest request, CancellationToken ct = default);
     Task<JsonObject> LeaveAsync(PartyRequest request, CancellationToken ct = default);
@@ -543,6 +549,19 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
     }
 
     // A new solo party lobby for the player, in <paramref name="mode"/>, as a leave answers it.
+    public async Task<JsonObject> LobbyAfterCustomLeaveAsync(string playerId, CancellationToken ct)
+    {
+        var redis = Redis();
+        if (await LobbyStore.PointerAsync(redis, playerId) is { } current && await LobbyStore.GetAsync(redis, current) is PartyLobby party
+            && party.PlayerIds.Contains(playerId))
+        {
+            return await LobbyOfAsync(redis, party, ModeOf(party), writeCosmetics: false, ct);
+        }
+
+        // Their party lobby is gone (it expires an hour after its last write): a new one, saved, as a party leave makes.
+        return (JsonObject)(await SoloAnswerAsync(redis, playerId, PartyLobby.LoginMode))["body"]!["lobby"]!.DeepClone();
+    }
+
     private async Task<JsonObject> SoloAnswerAsync(IDatabase redis, string me, string mode)
     {
         string soloId = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(12));

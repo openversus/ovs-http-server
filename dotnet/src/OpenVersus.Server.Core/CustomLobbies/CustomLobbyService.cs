@@ -916,7 +916,12 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
 
     // ── The shared routes' custom lobby side ────────────────────────────────────────────────────────────────────────
 
-    /// <summary>leave_player_lobby: out of the lobby; answered a fresh solo lobby (not saved: the game makes one next).</summary>
+    /// <summary>
+    /// leave_player_lobby: out of the lobby; answered the party lobby the player is in (IPartyService.LobbyAfterCustomLeaveAsync).
+    /// The TS server answered a fresh solo lobby, saved nowhere, on the belief that the game makes one next; it does not
+    /// (local stack, 2026-10-12: no create_party_lobby after the leave), so its next set_mode_for_lobby changed the old party
+    /// lobby and named that one, which the game ignored: the menu stayed on the custom lobby's queue (Tuggernuts).
+    /// </summary>
     private async Task<JsonObject?> LeaveAsync(string lobbyId, string me)
     {
         var redis = Redis();
@@ -927,9 +932,14 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
         }
 
         await redis.KeyDeleteAsync(PlayerKey(me));
+        await LeaveLobbyAsync(redis, lobbyId, lobby, me);
+        if (services.GetService<IPartyService>() is { } party)
+        {
+            return await party.LobbyAfterCustomLeaveAsync(me);
+        }
+
         var solo = await BaseLobbyAsync(redis, me);
         solo["ModeString"] = "1v1";
-        await LeaveLobbyAsync(redis, lobbyId, lobby, me);
         return solo;
     }
 

@@ -8,6 +8,7 @@ using OpenVersus.Server.Core.Arenas;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Cosmetics;
+using OpenVersus.Server.Core.CustomLobbies;
 using OpenVersus.Server.Core.Identity;
 using OpenVersus.Server.Core.FunFacts;
 using OpenVersus.Server.Core.Matches;
@@ -645,6 +646,51 @@ public sealed class PartyServiceTests : IAsyncLifetime
         await Db.HashDeleteAsync($"connections:{Owner}", "lobby_id");
         await Service().SetModeAsync(Asking(Owner, """{"ModeString": "1v1"}"""));
         Assert.Equal(Lobby, (string?)await Db.HashGetAsync($"connections:{ip}", "lobby_id"));
+    }
+
+    private sealed class NoLaunch : IMatchLauncher
+    {
+        public Task<LaunchedMatch?> LaunchAsync(MatchLaunch launch, CancellationToken ct) => Task.FromResult<LaunchedMatch?>(null);
+        public Task<int?> RollbackPortAsync(IDatabase redis) => Task.FromResult<int?>(null);
+        public void DeployIfOnDemand(int port, string matchId)
+        {
+        }
+    }
+
+    // Leaving a custom lobby (Tuggernuts, 2026-10-12: "going into a custom lobby and then leaving locks the menu and unable
+    // to change the queue"). The game makes no party lobby after that leave: it shows the lobby it is answered and names it
+    // in its next set_mode_for_lobby. So the answer is the party lobby the player is in, and a mode change's notice names
+    // that lobby. It used to be a fresh id saved nowhere, so the change went to the old party lobby, whose notice the game
+    // ignored.
+    [Fact]
+    public async Task LeavingACustomLobbyAnswersThePartyLobbyThatModeChangesReach()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        var party = Service();
+        ICustomLobbyService custom = new CustomLobbyService(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).AddSingleton(party).BuildServiceProvider(),
+            new NoLaunch(), _gate, new TestOptions<LobbySettings>(new LobbySettings()), new TestOptions<CustomLobbySettings>(new CustomLobbySettings()),
+            TimeProvider.System, NullLogger<CustomLobbyService>.Instance);
+        await party.CreatePartyLobbyAsync(Asking(Owner, """{"LobbyTemplate": "party_lobby"}"""));
+        string partyLobby = (await Db.StringGetAsync($"player_lobby:{Owner}")).ToString();
+        Assert.NotEqual("", partyLobby);
+        await custom.AnswerAsync("create_custom_game_lobby", Asking(Owner, """{"LobbyTemplate": "custom_game_lobby"}"""));
+        string customLobby = (await Db.StringGetAsync(CustomLobbyService.PlayerKey(Owner))).ToString();
+        Assert.NotEqual("", customLobby);
+
+        var left = await custom.SharedAsync("leave_player_lobby", Asking(Owner, $$"""{"LobbyId": "{{customLobby}}", "LobbyTemplate": "custom_game_lobby"}"""), customLobby);
+
+        string answered = left!["body"]!["lobby"]!["MatchID"]!.GetValue<string>();
+        Assert.Equal(partyLobby, answered);
+        Assert.True(await Db.KeyExistsAsync($"lobby:{answered}"));
+        var heard = await ListenAsync();
+        await party.SetModeAsync(Asking(Owner, $$"""{"ModeString": "2v2", "LobbyId": "{{answered}}", "LobbyTemplate": "party_lobby"}"""));
+        var told = await Eventually(() => heard.TryPeek(out var m) ? m : null);
+        Assert.Equal("OnLobbyModeUpdated", told["message"]!["data"]!["template_id"]!.GetValue<string>());
+        Assert.Equal(answered, told["message"]!["data"]!["LobbyId"]!.GetValue<string>());
     }
 
     // Only the lobby's owner changes its mode; a rift or Arena lobby's mode is its kind and stays.

@@ -56,8 +56,8 @@ public sealed class RewardTrackSettings
     [Description("Matches add XP to the account and character mastery tracks (character and account levels; only with RewardTracks:CharacterMastery): 150 for a win, 50 for a loss (the game's XPSRC_Base; custom games only with Missions:CustomGamesProgress).")]
     public bool MatchXp { get; set; } = true;
 
-    [Description("Rift matches add that XP too. The client's offline rift backend marks rifts as granting no progress (bModeGrantsProgress false), which says nothing about WB's online rifts.")]
-    public bool RiftMatchXp { get; set; } = true;
+    [Description("Rift matches add that XP too. Off by default: a rift can be left idle against its bots and still pays the loss XP (Tuggernuts, 2026-10-12). Their missions still progress (the PvE dailies need real damage). The client's offline rift backend marks rifts as granting no progress (bModeGrantsProgress false), which says nothing about WB's online rifts.")]
+    public bool RiftMatchXp { get; set; } = false;
 
     [Description("XP a completed ranked set (or a public FFA game) adds to the battle pass, and the bonus for winning it (End Game: 300 + 150). The TS server decides who is paid (reward_tracks:ranked_set, RankedSetXp).")]
     public int BattlePassSetXp { get; set; } = 300;

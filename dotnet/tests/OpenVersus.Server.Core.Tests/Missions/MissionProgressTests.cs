@@ -205,6 +205,26 @@ public sealed class MissionProgressTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // A rift's config says bModeGrantsProgress false (for the client's offline rift backend), but a rift's missions still
+    // progress (its XP is RewardTracks:RiftMatchXp's, off by default); 1v1 Testing Grounds says false and grants nothing.
+    public async Task ARiftProgressesAndTestingGroundsDoesNot()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        var redis = _redis!.GetDatabase();
+        string player = ObjectId.GenerateNewId().ToString(), rift = ObjectId.GenerateNewId().ToString(), testing = ObjectId.GenerateNewId().ToString();
+        _keys.AddRange([rift, testing, $"player:{player}"]);
+        string Notification(string match, string config) =>
+            $$$"""{"players":[{"playerId":"{{{player}}}","teamIndex":0,"isBot":false}],"matchId":"{{{match}}}","map":"M001","mode":"1v1","gameplayConfigOverride":{{{config}}}}""";
+        await redis.StringSetAsync(rift, Notification(rift, """{"bIsRift":true,"bIsPvP":false,"bModeGrantsProgress":false}"""));
+        await redis.StringSetAsync(testing, Notification(testing, """{"bIsCustomGame":false,"bModeGrantsProgress":false,"EventQueueSlug":"evtq_1v1testinggrounds"}"""));
+
+        var riftSeen = await MissionService.MatchAsync(redis, rift, player, 0, null);
+        var testingSeen = await MissionService.MatchAsync(redis, testing, player, 0, null);
+        Assert.Equal((true, false), (riftSeen!.Value.Rift, riftSeen.Value.NoProgress));
+        Assert.Equal((false, true), (testingSeen!.Value.Rift, testingSeen.Value.NoProgress));
+    }
+
+    [SkippableFact]
     public async Task AResultIsRecordedOnceAndThePlayerIsTold()
     {
         Skip.If(_redis is null, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");

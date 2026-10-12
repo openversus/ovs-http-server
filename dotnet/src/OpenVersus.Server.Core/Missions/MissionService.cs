@@ -290,7 +290,9 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
         var config = notification["gameplayConfigOverride"] as JsonObject;
         bool custom = Bool(config?["bIsCustomGame"]) ?? Bool(notification["isCustomGame"]) ?? false;
         // A match whose config says it grants no progress (1v1 Testing Grounds): no XP and no missions, whatever the settings.
-        bool noProgress = Bool(config?["bModeGrantsProgress"]) == false;
+        // Not a rift: its config says false for the client's offline rift backend (RiftMatchService). A rift's missions
+        // progress; its XP is RewardTracks:RiftMatchXp's (off by default: a rift can be left idle).
+        bool noProgress = Bool(config?["bModeGrantsProgress"]) == false && Bool(config?["bIsRift"]) != true;
         var player = (notification["players"] as JsonArray ?? []).OfType<JsonObject>().FirstOrDefault(p => Text(p["playerId"]) == playerId);
         bool won = player is not null && winningTeamIndex is { } w && RiftMissions.Number(player["teamIndex"]) == w;
         string character = "", skin = "";

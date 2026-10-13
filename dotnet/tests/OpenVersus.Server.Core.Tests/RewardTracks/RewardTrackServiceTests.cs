@@ -57,6 +57,26 @@ public sealed class RewardTrackServiceTests : IAsyncLifetime
         States(answer).OfType<JsonObject>().Single(t => t["TrackSlug"]!.GetValue<string>() == slug);
 
     [Fact]
+    public void AnAccountBelowTheFloorIsAnsweredAtItAndItsLevelsPayNothing()
+    {
+        const string account = "mrt_mastery_account";
+        var tiers = HissTables.Data("milestone-reward-tracks", account)!["Tiers"]!.AsArray();
+        var state = RewardTrackService.Floored(account, RewardTrackService.Initial(account), 15);
+
+        Assert.Equal(15, state["CurrentTier"]!.GetValue<int>());
+        Assert.Equal(double.Parse(tiers[14]!["ScoreThreshold"]!.ToJsonString()), double.Parse(state["CurrentScore"]!.ToJsonString()));
+        var claimed = state["ClaimedRewards"]!.AsArray().Select(r => r!.GetValue<string>()).ToHashSet();
+        Assert.All(tiers.Take(15).SelectMany(t => t!["Rewards"]!.AsArray()), r => Assert.Contains(r!["RewardGuid"]!.GetValue<string>(), claimed));
+
+        // Already past it, another track, or no floor: unchanged.
+        var past = RewardTrackService.Scored(account, RewardTrackService.Initial(account), (long)double.Parse(tiers[20]!["ScoreThreshold"]!.ToJsonString()));
+        Assert.Same(past, RewardTrackService.Floored(account, past, 15));
+        var shaggy = RewardTrackService.Initial("mrt_mastery_shaggy");
+        Assert.Same(shaggy, RewardTrackService.Floored("mrt_mastery_shaggy", shaggy, 15));
+        Assert.Same(state, RewardTrackService.Floored(account, state, 0));
+    }
+
+    [Fact]
     public async Task NothingCanBeClaimedByAPlayerWhoEarnedNothing()
     {
         var answer = await Service().AnswerAsync(ObjectId.GenerateNewId().ToString(), default);

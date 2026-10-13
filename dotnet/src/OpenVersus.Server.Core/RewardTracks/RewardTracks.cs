@@ -56,6 +56,9 @@ public sealed class RewardTrackSettings
     [Description("Matches add XP to the account and character mastery tracks (character and account levels; only with RewardTracks:CharacterMastery): 150 for a win, 50 for a loss (the game's XPSRC_Base; custom games only with Missions:CustomGamesProgress).")]
     public bool MatchXp { get; set; } = true;
 
+    [Description("The lowest account level (the mrt_mastery_account track's CurrentTier) a player is answered at, with RewardTracks:CharacterMastery: an account below it is answered at it, and its XP counts on from there. The levels it gives pay nothing (their rewards count as claimed). 0: off.")]
+    public int AccountLevelFloor { get; set; }
+
     [Description("Rift matches add that XP too. Off by default: a rift can be left idle against its bots and still pays the loss XP (Tuggernuts, 2026-10-12). Their missions still progress (the PvE dailies need real damage). The client's offline rift backend marks rifts as granting no progress (bModeGrantsProgress false), which says nothing about WB's online rifts.")]
     public bool RiftMatchXp { get; set; } = false;
 
@@ -111,7 +114,7 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
         foreach (var track in s_tracks.Value)
         {
             string slug = track["TrackSlug"]?.GetValue<string>() ?? "";
-            states.Add(settings.Governs(slug) ? Entry(track, stored?[slug] as JsonObject ?? Initial(slug)) : track.DeepClone());
+            states.Add(settings.Governs(slug) ? Entry(track, Floored(slug, stored?[slug] as JsonObject ?? Initial(slug), settings.AccountLevelFloor)) : track.DeepClone());
         }
 
         return new JsonObject { ["body"] = new JsonObject { ["RewardTrackStates"] = states }, ["metadata"] = null, ["return_code"] = 0 };
@@ -135,7 +138,7 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
             moved.Clear();
             foreach (var (slug, add) in points)
             {
-                var state = stored[slug] as JsonObject ?? Initial(slug);
+                var state = Floored(slug, stored[slug] as JsonObject ?? Initial(slug), settings.AccountLevelFloor);
                 long before = Score(state);
                 long after = Capped(slug, before + add);
                 if (after != before)
@@ -175,7 +178,8 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
 
     public async Task<(JsonObject? Track, IReadOnlyList<JsonObject> Claimed)> ClaimAsync(string accountId, string trackSlug, IReadOnlyCollection<string>? tierGuids, CancellationToken ct)
     {
-        if (!Settings.Governs(trackSlug))
+        var settings = Settings;
+        if (!settings.Governs(trackSlug))
         {
             return (null, []);
         }
@@ -184,7 +188,7 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
         var tracks = await UpdateAsync(accountId, stored =>
         {
             claimed.Clear();
-            var state = stored[trackSlug] as JsonObject ?? Initial(trackSlug);
+            var state = Floored(trackSlug, stored[trackSlug] as JsonObject ?? Initial(trackSlug), settings.AccountLevelFloor);
             var completed = (state["CompletedTiers"] as JsonArray ?? []).Select(t => t?.GetValue<string>()).ToHashSet();
             var had = state["ClaimedRewards"] as JsonArray ?? [];
             var have = had.Select(r => r?.GetValue<string>()).ToHashSet();
@@ -216,7 +220,7 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
             return true;
         }, ct) ?? await StoredAsync(accountId, ct) ?? [];
         var track = s_tracks.Value.FirstOrDefault(t => t["TrackSlug"]?.GetValue<string>() == trackSlug);
-        return (track is null ? null : Entry(track, tracks[trackSlug] as JsonObject ?? Initial(trackSlug)), claimed);
+        return (track is null ? null : Entry(track, Floored(trackSlug, tracks[trackSlug] as JsonObject ?? Initial(trackSlug), settings.AccountLevelFloor)), claimed);
     }
 
     // Reads the player's tracks, lets change say whether it changed them, and writes them back (version-guarded,
@@ -286,6 +290,41 @@ internal sealed class RewardTrackService(IServiceProvider services, ILogger<Rewa
         next["CurrentScore"] = score <= int.MaxValue ? JsonValue.Create((int)score) : JsonValue.Create(score);
         next["CurrentTier"] = CappedTier(slug, reached.Count);
         next["CompletedTiers"] = new JsonArray(reached.Select(t => (JsonNode?)t["TierGuid"]?.DeepClone()).ToArray());
+        return next;
+    }
+
+    /// <summary>
+    /// The account level track (mrt_mastery_account, <see cref="RankedSetXpPayer.Account"/>) below <paramref name="floor"/> (RewardTracks:AccountLevelFloor):
+    /// the state at the score of the tier that makes CurrentTier the floor, with every reward of the tiers that gives marked
+    /// claimed, so a level given is not paid (Tuggernuts, 2026-10-13: "mark everyone as account level 15"). Any other track,
+    /// a floor of 0, or an account already at or past it: unchanged.
+    /// </summary>
+    internal static JsonObject Floored(string slug, JsonObject state, int floor)
+    {
+        if (floor <= 0 || slug != RankedSetXpPayer.Account)
+        {
+            return state;
+        }
+
+        var tiers = (HissTables.Data("milestone-reward-tracks", slug)?["Tiers"] as JsonArray ?? []).OfType<JsonObject>().ToList();
+        int reached = Math.Min(floor, tiers.Count);
+        if (reached == 0)
+        {
+            return state;
+        }
+
+        long threshold = (long)(RiftsNumber(tiers[reached - 1]["ScoreThreshold"]) ?? 0);
+        if (Score(state) >= threshold)
+        {
+            return state;
+        }
+
+        var next = Scored(slug, state, threshold);
+        var had = next["ClaimedRewards"] as JsonArray ?? [];
+        var have = had.Select(r => r?.GetValue<string>()).ToHashSet();
+        var given = tiers.Take(reached).SelectMany(t => (t["Rewards"] as JsonArray ?? []).OfType<JsonObject>())
+            .Select(r => r["RewardGuid"]?.GetValue<string>()).OfType<string>().Where(have.Add).ToList();
+        next["ClaimedRewards"] = new JsonArray(had.Select(r => r?.DeepClone()).Concat(given.Select(g => (JsonNode?)JsonValue.Create(g))).ToArray());
         return next;
     }
 

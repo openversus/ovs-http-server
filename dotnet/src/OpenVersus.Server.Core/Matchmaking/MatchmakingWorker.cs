@@ -568,6 +568,13 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
             notification["gameplayConfigOverride"] = Matches.BotDefaults.UnrankedConfigOverride();
         }
 
+        if (mode == Ffa && FfaSchedule.MutatorsOf(ffa.CurrentValue).Length > 0)
+        {
+            // FFA's mutators (Ffa:Mutators, Beta Speed by default): the match stays last man standing; GameplayConfigs puts
+            // worldBuffs in its config's WorldBuffs, and the rollback registry gives it its tick_rate from them.
+            notification["worldBuffs"] = FfaSchedule.WorldBuffs(ffa.CurrentValue);
+        }
+
         if (testingGrounds)
         {
             // Its mutators: with Beta Speed the rollback registry gives the match its tick_rate from worldBuffs (66 at

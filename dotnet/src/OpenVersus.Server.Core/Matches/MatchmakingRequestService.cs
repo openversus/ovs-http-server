@@ -186,10 +186,12 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             return new MatchmakingAnswer(200, Matchmaking.TestingGrounds.ClosedFailure());
         }
 
-        // Beta Speed: a game that runs another speed than the server's (started before a change) would desync the match.
-        if (queue.IsTestingGrounds && Matchmaking.TestingGrounds.WrongBetaSpeed(Matchmaking.TestingGrounds.Of(services), BetaSpeed.Of(services), request.BetaSpeed))
+        // Beta Speed (Testing Grounds', and FFA's with Ffa:Mutators): a game that runs another speed than the server's
+        // (started before a change) would desync the match.
+        if ((queue.IsTestingGrounds && Matchmaking.TestingGrounds.WrongBetaSpeed(Matchmaking.TestingGrounds.Of(services), BetaSpeed.Of(services), request.BetaSpeed))
+            || (queue.IsFfa && Matchmaking.FfaSchedule.WrongBetaSpeed(ffa.CurrentValue, BetaSpeed.Of(services), request.BetaSpeed)))
         {
-            log.LogInformation("Rejected Testing Grounds matchmaking for {Player}: X-OVS-BetaSpeed {Theirs}, the server's is {Ours}", me, request.BetaSpeed ?? "none", BetaSpeed.Of(services).Percent);
+            log.LogInformation("Rejected {Kind} matchmaking for {Player}: X-OVS-BetaSpeed {Theirs}, the server's is {Ours}", kind, me, request.BetaSpeed ?? "none", BetaSpeed.Of(services).Percent);
             return new MatchmakingAnswer(200, Matchmaking.TestingGrounds.BetaSpeedFailure());
         }
 

@@ -579,7 +579,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         await PlayerAsync(Me);
         await Db.ListRightPushAsync("2v2", """{"players":[{"id":"0000000000000000000b0001"}]}""");
 
-        var answer = (await Service().RequestAsync("ffa", Asking(Me), CancellationToken.None))!;
+        var answer = (await Service().RequestAsync("ffa", Asking(Me) with { BetaSpeed = "110" }, CancellationToken.None))!;
 
         Assert.Equal((200, "ffa", 1), (answer.Status, (string?)answer.Body["criteria_slug"], (int)answer.Body["data"]!["player_count"]!));
         Assert.Empty(await Db.ListRangeAsync("2v2"));
@@ -619,7 +619,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         });
         MatchmakingRequestService.FfaPartyCancelDelay = TimeSpan.Zero;
 
-        var answer = (await Service().RequestAsync("ffa", Asking(Me), CancellationToken.None))!;
+        var answer = (await Service().RequestAsync("ffa", Asking(Me) with { BetaSpeed = "110" }, CancellationToken.None))!;
         Assert.Equal(200, answer.Status);
         Assert.Equal("ffa", (string?)answer.Body["criteria_slug"]);
         string requestId = (string)answer.Body["id"]!;
@@ -684,6 +684,30 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         var answer = (await service.RequestAsync(TestingGrounds.Criteria, request, CancellationToken.None))!;
         Assert.Equal((200, Js.Stringify(TestingGrounds.BetaSpeedFailure())), (answer.Status, Js.Stringify(answer.Body)));
         Assert.Null(answer.After);
+    }
+
+    [Theory]
+    [InlineData("120", true)]
+    [InlineData("110", false)]
+    [InlineData(null, false)]
+    // FFA runs Beta Speed too (Ffa:Mutators, by default): the same restart message for a game on another speed. With no
+    // mutators any game may queue.
+    public async Task AnFfaRequestMustRunTheServersBetaSpeedWhileFfaRunsIt(string? reported, bool accepted)
+    {
+        foreach (var settings in new[] { new FfaSettings { WeekendOnly = false }, new FfaSettings { WeekendOnly = false, Mutators = "" } })
+        {
+            var service = Service(withRedis: false, ffa: settings, betaSpeed: new BetaSpeedSettings { Percent = 120 });
+            var request = Asking(Me) with { BetaSpeed = reported };
+            if (accepted || settings.Mutators == "")
+            {
+                var past = await Assert.ThrowsAsync<InvalidOperationException>(() => service.RequestAsync("ffa", request, CancellationToken.None));
+                Assert.Contains("no Redis", past.Message);
+                continue;
+            }
+
+            var answer = (await service.RequestAsync("ffa", request, CancellationToken.None))!;
+            Assert.Equal((200, Js.Stringify(TestingGrounds.BetaSpeedFailure())), (answer.Status, Js.Stringify(answer.Body)));
+        }
     }
 
     [SkippableTheory]

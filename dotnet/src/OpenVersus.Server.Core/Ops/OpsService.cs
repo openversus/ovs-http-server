@@ -225,8 +225,15 @@ internal sealed class OpsService : IOpsService
         return ControlResult<OnlineView>.Ok(new OnlineView(count, players.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList()));
     }
 
+    // A 1v1 Testing Grounds match: unranked, so its notification says isCustomGame as a custom game's does, but its
+    // config override names the queue (Matchmaking/TestingGrounds.ConfigOverride).
+    private static bool IsTestingGrounds(JsonElement config) =>
+        config.TryGetProperty("gameplayConfigOverride", out var over) && over.ValueKind == JsonValueKind.Object
+        && Str(over, "EventQueueSlug") == Matchmaking.TestingGrounds.EventQueue;
+
     // The website's refreshMatchesCache (server.ts), both passes: games (match_started:*), then ranked sets between games
-    // (ranked_set:*), merged by set id; custom games are left out, as there. Unlike there, a game that has ended
+    // (ranked_set:*), merged by set id; custom games are left out, as there, but not 1v1 Testing Grounds matches (listed
+    // with TestingGrounds.ListedMode). Unlike there, a game that has ended
     // (match_end:{game}, the time it ended) stays listed for MatchView.FinishedListedFor after its end, marked finished unless its
     // set goes on (then it is the set, in progress), and then drops off; TS listed it until match_started:{game} expired,
     // ten minutes after the start. A set's games are one entry: match_to_set:{game} outlives the set (player_ranked_set,
@@ -256,7 +263,7 @@ internal sealed class OpsService : IOpsService
 
             using var config = await JsonAsync(redis, matchId);
             if (config is null || !config.RootElement.TryGetProperty("players", out var players) || players.ValueKind != JsonValueKind.Array
-                || config.RootElement.TryGetProperty("isCustomGame", out var custom) && custom.ValueKind == JsonValueKind.True)
+                || config.RootElement.TryGetProperty("isCustomGame", out var custom) && custom.ValueKind == JsonValueKind.True && !IsTestingGrounds(config.RootElement))
             {
                 continue;
             }
@@ -293,7 +300,8 @@ internal sealed class OpsService : IOpsService
             using var set = await JsonAsync(redis, $"ranked_set:{setId}");
             using var final = set is null && endedAt is not null ? await JsonAsync(redis, Matches.RankedSets.FinalKey(setId)) : null;
             seen.Add(setId);
-            results.Add(await MatchAsync(redis, setId, matchId, Str(config.RootElement, "mode"), players, (set ?? final)?.RootElement, finished: endedAt is not null && set is null));
+            string? mode = IsTestingGrounds(config.RootElement) ? Matchmaking.TestingGrounds.ListedMode : Str(config.RootElement, "mode");
+            results.Add(await MatchAsync(redis, setId, matchId, mode, players, (set ?? final)?.RootElement, finished: endedAt is not null && set is null));
         }
 
         foreach (string key in await KeysAsync("ranked_set:*"))

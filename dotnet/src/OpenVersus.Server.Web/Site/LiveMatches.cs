@@ -11,12 +11,15 @@ namespace OpenVersus.Server.Web.Site;
 /// the TS server's matchesCache tick made (made on request here: the web service runs no background service of its
 /// own): the matches in progress (<see cref="IOpsService.MatchesAsync"/>, the same view ovsctl shows), how many
 /// players are online, how many are searching in each queue (distinct players over the queue's tickets; a failed count
-/// keeps the previous), whether the FFA queue is open, and when it was made.
+/// keeps the previous; "1v1 Testing Grounds" is its tickets' list, testinggrounds1v1), whether the FFA and Testing Grounds
+/// queues are open (the page shows only the open ones), and when it was made.
 /// </summary>
 public sealed class LiveMatches(IServiceProvider services, IOpsService ops, IOptionsMonitor<FfaSettings> ffa, TimeProvider time, ILogger<LiveMatches> log)
 {
     public static readonly TimeSpan Tick = TimeSpan.FromSeconds(2);
-    private static readonly string[] s_queues = ["1v1", "2v2", "FFA"];
+    public const string TestingGroundsQueue = TestingGrounds.ListedMode;
+    private static readonly string[] s_queues = ["1v1", "2v2", "FFA", TestingGroundsQueue];
+    private static string ListOf(string queue) => queue == TestingGroundsQueue ? TestingGrounds.List : queue;
     private readonly Dictionary<string, int> _searching = s_queues.ToDictionary(q => q, _ => 0);
     private readonly SemaphoreSlim _gate = new(1, 1);
     private long _online;
@@ -61,7 +64,8 @@ public sealed class LiveMatches(IServiceProvider services, IOpsService ops, IOpt
     private static JsonObject Empty(long generatedAt) => new()
     {
         ["matches"] = new JsonArray(), ["count"] = 0, ["onlinePlayers"] = 0,
-        ["searching"] = new JsonObject { ["1v1"] = 0, ["2v2"] = 0, ["FFA"] = 0 }, ["ffaOpen"] = true, ["generatedAt"] = generatedAt,
+        ["searching"] = new JsonObject { ["1v1"] = 0, ["2v2"] = 0, ["FFA"] = 0, [TestingGroundsQueue] = 0 }, ["ffaOpen"] = true,
+        ["testingGroundsOpen"] = false, ["generatedAt"] = generatedAt,
     };
 
     /// <summary>One refresh (the TS refreshMatchesCache).</summary>
@@ -100,7 +104,7 @@ public sealed class LiveMatches(IServiceProvider services, IOpsService ops, IOpt
                 try
                 {
                     var players = new HashSet<string>();
-                    foreach (var raw in await redis.ListRangeAsync(queue))
+                    foreach (var raw in await redis.ListRangeAsync(ListOf(queue)))
                     {
                         foreach (var p in (System.Text.Json.Nodes.JsonNode.Parse(raw.ToString()) as JsonObject)?["players"] as JsonArray ?? [])
                         {
@@ -120,12 +124,27 @@ public sealed class LiveMatches(IServiceProvider services, IOpsService ops, IOpt
             }
         }
 
+        var now = time.GetUtcNow();
+        bool testingGroundsOpen = false;
+        try
+        {
+            testingGroundsOpen = await TestingGrounds.IsOpenAsync(services, now);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            log.LogWarning("reading whether Testing Grounds is open failed: {Error}", e.Message);
+        }
+
         Snapshot = new JsonObject
         {
             ["matches"] = matches, ["count"] = matches.Count, ["onlinePlayers"] = _online,
-            ["searching"] = new JsonObject { ["1v1"] = _searching["1v1"], ["2v2"] = _searching["2v2"], ["FFA"] = _searching["FFA"] },
-            ["ffaOpen"] = FfaSchedule.IsOpen(time.GetUtcNow(), ffa.CurrentValue.WeekendOnly),
-            ["generatedAt"] = time.GetUtcNow().ToUnixTimeMilliseconds(),
+            ["searching"] = new JsonObject
+            {
+                ["1v1"] = _searching["1v1"], ["2v2"] = _searching["2v2"], ["FFA"] = _searching["FFA"], [TestingGroundsQueue] = _searching[TestingGroundsQueue],
+            },
+            ["ffaOpen"] = FfaSchedule.IsOpen(now, ffa.CurrentValue.WeekendOnly),
+            ["testingGroundsOpen"] = testingGroundsOpen,
+            ["generatedAt"] = now.ToUnixTimeMilliseconds(),
         };
     }
 }

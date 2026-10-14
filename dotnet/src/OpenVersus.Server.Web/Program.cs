@@ -17,6 +17,7 @@ builder.AddGameHttp(typeof(Program).Assembly);
 // The website's admin pages and asset sync, the leaderboard APIs, and the live matches snapshot (at most every 2 s, on request).
 builder.AddSetting<AdminSettings>("Admin");
 builder.AddSetting<FfaSettings>("Ffa");
+builder.AddSetting<TestingGroundsSettings>("TestingGrounds");
 builder.AddLeaderboards();
 builder.Services.AddSingleton<LiveMatches>();
 // /namechange checks names and bans; /ovs/notifications finds its player as the game routes do; /api/identify registers

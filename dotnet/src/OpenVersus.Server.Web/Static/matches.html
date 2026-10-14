@@ -171,6 +171,31 @@
           font-weight: 700;
           letter-spacing: 1px;
       }
+      /* 1v1 Testing Grounds and FFA: unranked, no set score, a pill of their own. */
+      .mode_pill.mode_tg {
+          background: #0d9488;
+      }
+      .mode_pill.mode_ffa {
+          background: #dc2626;
+      }
+      .score.versus {
+          font-size: 30px;
+      }
+      .searching_label {
+          font-weight: 700;
+          margin-right: 4px;
+      }
+      .queue_chip {
+          display: inline-block;
+          margin: 2px 3px;
+          padding: 2px 10px;
+          border-radius: 20px;
+          border: 1px solid rgba(31, 111, 235, 0.35);
+          white-space: nowrap;
+      }
+      .queue_chip b {
+          margin-left: 4px;
+      }
       .concede_flag {
           display: block;
           margin-top: 4px;
@@ -224,7 +249,7 @@
       <h1>LIVE MATCHES</h1>
       <div class="subtitle"><span class="dot"></span><span id="match_count">0 matches in progress</span></div>
       <div class="subtitle"><span class="dot"></span><span id="online_count">0 players online</span></div>
-      <div class="subtitle"><span class="dot"></span><span id="searching_count">0 searching in 1v1 · 0 searching in 2v2</span></div>
+      <div class="subtitle"><span class="dot"></span><span id="searching_count"><span class="searching_label">Searching:</span></span></div>
 
       <div class="match_list" id="match_list">
         <div class="empty_state">Loading...</div>
@@ -320,11 +345,21 @@
     `;
   }
 
+  const TESTING_GROUNDS = '1v1 Testing Grounds';
+
   function renderMatch(m) {
-    const team0 = (m.teams['0'] || []).map(p => renderPlayer(p, false)).join('');
-    const team1 = (m.teams['1'] || []).map(p => renderPlayer(p, true)).join('');
+    // FFA: every player is a team of their own (0 to 3): the even ones on the left, the odd ones on the right.
+    const ffa = m.mode === 'FFA';
+    const side = (teams) => teams.flatMap(t => m.teams[t] || []);
+    const team0 = side(ffa ? ['0', '2'] : ['0']).map(p => renderPlayer(p, false)).join('');
+    const team1 = side(ffa ? ['1', '3'] : ['1']).map(p => renderPlayer(p, true)).join('');
     const s0 = (m.scores && m.scores[0]) || 0;
     const s1 = (m.scores && m.scores[1]) || 0;
+    // Testing Grounds and FFA matches are single unranked games: no set score.
+    const unranked = ffa || m.mode === TESTING_GROUNDS;
+    const score = unranked ? '<div class="score versus">VS</div>' : `<div class="score">${s0} - ${s1}</div>`;
+    const pillClass = ffa ? ' mode_ffa' : m.mode === TESTING_GROUNDS ? ' mode_tg' : '';
+    const pillText = ffa ? 'FREE FOR ALL' : m.mode;
     const concede = m.conceded ? '<span class="concede_flag">CONCEDED</span>' : '';
     // A match that ended a few minutes ago (the server lists it for a while after its end).
     const finished = m.finished ? '<span class="finished_flag">FINISHED</span>' : '';
@@ -332,8 +367,8 @@
       <div class="match_card${m.finished ? ' finished' : ''}">
         <div class="team team_left">${team0}</div>
         <div class="score_block">
-          <div class="score">${s0} - ${s1}</div>
-          <div class="mode_pill">${escapeHtml(m.mode || '')}</div>
+          ${score}
+          <div class="mode_pill${pillClass}">${escapeHtml(pillText || '')}</div>
           ${concede}
           ${finished}
         </div>
@@ -363,12 +398,13 @@
         : onlinePlayers + ' players online';
 
       const searching = data.searching || {};
-      const searchingIn = (mode) => (typeof searching[mode] === 'number' ? searching[mode] : 0) + ' searching in ' + mode;
-      const queues = data.ffaOpen ? ['1v1', '2v2', 'FFA'] : ['1v1', '2v2'];
-      document.getElementById('searching_count').textContent = queues.map(searchingIn).join(' · ');
+      const chip = (mode) => `<span class="queue_chip">${escapeHtml(mode)}<b>${typeof searching[mode] === 'number' ? searching[mode] : 0}</b></span>`;
+      // FFA and 1v1 Testing Grounds only while their queue is open.
+      const queues = ['1v1', '2v2'].concat(data.ffaOpen ? ['FFA'] : [], data.testingGroundsOpen ? [TESTING_GROUNDS] : []);
+      document.getElementById('searching_count').innerHTML = '<span class="searching_label">Searching:</span>' + queues.map(chip).join('');
 
       if (matches.length === 0) {
-        list.innerHTML = '<div class="empty_state">No ranked sets currently in progress.</div>';
+        list.innerHTML = '<div class="empty_state">No matches currently in progress.</div>';
         return;
       }
 

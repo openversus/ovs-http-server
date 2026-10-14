@@ -289,6 +289,25 @@ public sealed class OpsTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    public async Task TestingGroundsAndFfaMatchesAreListedWithTheirModes()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        // A 1v1 Testing Grounds match: unranked (isCustomGame, as a custom game's) but its override names the queue.
+        await Redis.StringSetAsync("match_started:t1", "1");
+        await Redis.StringSetAsync("t1", """{"players":[{"playerId":"p1","teamIndex":0},{"playerId":"p2","teamIndex":1}],"mode":"1v1","isCustomGame":true,"gameplayConfigOverride":{"EventQueueSlug":"evtq_1v1testinggrounds"}}""");
+        // An FFA match: four teams of one.
+        await Redis.StringSetAsync("match_started:a1", "1");
+        await Redis.StringSetAsync("a1", """{"players":[{"playerId":"q0","teamIndex":0},{"playerId":"q1","teamIndex":1},{"playerId":"q2","teamIndex":2},{"playerId":"q3","teamIndex":3}],"mode":"FFA"}""");
+
+        var matches = (await Ops.MatchesAsync()).Value!;
+        Assert.Equal(["a1", "s1", "s2", "t1"], matches.Select(m => m.SetId).Order());
+        Assert.Equal(OpenVersus.Server.Core.Matchmaking.TestingGrounds.ListedMode, matches.Single(m => m.SetId == "t1").Mode);
+        var ffa = matches.Single(m => m.SetId == "a1");
+        Assert.Equal("FFA", ffa.Mode);
+        Assert.Equal(["0", "1", "2", "3"], ffa.Teams.Keys.Order());
+    }
+
+    [SkippableFact]
     public async Task APlayerIsFoundByIdNameInAnyCaseOrSteamIdAndAmbiguityIsRefused()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");

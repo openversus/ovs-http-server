@@ -47,6 +47,9 @@ public static class TestingGrounds
     /// <summary>Its tickets' list (matchType) and queue name.</summary>
     public const string List = "testinggrounds1v1";
 
+    /// <summary>The mode its matches are listed with (ovsctl, the website's live matches): their own config says 1v1.</summary>
+    public const string ListedMode = "1v1 Testing Grounds";
+
     /// <summary>The settings in force (defaults when the service has none).</summary>
     public static TestingGroundsSettings Of(IServiceProvider services) =>
         services.GetService<IOptionsMonitor<TestingGroundsSettings>>()?.CurrentValue ?? new TestingGroundsSettings();

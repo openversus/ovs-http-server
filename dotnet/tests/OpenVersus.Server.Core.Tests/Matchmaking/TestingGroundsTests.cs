@@ -98,17 +98,36 @@ public sealed class TestingGroundsTests
         Assert.Equal("BetaSpeedChanged", failure["body"]!["ErrorCode"]!.GetValue<string>());
     }
 
+    [Fact]
+    // Tuggernuts, 2026-10-13: during Twosday neither tile shows; FFA only while its queue is open.
+    public void TheFfaTileShowsOnlyWhileTheFfaQueueIsOpen()
+    {
+        var saturday = new DateTimeOffset(2026, 10, 17, 20, 0, 0, TimeSpan.FromHours(-4));
+        var twosday = new DateTimeOffset(2026, 10, 13, 22, 0, 0, TimeSpan.FromHours(-4));
+        Assert.True(TestingGrounds.FfaTileShown(saturday, testingGroundsOpen: false, enabled: true, ffaWeekendOnly: true));
+        // Tuesday evening: Testing Grounds is closed for Twosday, and FFA is weekend-only, so no tile.
+        Assert.False(TestingGrounds.FfaTileShown(twosday, testingGroundsOpen: false, enabled: true, ffaWeekendOnly: true));
+        Assert.False(TestingGrounds.FfaTileShown(twosday, testingGroundsOpen: true, enabled: true, ffaWeekendOnly: true));
+        // Testing Grounds off: FFA shows all week, as before it existed.
+        Assert.True(TestingGrounds.FfaTileShown(twosday, testingGroundsOpen: false, enabled: false, ffaWeekendOnly: true));
+        // FFA every day: its tile whenever Testing Grounds is not open.
+        Assert.True(TestingGrounds.FfaTileShown(twosday, testingGroundsOpen: false, enabled: true, ffaWeekendOnly: false));
+    }
+
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void TheHissShowsTheOpenQueueOnly(bool open)
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void TheHissShowsTheOpenQueueOnly(bool open, bool ffaTile)
     {
         var answer = HissService.Fill(HissService.Values(1, 2, []));
-        TestingGrounds.ApplyTo(answer, open, new TestingGroundsSettings());
+        TestingGrounds.ApplyTo(answer, open, new TestingGroundsSettings(), ffaTile);
         var data = answer["body"]!["Data"]!;
         var toggles = data["feature-toggles"]!["_hydra_compressed"]!;
         Assert.Equal(open, toggles["evtq_1v1testinggrounds"]!.GetValue<bool>());
-        Assert.Equal(!open, toggles["FFA"]!.GetValue<bool>());
+        Assert.Equal(ffaTile, toggles["FFA"]!.GetValue<bool>());
+        Assert.Equal(ffaTile, toggles["evtq_ffa"]!.GetValue<bool>());
+        Assert.Equal(ffaTile, data["event-queue-config"]!["_hydra_compressed"]!["evtq_ffa"]!["data"]!["bAlwaysAvailable"]!.GetValue<bool>());
         Assert.Equal(open, data["event-queue-config"]!["_hydra_compressed"]!["evtq_1v1testinggrounds"]!["data"]!["bAlwaysAvailable"]!.GetValue<bool>());
         var mode = data["game-mode-config"]!["_hydra_compressed"]!["gm_1v1shields"]!["data"]!;
         Assert.Equal(["ovs_beta_speed", "ovs_shield_hp"], mode["GameModeData"]!["RequiredWorldBuffs"]!.AsArray().Select(b => b!.GetValue<string>()));

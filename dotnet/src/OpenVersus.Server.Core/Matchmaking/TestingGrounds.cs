@@ -37,6 +37,9 @@ public static class TestingGrounds
     /// <summary>The game's event queue slug.</summary>
     public const string EventQueue = "evtq_1v1testinggrounds";
 
+    /// <summary>The public FFA queue's event queue: its tile on the menu.</summary>
+    public const string FfaEventQueue = "evtq_ffa";
+
     /// <summary>
     /// The matchmaking criteria the game sends for it: its MatchmakingCriteriaSlug with the retail suffix, as 1v1's
     /// 1v1-retail (POST /matches/matchmaking/EVT_2_Player_1-retail/request); the bare slug is taken too.
@@ -119,6 +122,19 @@ public static class TestingGrounds
         return IsOpen(now, settings.Enabled, ffaWeekendOnly, settings.AlwaysOpen, await Twosday.IsActiveAsync(services, now));
     }
 
+    /// <summary>
+    /// Whether the menu shows the FFA tile: only while the FFA queue is open and Testing Grounds is not (Tuggernuts,
+    /// 2026-10-13: during Twosday neither tile shows, then the open one comes back). With Testing Grounds off, FFA shows all
+    /// week as before.
+    /// </summary>
+    public static bool FfaTileShown(DateTimeOffset now, bool testingGroundsOpen, bool enabled, bool ffaWeekendOnly) =>
+        !testingGroundsOpen && (!enabled || FfaSchedule.IsOpen(now, ffaWeekendOnly));
+
+    /// <summary><see cref="FfaTileShown(DateTimeOffset, bool, bool, bool)"/> with the service's settings.</summary>
+    public static bool FfaTileShown(IServiceProvider services, DateTimeOffset now, bool testingGroundsOpen) =>
+        FfaTileShown(now, testingGroundsOpen, Of(services).Enabled,
+            services.GetService<IOptionsMonitor<FfaSettings>>()?.CurrentValue.WeekendOnly ?? new FfaSettings().WeekendOnly);
+
     /// <summary>Its match's notification fields beside the unranked ones: the mutators (the rollback registry's tick_rate reads them).</summary>
     public static JsonArray WorldBuffs(TestingGroundsSettings settings) => new(MutatorsOf(settings).Select(m => (JsonNode?)m).ToArray());
 
@@ -153,21 +169,30 @@ public static class TestingGrounds
     };
 
     /// <summary>
-    /// The hiss as the schedule has it at this moment: the open queue's feature toggle on and the other's off, and Testing
-    /// Grounds always available while open (the catalog's FFA is), run with the settings' mutators.
+    /// The hiss as the schedule has it at this moment: Testing Grounds' feature toggle on while it is open, FFA's while
+    /// <paramref name="ffaTile"/> (<see cref="FfaTileShown(DateTimeOffset, bool, bool, bool)"/>: neither during Twosday), and
+    /// Testing Grounds always available while open (the catalog's FFA is), run with the settings' mutators.
     /// </summary>
-    public static void ApplyTo(JsonNode answer, bool open, TestingGroundsSettings settings)
+    public static void ApplyTo(JsonNode answer, bool open, TestingGroundsSettings settings, bool ffaTile)
     {
         var data = answer["body"]?["Data"];
         if (data?["feature-toggles"]?["_hydra_compressed"] is JsonObject toggles)
         {
-            toggles["FFA"] = !open;
+            toggles["FFA"] = ffaTile;
+            toggles[FfaEventQueue] = ffaTile;
             toggles[EventQueue] = open;
         }
 
         if (data?["event-queue-config"]?["_hydra_compressed"]?[EventQueue]?["data"] is JsonObject queue)
         {
             queue["bAlwaysAvailable"] = open;
+        }
+
+        // The FFA tile is its event queue, always available in the catalog: the FFA toggle alone leaves the tile on the menu
+        // (Lab 2026-10-13, Twosday). Hidden the way Testing Grounds' is: its toggle and its availability.
+        if (data?["event-queue-config"]?["_hydra_compressed"]?[FfaEventQueue]?["data"] is JsonObject ffaQueue)
+        {
+            ffaQueue["bAlwaysAvailable"] = ffaTile;
         }
 
         if (data?["game-mode-config"]?["_hydra_compressed"]?["gm_1v1shields"]?["data"] is JsonObject mode)

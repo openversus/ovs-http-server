@@ -73,13 +73,13 @@ public sealed class ArenaHissTests
         var crcs = new List<double>();
         foreach (int seconds in (int[])[11, 12, 15, 240, 241, 500, 1800])
         {
-            foreach (double testingGrounds in (double[])[0, HissService.TestingGroundsCrcOffset])
+            foreach (double testingGrounds in (double[])[0, HissService.TestingGroundsCrcOffset, HissService.NoQueueTileCrcOffset])
             {
                 crcs.Add(testingGrounds + ArenaHiss.CrcOffset + seconds * ArenaHiss.CrcPerBotTimeoutSecond);
             }
         }
 
-        crcs.AddRange([0, HissService.TestingGroundsCrcOffset]);
+        crcs.AddRange([0, HissService.TestingGroundsCrcOffset, HissService.NoQueueTileCrcOffset]);
         Assert.Equal(crcs.Count, crcs.Distinct().Count());
         Assert.True(HissService.DefaultCrc + 15 + crcs.Max() < int.MaxValue);
     }

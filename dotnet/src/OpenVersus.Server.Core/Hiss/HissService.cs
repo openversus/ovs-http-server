@@ -103,6 +103,9 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
     /// <summary>Added to the Crc while 1v1 Testing Grounds is open (weekdays), so the two catalogs never share a Crc.</summary>
     internal const double TestingGroundsCrcOffset = 100_000;
 
+    /// <summary>Added to the Crc while neither the FFA nor the Testing Grounds tile shows (Twosday), for the same reason.</summary>
+    internal const double NoQueueTileCrcOffset = 50_000;
+
     public async Task<HissAnswer> AnswerAsync(CancellationToken ct)
     {
         var mongo = services.GetService<IMongoDatabase>() ?? throw new InvalidOperationException("this service has no Mongo (MONGODB_URI)");
@@ -110,10 +113,12 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         int matchmakingCrc = MatchmakingCrcOf(services);
         var fighterPass = FighterPass.Current;
         string fighterPassKey = FighterPass.Key(fighterPass);
-        bool testingGrounds = await Matchmaking.TestingGrounds.IsOpenAsync(services, (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
+        var now = (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
+        bool testingGrounds = await Matchmaking.TestingGrounds.IsOpenAsync(services, now);
+        bool ffaTile = Matchmaking.TestingGrounds.FfaTileShown(services, now, testingGrounds);
         var testingGroundsRules = Matchmaking.TestingGrounds.Of(services);
-        // The catalog changes with the queue's state and with its mutators.
-        string testingGroundsKey = $"{testingGrounds}|{testingGroundsRules.Mutators}";
+        // The catalog changes with the queues' state and with Testing Grounds' mutators.
+        string testingGroundsKey = $"{testingGrounds}|{ffaTile}|{testingGroundsRules.Mutators}";
         bool arenas = Arenas.ArenaHiss.IsEnabled(services);
         int arenaBotTimeout = Arenas.ArenaHiss.BotTimeoutSeconds(services);
         Task<HissAnswer> build;
@@ -124,7 +129,7 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
             if (_current is not { } current || current.Crc != crc || current.MatchmakingCrc != matchmakingCrc || current.FighterPass != fighterPassKey || current.TestingGrounds != testingGroundsKey || current.Arenas != arenas || current.ArenaBotTimeout != arenaBotTimeout || current.Build.IsFaulted || current.Build.IsCanceled)
             {
                 _current = (crc, matchmakingCrc, fighterPassKey, testingGroundsKey, arenas, arenaBotTimeout,
-                    Task.Run(() => BuildAsync(mongo, crc, matchmakingCrc, fighterPass, testingGrounds, testingGroundsRules, arenas, arenaBotTimeout)));
+                    Task.Run(() => BuildAsync(mongo, crc, matchmakingCrc, fighterPass, testingGrounds, ffaTile, testingGroundsRules, arenas, arenaBotTimeout)));
             }
 
             build = _current.Value.Build;
@@ -166,16 +171,18 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
     /// <summary>
     /// The Crc the game is answered (the TS server's getCurrentCRC): the config document's CRC (the default without
     /// Mongo or a document) plus <see cref="HissSettings.ContentRevision"/>, plus <see cref="TestingGroundsCrcOffset"/> while 1v1
-    /// Testing Grounds is open, and while Arenas is on <see cref="Arenas.ArenaHiss.CrcOffset"/> plus
+    /// Testing Grounds is open or <see cref="NoQueueTileCrcOffset"/> while neither it nor FFA shows, and while Arenas is on <see cref="Arenas.ArenaHiss.CrcOffset"/> plus
     /// <see cref="Arenas.ArenaHiss.CrcPerBotTimeoutSecond"/> per second of Arenas:MatchmakingBotTimeoutSeconds.
     /// </summary>
     public static async Task<double> CurrentCrcAsync(IServiceProvider services, CancellationToken ct)
     {
         var mongo = services.GetService<IMongoDatabase>();
         double crc = mongo is null ? DefaultCrc : await CrcAsync(mongo, ct);
-        bool testingGrounds = await Matchmaking.TestingGrounds.IsOpenAsync(services, (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
+        var now = (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
+        bool testingGrounds = await Matchmaking.TestingGrounds.IsOpenAsync(services, now);
+        bool ffaTile = Matchmaking.TestingGrounds.FfaTileShown(services, now, testingGrounds);
         return crc + (services.GetService<IOptionsMonitor<HissSettings>>()?.CurrentValue.ContentRevision ?? new HissSettings().ContentRevision)
-            + (testingGrounds ? TestingGroundsCrcOffset : 0)
+            + (testingGrounds ? TestingGroundsCrcOffset : ffaTile ? 0 : NoQueueTileCrcOffset)
             + (Arenas.ArenaHiss.IsEnabled(services) ? Arenas.ArenaHiss.CrcOffset + Arenas.ArenaHiss.BotTimeoutSeconds(services) * Arenas.ArenaHiss.CrcPerBotTimeoutSecond : 0);
     }
 
@@ -188,7 +195,7 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
     }
 
     private async Task<HissAnswer> BuildAsync(IMongoDatabase mongo, double crc, int matchmakingCrc, FighterPassSettings fighterPass, bool testingGrounds,
-        Matchmaking.TestingGroundsSettings testingGroundsRules, bool arenas, int arenaBotTimeout)
+        bool ffaTile, Matchmaking.TestingGroundsSettings testingGroundsRules, bool arenas, int arenaBotTimeout)
     {
         long started = Stopwatch.GetTimestamp();
         var assets = await DataAssets.EnabledAsync(mongo, CancellationToken.None);
@@ -196,7 +203,7 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         var answer = Fill(values);
         RiftCatalog.ExtendEndTimes(answer["body"]?["Data"]?["rift-config"]?["_hydra_compressed"] as JsonObject);
         ExtendFighterPasses(answer, fighterPass);
-        Matchmaking.TestingGrounds.ApplyTo(answer, testingGrounds, testingGroundsRules);
+        Matchmaking.TestingGrounds.ApplyTo(answer, testingGrounds, testingGroundsRules, ffaTile);
         Arenas.ArenaHiss.ApplyTo(answer, arenas, arenaBotTimeout);
         byte[] hydra = HydraEncoder.Encode(answer, compression: CompressionLevel.Optimal);
         log.LogInformation("Built the hiss answer for CRC {Crc}: {Assets} data assets, {Bytes} bytes, {Ms:F0} ms",
@@ -206,7 +213,7 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
             var json = Fill(values);
             RiftCatalog.ExtendEndTimes(json["body"]?["Data"]?["rift-config"]?["_hydra_compressed"] as JsonObject);
             ExtendFighterPasses(json, fighterPass);
-            Matchmaking.TestingGrounds.ApplyTo(json, testingGrounds, testingGroundsRules);
+            Matchmaking.TestingGrounds.ApplyTo(json, testingGrounds, testingGroundsRules, ffaTile);
             Arenas.ArenaHiss.ApplyTo(json, arenas, arenaBotTimeout);
             return Js.Stringify(json);
         });

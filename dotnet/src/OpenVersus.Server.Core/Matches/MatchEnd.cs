@@ -83,6 +83,44 @@ internal sealed class MatchEnd(IServiceProvider services, IRankedSets sets, EloR
             return;
         }
 
+        try
+        {
+            await EndOnceAsync(redis, matchId, playerIds, ct);
+        }
+        finally
+        {
+            await TellOutdatedPaksAsync(redis, matchId, playerIds);
+        }
+    }
+
+    // Players whose paks are not the required ones are told to restart (Clients/RequiredPaks.cs), now that they are out of
+    // the match; not those still in a ranked set (its next game is theirs). Never fails the match's end.
+    private async Task TellOutdatedPaksAsync(IDatabase redis, string matchId, IReadOnlyList<string> playerIds)
+    {
+        try
+        {
+            var free = new List<string>();
+            foreach (string id in playerIds)
+            {
+                if (!(await redis.StringGetAsync($"player_ranked_set:{id}")).HasValue)
+                {
+                    free.Add(id);
+                }
+            }
+
+            if (await Clients.PakUpdateNotices.MatchEndedAsync(services, redis, free, time) is > 0 and int told)
+            {
+                log.LogInformation("Match {Match} ended: {Count} player(s) told to restart for new paks", matchId, told);
+            }
+        }
+        catch (RedisException e)
+        {
+            log.LogWarning("Match {Match}: could not tell players about new paks ({Error})", matchId, e.Message);
+        }
+    }
+
+    private async Task EndOnceAsync(IDatabase redis, string matchId, IReadOnlyList<string> playerIds, CancellationToken ct)
+    {
         foreach (string id in playerIds)
         {
             await EchoAsync(redis, matchId, id);

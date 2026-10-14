@@ -42,6 +42,12 @@ public sealed class ClientSettings
 
     [Description("The GitHub \"owner/repo\" whose latest release the client's update check offers (CLIENT_RELEASE_REPO); anything else means the default, openversus/ovs-client.")]
     public string ReleaseRepo { get; set; } = "openversus/ovs-client";
+
+    [Description("The OVS paks players must run (RequiredPaks.cs): release = the latest ReleaseRepo release's OVS_* paks at GitHub's sha256 digests, the ones the client's startup update installs; off = none; or a literal Name=sha256;... list (local tests). A player whose paks (X-OVS-Paks, kept at login) differ is told to close the game and relaunch to update: when the list changes, unless in a match, and at the end of each match. Nobody is locked out for it.")]
+    public string RequiredPaks { get; set; } = "release";
+
+    [Description("What the game shows before it closes to install new paks.")]
+    public string PaksUpdateMessage { get; set; } = "New OpenVersus content is out. MultiVersus will close in 5 seconds; please relaunch it to install the update.";
 }
 
 /// <summary>A player's client, as the gate sees it.</summary>
@@ -269,6 +275,8 @@ public static class ClientUpdateGateHosting
         // ForRequestAsync finds the player's connection through it.
         builder.AddAccountResolver();
         builder.Services.AddSingleton<IClientUpdateGate, ClientUpdateGate>();
+        // The required paks, for telling players at a match's end (RequiredPaks.cs).
+        builder.AddRequiredPaks();
         return builder;
     }
 }

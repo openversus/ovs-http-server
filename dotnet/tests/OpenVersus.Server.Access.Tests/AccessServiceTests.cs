@@ -61,12 +61,12 @@ public sealed class AccessServiceTests : IClassFixture<ServiceFactory<Program>>
     }
 
     [Fact]
-    public void RunsTheBanLoaderTheBanSweepAndTheDailyToastPopupsAndNoOtherBackgroundServiceOfItsOwn()
+    public void RunsTheBanLoaderTheBanSweepTheDailyToastPopupsAndTheRequiredPaksAndNoOtherBackgroundServiceOfItsOwn()
     {
         var hosted = _factory.Services.GetServices<IHostedService>().Select(s => s.GetType())
             .Where(t => t.Namespace?.StartsWith("OpenVersus.", StringComparison.Ordinal) == true).Select(t => t.Name).Order().ToList();
 
-        Assert.Equal(["BanLoader", "BanSweep", "BannedPlayers", "ClusterSettingsSync", "DailyToastPopups", "InstanceHeartbeat"], hosted);
+        Assert.Equal(["BanLoader", "BanSweep", "BannedPlayers", "ClusterSettingsSync", "DailyToastPopups", "InstanceHeartbeat", "RequiredPaksRefresher"], hosted);
     }
 
     [Fact]

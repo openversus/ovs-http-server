@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json;
 using FastEndpoints;
 using OpenVersus.Server.Core.Access;
+using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Http.Shared.Hosting;
 
@@ -30,7 +31,8 @@ public sealed class PostAccess : EndpointWithoutRequest
         string ip = ClientAddress.Of(HttpContext, stripMapped: true);
         string? token = HttpContext.Request.Headers["x-hydra-access-token"] is { Count: > 0 } header ? header.ToString() : null;
         string? provedEpicId = await ProvedEpicIdAsync(ip, ct);
-        switch (await Resolve<IAccessService>().LoginAsync(ip, token, ct, provedEpicId))
+        string? paks = HttpContext.Request.Headers[PakReport.Header] is { Count: > 0 } reported ? reported.ToString() : null;
+        switch (await Resolve<IAccessService>().LoginAsync(ip, token, ct, provedEpicId, paks))
         {
             case AccessResult.Ok ok:
                 await HydraBodies.WriteAsync(HttpContext, ok.Response, ct);

@@ -186,13 +186,6 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             return new MatchmakingAnswer(200, Matchmaking.TestingGrounds.ClosedFailure());
         }
 
-        // Its mutators live in paks: a player without the exact pak would desync the match.
-        if (queue.IsTestingGrounds && Matchmaking.TestingGrounds.MissingPak(Matchmaking.TestingGrounds.Of(services), request.Paks) is { } missing)
-        {
-            log.LogInformation("Rejected Testing Grounds matchmaking for {Player}: no matching {Pak} (X-OVS-Paks: {Paks})", me, missing, request.Paks ?? "none");
-            return new MatchmakingAnswer(200, Matchmaking.TestingGrounds.PakFailure());
-        }
-
         // Beta Speed: a game that runs another speed than the server's (started before a change) would desync the match.
         if (queue.IsTestingGrounds && Matchmaking.TestingGrounds.WrongBetaSpeed(Matchmaking.TestingGrounds.Of(services), BetaSpeed.Of(services), request.BetaSpeed))
         {

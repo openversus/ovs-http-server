@@ -65,24 +65,6 @@ public sealed class TestingGroundsTests
     }
 
     [Fact]
-    public void APlayerNeedsEveryRequiredPakWithTheSameHash()
-    {
-        var none = new TestingGroundsSettings();
-        Assert.Null(TestingGrounds.MissingPak(none, null));
-        Assert.Null(TestingGrounds.MissingPak(none, "anything=1"));
-
-        var settings = new TestingGroundsSettings { RequiredPaks = "OVS_Experimental_50_P=ABCD; OVS_Balance_51_P=ef01" };
-        Assert.Equal("OVS_Experimental_50_P", TestingGrounds.MissingPak(settings, null));
-        Assert.Equal("OVS_Experimental_50_P", TestingGrounds.MissingPak(settings, "OVS_Experimental_50_P=abce;OVS_Balance_51_P=EF01"));
-        Assert.Equal("OVS_Balance_51_P", TestingGrounds.MissingPak(settings, "OVS_Experimental_50_P=abcd"));
-        // Hashes compare without case; extra paks are fine.
-        Assert.Null(TestingGrounds.MissingPak(settings, "ovs_experimental_50_p=abcd;OVS_Balance_51_P=EF01;OVS_Other_60_P=99"));
-        var failure = TestingGrounds.PakFailure();
-        Assert.Equal(1, failure["return_code"]!.GetValue<int>());
-        Assert.Equal("PakRequired", failure["body"]!["ErrorCode"]!.GetValue<string>());
-    }
-
-    [Fact]
     public void WithBetaSpeedAPlayerMustRunTheServersSpeed()
     {
         var settings = new TestingGroundsSettings();

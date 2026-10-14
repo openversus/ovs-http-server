@@ -1,5 +1,6 @@
 using OpenVersus.Server.Identity.Epic;
 using OpenVersus.Server.Core.Access;
+using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Hosting;
 using OpenVersus.Server.Http.Shared;
 
@@ -11,6 +12,10 @@ builder.AddAccess();
 builder.AddEpicIdTokens();
 // The daily toast bonus's popup, when the game's websocket connects (the realtime gateway's connected events).
 builder.AddDailyToastPopups();
+// Keeps the required paks current for every service and tells online players who must restart (Core/Clients/RequiredPaks.cs):
+// the latest client release, read here as the ban sweep reads bans, one replica at a time.
+builder.AddClientReleases();
+builder.AddRequiredPaksRefresher();
 
 var app = builder.Build();
 app.UseGameHttp();

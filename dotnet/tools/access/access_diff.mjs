@@ -13,7 +13,8 @@
 // Never point these at data you want to keep.
 //
 // One difference is the design, asserted on the C# run and then taken out of it (LOGIN_LOBBY): C# writes into the session
-// the custom lobby a login finds its player still in (login_custom_lobby, "" for none), which TS has no field for.
+// the custom lobby a login finds its player still in (login_custom_lobby, "" for none), which TS has no field for. A
+// second: the client's X-OVS-Paks at login (paks, on the id's and the IP's session; "" here, as no request sends it).
 import fs from "node:fs";
 import { require, need, openScratch, readProfile, toPlain, dump, writeRun, diff } from "../refdiff/refdiff.mjs";
 
@@ -160,8 +161,16 @@ function diffAccess(tsFile, csFile) {
   const cs = JSON.parse(fs.readFileSync(csFile, "utf8"));
   const first = cs.steps[0]?.response?.body?.account?.id;
   let wrong = 0, seen = 0;
+  let paksWrong = 0;
   cs.steps.forEach((step, i) => {
     for (const [key, entry] of Object.entries(step.state?.redis ?? {})) {
+      if (key.startsWith("connections:") && entry.type === "hash" && "paks" in entry.value) {
+        if (entry.value.paks !== "") {
+          paksWrong++;
+          console.log(`ASSERTION FAILED [${i}:${step.name}] ${key}.paks: ${JSON.stringify(entry.value.paks)}, wanted ""`);
+        }
+        delete entry.value.paks;
+      }
       if (!/^connections:[0-9a-f]{24}$/.test(key) || entry.type !== "hash") continue;
       const wanted = key === `connections:${first}` && i > 0 ? LEFT_OVER_LOBBY : "";
       seen++;
@@ -176,7 +185,7 @@ function diffAccess(tsFile, csFile) {
   const adjusted = `${csFile}.adjusted.json`;
   fs.writeFileSync(adjusted, JSON.stringify(cs));
   diff(tsFile, adjusted);
-  if (wrong || !seen) process.exitCode = 1;
+  if (wrong || !seen || paksWrong) process.exitCode = 1;
 }
 
 async function call(baseUrl, method, ip, body, headers) {

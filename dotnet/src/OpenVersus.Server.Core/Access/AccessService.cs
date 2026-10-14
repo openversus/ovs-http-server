@@ -32,7 +32,8 @@ namespace OpenVersus.Server.Core.Access;
 //   connections:{playerId}       hash: the account token's fields (GameplayPreferences as text), hardwareIdVersion,
 //                                hardwareIdQuality, installId, clientVersion, identityRegistered, nodePort (the P2P
 //                                node's port, from the identify token's claim or identity:{ip}; "0" for none; never in
-//                                the account token), jwt; party_key; login_custom_lobby (the custom lobby the player was
+//                                the account token), jwt; paks (the client's X-OVS-Paks at login, Clients/RequiredPaks.cs; "" when
+//                                it sent none); party_key; login_custom_lobby (the custom lobby the player was
 //                                still in at this login, "" for none: their first create_party_lobby takes them out of it,
 //                                CustomLobbyService; the IP's copy does not get it)
 //   connections:{ip}             the same hash, for old clients; 120 s TTL
@@ -111,7 +112,8 @@ public interface IAccessService
     /// <paramref name="provedEpicId"/> when the request's own Epic credential (auth.epic, the game's Epic access token)
     /// verified: the Epic account id it names, which outranks any claim.
     /// </summary>
-    Task<AccessResult> LoginAsync(string ip, string? accessToken, CancellationToken ct = default, string? provedEpicId = null);
+    /// <param name="paks">The client's X-OVS-Paks header (its installed OVS paks), kept on the connection for the client update gate.</param>
+    Task<AccessResult> LoginAsync(string ip, string? accessToken, CancellationToken ct = default, string? provedEpicId = null, string? paks = null);
 
     /// <summary>DELETE /access: the TS server only logs it.</summary>
     Task LogoutAsync(string ip, CancellationToken ct = default);
@@ -163,7 +165,7 @@ internal sealed partial class AccessService(
         public bool Any => SteamId.Length > 0 || EpicId.Length > 0 || InstallId.Length > 0;
     }
 
-    public async Task<AccessResult> LoginAsync(string ip, string? accessToken, CancellationToken ct = default, string? provedEpicId = null)
+    public async Task<AccessResult> LoginAsync(string ip, string? accessToken, CancellationToken ct = default, string? provedEpicId = null, string? paks = null)
     {
         var mongo = services.GetService<IMongoDatabase>();
         var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase();
@@ -299,7 +301,7 @@ internal sealed partial class AccessService(
         string ws = realtimeSettings.Url;
         log.LogInformation("Player {Player} - {Name} connected; ws: {Ws}", id, player.Str("name"), ws);
 
-        await WriteSessionAsync(redis, player, account, identity, token, ip, now);
+        await WriteSessionAsync(redis, player, account, identity, token, ip, now, paks);
 
         var (granted, count) = await DailyToastBonus.TryGrantAsync(mongo, id, now, ct);
         if (granted > 0)
@@ -779,7 +781,7 @@ internal sealed partial class AccessService(
         return doc;
     }
 
-    private async Task WriteSessionAsync(IDatabase redis, PlayerRecord player, JsonObject account, Identity identity, string token, string ip, DateTimeOffset now)
+    private async Task WriteSessionAsync(IDatabase redis, PlayerRecord player, JsonObject account, Identity identity, string token, string ip, DateTimeOffset now, string? paks)
     {
         string id = player.IdHex;
         var connection = account.Select(p => new HashEntry(p.Key, p.Value is { } v && v.GetValueKind() == JsonValueKind.Number ? v.ToJsonString() : (string?)p.Value ?? "")).ToList();
@@ -788,6 +790,8 @@ internal sealed partial class AccessService(
         connection.Add(new HashEntry("installId", player.Str("installId") ?? ""));
         connection.Add(new HashEntry("clientVersion", identity.ClientVersion));
         connection.Add(new HashEntry("identityRegistered", identity.Registered ? "1" : ""));
+        // The client's OVS paks as it reported them (X-OVS-Paks): they only change at a restart, which is a new login.
+        connection.Add(new HashEntry("paks", paks ?? ""));
         connection.Add(new HashEntry("nodePort", identity.NodePort.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         connection.Add(new HashEntry("jwt", token));
         // The IP hash was just written for this player, so the TS server's owner check before mirroring the party key

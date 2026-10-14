@@ -89591,6 +89591,20 @@
                   ],
                   "ScoreThreshold": 100000,
                   "TierGuid": "9A6FD5F34A60612120874A9ECB07C1D2"
+                },
+                {
+                  "DisplayType": 1,
+                  "Rewards": [
+                    {
+                      "Constraints": [],
+                      "DirectInventoryItemCount": 1,
+                      "InventoryHsda": "emote_ovs_dumpster_fire",
+                      "RewardGrantMethod": "DirectInventoryItem",
+                      "RewardGuid": "1B9F613FA4BB0A400B02D36101BD0C4A"
+                    }
+                  ],
+                  "ScoreThreshold": 102000,
+                  "TierGuid": "9148EAA4462FE1787F9408AF02CFC5B0"
                 }
               ],
               "Title": {

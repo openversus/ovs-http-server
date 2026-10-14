@@ -9,7 +9,8 @@ let CRC = 1267552956;
 // 13: the final battle pass order (50 tiers, Twerk It Out last).
 // 14: custom FFA uses the CustomFFA map rotation (WB's PlaytestCustomFFA had the unfinished M025 / M026 maps).
 // 15: Get Rich or Dunk Tryin' (LeBron, Glassconsumer69) at battle pass tier 49; 51 tiers, Twerk It Out last.
-const HISS_CONTENT_REVISION = 15;
+// 16: Dumpster Fire (RosettaSt0ned) at battle pass tier 52, the last tier.
+const HISS_CONTENT_REVISION = 16;
 
 export function getCurrentCRC() {
   return CRC + HISS_CONTENT_REVISION;

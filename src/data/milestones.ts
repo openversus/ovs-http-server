@@ -86477,8 +86477,8 @@ for (const { trackSlug, skinSlug } of CHROMIUM_FIGHTER_PASS) {
 const battlepassTiers = MILESTONE_REWARDS.mrt_battlepass_season_five.data.Tiers as any[];
 // The End Game battle pass, one reward per tier, in Tuggernuts's order (2026-10-07): the valuable items spread out
 // (early: One Tough Banana, Sailor Aquaman, the Tooniverse skins; mid: Jason, Cackle, Bugs Crying, Painter
-// Beetlejuice; late: Finn's dance, Laughing Shaggy, Peace Among Worlds; last: Twerk It Out), no two skins in a
-// row, taunts apart, the Toasties every few tiers.
+// Beetlejuice; late: Finn's dance, Laughing Shaggy, Peace Among Worlds, Twerk It Out; last: Dumpster Fire), no two
+// skins in a row, taunts apart, the Toasties every few tiers.
 export const OVS_BATTLEPASS_REWARD_SLUGS: string[] = [
   "profileicon_ovs_multiversus_tattoo", // 1: No Regrets (SoraMVS), the free tier
   "emote_superman_smile", // 2
@@ -86530,7 +86530,8 @@ export const OVS_BATTLEPASS_REWARD_SLUGS: string[] = [
   "emote_ovs_toastie_cool", // 48
   LEBRON_50CENT_SLUG, // 49: Get Rich or Dunk Tryin' (Glassconsumer69), near the end (Tuggernuts 2026-10-08)
   "emote_ovs_gingerbread_man", // 50
-  TWERK_IT_OUT_SLUG, // 51: Twerk It Out (Tuggernuts), the last tier
+  TWERK_IT_OUT_SLUG, // 51: Twerk It Out (Tuggernuts)
+  "emote_ovs_dumpster_fire", // 52: Dumpster Fire (RosettaSt0ned), the last tier
 ];
 
 // Every tier is 2,000 XP apart (~4 matches at 500 XP): tier N unlocks at (N-1) x 2000.

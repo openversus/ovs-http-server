@@ -24,6 +24,7 @@ export const RECOVERED_EMOTES = [
   { token: "GizmoSmith", slug: "emote_ovs_gizmo_smith", displayName: "I Hate Mogwais" },
   { token: "TazGetIn", slug: "emote_ovs_taz_get_in", displayName: "Taz: Get In!" },
   { token: "JDawg", slug: "emote_ovs_jdawg", displayName: "J-800" },
+  { token: "DumpsterFire", slug: "emote_ovs_dumpster_fire", displayName: "Dumpster Fire" },
 ] as const;
 
 export const RECOVERED_EMOTE_SLUGS = RECOVERED_EMOTES.map((emote) => emote.slug);

@@ -2493,7 +2493,7 @@
         ],
         "bHasPremium": false,
         "Guid": "e693b965-7c8c-40f7-b89f-14c79dd6a609",
-        "InfiniteTierThreshold": 48,
+        "InfiniteTierThreshold": 51,
         "HighestClaimedInifiniteTier": -1
       },
       {

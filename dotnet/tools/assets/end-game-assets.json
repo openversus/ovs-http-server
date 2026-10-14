@@ -534,6 +534,12 @@
     "character_slug": "character_c019"
   },
   {
+    "slug": "emote_ovs_dumpster_fire",
+    "assetType": "EmoteData",
+    "assetPath": "/OVS/Rewards/Emotes/Recovered/DumpsterFire/emote_ovs_dumpster_fire.emote_ovs_dumpster_fire",
+    "character_slug": ""
+  },
+  {
     "slug": "ovs_2v2_individual_stocks",
     "assetType": "MvsMetaWorldBuffHsda",
     "assetPath": "/OVS/Mutators/IndividualStocks/ovs_2v2_individual_stocks.ovs_2v2_individual_stocks",

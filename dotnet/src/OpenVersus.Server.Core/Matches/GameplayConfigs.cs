@@ -119,6 +119,17 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
         bool ffa = gameMode == Matchmaking.MatchmakingWorker.Ffa;
         bool friendlyFire = custom && (n["worldBuffs"] as JsonArray ?? []).Any(b => Str(b) == FriendlyFireMutator);
 
+        // The Random fighter: each player (or bot) who picked it gets their real fighter for this match first.
+        foreach (var player in players.Where(p => !RollbackCallbacks.Truthy(p["isSpectator"])))
+        {
+            string id = Str(player["playerId"]) ?? "";
+            if (await RandomFighter.ResolveAsync(redis, matchId, id, RollbackCallbacks.Truthy(player["isBot"]) ? $"bot_config:{id}" : $"connections:{id}")
+                is { } pick)
+            {
+                log.LogInformation("Match {Match}: {Player} picked Random, plays {Character} ({Skin})", matchId, id, pick.Character, pick.Skin);
+            }
+        }
+
         // Every human's match copy of their cosmetics first, as TS reads them (the equipped ones when there is none).
         var cosmeticsOf = new Dictionary<string, JsonObject>();
         foreach (var player in players.Where(p => !RollbackCallbacks.Truthy(p["isBot"])))

@@ -457,6 +457,45 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // The Random fighter is rolled when the player queues: the ticket's skill is the rolled fighter's rating, the session
+    // holds that fighter for the match, and the lobby pick stays Random.
+    public async Task ARandomPickIsRolledAtTheQueueAndQueuesOnThatFightersRating()
+    {
+        string? mongoUri = Environment.GetEnvironmentVariable("OVS_TEST_MONGO");
+        Skip.If(_redis is null || string.IsNullOrEmpty(mongoUri), "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        var client = new MongoDB.Driver.MongoClient(mongoUri);
+        const string database = "ovs_matchmaking_request_random_tests";
+        await client.DropDatabaseAsync(database);
+        var mongo = client.GetDatabase(database);
+        try
+        {
+            await PlayerAsync(Me);
+            await Db.HashSetAsync($"player:{Me}", [new("character", RandomFighter.Character), new("skin", RandomFighter.Skin)]);
+            // Every fighter it can roll rated differently.
+            var rated = new MongoDB.Bson.BsonDocument();
+            for (int i = 0; i < BotFighters.All.Count; i++)
+            {
+                rated[BotFighters.All[i].Character] = new MongoDB.Bson.BsonDocument("elo", 1000 + i);
+            }
+
+            await mongo.GetCollection<MongoDB.Bson.BsonDocument>("eloratings").InsertOneAsync(
+                new MongoDB.Bson.BsonDocument { ["account_id"] = Me, ["elo_1v1"] = 1000, ["characters_1v1"] = rated });
+
+            var answer = (await Service(mongo).RequestAsync("1v1-retail", Asking(Me), CancellationToken.None))!;
+            await answer.After!();
+            string rolled = (string?)await Db.HashGetAsync($"connections:{Me}", "character") ?? "";
+            int index = BotFighters.All.Select(f => f.Character).ToList().IndexOf(rolled);
+            Assert.True(index >= 0, $"rolled {rolled}");
+            Assert.Equal(1000 + index, (double)Js.Parse(await QueuedAsync())!["players"]![0]!["skill"]!);
+            Assert.Equal(RandomFighter.Character, (string?)await Db.HashGetAsync($"player:{Me}", "character"));
+        }
+        finally
+        {
+            await client.DropDatabaseAsync(database);
+        }
+    }
+
+    [SkippableFact]
     // The regular ratings are for the regular queues only: a Casual ticket never reads them (nor makes one). The control:
     // the same rating is the skill of a regular request.
     public async Task CasualNeverTouchesTheRegularRatings()

@@ -562,5 +562,17 @@
     "assetType": "MvsMetaWorldBuffHsda",
     "assetPath": "/OVSExperimental/Mutators/ShieldHP/ovs_shield_hp.ovs_shield_hp",
     "character_slug": ""
+  },
+  {
+    "slug": "character_ovs_random",
+    "assetType": "CharacterData",
+    "assetPath": "/OVS/Rewards/Characters/Random/character_ovs_random.character_ovs_random",
+    "character_slug": ""
+  },
+  {
+    "slug": "skin_ovs_random",
+    "assetType": "SkinData",
+    "assetPath": "/OVS/Rewards/Skins/Random/skin_ovs_random.skin_ovs_random",
+    "character_slug": "character_ovs_random"
   }
 ]

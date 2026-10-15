@@ -323206,6 +323206,11 @@
           },
           "AssetMetaData": {
             "CharacterMetaData": {
+              "character_ovs_random": {
+                "MasteryRewardTrack": "mrt_mastery_batman",
+                "DefaultSkin": "skin_ovs_random",
+                "DisplayName": "Random"
+              },
               "character_wonder_woman": {
                 "MasteryRewardTrack": "mrt_mastery_wonder_woman",
                 "DefaultSkin": "skin_wonder_woman_default",

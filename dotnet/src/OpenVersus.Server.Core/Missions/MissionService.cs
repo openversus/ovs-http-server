@@ -305,9 +305,8 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
         }
         else
         {
-            var loadout = await redis.HashGetAsync($"player:{playerId}", ["character", "skin"]);
-            character = loadout[0].ToString();
-            skin = loadout[1].ToString();
+            // The lobby pick, or the real fighter when it was Random.
+            (character, skin) = await Matches.RandomFighter.PlayedAsync(redis, playerId);
         }
 
         rift |= Bool(config?["bIsRift"]) ?? false;

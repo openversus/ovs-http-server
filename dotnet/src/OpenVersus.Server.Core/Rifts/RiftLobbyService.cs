@@ -198,9 +198,11 @@ internal sealed class RiftLobbyService(IServiceProvider services, IRiftStateServ
         };
     }
 
-    // The characters the TS server refuses in a lobby loadout (ssc.ts set_lock_lobby_loadout).
+    // The characters the TS server refuses in a lobby loadout (ssc.ts set_lock_lobby_loadout), and the Random fighter (a
+    // rift's character is fixed when it starts, never through a match config's RandomFighter pick).
     private static readonly HashSet<string> s_disabledCharacters =
-        ["character_Meeseeks", "Meeseeks", "character_supershaggy", "supershaggy", "character_c022", "c022", "character_C022", "C022"];
+        ["character_Meeseeks", "Meeseeks", "character_supershaggy", "supershaggy", "character_c022", "c022", "character_C022", "C022",
+         Matches.RandomFighter.Character];
 
     /// <summary>The rift's runtime data (FMvsRiftRuntimeData) in the frozen load_rifts copy, and no powerups.</summary>
     internal static JsonObject RuntimeData(string slug) => RuntimeData(s_runtimeData.Value, slug);

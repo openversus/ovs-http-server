@@ -335,6 +335,7 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
                 && !(await redis.HashGetAsync($"connections:{pid}", "current_ip")).IsNullOrEmpty)
             {
                 await PlayedLoadout.RecordAsync(redis, pid, character, skin, Get(loadout, "profileIcon"));
+                await RollRandomAsync(redis, pid);
             }
         }
 
@@ -382,7 +383,18 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         }
 
         await PlayedLoadout.RecordAsync(redis, id, character, skin, Get(loadout, "profileIcon"));
+        await RollRandomAsync(redis, id);
         return (id, profile, null);
+    }
+
+    // The Random fighter is rolled when the player queues (not when the match is made), so the ticket's skill is that
+    // fighter's rating (TicketAsync) and the match plays that fighter: the match config finds it already in the session.
+    private async Task RollRandomAsync(IDatabase redis, string playerId)
+    {
+        if (await RandomFighter.ResolveAsync(redis, "queue-" + Guid.NewGuid().ToString("N"), playerId, $"connections:{playerId}") is { } pick)
+        {
+            log.LogInformation("Player {Player} queued as Random: rolled {Character} ({Skin})", playerId, pick.Character, pick.Skin);
+        }
     }
 
     // The Hydra matchmaking request the game is answered with. The 2v2 answer starts with its id; the 1v1 one ends with it.
@@ -541,7 +553,14 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         foreach (string pid in players)
         {
             var config = await HashAsync(redis, $"player:{pid}");
-            var entry = new JsonObject { ["id"] = pid, ["region"] = "MVSI", ["skill"] = await SkillAsync(pid, Get(config, "character") ?? "", matchType, ct) };
+            // A Random pick's rolled fighter (RollRandomAsync put it in the session).
+            string character = Get(config, "character") ?? "";
+            if (RandomFighter.IsRandom(character) && (string?)await redis.HashGetAsync($"connections:{pid}", "character") is { Length: > 0 } rolled)
+            {
+                character = rolled;
+            }
+
+            var entry = new JsonObject { ["id"] = pid, ["region"] = "MVSI", ["skill"] = await SkillAsync(pid, character, matchType, ct) };
             if (Get(config, "ip") is { } ip)
             {
                 entry["ip"] = ip;
@@ -594,6 +613,15 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             {
                 log.LogInformation("Player {Player} using character ELO: {Character} = {Elo}", playerId, character, value);
                 return JsonValue.Create(value);
+            }
+
+            // The Random fighter (RandomFighter) has no rating of its own: the player's best character rating in this mode.
+            if (RandomFighter.IsRandom(character) && rating.TryGetValue(field, out var all) && all is BsonDocument allMap
+                && allMap.Values.OfType<BsonDocument>().Select(s => s.TryGetValue("elo", out var e) && e.IsNumeric ? e.ToDouble() : 0).DefaultIfEmpty(0).Max() is var best
+                && best != 0 && !double.IsNaN(best))
+            {
+                log.LogInformation("Player {Player} picked Random: using their best character ELO = {Elo}", playerId, best);
+                return JsonValue.Create(best);
             }
 
             log.LogInformation("Player {Player} using new character ELO: 0 (char: {Character}, no ranked data)", playerId, character.Length > 0 ? character : "unknown");

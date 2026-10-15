@@ -188,13 +188,20 @@ public sealed class IdentifyEpicTests : IAsyncLifetime
         {
             var players = mongo.GetDatabase(TestMongoDb).GetCollection<MongoDB.Bson.BsonDocument>("playertesters");
             var id = MongoDB.Bson.ObjectId.Parse(Account);
-            await players.InsertOneAsync(new MongoDB.Bson.BsonDocument { { "_id", id }, { "name", "Claimed" }, { "epicId", Claimed }, { "installId", Install } });
+            await players.InsertOneAsync(new MongoDB.Bson.BsonDocument
+            {
+                { "_id", id }, { "name", "Claimed" }, { "epicId", Claimed }, { "installId", Install },
+                { "hardwareId", Here }, { "hardwareIdVersion", "2" }, { "hardwareIdQuality", "strong" },
+            });
             await Redis.StringSetAsync($"identity:install:{Install}", Account);
 
-            // The game's own login may read the record before this registration wrote it: the proof goes onto the account here.
+            // The game's own login may read the record before this registration wrote it: the proof goes onto the account
+            // here. The same machine: the claim was this person's (another machine would be a copied plugin folder).
             _verifier.Next = new EpicTokenCheck.Verified(Proved, new JsonObject(), DateTimeOffset.UtcNow.AddHours(1));
-            var (_, _, accountId) = await RegisterAsync(new JsonObject { ["epicId"] = Claimed, ["epicToken"] = "token", ["installId"] = Install }, mongo.GetDatabase(TestMongoDb));
+            var (_, claims, accountId) = await RegisterAsync(WithHardware(new JsonObject { ["epicId"] = Claimed, ["epicToken"] = "token", ["installId"] = Install }, Here), mongo.GetDatabase(TestMongoDb));
             Assert.Equal(Account, accountId);
+            Assert.Equal(Install, (string?)claims["installId"]);
+            Assert.Null(_lastResponse!["installIdTaken"]);
             var saved = await players.Find(new MongoDB.Bson.BsonDocument("_id", id)).SingleAsync();
             Assert.Equal(Proved, saved["epicId"].AsString);
             Assert.True(saved[Core.Identity.IdentityRecord.EpicProvedField].IsValidDateTime);
@@ -210,14 +217,67 @@ public sealed class IdentifyEpicTests : IAsyncLifetime
         }
     }
 
+    [SkippableFact]
+    public async Task ACopiedPluginFoldersInstallIdIsNotTheFriendsAndTheClientIsToldToMakeANewOne()
+    {
+        Skip.IfNot(Configured && !string.IsNullOrEmpty(s_mongo), "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        _epic.ClientId = "client";
+        var mongo = new MongoDB.Driver.MongoClient(new MongoDB.Driver.MongoUrlBuilder(s_mongo) { DatabaseName = TestMongoDb }.ToMongoUrl());
+        await mongo.DropDatabaseAsync(TestMongoDb);
+        try
+        {
+            // The sender: their Epic id claimed, on their own machine.
+            var players = mongo.GetDatabase(TestMongoDb).GetCollection<MongoDB.Bson.BsonDocument>("playertesters");
+            var id = MongoDB.Bson.ObjectId.Parse(Account);
+            await players.InsertOneAsync(new MongoDB.Bson.BsonDocument
+            {
+                { "_id", id }, { "name", "Sender" }, { "epicId", Claimed }, { "installId", Install },
+                { "hardwareId", There }, { "hardwareIdVersion", "2" }, { "hardwareIdQuality", "strong" },
+            });
+            await Redis.StringSetAsync($"identity:install:{Install}", Account);
+
+            // A friend's first launch with the copy: another proved Epic id, another machine.
+            _verifier.Next = new EpicTokenCheck.Verified(Proved, new JsonObject(), DateTimeOffset.UtcNow.AddHours(1));
+            var (_, claims, accountId) = await RegisterAsync(WithHardware(new JsonObject { ["epicToken"] = "token", ["installId"] = Install }, Here), mongo.GetDatabase(TestMongoDb));
+
+            Assert.Null(accountId);
+            Assert.Equal("", (string?)claims["installId"]);
+            Assert.True((bool?)_lastResponse!["installIdTaken"]);
+            var sender = await players.Find(new MongoDB.Bson.BsonDocument("_id", id)).SingleAsync();
+            Assert.Equal(Claimed, sender["epicId"].AsString);
+            Assert.False(sender.Contains(Core.Identity.IdentityRecord.EpicProvedField));
+
+            // A launch with no Epic or Steam id cannot tell: the install id is the person, as always.
+            _verifier.Next = new EpicTokenCheck.Refused("none");
+            await RegisterAsync(new JsonObject { ["installId"] = "fedcba9876543210fedcba9876543210" }, mongo.GetDatabase(TestMongoDb));
+            Assert.Null(_lastResponse!["installIdTaken"]);
+        }
+        finally
+        {
+            await mongo.DropDatabaseAsync(TestMongoDb);
+        }
+    }
+
+    private static readonly string Here = new('a', 64), There = new('b', 64);
+
+    private static JsonObject WithHardware(JsonObject body, string hardware)
+    {
+        body["hardwareId"] = hardware;
+        body["hardwareIdVersion"] = "2";
+        body["hardwareIdQuality"] = "strong";
+        return body;
+    }
+
     // Helpers
 
     private const string TestMongoDb = "ovs_identify_epic_tests";
+    private JsonObject? _lastResponse;
     private static readonly string? s_mongo = Environment.GetEnvironmentVariable("OVS_TEST_MONGO");
 
     private async Task<(Dictionary<string, string> Record, JsonObject Claims, string? AccountId)> RegisterAsync(JsonObject body, MongoDB.Driver.IMongoDatabase? mongo = null)
     {
         var result = Assert.IsType<IdentifyResult.Ok>(await Service(mongo).RegisterAsync(Ip, body));
+        _lastResponse = result.Response;
         var record = (await Redis.HashGetAllAsync($"identity:{Ip}")).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
         var claims = IdentifyTokens.Verify((string?)result.Response["token"], IdentifySecret, DateTimeOffset.UtcNow);
         Assert.NotNull(claims);

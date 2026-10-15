@@ -142,15 +142,25 @@ internal sealed class IdentifyService(
             identity.ClientVersion.Length > 0 ? identity.ClientVersion : "legacy", registered ? "registered" : "missing", nodePort > 0 ? nodePort : "none");
 
         // The account these ids are indexed to (a first launch has none yet): the token's id claim, so the resolver
-        // takes its fast path. By the Steam id only when a ticket proved it.
+        // takes its fast path. By the Steam id only when a ticket proved it. By the install id only when its account is
+        // this person's (IdentityRules.InstallOwnerIsThisPerson, as the login decides): a copied plugin folder's install
+        // id is someone else's, and the client is told to make itself a new one (installIdTaken).
+        string steamId = identity.SteamVerified ? identity.SteamId : "", epicId = identity.EpicVerified || !epicEnforced ? identity.EpicId : "";
         string resolvedId = "";
-        foreach (var (name, id) in new[] { ("steam", identity.SteamVerified ? identity.SteamId : ""), ("epic", identity.EpicVerified || !epicEnforced ? identity.EpicId : ""), ("install", identity.InstallId) })
+        foreach (var (name, id) in new[] { ("steam", steamId), ("epic", epicId) })
         {
             if (id.Length > 0 && await redis.StringGetAsync($"identity:{name}:{id}") is { HasValue: true } account)
             {
                 resolvedId = account.ToString();
                 break;
             }
+        }
+
+        bool installTaken = await InstallTakenAsync(identity, steamId, epicId, resolvedId, ip, ct);
+        if (resolvedId.Length == 0 && !installTaken && identity.InstallId.Length > 0
+            && await redis.StringGetAsync($"identity:install:{identity.InstallId}") is { HasValue: true } byInstall)
+        {
+            resolvedId = byInstall.ToString();
         }
 
         if (identity.SteamVerified && resolvedId.Length > 0)
@@ -172,7 +182,7 @@ internal sealed class IdentifyService(
             ["hardwareId"] = identity.Hardware.HardwareId,
             ["hardwareIdVersion"] = identity.Hardware.HardwareIdVersion,
             ["hardwareIdQuality"] = identity.Hardware.HardwareIdQuality,
-            ["installId"] = identity.InstallId,
+            ["installId"] = installTaken ? "" : identity.InstallId,   // someone else's: not this person's to be found by
             ["clientVersion"] = identity.ClientVersion,
             ["identityRegistered"] = registered ? "1" : "",
             ["nodePort"] = nodePort.ToString(CultureInfo.InvariantCulture),
@@ -214,7 +224,47 @@ internal sealed class IdentifyService(
             });
         }
 
-        return new IdentifyResult.Ok(new JsonObject { ["ok"] = true, ["token"] = token, ["accountId"] = resolvedId.Length > 0 ? resolvedId : null });
+        var ok = new JsonObject { ["ok"] = true, ["token"] = token, ["accountId"] = resolvedId.Length > 0 ? resolvedId : null };
+        if (installTaken)
+        {
+            ok["installIdTaken"] = true;
+        }
+
+        return new IdentifyResult.Ok(ok);
+    }
+
+    // Whether this registration's install id is another person's: an account (not the one its Steam or Epic id names)
+    // holds it and is not this person's by IdentityRules.InstallOwnerIsThisPerson. Only a registration with a Steam or
+    // Epic id can tell (without one, the install id is the person); without Mongo, nobody can.
+    private async Task<bool> InstallTakenAsync(IpIdentity identity, string steamId, string epicId, string resolvedId, string ip, CancellationToken ct)
+    {
+        if (identity.InstallId.Length == 0 || (steamId.Length == 0 && epicId.Length == 0) || services.GetService<IMongoDatabase>() is not { } mongo)
+        {
+            return false;
+        }
+
+        try
+        {
+            var filter = new BsonDocument("installId", identity.InstallId);
+            if (ObjectId.TryParse(resolvedId, out var own))
+            {
+                filter.Add("_id", new BsonDocument("$ne", own));
+            }
+
+            var holders = await mongo.GetCollection<BsonDocument>(PlayerRecord.Collection).Find(filter).Limit(5).ToListAsync(ct);
+            if (holders.FirstOrDefault(h => !IdentityRules.InstallOwnerIsThisPerson(h, steamId, epicId, identity.Hardware)) is { } other)
+            {
+                log.LogWarning("The install id registered from {Ip} (steam:{Steam} epic:{Epic}) is account {Player}'s, someone else's: the client is told to make a new one",
+                    ip, Dash(steamId), Dash(epicId), other["_id"].ToString());
+                return true;
+            }
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            log.LogError(e, "Could not check whose install id was registered from {Ip}", ip);
+        }
+
+        return false;
     }
 
     // The request's identifiers, normalized as the TS server normalized them; the Steam id from the ticket alone.

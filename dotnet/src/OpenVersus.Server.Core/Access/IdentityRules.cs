@@ -159,6 +159,54 @@ public static partial class IdentityRules
         return real.Count == 1 ? real[0] : null;
     }
 
+    /// <summary>
+    /// Whether the account holding a login's install id is that login's person (2026-10-14: players pass their plugin
+    /// folder, install id included, to friends, whose first launch then signed into the sender's account). A login that
+    /// proves no Steam or Epic id is its install, as before. One that does is the install's account's person when the
+    /// account holds the same Steam or Epic id; never when it holds a different one proved (a ticket or an Epic token: two
+    /// people on one install); and otherwise, a different one only claimed or none of the login's ids, only from the
+    /// same machine: both strong fingerprints equal for a claimed id (a claim is someone else's unless the machine says
+    /// otherwise), not two different strong fingerprints for an account without the login's ids (an older install-only
+    /// account takes its platform id, unless another machine has the copy).
+    /// </summary>
+    /// <param name="steamId">The login's proved Steam id, or "".</param>
+    /// <param name="epicId">The login's Epic id (proved, or a claim while Epic ids are not checked), or "".</param>
+    public static bool InstallOwnerIsThisPerson(BsonDocument owner, string steamId, string epicId, HardwareSignal hardware)
+    {
+        if (steamId.Length == 0 && epicId.Length == 0)
+        {
+            return true;
+        }
+
+        string ownSteam = Normalize(IdentityKind.Steam, Str(owner, "steamId"));
+        string ownEpic = Normalize(IdentityKind.Epic, Str(owner, "epicId"));
+        if ((steamId.Length > 0 && ownSteam == steamId) || (epicId.Length > 0 && ownEpic == epicId))
+        {
+            return true;
+        }
+
+        bool otherSteam = steamId.Length > 0 && ownSteam.Length > 0;
+        bool otherEpic = epicId.Length > 0 && ownEpic.Length > 0;
+        if ((otherSteam && SteamProved(owner, ownSteam)) || (otherEpic && EpicProved(owner)))
+        {
+            return false;
+        }
+
+        var stored = NormalizeHardware(Str(owner, "hardwareId"), Str(owner, "hardwareIdVersion"), Str(owner, "hardwareIdQuality"));
+        bool compared = stored.HardwareId.Length > 0 && hardware.HardwareId.Length > 0;
+        return otherSteam || otherEpic
+            ? compared && stored.HardwareId == hardware.HardwareId
+            : !compared || stored.HardwareId == hardware.HardwareId;
+    }
+
+    // The account's Steam id was proved: its last verified ticket names it (as AccessService reads it).
+    private static bool SteamProved(BsonDocument account, string steamId) =>
+        account.TryGetValue(Identity.IdentityRecord.TicketField, out var ticket) && ticket is BsonDocument doc && doc.GetValue("steam_id", "") == steamId;
+
+    // The account's Epic id was written with the game's token's proof.
+    private static bool EpicProved(BsonDocument account) =>
+        account.TryGetValue(Identity.IdentityRecord.EpicProvedField, out var at) && at.IsValidDateTime;
+
     // provisional === true: only a real true counts.
     private static bool IsProvisional(BsonDocument account) =>
         account.TryGetValue("provisional", out var p) && p.IsBoolean && p.AsBoolean;

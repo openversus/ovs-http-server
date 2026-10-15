@@ -111,4 +111,64 @@ public sealed class IdentityRulesTests
         Assert.Equal(HardwareSignal.None, IdentityRules.NormalizeHardware(hw, "2", "weak"));
         Assert.Equal(HardwareSignal.None, IdentityRules.NormalizeHardware("abc", "2", "strong"));
     }
+
+    // A copied plugin folder (2026-10-14): whose account an install id's is, for a login with a Steam or Epic id.
+    private const string Friend = "76561198000000002", Epic = "0123456789abcdef0123456789abcde0";
+    private static readonly HardwareSignal s_here = new(new string('a', 64), "2", "strong"), s_there = new(new string('b', 64), "2", "strong");
+
+    private static BsonDocument Holder(string steam = "", string epic = "", HardwareSignal? hardware = null)
+    {
+        var doc = IdLess("holder").Set("steamId", steam).Set("epicId", epic).Set("installId", Install);
+        if (hardware is { } hw)
+        {
+            doc.Set("hardwareId", hw.HardwareId).Set("hardwareIdVersion", hw.HardwareIdVersion).Set("hardwareIdQuality", hw.HardwareIdQuality);
+        }
+
+        return doc;
+    }
+
+    private static BsonDocument ProvedSteam(BsonDocument doc) => doc.Set("steamTicket", new BsonDocument { { "steam_id", doc["steamId"].AsString }, { "ticket_hash", "x" } });
+
+    [Fact]
+    public void AnInstallIdIsItsPersonsWhenTheLoginProvesNoPlatformId()
+    {
+        Assert.True(IdentityRules.InstallOwnerIsThisPerson(ProvedSteam(Holder(steam: Steam, hardware: s_there)), "", "", s_here));
+    }
+
+    [Fact]
+    public void AnInstallIdHoldingTheLoginsOwnIdIsTheirs()
+    {
+        Assert.True(IdentityRules.InstallOwnerIsThisPerson(Holder(steam: Steam, hardware: s_there), Steam, "", s_here));
+        Assert.True(IdentityRules.InstallOwnerIsThisPerson(Holder(epic: Epic), "", Epic, HardwareSignal.None));
+    }
+
+    [Fact]
+    public void AnotherProvedSteamIdIsAnotherPersonEvenOnTheSameMachine()
+    {
+        Assert.False(IdentityRules.InstallOwnerIsThisPerson(ProvedSteam(Holder(steam: Steam, hardware: s_here)), Friend, "", s_here));
+        Assert.False(IdentityRules.InstallOwnerIsThisPerson(Holder(epic: Epic).Set("epicVerifiedAt", Day(1)), "", "ffffffffffffffffffffffffffffffff", s_here));
+    }
+
+    [Fact]
+    public void AnotherClaimedSteamIdGivesWayOnlyOnTheSameMachine()
+    {
+        Assert.True(IdentityRules.InstallOwnerIsThisPerson(Holder(steam: Steam, hardware: s_here), Friend, "", s_here));
+        Assert.False(IdentityRules.InstallOwnerIsThisPerson(Holder(steam: Steam, hardware: s_there), Friend, "", s_here));
+        // Nothing to compare: someone else's claim stays theirs.
+        Assert.False(IdentityRules.InstallOwnerIsThisPerson(Holder(steam: Steam), Friend, "", s_here));
+        Assert.False(IdentityRules.InstallOwnerIsThisPerson(Holder(steam: Steam, hardware: s_here), Friend, "", HardwareSignal.None));
+    }
+
+    [Fact]
+    public void AnAccountWithoutTheLoginsIdsTakesItUnlessAnotherMachineHasTheCopy()
+    {
+        Assert.False(IdentityRules.InstallOwnerIsThisPerson(Holder(hardware: s_there), Friend, "", s_here));
+        Assert.False(IdentityRules.InstallOwnerIsThisPerson(Holder(epic: Epic, hardware: s_there).Set("epicVerifiedAt", Day(1)), Friend, "", s_here));
+        Assert.True(IdentityRules.InstallOwnerIsThisPerson(Holder(hardware: s_here), Friend, "", s_here));
+        // An older install-only account, nothing to compare: it takes its platform id, as before.
+        Assert.True(IdentityRules.InstallOwnerIsThisPerson(Holder(), Friend, "", s_here));
+        Assert.True(IdentityRules.InstallOwnerIsThisPerson(Holder(hardware: s_there), Friend, "", HardwareSignal.None));
+        // Placeholder ids are no ids.
+        Assert.True(IdentityRules.InstallOwnerIsThisPerson(Holder(steam: "Unknown", hardware: s_here), Friend, "", s_here));
+    }
 }

@@ -528,24 +528,23 @@ internal sealed partial class AccessService(
             found = await FindOne(new BsonDocument("epicId", identity.EpicId));
         }
 
+        bool installTaken = false;
         if (found is null && identity.InstallId.Length > 0)
         {
-            // The install's account is this person's unless it names another platform account: a different id it holds
-            // as a claim is no conflict when this login proved its own (the install match says whose account it is, and
-            // BackfillAsync replaces the claim); a different id it holds proved is another person at a shared PC, who
-            // gets an account of their own.
+            // The install's account is this person's unless IdentityRules.InstallOwnerIsThisPerson says it is someone
+            // else's: another proved platform account (two people on one install), or, from another machine, another
+            // claimed one or none of this login's (a copied plugin folder, 2026-10-14). Someone else's keeps its install
+            // id; this login gets an account of its own without it.
             var owner = await FindOne(new BsonDocument("installId", identity.InstallId));
-            bool steamConflict = identity.SteamId.Length > 0 && Str(owner, "steamId") is { Length: > 0 } s && s != identity.SteamId
-                && !(identity.SteamVerified && !StoredSteamProved(owner!, s));
-            bool epicConflict = identity.EpicId.Length > 0 && Str(owner, "epicId") is { Length: > 0 } e && e != identity.EpicId
-                && !(identity.EpicVerified && !StoredEpicProved(owner!));
-            if (!steamConflict && !epicConflict)
+            if (owner is null || IdentityRules.InstallOwnerIsThisPerson(owner, identity.SteamId, identity.EpicId, identity.Hardware))
             {
                 found = owner;
             }
             else
             {
-                log.LogInformation("The install's account {Player} names another proved platform account; the login from {Ip} gets its own", owner!["_id"].ToString(), ip);
+                installTaken = true;
+                log.LogWarning("The install id from {Ip} is account {Player}'s, which is not this login's person (steam={Steam} epic={Epic}); the login gets its own account without it",
+                    ip, owner["_id"].ToString(), Dash(identity.SteamId), Dash(identity.EpicId));
             }
         }
 
@@ -602,7 +601,7 @@ internal sealed partial class AccessService(
 
         if (found is null)
         {
-            if (identity.InstallId.Length > 0 && (identity.SteamId.Length > 0 || identity.EpicId.Length > 0))
+            if (identity.InstallId.Length > 0 && (identity.SteamId.Length > 0 || identity.EpicId.Length > 0) && !installTaken)
             {
                 await players.UpdateManyAsync(new BsonDocument("installId", identity.InstallId), new BsonDocument("$set", new BsonDocument("installId", "")), cancellationToken: ct);
             }
@@ -620,7 +619,7 @@ internal sealed partial class AccessService(
                 ["hardwareId"] = identity.Hardware.HardwareId,
                 ["hardwareIdVersion"] = identity.Hardware.HardwareIdVersion,
                 ["hardwareIdQuality"] = identity.Hardware.HardwareIdQuality,
-                ["installId"] = identity.InstallId,
+                ["installId"] = installTaken ? "" : identity.InstallId,
                 ["lastSeenAt"] = now,
                 ["ipSeenAt"] = now,
             }, now), true);
@@ -710,11 +709,21 @@ internal sealed partial class AccessService(
         if (identity.InstallId.Length > 0 && player.Str("installId") != identity.InstallId)
         {
             // The install binding follows the current platform account; a previous owner stays reachable by its
-            // Steam or Epic id but must not keep a copy of this install id.
-            await players.UpdateManyAsync(
-                new BsonDocument { { "_id", new BsonDocument("$ne", player.Id) }, { "installId", identity.InstallId } },
-                new BsonDocument("$set", new BsonDocument("installId", "")), cancellationToken: ct);
-            player.Set("installId", identity.InstallId);
+            // Steam or Epic id but must not keep a copy of this install id. Unless that owner is someone else
+            // (IdentityRules.InstallOwnerIsThisPerson): a copied plugin folder's install id stays with its owner.
+            var holders = await players.Find(new BsonDocument { { "_id", new BsonDocument("$ne", player.Id) }, { "installId", identity.InstallId } }).ToListAsync(ct);
+            if (holders.FirstOrDefault(h => !IdentityRules.InstallOwnerIsThisPerson(h, identity.SteamId, identity.EpicId, identity.Hardware)) is { } other)
+            {
+                log.LogWarning("Account {Player} logged in from {Ip} with the install id of account {Other}, which is not this person's: it stays theirs",
+                    player.Id, ip, other["_id"].ToString());
+            }
+            else
+            {
+                await players.UpdateManyAsync(
+                    new BsonDocument { { "_id", new BsonDocument("$ne", player.Id) }, { "installId", identity.InstallId } },
+                    new BsonDocument("$set", new BsonDocument("installId", "")), cancellationToken: ct);
+                player.Set("installId", identity.InstallId);
+            }
         }
 
         if (player.Bool("provisional") && identity.Any)

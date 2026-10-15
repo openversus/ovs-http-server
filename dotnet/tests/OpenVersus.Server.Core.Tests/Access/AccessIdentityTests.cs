@@ -226,13 +226,13 @@ public sealed class AccessIdentityTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    public async Task AProvedSteamIdReplacesOneTheInstallsAccountHeldAsAClaim()
+    public async Task AProvedSteamIdReplacesOneTheInstallsAccountHeldAsAClaimFromTheSameMachine()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         const string claimed = "76561198000000002";
-        var account = await SeedAsync("Claimed", steam: claimed, install: Install);
+        var account = await SeedAsync("Claimed", steam: claimed, install: Install, hardware: Here);
         await Redis.HashSetAsync($"identity:{Ip}", [new HashEntry("steamId", s_steam), new HashEntry("steamVerified", "1"), new HashEntry("steamTicket", TicketJson()), new HashEntry("installId", Install)]);
-        var result = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, IdentifyToken(s_steam, verified: true)));
+        var result = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, IdentifyToken(s_steam, verified: true, hardware: Here)));
         Assert.Equal(account.ToString(), result.PlayerId);
         var saved = await Players.Find(new BsonDocument("_id", account)).SingleAsync();
         Assert.Equal(s_steam, saved["steamId"].AsString);
@@ -255,6 +255,9 @@ public sealed class AccessIdentityTests : IAsyncLifetime
         Assert.Equal(sibling, saved["steamTicket"]["steam_id"].AsString);
         var own = await Players.Find(new BsonDocument("_id", ObjectId.Parse(result.PlayerId))).SingleAsync();
         Assert.Equal(s_steam, own["steamId"].AsString);
+        // The install id stays the sibling's (it went back and forth between them at every login before 2026-10-14).
+        Assert.Equal(Install, saved["installId"].AsString);
+        Assert.Equal("", own["installId"].AsString);
     }
 
     [SkippableFact]
@@ -262,8 +265,8 @@ public sealed class AccessIdentityTests : IAsyncLifetime
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         _epic.ClientId = "client";
-        var account = await SeedAsync("Claimed", steam: "", install: Install, epic: "ffffffffffffffffffffffffffffffff");
-        var result = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, EpicIdentifyToken(verified: true)));
+        var account = await SeedAsync("Claimed", steam: "", install: Install, epic: "ffffffffffffffffffffffffffffffff", hardware: Here);
+        var result = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, EpicIdentifyToken(verified: true, hardware: Here)));
         Assert.Equal(account.ToString(), result.PlayerId);
         var saved = await Players.Find(new BsonDocument("_id", account)).SingleAsync();
         Assert.Equal(Epic, saved["epicId"].AsString);
@@ -304,8 +307,83 @@ public sealed class AccessIdentityTests : IAsyncLifetime
         Assert.True(saved[IdentityRecord.EpicProvedField].IsValidDateTime);
     }
 
-    private static string EpicIdentifyToken(bool verified) =>
-        IdentifyTokens.Sign(new JsonObject { ["epicId"] = Epic, ["installId"] = Install, ["identityRegistered"] = "1", ["epicVerified"] = verified ? "1" : "" }, IdentifySecret, DateTimeOffset.UtcNow);
+    private static string EpicIdentifyToken(bool verified, string hardware = "") =>
+        IdentifyTokens.Sign(WithHardware(new JsonObject { ["epicId"] = Epic, ["installId"] = Install, ["identityRegistered"] = "1", ["epicVerified"] = verified ? "1" : "" }, hardware), IdentifySecret, DateTimeOffset.UtcNow);
+
+    // --- A copied plugin folder (2026-10-14): a friend's first launch carries the sender's install id.
+    private static readonly string Here = new('a', 64), There = new('b', 64);
+    private const string Sender = "76561198000000002";
+
+    [SkippableFact]
+    public async Task ACopiedPluginFolderDoesNotSignAFriendIntoTheSendersAccount()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        // The sender's Steam id only claimed (an account from before tickets), on another machine.
+        var sender = await SeedAsync("Sender", steam: Sender, install: Install, hardware: There);
+
+        var friend = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, IdentifyToken(s_steam, verified: true, hardware: Here)));
+
+        Assert.NotEqual(sender.ToString(), friend.PlayerId);
+        var theirs = await Players.Find(new BsonDocument("_id", sender)).SingleAsync();
+        Assert.Equal(Sender, theirs["steamId"].AsString);
+        Assert.Equal(Install, theirs["installId"].AsString);
+        var own = await Players.Find(new BsonDocument("_id", ObjectId.Parse(friend.PlayerId))).SingleAsync();
+        Assert.Equal(s_steam, own["steamId"].AsString);
+        Assert.Equal("", own["installId"].AsString);
+        Assert.Equal(sender.ToString(), (string?)await Redis.StringGetAsync($"identity:install:{Install}"));
+
+        // Their next launch finds them by Steam; the install id still stays the sender's.
+        var again = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, IdentifyToken(s_steam, verified: true, hardware: Here)));
+        Assert.Equal(friend.PlayerId, again.PlayerId);
+        Assert.Equal(Install, (await Players.Find(new BsonDocument("_id", sender)).SingleAsync())["installId"].AsString);
+        Assert.Equal("", (await Players.Find(new BsonDocument("_id", ObjectId.Parse(friend.PlayerId))).SingleAsync())["installId"].AsString);
+
+        // And the sender still logs in as themselves.
+        string senderToken = IdentifyTokens.Sign(WithHardware(new JsonObject { ["installId"] = Install, ["identityRegistered"] = "1" }, There), IdentifySecret, DateTimeOffset.UtcNow);
+        Assert.Equal(sender.ToString(), Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, senderToken)).PlayerId);
+    }
+
+    [SkippableFact]
+    public async Task ACopiedPluginFolderOfAnAccountWithoutASteamIdIsNotTheFriendsFromAnotherMachine()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        var sender = await SeedAsync("Sender", steam: "", install: Install, hardware: There);
+        var friend = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, IdentifyToken(s_steam, verified: true, hardware: Here)));
+        Assert.NotEqual(sender.ToString(), friend.PlayerId);
+        Assert.Equal("", (await Players.Find(new BsonDocument("_id", sender)).SingleAsync())["steamId"].AsString);
+
+        // From the same machine it is the person's own older account, which takes their Steam id (as before).
+        await Players.DeleteOneAsync(new BsonDocument("_id", ObjectId.Parse(friend.PlayerId)));
+        await Redis.KeyDeleteAsync($"identity:steam:{s_steam}");
+        await Players.UpdateOneAsync(new BsonDocument("_id", sender), new BsonDocument("$set", new BsonDocument("hardwareId", Here)));
+        var own = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, IdentifyToken(s_steam, verified: true, hardware: Here)));
+        Assert.Equal(sender.ToString(), own.PlayerId);
+        Assert.Equal(s_steam, (await Players.Find(new BsonDocument("_id", sender)).SingleAsync())["steamId"].AsString);
+    }
+
+    [SkippableFact]
+    public async Task AReinstallKeepsTheAccountAndTakesItsNewInstallId()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        var account = await SeedAsync("Returning", steam: s_steam, install: OtherInstall, hardware: Here);
+        await Players.UpdateOneAsync(new BsonDocument("_id", account), new BsonDocument("$set", new BsonDocument("steamTicket", new BsonDocument { { "steam_id", s_steam }, { "ticket_hash", "x" } })));
+        // The installer removed the old files: a new install id, the same Steam id.
+        var result = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, IdentifyToken(s_steam, verified: true, hardware: Here)));
+        Assert.Equal(account.ToString(), result.PlayerId);
+        Assert.Equal(Install, (await Players.Find(new BsonDocument("_id", account)).SingleAsync())["installId"].AsString);
+    }
+
+    private static JsonObject WithHardware(JsonObject claims, string hardware)
+    {
+        if (hardware.Length > 0)
+        {
+            claims["hardwareId"] = hardware;
+            claims["hardwareIdVersion"] = "2";
+            claims["hardwareIdQuality"] = "strong";
+        }
+
+        return claims;
+    }
 
     [SkippableFact]
     public async Task TheGamesOwnSessionTokenStillBindsByTheAccountsSteamId()
@@ -343,8 +421,8 @@ public sealed class AccessIdentityTests : IAsyncLifetime
     }
 
     // The token /api/identify signed for the client, which the game's login carries when the game has none of its own.
-    private static string IdentifyToken(string steam, bool verified) =>
-        IdentifyTokens.Sign(new JsonObject { ["steamId"] = steam, ["installId"] = Install, ["identityRegistered"] = "1", ["steamVerified"] = verified ? "1" : "" }, IdentifySecret, DateTimeOffset.UtcNow);
+    private static string IdentifyToken(string steam, bool verified, string hardware = "") =>
+        IdentifyTokens.Sign(WithHardware(new JsonObject { ["steamId"] = steam, ["installId"] = Install, ["identityRegistered"] = "1", ["steamVerified"] = verified ? "1" : "" }, hardware), IdentifySecret, DateTimeOffset.UtcNow);
 
     // A verified ticket's fields as /api/identify leaves them in identity:{ip}.
     private static string TicketJson()
@@ -355,14 +433,20 @@ public sealed class AccessIdentityTests : IAsyncLifetime
         return IdentifyService.TicketFields(verified, Ip, SteamTickets.Now).ToJson(new MongoDB.Bson.IO.JsonWriterSettings { OutputMode = MongoDB.Bson.IO.JsonOutputMode.CanonicalExtendedJson });
     }
 
-    private async Task<ObjectId> SeedAsync(string name, string steam, string install, string epic = "")
+    private async Task<ObjectId> SeedAsync(string name, string steam, string install, string epic = "", string hardware = "")
     {
         var id = ObjectId.GenerateNewId();
-        await Players.InsertOneAsync(new BsonDocument
+        var doc = new BsonDocument
         {
             { "_id", id }, { "name", name }, { "hydraUsername", "OpenVersus_1234567890123" }, { "ip", "198.51.100.40" },
             { "steamId", steam }, { "epicId", epic }, { "installId", install }, { "account", new BsonDocument("current_ip", "198.51.100.41") },
-        });
+        };
+        if (hardware.Length > 0)
+        {
+            doc.Add("hardwareId", hardware).Add("hardwareIdVersion", "2").Add("hardwareIdQuality", "strong");
+        }
+
+        await Players.InsertOneAsync(doc);
         if (steam.Length > 0)
         {
             await Redis.StringSetAsync($"identity:steam:{steam}", id.ToString());

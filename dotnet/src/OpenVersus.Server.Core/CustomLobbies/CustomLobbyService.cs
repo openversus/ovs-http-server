@@ -591,6 +591,14 @@ internal sealed class CustomLobbyService(IServiceProvider services, IMatchLaunch
             merged = [];
             foreach (var buff in GameModes.WorldBuffs(slug).Concat(asked))
             {
+                // 2v2 Individual Stocks only means something with teams: a 1v1 lobby drops it, so its tile goes back off
+                // (Tuggernuts, 2026-10-14). Changing the mode resets the buffs to the mode's own (ApplyGameSettingsAsync).
+                if (GameModes.IsSolo(slug) && buff is JsonValue value && value.TryGetValue(out string? name) && name == GameModes.IndividualStocks)
+                {
+                    log.LogInformation("Lobby {Lobby}: {Buff} left out of a 1v1 lobby's world buffs", lobbyId, name);
+                    continue;
+                }
+
                 if (seen.Add(buff?.ToJsonString() ?? "null"))
                 {
                     merged.Add(buff?.DeepClone());

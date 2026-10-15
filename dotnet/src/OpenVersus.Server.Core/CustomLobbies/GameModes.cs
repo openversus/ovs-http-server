@@ -19,6 +19,12 @@ public static class GameModes
 
     public const string Default = "gm_classic_2v2";
 
+    /// <summary>The OVS 2v2 Individual Stocks mutator (its tile; the asi runs its rules).</summary>
+    public const string IndividualStocks = "ovs_2v2_individual_stocks";
+
+    /// <summary>Whether a mode is one-on-one (no teams): its slug says 1v1, as gm_classic_1v1.</summary>
+    public static bool IsSolo(string slug) => slug.Contains("1v1", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>The mode a team style sets (update_team_style_for_custom_game): Duos, Solos and FFA have one each, the rest the default.</summary>
     public static string ForTeamStyle(string? style) => style switch
     {

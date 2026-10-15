@@ -143,6 +143,30 @@ public sealed class CustomLobbyServiceTests : IAsyncLifetime
         return Db.StringSetAsync($"custom_lobby_ssc:{Lobby}", Js.Stringify(lobby), TimeSpan.FromMinutes(5));
     }
 
+    [Theory]
+    [InlineData("Solos", false)]
+    [InlineData("Duos", true)]
+    // 2v2 Individual Stocks is for teams: a 1v1 lobby leaves it out of its world buffs (its tile goes back off); the other
+    // buffs stay. A 2v2 lobby keeps it.
+    public async Task IndividualStocksIsLeftOutOfAOneVersusOneLobby(string style, bool kept)
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await SeedAsync(style, (0, Leader, Player(Leader, "2026-10-01T10:00:00.000Z")));
+        await Service().AnswerAsync("set_world_buffs_for_custom_game", Asking(Leader, new JsonObject
+        {
+            ["MatchID"] = Lobby,
+            ["WorldBuffSlugs"] = new JsonArray(GameModes.IndividualStocks, "ovs_beta_speed"),
+        }));
+
+        var buffs = (await StoredAsync())["WorldBuffs"]!.AsArray().Select(b => b!.GetValue<string>()).ToList();
+        Assert.Contains("ovs_beta_speed", buffs);
+        Assert.Equal(kept, buffs.Contains(GameModes.IndividualStocks));
+    }
+
     [Fact]
     // The TS script added a player who joined again to a second team: the lobby counted them twice and could never be
     // all ready.

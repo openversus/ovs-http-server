@@ -59,7 +59,7 @@ public static class ClientGameplayGate
         try
         {
             state = await gate.ForRequestAsync(AccountLookups.From(context), context.Session()?.Claims);
-            if (state.Required)
+            if (state.Blocked)
             {
                 modalRequested = await gate.RequestModalsAsync([state.AccountId]) is [true];
             }
@@ -73,7 +73,7 @@ public static class ClientGameplayGate
         }
 
         // Outside the try: the endpoint's own failures are not the gate's (in TS, Express catches them inside next()).
-        if (!state.Required)
+        if (!state.Blocked)
         {
             await next(context);
             return;
@@ -82,10 +82,10 @@ public static class ClientGameplayGate
         if (modalRequested)
         {
             var settings = context.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<ClientSettings>>().CurrentValue;
-            log.LogWarning("Blocked {Method} {Path}{Query} for {Account} (version={Version}, identity={Identity}, minimum={Minimum}); requested reward-free update toast",
+            log.LogWarning("Blocked {Method} {Path}{Query} for {Account} (version={Version}, identity={Identity}, minimum={Minimum}, other paks={OtherPaks}); requested its toast or banner",
                 context.Request.Method, context.Request.Path, context.Request.QueryString, state.AccountId.Length > 0 ? state.AccountId : "unresolved",
                 state.ClientVersion.Length > 0 ? state.ClientVersion : "legacy", state.IdentityRegistered ? "registered" : "missing",
-                settings.MinimumVersion.Length > 0 ? settings.MinimumVersion : "disabled");
+                settings.MinimumVersion.Length > 0 ? settings.MinimumVersion : "disabled", state.OtherPaks.Length > 0 ? state.OtherPaks : "none");
         }
 
         await HydraBodies.WriteAsync(context, gate.FailureBody(), context.RequestAborted);

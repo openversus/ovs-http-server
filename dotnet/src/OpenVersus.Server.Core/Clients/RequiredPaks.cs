@@ -50,6 +50,25 @@ public static class PakReport
 {
     public const string Header = "X-OVS-Paks";
 
+    /// <summary>
+    /// The client's other paks (2026-10-16): every pak the game mounts that is neither the game's own nor OVS_*, by name,
+    /// ";"-separated. A player running any is kept out of online play (ClientUpdateGate), never out of the Lab.
+    /// </summary>
+    public const string OtherHeader = "X-OVS-Other-Paks";
+
+    /// <summary>
+    /// The other paks' names as stored: each trimmed, cut to 100 characters, anything but letters, digits and . _ - + as _
+    /// (a name is never dropped for its characters: that would let its pak through), distinct, sorted; at most 20, joined
+    /// with ";".
+    /// </summary>
+    public static string OtherNames(string? text)
+    {
+        var names = (text ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(n => new string(n[..Math.Min(n.Length, 100)].Select(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-' or '+' ? c : '_').ToArray()))
+            .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).Take(20);
+        return string.Join(";", names);
+    }
+
     /// <summary>The pairs of <paramref name="text"/>, by name (any case), hashes in lower case; malformed items skipped.</summary>
     public static Dictionary<string, string> Parse(string? text)
     {

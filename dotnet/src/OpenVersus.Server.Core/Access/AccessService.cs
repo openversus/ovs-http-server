@@ -113,7 +113,8 @@ public interface IAccessService
     /// verified: the Epic account id it names, which outranks any claim.
     /// </summary>
     /// <param name="paks">The client's X-OVS-Paks header (its installed OVS paks), kept on the connection for the client update gate.</param>
-    Task<AccessResult> LoginAsync(string ip, string? accessToken, CancellationToken ct = default, string? provedEpicId = null, string? paks = null);
+    /// <param name="otherPaks">The client's X-OVS-Other-Paks header (paks neither the game's nor OVS_*), kept on the connection: the gate keeps such a player out of online play.</param>
+    Task<AccessResult> LoginAsync(string ip, string? accessToken, CancellationToken ct = default, string? provedEpicId = null, string? paks = null, string? otherPaks = null);
 
     /// <summary>DELETE /access: the TS server only logs it.</summary>
     Task LogoutAsync(string ip, CancellationToken ct = default);
@@ -165,7 +166,7 @@ internal sealed partial class AccessService(
         public bool Any => SteamId.Length > 0 || EpicId.Length > 0 || InstallId.Length > 0;
     }
 
-    public async Task<AccessResult> LoginAsync(string ip, string? accessToken, CancellationToken ct = default, string? provedEpicId = null, string? paks = null)
+    public async Task<AccessResult> LoginAsync(string ip, string? accessToken, CancellationToken ct = default, string? provedEpicId = null, string? paks = null, string? otherPaks = null)
     {
         var mongo = services.GetService<IMongoDatabase>();
         var redis = services.GetService<IConnectionMultiplexer>()?.GetDatabase();
@@ -301,7 +302,7 @@ internal sealed partial class AccessService(
         string ws = realtimeSettings.Url;
         log.LogInformation("Player {Player} - {Name} connected; ws: {Ws}", id, player.Str("name"), ws);
 
-        await WriteSessionAsync(redis, player, account, identity, token, ip, now, paks);
+        await WriteSessionAsync(redis, player, account, identity, token, ip, now, paks, otherPaks);
 
         var (granted, count) = await DailyToastBonus.TryGrantAsync(mongo, id, now, ct);
         if (granted > 0)
@@ -790,7 +791,7 @@ internal sealed partial class AccessService(
         return doc;
     }
 
-    private async Task WriteSessionAsync(IDatabase redis, PlayerRecord player, JsonObject account, Identity identity, string token, string ip, DateTimeOffset now, string? paks)
+    private async Task WriteSessionAsync(IDatabase redis, PlayerRecord player, JsonObject account, Identity identity, string token, string ip, DateTimeOffset now, string? paks, string? otherPaks = null)
     {
         string id = player.IdHex;
         var connection = account.Select(p => new HashEntry(p.Key, p.Value is { } v && v.GetValueKind() == JsonValueKind.Number ? v.ToJsonString() : (string?)p.Value ?? "")).ToList();
@@ -801,6 +802,8 @@ internal sealed partial class AccessService(
         connection.Add(new HashEntry("identityRegistered", identity.Registered ? "1" : ""));
         // The client's OVS paks as it reported them (X-OVS-Paks): they only change at a restart, which is a new login.
         connection.Add(new HashEntry("paks", paks ?? ""));
+        // And any others (X-OVS-Other-Paks, names only): ClientUpdateGate keeps such a player out of online play.
+        connection.Add(new HashEntry("otherPaks", Clients.PakReport.OtherNames(otherPaks)));
         connection.Add(new HashEntry("nodePort", identity.NodePort.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         connection.Add(new HashEntry("jwt", token));
         // The IP hash was just written for this player, so the TS server's owner check before mirroring the party key

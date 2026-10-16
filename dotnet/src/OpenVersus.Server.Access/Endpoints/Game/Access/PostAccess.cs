@@ -32,7 +32,8 @@ public sealed class PostAccess : EndpointWithoutRequest
         string? token = HttpContext.Request.Headers["x-hydra-access-token"] is { Count: > 0 } header ? header.ToString() : null;
         string? provedEpicId = await ProvedEpicIdAsync(ip, ct);
         string? paks = HttpContext.Request.Headers[PakReport.Header] is { Count: > 0 } reported ? reported.ToString() : null;
-        switch (await Resolve<IAccessService>().LoginAsync(ip, token, ct, provedEpicId, paks))
+        string? otherPaks = HttpContext.Request.Headers[PakReport.OtherHeader] is { Count: > 0 } other ? other.ToString() : null;
+        switch (await Resolve<IAccessService>().LoginAsync(ip, token, ct, provedEpicId, paks, otherPaks))
         {
             case AccessResult.Ok ok:
                 await HydraBodies.WriteAsync(HttpContext, ok.Response, ct);

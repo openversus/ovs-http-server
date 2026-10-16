@@ -16,8 +16,12 @@ namespace OpenVersus.Server.Core.Clients;
 // match or a rift node, accepting a rematch), ported from the TS server's services/clientUpdateGate.ts and services/clientVersion.ts (branch
 // infinity-war). A player is let through when the check is off, or when their session was registered through
 // /api/identify and their client is at least the minimum version (no minimum: any version).
+// The same doors close to a player whose game runs paks that are neither the game's nor OVS_* (2026-10-16: the client's
+// X-OVS-Other-Paks, kept at login as connections:{id} otherPaks; Clients:BlockOtherPaks): those change the simulation, so a
+// match with them desyncs. Offline (the Lab, Local Play) never asks the server, so they keep working there. Such a player
+// gets a banner naming the paks instead of the update toast.
 //
-// Redis, read     connections:{id} clientVersion, identityRegistered ("1"); client_update_modal_nonce:{id} (the calendar)
+// Redis, read     connections:{id} clientVersion, identityRegistered ("1"), otherPaks; client_update_modal_nonce:{id} (the calendar)
 // Redis, written  client_update_modal_cooldown:{id} "1" (SET NX EX 15: one request per player per 15 s)
 //                 client_update_modal_nonce:{id} (INCR, then EXPIRE 86400)
 // Sent (ws:send)  the update toast (ToastReceivedNotification from the update notifier). The TS server published
@@ -48,10 +52,24 @@ public sealed class ClientSettings
 
     [Description("What the game shows before it closes to install new paks.")]
     public string PaksUpdateMessage { get; set; } = "New OpenVersus content is out. MultiVersus will close in 5 seconds; please relaunch it to install the update.";
+
+    [Description("On: a player whose game runs paks that are neither the game's nor OVS_* (X-OVS-Other-Paks) is kept out of online play; the Lab and Local Play stay theirs.")]
+    public bool BlockOtherPaks { get; set; } = true;
+
+    [Description("The banner such a player gets; {paks} becomes their names.")]
+    public string OtherPaksMessage { get; set; } = "Online play is off while other paks are installed: {paks}. Remove them to play online; the Lab still works with them.";
 }
 
 /// <summary>A player's client, as the gate sees it.</summary>
-public sealed record ClientUpdateState(string AccountId, string ClientVersion, bool IdentityRegistered, bool Required);
+/// <param name="Required">The client must update (version, identity).</param>
+public sealed record ClientUpdateState(string AccountId, string ClientVersion, bool IdentityRegistered, bool Required)
+{
+    /// <summary>The paks the game runs that are neither the game's nor OVS_* (";"-separated), when the gate blocks them; else "".</summary>
+    public string OtherPaks { get; init; } = "";
+
+    /// <summary>Kept out of online play: an update required, or other paks.</summary>
+    public bool Blocked => Required || OtherPaks.Length > 0;
+}
 
 public interface IClientUpdateGate
 {
@@ -158,12 +176,15 @@ internal sealed class ClientUpdateGate(IServiceProvider services, IAccountResolv
         var current = settings.CurrentValue;
         var states = await Task.WhenAll(playerIds.Where(id => id.Length > 0).Distinct().Select(async id =>
         {
-            var fields = await redis.HashGetAsync($"connections:{id}", ["clientVersion", "identityRegistered"]);
+            var fields = await redis.HashGetAsync($"connections:{id}", ["clientVersion", "identityRegistered", "otherPaks"]);
             string version = fields[0].HasValue ? fields[0].ToString() : "";
             bool registered = fields[1] == "1";
-            return new ClientUpdateState(id, version, registered, ClientVersions.GameplayAccessRequired(version, current.MinimumVersion, registered, current.VersionCheck));
+            return new ClientUpdateState(id, version, registered, ClientVersions.GameplayAccessRequired(version, current.MinimumVersion, registered, current.VersionCheck))
+            {
+                OtherPaks = current.BlockOtherPaks && fields[2].HasValue ? fields[2].ToString() : "",
+            };
         }));
-        return states.Where(s => s.Required).ToList();
+        return states.Where(s => s.Blocked).ToList();
     }
 
     public async Task<ClientUpdateState> ForRequestAsync(AccountLookup lookup, JsonObject? claims)
@@ -180,7 +201,10 @@ internal sealed class ClientUpdateGate(IServiceProvider services, IAccountResolv
             ? flag == "1"
             : Claim("identityRegistered") is JsonValue r && ((r.TryGetValue(out string? t) && t == "1") || (r.TryGetValue(out bool b) && b));
         var current = settings.CurrentValue;
-        return new ClientUpdateState(accountId, version, registered, ClientVersions.GameplayAccessRequired(version, current.MinimumVersion, registered, current.VersionCheck));
+        return new ClientUpdateState(accountId, version, registered, ClientVersions.GameplayAccessRequired(version, current.MinimumVersion, registered, current.VersionCheck))
+        {
+            OtherPaks = current.BlockOtherPaks ? Field("otherPaks") : "",
+        };
     }
 
     public async Task<double> ModalNonceAsync(string playerId)
@@ -203,6 +227,17 @@ internal sealed class ClientUpdateGate(IServiceProvider services, IAccountResolv
             if (!await redis.StringSetAsync($"client_update_modal_cooldown:{id}", "1", s_cooldown, When.NotExists))
             {
                 return false;
+            }
+
+            // Other paks: the banner naming them (an update toast would send them looking for an update they have).
+            var current = settings.CurrentValue;
+            string other = current.BlockOtherPaks ? (string?)await redis.HashGetAsync($"connections:{id}", "otherPaks") ?? "" : "";
+            if (other.Length > 0)
+            {
+                await Realtime.PlayerMessages.NotifyClientAsync(redis, id, "admin_banner", "Other paks installed",
+                    current.OtherPaksMessage.Replace("{paks}", other.Replace(";", ", "), StringComparison.Ordinal), new JsonObject { ["timeout"] = 10 },
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                return true;
             }
 
             string nonceKey = $"client_update_modal_nonce:{id}";
@@ -261,8 +296,8 @@ public static class ClientUpdateGates
         }
 
         await gate.RequestModalsAsync(outdated.Select(o => o.AccountId));
-        log.LogWarning("Blocked {What}: update required for {Players}", what,
-            string.Join(", ", outdated.Select(o => $"{o.AccountId}:{(o.ClientVersion.Length > 0 ? o.ClientVersion : "legacy")}")));
+        log.LogWarning("Blocked {What}: update required or other paks for {Players}", what,
+            string.Join(", ", outdated.Select(o => $"{o.AccountId}:{(o.ClientVersion.Length > 0 ? o.ClientVersion : "legacy")}{(o.OtherPaks.Length > 0 ? " paks " + o.OtherPaks : "")}")));
         return true;
     }
 }

@@ -107,33 +107,35 @@ public sealed class ClientUpdateGateTests : IAsyncLifetime
         Assert.DoesNotContain(await Db.SortedSetRangeByScoreAsync(DelayedMessages.Key), e => e.ToString().Contains("0000000000000000001b", StringComparison.Ordinal));
     }
 
-    // Other paks (2026-10-16): a current client running paks that are neither the game's nor OVS_* is kept out of online
-    // play, and told why by a banner naming them instead of the update toast.
+    // Other paks (2026-10-16): with Clients:BlockOtherPaks on, a current client running paks that are neither the game's nor
+    // OVS_* is kept out of online play, and told why by a banner naming them instead of the update toast. Off by default.
+    private ClientUpdateGate Blocking() => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
+        null!, new TestOptions<ClientSettings>(new ClientSettings { BlockOtherPaks = true }));
+
     [SkippableFact]
-    public async Task AGameRunningOtherPaksIsBlockedAndToldWhichOnes()
+    public async Task WithTheBlockOnAGameRunningOtherPaksIsBlockedAndToldWhichOnes()
     {
         Skip.If(_redis is null, "OVS_TEST_REDIS not set");
         await Db.HashSetAsync($"connections:{P1}", [new HashEntry("clientVersion", "2026.10.16.01"), new HashEntry("identityRegistered", "1"),
             new HashEntry("otherPaks", "MVSI_Pack_P;pakchunk99-Tweak_P")]);
         await Db.HashSetAsync($"connections:{P2}", [new HashEntry("clientVersion", "2026.10.16.01"), new HashEntry("identityRegistered", "1"), new HashEntry("otherPaks", "")]);
 
-        var blocked = Assert.Single(await Gate().RequiringUpdateAsync([P1, P2]));
+        // Off by default: nobody is blocked for them.
+        Assert.Empty(await Gate().RequiringUpdateAsync([P1, P2]));
+
+        var blocked = Assert.Single(await Blocking().RequiringUpdateAsync([P1, P2]));
         Assert.Equal(P1, blocked.AccountId);
         Assert.False(blocked.Required);
         Assert.True(blocked.Blocked);
         Assert.Equal("MVSI_Pack_P;pakchunk99-Tweak_P", blocked.OtherPaks);
 
-        Assert.Equal([true], await Gate().RequestModalsAsync([P1]));
+        Assert.Equal([true], await Blocking().RequestModalsAsync([P1]));
         await Task.Delay(200);
         Assert.Empty(_published);   // no update toast
         var banner = (JsonObject)Js.Parse((string?)await Db.ListGetByIndexAsync(PlayerMessages.NotificationPrefix + P1, 0))!;
         Assert.Equal("admin_banner", (string?)banner["type"]);
         Assert.Contains("MVSI_Pack_P, pakchunk99-Tweak_P", (string?)banner["message"]);
 
-        // With the block off, they go through.
-        var open = new ClientUpdateGate(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(), null!,
-            new TestOptions<ClientSettings>(new ClientSettings { BlockOtherPaks = false }));
-        Assert.Empty(await open.RequiringUpdateAsync([P1, P2]));
     }
 
     [Theory]

@@ -16,10 +16,11 @@ namespace OpenVersus.Server.Core.Clients;
 // match or a rift node, accepting a rematch), ported from the TS server's services/clientUpdateGate.ts and services/clientVersion.ts (branch
 // infinity-war). A player is let through when the check is off, or when their session was registered through
 // /api/identify and their client is at least the minimum version (no minimum: any version).
-// The same doors close to a player whose game runs paks that are neither the game's nor OVS_* (2026-10-16: the client's
-// X-OVS-Other-Paks, kept at login as connections:{id} otherPaks; Clients:BlockOtherPaks): those change the simulation, so a
-// match with them desyncs. Offline (the Lab, Local Play) never asks the server, so they keep working there. Such a player
-// gets a banner naming the paks instead of the update toast.
+// With Clients:BlockOtherPaks on (off by default), the same doors close to a player whose game runs paks that are neither
+// the game's nor OVS_* (2026-10-16: the client's X-OVS-Other-Paks, kept at login as connections:{id} otherPaks): a pak that
+// changes gameplay desyncs a match, but most are skins, which do not (Tuggernuts: "technically, that's not hurting the
+// game"), so by default the login only logs them (AccessService), for desync reports. Offline (the Lab, Local Play) never
+// asks the server either way. A blocked player gets a banner naming the paks instead of the update toast.
 //
 // Redis, read     connections:{id} clientVersion, identityRegistered ("1"), otherPaks; client_update_modal_nonce:{id} (the calendar)
 // Redis, written  client_update_modal_cooldown:{id} "1" (SET NX EX 15: one request per player per 15 s)
@@ -53,8 +54,8 @@ public sealed class ClientSettings
     [Description("What the game shows before it closes to install new paks.")]
     public string PaksUpdateMessage { get; set; } = "New OpenVersus content is out. MultiVersus will close in 5 seconds; please relaunch it to install the update.";
 
-    [Description("On: a player whose game runs paks that are neither the game's nor OVS_* (X-OVS-Other-Paks) is kept out of online play; the Lab and Local Play stay theirs.")]
-    public bool BlockOtherPaks { get; set; } = true;
+    [Description("On: a player whose game runs paks that are neither the game's nor OVS_* (X-OVS-Other-Paks) is kept out of online play; the Lab and Local Play stay theirs. Off (the default): the login only logs them.")]
+    public bool BlockOtherPaks { get; set; }
 
     [Description("The banner such a player gets; {paks} becomes their names.")]
     public string OtherPaksMessage { get; set; } = "Online play is off while other paks are installed: {paks}. Remove them to play online; the Lab still works with them.";

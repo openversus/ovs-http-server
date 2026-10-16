@@ -802,8 +802,14 @@ internal sealed partial class AccessService(
         connection.Add(new HashEntry("identityRegistered", identity.Registered ? "1" : ""));
         // The client's OVS paks as it reported them (X-OVS-Paks): they only change at a restart, which is a new login.
         connection.Add(new HashEntry("paks", paks ?? ""));
-        // And any others (X-OVS-Other-Paks, names only): ClientUpdateGate keeps such a player out of online play.
-        connection.Add(new HashEntry("otherPaks", Clients.PakReport.OtherNames(otherPaks)));
+        // And any others (X-OVS-Other-Paks, names only): logged, for desync reports; with Clients:BlockOtherPaks on,
+        // ClientUpdateGate keeps such a player out of online play.
+        string other = Clients.PakReport.OtherNames(otherPaks);
+        connection.Add(new HashEntry("otherPaks", other));
+        if (other.Length > 0)
+        {
+            log.LogWarning("Player {Player} ({Name}) logged in from {Ip} running other paks: {Paks}", id, player.Str("name") ?? "", ip, other.Replace(";", ", ", StringComparison.Ordinal));
+        }
         connection.Add(new HashEntry("nodePort", identity.NodePort.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         connection.Add(new HashEntry("jwt", token));
         // The IP hash was just written for this player, so the TS server's owner check before mirroring the party key

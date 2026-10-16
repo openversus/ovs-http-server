@@ -684,15 +684,15 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     }
 
     [Fact]
-    // Closed (a Tuesday in New York): the TS ffaQueueClosedFailure, 200, before anything else is read; nothing queued.
+    // Closed (a Wednesday in New York): the TS ffaQueueClosedFailure, 200, before anything else is read; nothing queued.
     // An outdated client is told to update first, as there. Needs no Redis: the service has none here.
     public async Task AnFfaRequestOutsideTheWindowIsRefused()
     {
-        var tuesday = new Clock(DateTimeOffset.Parse("2026-10-06T18:00:00Z"));
-        var service = Service(ffa: new FfaSettings(), time: tuesday, withRedis: false);
+        var wednesday = new Clock(DateTimeOffset.Parse("2026-10-07T18:00:00Z"));
+        var service = Service(ffa: new FfaSettings(), time: wednesday, withRedis: false);
 
         var answer = (await service.RequestAsync("ffa", Asking(Me), CancellationToken.None))!;
-        Assert.Equal((200, Js.Stringify(FfaSchedule.ClosedFailure())), (answer.Status, Js.Stringify(answer.Body)));
+        Assert.Equal((200, Js.Stringify(FfaSchedule.ClosedFailure(new FfaSettings()))), (answer.Status, Js.Stringify(answer.Body)));
         Assert.Null(answer.After);
 
         _gate.Outdated.Add(Me);

@@ -12,26 +12,32 @@ namespace OpenVersus.Server.Core.Tests.Matchmaking;
 public sealed class TestingGroundsTests
 {
     [Theory]
-    // A Wednesday afternoon in New York: Testing Grounds; a Saturday: FFA; Sunday 23:59 Eastern (Monday 03:59 UTC, EDT):
-    // FFA has closed, Testing Grounds is open.
+    // The days FFA is not (2026-10-16: Monday, Wednesday, Friday and Sunday, New York time): Wednesday, Friday 00:00 and a
+    // Sunday are Testing Grounds; a Saturday is FFA; Monday 23:59:59 is still Testing Grounds, Tuesday 00:00 FFA (EDT).
     [InlineData("2026-10-07T18:00:00Z", true)]
+    [InlineData("2026-10-02T04:00:00Z", true)]
+    [InlineData("2026-10-04T15:00:00Z", true)]
     [InlineData("2026-10-03T15:00:00Z", false)]
-    [InlineData("2026-10-05T03:58:59Z", false)]
-    [InlineData("2026-10-05T03:59:00Z", true)]
-    [InlineData("2026-10-02T04:00:00Z", false)]
+    [InlineData("2026-10-06T03:59:59Z", true)]
+    [InlineData("2026-10-06T04:00:00Z", false)]
     public void OpenWhileTheFfaQueueIsClosed(string now, bool open)
     {
         var at = DateTimeOffset.Parse(now);
-        Assert.Equal(open, TestingGrounds.IsOpen(at, enabled: true, ffaWeekendOnly: true));
-        Assert.NotEqual(open, FfaSchedule.IsOpen(at, weekendOnly: true));
+        Assert.Equal(open, TestingGrounds.IsOpen(at, enabled: true, new FfaSettings()));
+        Assert.NotEqual(open, FfaSchedule.IsOpen(at, new FfaSettings()));
     }
+
+    [Fact]
+    public void TheClosedAnswerNamesItsDaysAndFfas() => Assert.Equal(
+        "1v1 Testing Grounds is open Monday, Wednesday, Friday and Sunday (US Eastern), except during Twosday; Free For All takes its place on Tuesday, Thursday and Saturday.",
+        (string?)TestingGrounds.ClosedFailure(new FfaSettings())["body"]!["ErrorMessage"]);
 
     [Fact]
     public void NeverOpenWhenDisabledOrWhileFfaIsOpenAllWeek()
     {
         var wednesday = DateTimeOffset.Parse("2026-10-07T18:00:00Z");
-        Assert.False(TestingGrounds.IsOpen(wednesday, enabled: false, ffaWeekendOnly: true));
-        Assert.False(TestingGrounds.IsOpen(wednesday, enabled: true, ffaWeekendOnly: false));
+        Assert.False(TestingGrounds.IsOpen(wednesday, enabled: false, new FfaSettings()));
+        Assert.False(TestingGrounds.IsOpen(wednesday, enabled: true, new FfaSettings { WeekendOnly = false }));
         Assert.True(new TestingGroundsSettings().Enabled);
     }
 
@@ -39,8 +45,8 @@ public sealed class TestingGroundsTests
     public void AlwaysOpenTakesTheWeekendToo()
     {
         var saturday = DateTimeOffset.Parse("2026-10-03T15:00:00Z");
-        Assert.True(TestingGrounds.IsOpen(saturday, enabled: true, ffaWeekendOnly: true, alwaysOpen: true));
-        Assert.False(TestingGrounds.IsOpen(saturday, enabled: false, ffaWeekendOnly: true, alwaysOpen: true));
+        Assert.True(TestingGrounds.IsOpen(saturday, enabled: true, new FfaSettings(), alwaysOpen: true));
+        Assert.False(TestingGrounds.IsOpen(saturday, enabled: false, new FfaSettings(), alwaysOpen: true));
         Assert.False(new TestingGroundsSettings().AlwaysOpen);
     }
 
@@ -81,19 +87,22 @@ public sealed class TestingGroundsTests
     }
 
     [Fact]
-    // Tuggernuts, 2026-10-13: during Twosday neither tile shows; FFA only while its queue is open.
+    // Tuggernuts, 2026-10-13: during Twosday neither tile shows; FFA only while its queue is open (2026-10-16: Tuesday is
+    // an FFA day, closed for Twosday's hours).
     public void TheFfaTileShowsOnlyWhileTheFfaQueueIsOpen()
     {
+        var ffa = new FfaSettings();
         var saturday = new DateTimeOffset(2026, 10, 17, 20, 0, 0, TimeSpan.FromHours(-4));
-        var twosday = new DateTimeOffset(2026, 10, 13, 22, 0, 0, TimeSpan.FromHours(-4));
-        Assert.True(TestingGrounds.FfaTileShown(saturday, testingGroundsOpen: false, enabled: true, ffaWeekendOnly: true));
-        // Tuesday evening: Testing Grounds is closed for Twosday, and FFA is weekend-only, so no tile.
-        Assert.False(TestingGrounds.FfaTileShown(twosday, testingGroundsOpen: false, enabled: true, ffaWeekendOnly: true));
-        Assert.False(TestingGrounds.FfaTileShown(twosday, testingGroundsOpen: true, enabled: true, ffaWeekendOnly: true));
+        var tuesday = new DateTimeOffset(2026, 10, 13, 22, 0, 0, TimeSpan.FromHours(-4));
+        Assert.True(TestingGrounds.FfaTileShown(saturday, testingGroundsOpen: false, enabled: true, ffa));
+        // Tuesday: FFA's day; during Twosday no tile at all.
+        Assert.True(TestingGrounds.FfaTileShown(tuesday, testingGroundsOpen: false, enabled: true, ffa));
+        Assert.False(TestingGrounds.FfaTileShown(tuesday, testingGroundsOpen: false, enabled: true, ffa, twosday: true));
+        Assert.False(TestingGrounds.FfaTileShown(tuesday, testingGroundsOpen: true, enabled: true, ffa, twosday: true));
         // Testing Grounds off: FFA shows all week, as before it existed.
-        Assert.True(TestingGrounds.FfaTileShown(twosday, testingGroundsOpen: false, enabled: false, ffaWeekendOnly: true));
+        Assert.True(TestingGrounds.FfaTileShown(tuesday, testingGroundsOpen: false, enabled: false, ffa, twosday: true));
         // FFA every day: its tile whenever Testing Grounds is not open.
-        Assert.True(TestingGrounds.FfaTileShown(twosday, testingGroundsOpen: false, enabled: true, ffaWeekendOnly: false));
+        Assert.True(TestingGrounds.FfaTileShown(tuesday, testingGroundsOpen: false, enabled: true, new FfaSettings { WeekendOnly = false }, twosday: true));
     }
 
     [Theory]

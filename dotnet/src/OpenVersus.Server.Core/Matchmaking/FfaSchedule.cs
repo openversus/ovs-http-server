@@ -1,11 +1,14 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace OpenVersus.Server.Core.Matchmaking;
 
 // The public Free For All queue's hours, ported from the TS server's services/ffaSchedule.ts. With Ffa:WeekendOnly on
-// (FFA_WEEKEND_ONLY, on by default as there) the queue is open from Friday 00:00 to Sunday 23:59 US Eastern, EST or EDT
-// as the date has it; Sunday's last minute is already closed (as there). Read by the FFA request
+// (FFA_WEEKEND_ONLY, on by default) the queue is open on Ffa:Days, each the whole day US Eastern, EST or EDT as the date
+// has it (2026-10-16, Tuggernuts: FFA and Testing Grounds swap by the day, Testing Grounds the more days; until then
+// Friday 00:00 to Sunday 23:59). On an FFA day Twosday closes it for its hours, as it closes Testing Grounds (neither tile
+// shows then; Tuggernuts, 2026-10-16). Testing Grounds is open on the other days (TestingGrounds.IsOpen). Read by the FFA request
 // (MatchmakingRequestService: refused outside the window with ClosedFailure) and by the matchmaker (MatchmakingWorker:
 // outside the window it cancels every queued FFA ticket). The TS website (server.ts) reads its own FFA_WEEKEND_ONLY for
 // the FFA searching count: keep the two the same.
@@ -16,8 +19,11 @@ namespace OpenVersus.Server.Core.Matchmaking;
 /// <summary>The public FFA queue's settings.</summary>
 public sealed class FfaSettings
 {
-    [Description("The public FFA queue is open only from Friday 00:00 to Sunday 23:59 US Eastern (FFA_WEEKEND_ONLY). Outside it an FFA request is refused and the matchmaker cancels every queued FFA ticket. Off: always open. The TS website reads its own FFA_WEEKEND_ONLY: keep the two the same.")]
+    [Description("On: the public FFA queue is open only on Ffa:Days, US Eastern (FFA_WEEKEND_ONLY, the name it had while those were the weekend). Outside them an FFA request is refused and the matchmaker cancels every queued FFA ticket; Testing Grounds takes those days. Off: always open.")]
     public bool WeekendOnly { get; set; } = true;
+
+    [Description("The days the FFA queue is open while Ffa:WeekendOnly is on, each 00:00 to 24:00 US Eastern, comma-separated (Mon, Tuesday, ...; any case). Testing Grounds has the others. Default Tue,Thu,Sat. None that parses: FFA is never open.")]
+    public string Days { get; set; } = "Tue,Thu,Sat";
 
     [Description("The OVS mutators every public FFA match runs, comma-separated slugs (its world buffs). Default ovs_beta_speed: the whole match at BetaSpeed:Percent; a client that runs another speed is refused from the queue until it restarts. Empty: none.")]
     public string Mutators { get; set; } = "ovs_beta_speed";
@@ -39,8 +45,39 @@ public static class FfaSchedule
     public static bool WrongBetaSpeed(FfaSettings settings, Matches.BetaSpeedSettings betaSpeed, string? header) =>
         MutatorsOf(settings).Contains(Matches.GameplayConfigs.BetaSpeedMutator) && !Matches.BetaSpeed.Reports(header, betaSpeed.Percent);
 
-    public const string ScheduleText = "Free For All is open Friday 12:00am to Sunday 11:59pm Eastern.";
-    private const int SundayCloseMinute = 23 * 60 + 59;
+    /// <summary>The days in <paramref name="text"/> (Ffa:Days), Monday first: full names or their first three letters, any case; others ignored.</summary>
+    public static DayOfWeek[] DaysOf(string? text)
+    {
+        var days = new HashSet<DayOfWeek>();
+        foreach (string part in (text ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            foreach (var day in Enum.GetValues<DayOfWeek>())
+            {
+                string name = day.ToString();
+                if (part.Equals(name, StringComparison.OrdinalIgnoreCase) || (part.Length == 3 && name.StartsWith(part, StringComparison.OrdinalIgnoreCase)))
+                {
+                    days.Add(day);
+                }
+            }
+        }
+
+        return days.OrderBy(d => ((int)d + 6) % 7).ToArray();
+    }
+
+    /// <summary>"Tuesday, Thursday and Saturday": the days as a sentence names them.</summary>
+    public static string DayList(IEnumerable<DayOfWeek> days)
+    {
+        var names = days.Select(d => d.ToString()).ToList();
+        return names.Count switch
+        {
+            0 => "no day",
+            1 => names[0],
+            _ => string.Join(", ", names[..^1]) + " and " + names[^1],
+        };
+    }
+
+    /// <summary>What a player turned away is told.</summary>
+    public static string ScheduleText(FfaSettings settings) => $"Free For All is open {DayList(DaysOf(settings.Days))}, US Eastern, except during Twosday.";
 
     // The IANA name, as the TS server's Intl; Windows with invariant globalization cannot map IANA names, so its own
     // name there.
@@ -48,31 +85,36 @@ public static class FfaSchedule
         ? eastern
         : TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
 
-    /// <summary>Whether the FFA queue takes players at <paramref name="now"/> (isFfaQueueOpen).</summary>
-    public static bool IsOpen(DateTimeOffset now, bool weekendOnly)
+    /// <summary>
+    /// Whether the FFA queue takes players at <paramref name="now"/> (isFfaQueueOpen): always with Ffa:WeekendOnly off, else
+    /// on Ffa:Days, US Eastern, outside <paramref name="twosday"/>.
+    /// </summary>
+    public static bool IsOpen(DateTimeOffset now, FfaSettings settings, bool twosday = false) =>
+        !settings.WeekendOnly || (DaysOf(settings.Days).Contains(TimeZoneInfo.ConvertTime(now, s_eastern).DayOfWeek) && !twosday);
+
+    /// <summary><see cref="IsOpen"/> with the service's settings and Twosday's switch (Redis), read only on an FFA day.</summary>
+    public static Task<bool> IsOpenAsync(IServiceProvider services, DateTimeOffset now) =>
+        IsOpenAsync(services, now, services.GetService<Microsoft.Extensions.Options.IOptionsMonitor<FfaSettings>>()?.CurrentValue ?? new FfaSettings());
+
+    /// <summary><see cref="IsOpen"/> with <paramref name="settings"/> and Twosday's switch (Redis), read only on an FFA day.</summary>
+    public static async Task<bool> IsOpenAsync(IServiceProvider services, DateTimeOffset now, FfaSettings settings)
     {
-        if (!weekendOnly)
+        if (!IsOpen(now, settings) || !settings.WeekendOnly)
         {
-            return true;
+            return IsOpen(now, settings);
         }
 
-        var local = TimeZoneInfo.ConvertTime(now, s_eastern);
-        return local.DayOfWeek switch
-        {
-            DayOfWeek.Friday or DayOfWeek.Saturday => true,
-            DayOfWeek.Sunday => local.Hour * 60 + local.Minute < SundayCloseMinute,
-            _ => false,
-        };
+        return IsOpen(now, settings, await Twosday.IsActiveAsync(services, now));
     }
 
     /// <summary>The answer to an FFA request outside the window (ffaQueueClosedFailure): a Hydra action failure, HTTP 200.</summary>
-    public static JsonObject ClosedFailure() => new()
+    public static JsonObject ClosedFailure(FfaSettings settings) => new()
     {
         ["body"] = new JsonObject
         {
             ["error"] = "ffa_queue_closed",
             ["ErrorCode"] = "QueueClosed",
-            ["ErrorMessage"] = ScheduleText,
+            ["ErrorMessage"] = ScheduleText(settings),
         },
         ["metadata"] = null,
         ["return_code"] = 1,

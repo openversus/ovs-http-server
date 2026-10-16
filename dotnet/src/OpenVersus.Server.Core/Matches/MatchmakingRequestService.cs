@@ -174,16 +174,16 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             return new MatchmakingAnswer(200, gate.FailureBody());
         }
 
-        if (queue.IsFfa && !Matchmaking.FfaSchedule.IsOpen(time.GetUtcNow(), ffa.CurrentValue.WeekendOnly))
+        if (queue.IsFfa && !await Matchmaking.FfaSchedule.IsOpenAsync(services, time.GetUtcNow(), ffa.CurrentValue))
         {
             log.LogInformation("Rejected FFA matchmaking for {Player}: outside the weekend window", me);
-            return new MatchmakingAnswer(200, Matchmaking.FfaSchedule.ClosedFailure());
+            return new MatchmakingAnswer(200, Matchmaking.FfaSchedule.ClosedFailure(ffa.CurrentValue));
         }
 
         if (queue.IsTestingGrounds && !await Matchmaking.TestingGrounds.IsOpenAsync(services, time.GetUtcNow()))
         {
             log.LogInformation("Rejected Testing Grounds matchmaking for {Player}: the queue is closed (FFA's weekend, Twosday, or TestingGrounds:Enabled off)", me);
-            return new MatchmakingAnswer(200, Matchmaking.TestingGrounds.ClosedFailure());
+            return new MatchmakingAnswer(200, Matchmaking.TestingGrounds.ClosedFailure(ffa.CurrentValue));
         }
 
         // Beta Speed (Testing Grounds', and FFA's with Ffa:Mutators): a game that runs another speed than the server's

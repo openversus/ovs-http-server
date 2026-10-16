@@ -125,14 +125,15 @@ public sealed class LiveMatches(IServiceProvider services, IOpsService ops, IOpt
         }
 
         var now = time.GetUtcNow();
-        bool testingGroundsOpen = false;
+        bool testingGroundsOpen = false, ffaOpen = false;
         try
         {
             testingGroundsOpen = await TestingGrounds.IsOpenAsync(services, now);
+            ffaOpen = await FfaSchedule.IsOpenAsync(services, now, ffa.CurrentValue);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
-            log.LogWarning("reading whether Testing Grounds is open failed: {Error}", e.Message);
+            log.LogWarning("reading whether Testing Grounds and FFA are open failed: {Error}", e.Message);
         }
 
         Snapshot = new JsonObject
@@ -142,7 +143,7 @@ public sealed class LiveMatches(IServiceProvider services, IOpsService ops, IOpt
             {
                 ["1v1"] = _searching["1v1"], ["2v2"] = _searching["2v2"], ["FFA"] = _searching["FFA"], [TestingGroundsQueue] = _searching[TestingGroundsQueue],
             },
-            ["ffaOpen"] = FfaSchedule.IsOpen(now, ffa.CurrentValue.WeekendOnly),
+            ["ffaOpen"] = ffaOpen,
             ["testingGroundsOpen"] = testingGroundsOpen,
             ["generatedAt"] = now.ToUnixTimeMilliseconds(),
         };

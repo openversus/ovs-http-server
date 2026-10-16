@@ -439,7 +439,7 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
     }
 
     [Fact]
-    // Outside the window (a Tuesday in New York) every FFA ticket goes and its search is cancelled for its players, as
+    // Outside the window (a Wednesday in New York) every FFA ticket goes and its search is cancelled for its players, as
     // cancelMatchmakingForAll, through MatchmakingQueue: the player's tick (realtime:queued) stops instead of searching
     // for a ticket that is gone, and the lobby has to ready again. The other queues are not touched.
     public async Task AClosedFfaQueueCancelsEverySearchInIt()
@@ -460,8 +460,8 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
 
         await Db.StringSetAsync($"player_lobby:{Id(1)}", Id(900));
         await Db.StringSetAsync($"party_ready:{Id(900)}", "1");
-        var tuesday = new Clock(DateTimeOffset.Parse("2026-10-06T18:00:00Z"));
-        await Worker(ffa: new FfaSettings(), time: tuesday).TickAsync(Db);
+        var wednesday = new Clock(DateTimeOffset.Parse("2026-10-07T18:00:00Z"));
+        await Worker(ffa: new FfaSettings(), time: wednesday).TickAsync(Db);
 
         Assert.Empty(await QueuedAsync(MatchmakingWorker.Ffa));
         Assert.Single(await QueuedAsync("1v1"));

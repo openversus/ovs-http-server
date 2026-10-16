@@ -20,7 +20,7 @@ namespace OpenVersus.Server.Core.Matchmaking;
 /// <summary>1v1 Testing Grounds settings.</summary>
 public sealed class TestingGroundsSettings
 {
-    [Description("1v1 Testing Grounds (unranked 1v1s with the Beta Speed mutator) is open whenever the FFA queue is closed: weekdays while Ffa:WeekendOnly is on, never while it is off. Off: never open, and the menu shows FFA all week as before.")]
+    [Description("1v1 Testing Grounds (unranked 1v1s with the Beta Speed mutator) is open whenever the FFA queue is closed: the days not in Ffa:Days while Ffa:WeekendOnly is on, never while it is off. Off: never open, and the menu shows FFA all week as before.")]
     public bool Enabled { get; set; } = true;
 
     [Description("Open every day, FFA's weekend and Twosday included (the menu then shows Testing Grounds, not FFA): for testing, or an event. Off: weekdays outside Twosday only.")]
@@ -54,7 +54,13 @@ public static class TestingGrounds
     public static TestingGroundsSettings Of(IServiceProvider services) =>
         services.GetService<IOptionsMonitor<TestingGroundsSettings>>()?.CurrentValue ?? new TestingGroundsSettings();
 
-    public const string ScheduleText = "1v1 Testing Grounds is open Monday to Thursday, except during Twosday; Free For All takes its place on the weekend.";
+    /// <summary>What a player turned away is told: its days (those not in Ffa:Days), and FFA's.</summary>
+    public static string ScheduleText(FfaSettings ffa)
+    {
+        var ffaDays = FfaSchedule.DaysOf(ffa.Days);
+        var days = Enum.GetValues<DayOfWeek>().Where(d => !ffaDays.Contains(d)).OrderBy(d => ((int)d + 6) % 7);
+        return $"1v1 Testing Grounds is open {FfaSchedule.DayList(days)} (US Eastern), except during Twosday; Free For All takes its place on {FfaSchedule.DayList(ffaDays)}.";
+    }
 
     /// <summary>The mutators of its matches, in order, without blanks or repeats.</summary>
     public static string[] MutatorsOf(TestingGroundsSettings settings) =>
@@ -71,20 +77,22 @@ public static class TestingGrounds
     /// Whether the queue takes players at <paramref name="now"/>: enabled, and neither the FFA queue nor Twosday on (or
     /// always open).
     /// </summary>
-    public static bool IsOpen(DateTimeOffset now, bool enabled, bool ffaWeekendOnly, bool alwaysOpen = false, bool twosday = false) =>
-        enabled && (alwaysOpen || (!FfaSchedule.IsOpen(now, ffaWeekendOnly) && !twosday));
+    public static bool IsOpen(DateTimeOffset now, bool enabled, FfaSettings ffa, bool alwaysOpen = false, bool twosday = false) =>
+        enabled && (alwaysOpen || (!FfaSchedule.IsOpen(now, ffa) && !twosday));
 
-    /// <summary><see cref="IsOpen(DateTimeOffset, bool, bool, bool, bool)"/> with the service's settings and Twosday's switch (Redis).</summary>
+    private static FfaSettings Ffa(IServiceProvider services) => services.GetService<IOptionsMonitor<FfaSettings>>()?.CurrentValue ?? new FfaSettings();
+
+    /// <summary><see cref="IsOpen(DateTimeOffset, bool, FfaSettings, bool, bool)"/> with the service's settings and Twosday's switch (Redis).</summary>
     public static async Task<bool> IsOpenAsync(IServiceProvider services, DateTimeOffset now)
     {
         var settings = Of(services);
-        bool ffaWeekendOnly = services.GetService<IOptionsMonitor<FfaSettings>>()?.CurrentValue.WeekendOnly ?? new FfaSettings().WeekendOnly;
-        if (!settings.Enabled || settings.AlwaysOpen || FfaSchedule.IsOpen(now, ffaWeekendOnly))
+        var ffa = Ffa(services);
+        if (!settings.Enabled || settings.AlwaysOpen || FfaSchedule.IsOpen(now, ffa))
         {
-            return IsOpen(now, settings.Enabled, ffaWeekendOnly, settings.AlwaysOpen);
+            return IsOpen(now, settings.Enabled, ffa, settings.AlwaysOpen);
         }
 
-        return IsOpen(now, settings.Enabled, ffaWeekendOnly, settings.AlwaysOpen, await Twosday.IsActiveAsync(services, now));
+        return IsOpen(now, settings.Enabled, ffa, settings.AlwaysOpen, await Twosday.IsActiveAsync(services, now));
     }
 
     /// <summary>
@@ -92,13 +100,12 @@ public static class TestingGrounds
     /// 2026-10-13: during Twosday neither tile shows, then the open one comes back). With Testing Grounds off, FFA shows all
     /// week as before.
     /// </summary>
-    public static bool FfaTileShown(DateTimeOffset now, bool testingGroundsOpen, bool enabled, bool ffaWeekendOnly) =>
-        !testingGroundsOpen && (!enabled || FfaSchedule.IsOpen(now, ffaWeekendOnly));
+    public static bool FfaTileShown(DateTimeOffset now, bool testingGroundsOpen, bool enabled, FfaSettings ffa, bool twosday = false) =>
+        !testingGroundsOpen && (!enabled || FfaSchedule.IsOpen(now, ffa, twosday));
 
-    /// <summary><see cref="FfaTileShown(DateTimeOffset, bool, bool, bool)"/> with the service's settings.</summary>
-    public static bool FfaTileShown(IServiceProvider services, DateTimeOffset now, bool testingGroundsOpen) =>
-        FfaTileShown(now, testingGroundsOpen, Of(services).Enabled,
-            services.GetService<IOptionsMonitor<FfaSettings>>()?.CurrentValue.WeekendOnly ?? new FfaSettings().WeekendOnly);
+    /// <summary><see cref="FfaTileShown(DateTimeOffset, bool, bool, FfaSettings, bool)"/> with the service's settings and Twosday's switch.</summary>
+    public static async Task<bool> FfaTileShownAsync(IServiceProvider services, DateTimeOffset now, bool testingGroundsOpen) =>
+        !testingGroundsOpen && (!Of(services).Enabled || await FfaSchedule.IsOpenAsync(services, now));
 
     /// <summary>Its match's notification fields beside the unranked ones: the mutators (the rollback registry's tick_rate reads them).</summary>
     public static JsonArray WorldBuffs(TestingGroundsSettings settings) => new(MutatorsOf(settings).Select(m => (JsonNode?)m).ToArray());
@@ -116,7 +123,7 @@ public static class TestingGrounds
     };
 
     /// <summary>The answer to a request outside the window: a Hydra action failure, HTTP 200, as FFA's.</summary>
-    public static JsonObject ClosedFailure() => Failure("testing_grounds_queue_closed", "QueueClosed", ScheduleText);
+    public static JsonObject ClosedFailure(FfaSettings ffa) => Failure("testing_grounds_queue_closed", "QueueClosed", ScheduleText(ffa));
 
     /// <summary>The answer to a player whose game runs another Beta Speed (<see cref="WrongBetaSpeed"/>): restart the game to update.</summary>
     public static JsonObject BetaSpeedFailure() => Failure("testing_grounds_beta_speed_changed", "BetaSpeedChanged",

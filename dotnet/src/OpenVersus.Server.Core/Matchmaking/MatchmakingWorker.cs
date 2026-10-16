@@ -37,7 +37,7 @@ namespace OpenVersus.Server.Core.Matchmaking;
 //   casual1v1, casual2v2  the Casual queue (MatchmakingRequestService): as 1v1 and 2v2, with no skill range at all
 //        (anyone not blocked); a player who waits too long gets bots from the game's casual_queue instead.
 //   FFA  the public Free For All queue (processFfaQueue): the 4 oldest solo tickets of distinct players, no skill; a
-//        blocked group waits (no other four are tried). Outside its window (FfaSchedule, Ffa:WeekendOnly) nothing is
+//        blocked group waits (no other four are tried). Outside its window (FfaSchedule, Ffa:WeekendOnly and Ffa:Days) nothing is
 //        matched: every ticket in it goes, and each is cancelled as the TS cancelMatchmakingForAll does
 //        (MatchmakingQueue's cancel: the ticket's tick stops and the game is told, with the ticket's request id; each
 //        player's party_ready:{lobby} deleted). Each player is a team of their own (team and index 0..3, a random one
@@ -316,7 +316,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
         var tickets = await TicketsAsync(redis, Ffa);
 
         // Closed: nobody is left searching until the window opens again.
-        if (!FfaSchedule.IsOpen(time.GetUtcNow(), ffa.CurrentValue.WeekendOnly))
+        if (!await FfaSchedule.IsOpenAsync(services, time.GetUtcNow(), ffa.CurrentValue))
         {
             if (tickets.Count > 0)
             {

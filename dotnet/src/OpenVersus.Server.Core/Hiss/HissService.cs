@@ -115,7 +115,7 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         string fighterPassKey = FighterPass.Key(fighterPass);
         var now = (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
         bool testingGrounds = await Matchmaking.TestingGrounds.IsOpenAsync(services, now);
-        bool ffaTile = Matchmaking.TestingGrounds.FfaTileShown(services, now, testingGrounds);
+        bool ffaTile = await Matchmaking.TestingGrounds.FfaTileShownAsync(services, now, testingGrounds);
         var testingGroundsRules = Matchmaking.TestingGrounds.Of(services);
         // The catalog changes with the queues' state and with Testing Grounds' mutators.
         string testingGroundsKey = $"{testingGrounds}|{ffaTile}|{testingGroundsRules.Mutators}";
@@ -180,7 +180,7 @@ internal sealed class HissService(IServiceProvider services, IOptionsMonitor<His
         double crc = mongo is null ? DefaultCrc : await CrcAsync(mongo, ct);
         var now = (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
         bool testingGrounds = await Matchmaking.TestingGrounds.IsOpenAsync(services, now);
-        bool ffaTile = Matchmaking.TestingGrounds.FfaTileShown(services, now, testingGrounds);
+        bool ffaTile = await Matchmaking.TestingGrounds.FfaTileShownAsync(services, now, testingGrounds);
         return crc + (services.GetService<IOptionsMonitor<HissSettings>>()?.CurrentValue.ContentRevision ?? new HissSettings().ContentRevision)
             + (testingGrounds ? TestingGroundsCrcOffset : ffaTile ? 0 : NoQueueTileCrcOffset)
             + (Arenas.ArenaHiss.IsEnabled(services) ? Arenas.ArenaHiss.CrcOffset + Arenas.ArenaHiss.BotTimeoutSeconds(services) * Arenas.ArenaHiss.CrcPerBotTimeoutSecond : 0);

@@ -69,9 +69,11 @@ public sealed class TwosdayTests
     [Fact]
     public void TestingGroundsClosesForTwosdayUnlessAlwaysOpen()
     {
+        // On a Testing Grounds day (FFA on the old weekend, so Tuesday is one).
         var tuesdayEvening = DateTimeOffset.Parse("2026-10-06T20:00:00Z");
-        Assert.True(TestingGrounds.IsOpen(tuesdayEvening, enabled: true, ffaWeekendOnly: true));
-        Assert.False(TestingGrounds.IsOpen(tuesdayEvening, enabled: true, ffaWeekendOnly: true, twosday: true));
-        Assert.True(TestingGrounds.IsOpen(tuesdayEvening, enabled: true, ffaWeekendOnly: true, alwaysOpen: true, twosday: true));
+        var weekendFfa = new FfaSettings { Days = "Fri,Sat,Sun" };
+        Assert.True(TestingGrounds.IsOpen(tuesdayEvening, enabled: true, weekendFfa));
+        Assert.False(TestingGrounds.IsOpen(tuesdayEvening, enabled: true, weekendFfa, twosday: true));
+        Assert.True(TestingGrounds.IsOpen(tuesdayEvening, enabled: true, weekendFfa, alwaysOpen: true, twosday: true));
     }
 }

@@ -399,8 +399,8 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
         var notification = JsonNode.Parse((await Db.StringGetAsync(matchId)).ToString())!;
         Assert.Equal("FFA", (string?)notification["mode"]);
         Assert.Null(notification["isCustomGame"]);
-        // Its mutators (Ffa:Mutators): Beta Speed by default, in the worldBuffs the config and the rollback tick rate read.
-        Assert.Equal(["ovs_beta_speed"], notification["worldBuffs"]!.AsArray().Select(b => b!.GetValue<string>()));
+        // Its mutators (Ffa:Mutators): Beta Speed and Shield HP by default, in the worldBuffs the config and the rollback tick rate read.
+        Assert.Equal(["ovs_beta_speed", "ovs_shield_hp"], notification["worldBuffs"]!.AsArray().Select(b => b!.GetValue<string>()));
         var players = notification["players"]!.AsArray().Select(p => p!.AsObject()).ToList();
         Assert.Equal([Id(1), Id(4), Id(5), Id(6)], players.Select(p => p["playerId"]!.GetValue<string>()));
         Assert.Equal([0, 1, 2, 3], players.Select(p => p["playerIndex"]!.GetValue<int>()));

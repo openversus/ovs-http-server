@@ -12,9 +12,11 @@ namespace OpenVersus.Server.Core.Matchmaking;
 // (MatchmakingRequestService: refused outside the window with ClosedFailure) and by the matchmaker (MatchmakingWorker:
 // outside the window it cancels every queued FFA ticket). The TS website (server.ts) reads its own FFA_WEEKEND_ONLY for
 // the FFA searching count: keep the two the same.
-// Its matches run Ffa:Mutators (Tuggernuts, 2026-10-14: last man standing, as always, plus Beta Speed's 10%): the
-// matchmaker puts them in the match's worldBuffs (the rollback server's tick rate and every client's speed read them),
-// and with Beta Speed a client that runs another speed is refused as from Testing Grounds (WrongBetaSpeed).
+// Its matches run Ffa:Mutators (Tuggernuts, 2026-10-14: last man standing, as always, plus Beta Speed's 10%; 2026-10-16:
+// and Shield HP, as Testing Grounds): the matchmaker puts them in the match's worldBuffs (the rollback server's tick rate
+// and every client's speed read them), and with Beta Speed a client that runs another speed is refused as from Testing
+// Grounds (WrongBetaSpeed). Shield HP lives in the experimental pak, which every player must run as the release has it
+// (Clients/RequiredPaks.cs), as for Testing Grounds.
 
 /// <summary>The public FFA queue's settings.</summary>
 public sealed class FfaSettings
@@ -25,8 +27,8 @@ public sealed class FfaSettings
     [Description("The days the FFA queue is open while Ffa:WeekendOnly is on, each 00:00 to 24:00 US Eastern, comma-separated (Mon, Tuesday, ...; any case). Testing Grounds has the others. Default Tue,Thu,Sat. None that parses: FFA is never open.")]
     public string Days { get; set; } = "Tue,Thu,Sat";
 
-    [Description("The OVS mutators every public FFA match runs, comma-separated slugs (its world buffs). Default ovs_beta_speed: the whole match at BetaSpeed:Percent; a client that runs another speed is refused from the queue until it restarts. Empty: none.")]
-    public string Mutators { get; set; } = "ovs_beta_speed";
+    [Description("The OVS mutators every public FFA match runs, comma-separated slugs (its world buffs). Default ovs_beta_speed,ovs_shield_hp: the whole match at BetaSpeed:Percent (a client that runs another speed is refused from the queue until it restarts), and Shield HP's shields, as Testing Grounds. Empty: none.")]
+    public string Mutators { get; set; } = "ovs_beta_speed,ovs_shield_hp";
 }
 
 public static class FfaSchedule

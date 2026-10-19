@@ -286,7 +286,7 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
 
         // As the TS server's redisOnGameplayConfigNotified, which every match config passes through: P2P decided once.
         // A P2P match keeps its port for the relay, deployed only if its nodes find no direct path (/ovs_p2p_failed).
-        bool p2p = P2P.Mark(notification, rollback.P2P);
+        bool p2p = await P2P.MarkAsync(redis, notification, rollback.P2P, log);
         if (!p2p)
         {
             DeployIfOnDemand(rollbackPort, matchId);

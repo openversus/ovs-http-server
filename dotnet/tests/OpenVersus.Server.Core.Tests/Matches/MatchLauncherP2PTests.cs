@@ -80,7 +80,8 @@ public sealed class MatchLauncherP2PTests : IAsyncLifetime
 
     [Theory]
     [MemberData(nameof(Launches))]
-    // p2p is always in the config, true or false; a P2P match keeps its port (for the relay) and deploys nothing.
+    // p2p is always in the config, true or false; a P2P match keeps its port (for the relay) and deploys nothing. Every
+    // human here has reported a node.
     public async Task AMatchRunsP2PWhenEligibleAndSwitchedOnAndThenDeploysNothing(string name, bool enabled, MatchPlayer[] players, bool p2p)
     {
         if (_redis is null)
@@ -88,22 +89,73 @@ public sealed class MatchLauncherP2PTests : IAsyncLifetime
             return;
         }
 
+        Assert.True(await LaunchAsync(enabled, players, withNode: [.. players.Where(p => !p.IsBot).Select(p => p.PlayerId)]) == p2p, name);
+    }
+
+    public static TheoryData<string, MatchPlayer[], string[], string> NodeLaunches => new()
+    {
+        { "one human without a node", [Human(0, host: true), Human(1)], [Human(0).PlayerId], "" },
+        { "the host without a node", [Human(0, host: true), Human(1)], [Human(1).PlayerId], "" },
+        { "nobody with a node", [Human(0, host: true), Human(1)], [], "" },
+        { "a spectator without a node", [Human(0, host: true), Human(1), Spectator(2)], [Human(0).PlayerId, Human(1).PlayerId], "" },
+        { "a node port of 0", [Human(0, host: true), Human(1)], [Human(0).PlayerId], "0" },
+    };
+
+    [Theory]
+    [MemberData(nameof(NodeLaunches))]
+    // A human with no node (RollbackNode = false, an old client, a node that never reported its port) plays on a rollback
+    // server, deployed as for any server match (2026-10-19: sent to 127.0.0.1 with nothing there, the game never
+    // connected, and the relay, asked for and reached through nodes, could not save it).
+    public async Task AMatchWithAHumanWithoutANodeRunsOnARollbackServer(string name, MatchPlayer[] players, string[] withNode, string otherPort)
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        string[] reportedOther = otherPort.Length > 0 ? [.. players.Where(p => !p.IsBot).Select(p => p.PlayerId).Except(withNode)] : [];
+        Assert.False(await LaunchAsync(enabled: true, players, withNode, reportedOther, otherPort), name);
+    }
+
+    // Launches the match with the given humans' nodes reported (connections:{id} nodePort 41234; those in
+    // reportedOther report otherPort), checks its port and that a server was deployed only for a server match, cleans
+    // up, and returns its p2p.
+    private async Task<bool> LaunchAsync(bool enabled, MatchPlayer[] players, string[] withNode, string[]? reportedOther = null, string otherPort = "")
+    {
+        var db = _redis!.GetDatabase();
+        foreach (string id in withNode)
+        {
+            await db.HashSetAsync($"connections:{id}", "nodePort", "41234");
+        }
+
+        foreach (string id in reportedOther ?? [])
+        {
+            await db.HashSetAsync($"connections:{id}", "nodePort", otherPort);
+        }
+
         var webhook = new Webhook();
         var launcher = new MatchLauncher(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis).BuildServiceProvider(),
             new TestOptions<RollbackSettings>(new RollbackSettings { OnDemand = true, P2P = enabled }), webhook, TimeProvider.System,
             NullLogger<MatchLauncher>.Instance);
-
-        var launched = await launcher.LaunchAsync(new MatchLaunch("1v1", "M001_V3", "1v1", players), CancellationToken.None);
-
-        Assert.NotNull(launched);
-        var db = _redis.GetDatabase();
-        var notification = JsonNode.Parse((await db.StringGetAsync(launched.MatchId)).ToString())!;
-        await db.KeyDeleteAsync([launched.MatchId, $"match:{launched.MatchId}"]);
-        Assert.True(notification["p2p"]!.GetValue<bool>() == p2p, name);
-        Assert.Equal(launched.RollbackPort, notification["rollbackPort"]!.GetValue<int>());
-        lock (webhook.Bodies)
+        try
         {
-            Assert.Equal(p2p ? 0 : 1, webhook.Bodies.Count);
+            var launched = await launcher.LaunchAsync(new MatchLaunch("1v1", "M001_V3", "1v1", players), CancellationToken.None);
+
+            Assert.NotNull(launched);
+            var notification = JsonNode.Parse((await db.StringGetAsync(launched.MatchId)).ToString())!;
+            await db.KeyDeleteAsync([launched.MatchId, $"match:{launched.MatchId}"]);
+            bool p2p = notification["p2p"]!.GetValue<bool>();
+            Assert.Equal(launched.RollbackPort, notification["rollbackPort"]!.GetValue<int>());
+            lock (webhook.Bodies)
+            {
+                Assert.Equal(p2p ? 0 : 1, webhook.Bodies.Count);
+            }
+
+            return p2p;
+        }
+        finally
+        {
+            await db.KeyDeleteAsync([.. players.Select(p => new RedisKey($"connections:{p.PlayerId}"))]);
         }
     }
 

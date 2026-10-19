@@ -63,7 +63,7 @@ namespace OpenVersus.Server.Core.Matches;
 // Mongo, written  eloratings, playerstats (SetRatings); eloratings for a player with none (FullRankUpdate)
 //
 // The next game's rollback port is IMatchLauncher's (fixed servers: a random one of theirs; on demand: the next port,
-// deployed unless the game runs P2P), as the matchmaker's; its p2p is P2P.Mark (Rollback:P2P). The teams and player
+// deployed unless the game runs P2P), as the matchmaker's; its p2p is P2P.MarkAsync (Rollback:P2P, every human with a node). The teams and player
 // indexes are the set's players unchanged, as there.
 //
 // Unlike there:
@@ -739,7 +739,7 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
             ["mode"] = set["mode"]?.DeepClone(),
             ["rollbackPort"] = port,
         };
-        bool p2p = P2P.Mark(notification, rollback.CurrentValue.P2P);
+        bool p2p = await P2P.MarkAsync(redis, notification, rollback.CurrentValue.P2P, log);
         if (!p2p)
         {
             launcher.DeployIfOnDemand(port, matchId);

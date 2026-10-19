@@ -45,7 +45,7 @@ namespace OpenVersus.Server.Core.Matchmaking;
 //        not ranked, from mode "FFA") but not a password match, as the TS worker writes it.
 // A match (createMatch): match:{id} (the tickets as queued) EX 20 min; teams (parties shuffled, team 0 filled first,
 // player index = place * 2 + team, a random index hosts, each player's ip from player:{id}); a map (Matchmaking/maps.json:
-// an enabled one for the mode; 1v1: 1 in 999 PVE_03); p2p in the notification (Rollback:P2P and P2P.IsEligible; a P2P
+// an enabled one for the mode; 1v1: 1 in 999 PVE_03); p2p in the notification (Rollback:P2P, P2P.IsEligible and every human with a node: P2P.MarkAsync; a P2P
 // match is deployed no rollback server); ranked_set:{id} and player_ranked_set:{player} EX 20 min (every regular 1v1 and
 // 2v2 match: game 1 of a set); then the notification at {id} EX 20 min, announced (MatchLaunches: match:notifications, or
 // match:launched) with matchmaking-complete for each ticket's players (MatchLauncher.MatchmakingComplete: its own
@@ -585,7 +585,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
         }
 
         // As the TS worker's markP2P: a P2P match gets no rollback server unless its nodes find no direct path.
-        bool p2p = Matches.P2P.Mark(notification, rollback.CurrentValue.P2P);
+        bool p2p = await Matches.P2P.MarkAsync(redis, notification, rollback.CurrentValue.P2P, log);
         if (!p2p)
         {
             launcher.DeployIfOnDemand(port, matchId);

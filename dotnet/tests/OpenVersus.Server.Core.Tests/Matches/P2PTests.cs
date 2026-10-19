@@ -57,10 +57,49 @@ public sealed class P2PTests
     [Fact]
     public void MarkAlwaysWritesP2P()
     {
-        var notification = new JsonObject { ["players"] = JsonNode.Parse("""[{},{}]""") };
-        Assert.False(P2P.Mark(notification, enabled: false));
+        var notification = new JsonObject { ["players"] = JsonNode.Parse("""[{"playerId":"a"},{"playerId":"b"}]""") };
+        Assert.False(P2P.Mark(notification, enabled: false, hasNode: _ => true));
         Assert.False(notification["p2p"]!.GetValue<bool>());
-        Assert.True(P2P.Mark(notification, enabled: true));
+        Assert.True(P2P.Mark(notification, enabled: true, hasNode: _ => true));
         Assert.True(notification["p2p"]!.GetValue<bool>());
     }
+
+    [Theory]
+    // Every human, spectators included, must have a node: each is sent to their own (2026-10-19: a game with its node
+    // off was sent to 127.0.0.1 with nothing there, and no relay could reach it). Bots need none.
+    [InlineData("""[{"playerId":"a"},{"playerId":"b"}]""", "a,b", true)]
+    [InlineData("""[{"playerId":"a"},{"playerId":"b"}]""", "a", false)]
+    [InlineData("""[{"playerId":"a"},{"playerId":"b"}]""", "", false)]
+    [InlineData("""[{"playerId":"a"},{"playerId":"bot","isBot":true}]""", "a", true)]
+    [InlineData("""[{"playerId":"a"},{"playerId":"b"},{"playerId":"s","isSpectator":true}]""", "a,b", false)]
+    [InlineData("""[{"playerId":"a"},{"playerId":"b"},{"playerId":"s","isSpectator":true}]""", "a,b,s", true)]
+    // An entry without a playerId cannot be asked about: a server match.
+    [InlineData("""[{"playerId":"a"},{}]""", "a", false)]
+    public void P2PNeedsANodeForEveryHuman(string players, string withNode, bool p2p)
+    {
+        var nodes = withNode.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+        var notification = new JsonObject { ["players"] = JsonNode.Parse(players) };
+        Assert.Equal(p2p, P2P.Mark(notification, enabled: true, hasNode: nodes.Contains));
+        Assert.Equal(p2p, notification["p2p"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    // Switched off, or with nobody whose node could host, no node is asked about.
+    public void NodesAreAskedAboutOnlyForAnEligibleMatchWithTheSwitchOn()
+    {
+        int asked = 0;
+        bool HasNode(string _)
+        {
+            asked++;
+            return true;
+        }
+
+        Assert.False(P2P.Mark(new JsonObject { ["players"] = JsonNode.Parse("""[{"playerId":"a"},{"playerId":"b"}]""") }, enabled: false, HasNode));
+        Assert.False(P2P.Mark(new JsonObject { ["players"] = JsonNode.Parse("""[{"playerId":"s","isSpectator":true},{"isBot":true}]""") }, enabled: true, HasNode));
+        Assert.Equal(0, asked);
+    }
+
+    [Fact]
+    public void HumansArePlayersAndSpectatorsButNotBots() =>
+        Assert.Equal(["a", "s", ""], P2P.Humans(JsonNode.Parse("""[{"playerId":"a"},{"playerId":"b","isBot":true},{"playerId":"s","isSpectator":true},{}]""")!.AsArray()));
 }

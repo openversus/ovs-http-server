@@ -278,6 +278,8 @@ public sealed class RankedSetsTests : IAsyncLifetime
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         await SeedAsync(gamesPlayed: 1, 0, 1);
+        await Db.HashSetAsync($"connections:{P1}", "nodePort", "41234");
+        await Db.HashSetAsync($"connections:{P2}", "nodePort", "41234");
         var launcher = new Launcher();
         var sets = Sets(launcher, p2p: true);
         await sets.CheckinAsync(P1, Set);
@@ -286,6 +288,23 @@ public sealed class RankedSetsTests : IAsyncLifetime
         _games.Add(game);
         Assert.True((await JsonAsync(game))!["p2p"]!.GetValue<bool>());
         Assert.Empty(launcher.Deployed);
+    }
+
+    [SkippableFact]
+    // A set's next game without a node for one of its players runs on a rollback server, deployed (2026-10-19).
+    public async Task ANextGameWithAPlayerWithoutANodeRunsOnARollbackServer()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync(gamesPlayed: 1, 0, 1);
+        await Db.HashSetAsync($"connections:{P1}", "nodePort", "41234");
+        var launcher = new Launcher();
+        var sets = Sets(launcher, p2p: true);
+        await sets.CheckinAsync(P1, Set);
+        await sets.CheckinAsync(P2, Set);
+        string game = (string)(await Db.StringGetAsync($"ranked_set_match:{Set}"))!;
+        _games.Add(game);
+        Assert.False((await JsonAsync(game))!["p2p"]!.GetValue<bool>());
+        Assert.Equal([game], launcher.Deployed);
     }
 
     [SkippableFact]

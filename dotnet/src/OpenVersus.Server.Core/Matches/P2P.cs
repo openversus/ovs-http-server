@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Matches;
 
@@ -12,6 +14,11 @@ namespace OpenVersus.Server.Core.Matches;
 // websocket then sends a P2P match's players to 127.0.0.1 and their node's port (connections:{id} nodePort, which
 // /access writes from /api/identify), and /ovs_register (RollbackCallbacks) holds game-server-instance-ready until the
 // host's node posts /ovs_p2p_ready. The switch is Rollback:P2P (P2P_ROLLBACK fills it when it is not set itself: TsEnvironment).
+//
+// Every human in the match (players and spectators: each is sent to its own node) must have reported a node, or the
+// match runs on a rollback server (Tuggernuts, 2026-10-19). A game without one ([Features] RollbackNode = false, an old
+// client, or a node that never reported its port) was sent to 127.0.0.1 with nothing listening, and the relay could not
+// save it: the relay is asked for by a node and reached through one.
 
 /// <summary>Which matches run P2P, and the node port a client reports.</summary>
 public static class P2P
@@ -24,11 +31,55 @@ public static class P2P
     public static bool IsEligible(JsonArray players) =>
         players.Any(player => !Flag(player, "isSpectator") && !Flag(player, "isBot"));
 
-    /// <summary>Writes the notification's p2p (the switch and eligibility) and returns it.</summary>
-    public static bool Mark(JsonObject notification, bool enabled)
+    /// <summary>
+    /// The humans of <paramref name="players"/>, players and spectators (everyone but bots), by playerId; "" for an entry
+    /// without one. In a P2P match each of them is sent to their own node.
+    /// </summary>
+    public static IEnumerable<string> Humans(JsonArray players) =>
+        players.Where(player => !Flag(player, "isBot"))
+            .Select(player => player?["playerId"] is JsonValue v && v.TryGetValue(out string? id) ? id : "");
+
+    /// <summary>
+    /// Writes the notification's p2p and returns it: the switch, eligibility, and every human with a node
+    /// (<paramref name="hasNode"/>, asked only with the switch on and the match eligible).
+    /// </summary>
+    public static bool Mark(JsonObject notification, bool enabled, Func<string, bool> hasNode)
     {
-        bool p2p = enabled && notification["players"] is JsonArray players && IsEligible(players);
+        bool p2p = enabled && notification["players"] is JsonArray players && IsEligible(players) && Humans(players).All(hasNode);
         notification["p2p"] = p2p;
+        return p2p;
+    }
+
+    /// <summary>
+    /// <see cref="Mark(JsonObject, bool, Func{string, bool})"/> with each human's node read from Redis (connections:{id}
+    /// nodePort above 0). An eligible match that runs on a rollback server for want of a node is logged with who has none.
+    /// </summary>
+    public static async Task<bool> MarkAsync(IDatabase redis, JsonObject notification, bool enabled, ILogger log)
+    {
+        var withNode = new HashSet<string>();
+        var without = new List<string>();
+        if (enabled && notification["players"] is JsonArray players && IsEligible(players))
+        {
+            foreach (string id in Humans(players).Distinct())
+            {
+                if (id.Length > 0 && ParseNodePort((string?)await redis.HashGetAsync($"connections:{id}", "nodePort")) > 0)
+                {
+                    withNode.Add(id);
+                }
+                else
+                {
+                    without.Add(id.Length > 0 ? id : "(no playerId)");
+                }
+            }
+        }
+
+        bool p2p = Mark(notification, enabled, withNode.Contains);
+        if (without.Count > 0)
+        {
+            log.LogInformation("Match {Match} runs on a rollback server, not P2P: no rollback node reported by {Players}",
+                (string?)notification["matchId"], string.Join(", ", without));
+        }
+
         return p2p;
     }
 

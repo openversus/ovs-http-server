@@ -329,9 +329,18 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
         Assert.Null(regularNotification["isCustomGame"]);
     }
 
+    // Each player's rollback node, as /access writes it from the client's report (connections:{id} nodePort).
+    private async Task NodesAsync(params int[] players)
+    {
+        foreach (int p in players)
+        {
+            await Db.HashSetAsync($"connections:{Id(p)}", "nodePort", "41234");
+        }
+    }
+
     [Theory]
-    // A 1v1 of two humans runs P2P with the switch on: p2p in its config, and no rollback server deployed (the port is
-    // kept for the relay). Switched off, the same match is a server match, deployed as before.
+    // A 1v1 of two humans with nodes runs P2P with the switch on: p2p in its config, and no rollback server deployed (the
+    // port is kept for the relay). Switched off, the same match is a server match, deployed as before.
     [InlineData(true)]
     [InlineData(false)]
     public async Task A1v1OfTwoHumansRunsP2POnlyWithTheSwitchAndThenDeploysNothing(bool p2p)
@@ -343,6 +352,7 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
 
         await QueueAsync("1v1", [1], age: 1);
         await QueueAsync("1v1", [2], age: 1);
+        await NodesAsync(1, 2);
         var ports = new Ports();
         await Worker(ports, p2p).TickAsync(Db);
 
@@ -364,12 +374,46 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
 
         await QueueAsync("2v2", [1, 2], age: 1);
         await QueueAsync("2v2", [3, 4], age: 1);
+        await NodesAsync(1, 2, 3, 4);
         var ports = new Ports();
         await Worker(ports, p2p: true).TickAsync(Db);
 
         string matchId = (string)(await MatchesAsync()).Single()["matchId"]!;
         Assert.True(JsonNode.Parse((await Db.StringGetAsync(matchId)).ToString())!["p2p"]!.GetValue<bool>());
         Assert.Empty(ports.Deployed);
+    }
+
+    [Theory]
+    // With the switch on, a player whose game reported no rollback node (RollbackNode = false, an old client) puts the
+    // match on a rollback server, deployed as before: P2P would send their game to 127.0.0.1 with nothing listening.
+    [InlineData("1v1")]
+    [InlineData("2v2")]
+    public async Task APlayerWithoutANodePutsTheMatchOnARollbackServer(string mode)
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        if (mode == "1v1")
+        {
+            await QueueAsync("1v1", [1], age: 1);
+            await QueueAsync("1v1", [2], age: 1);
+            await NodesAsync(1);
+        }
+        else
+        {
+            await QueueAsync("2v2", [1, 2], age: 1);
+            await QueueAsync("2v2", [3, 4], age: 1);
+            await NodesAsync(1, 2, 4);
+        }
+
+        var ports = new Ports();
+        await Worker(ports, p2p: true).TickAsync(Db);
+
+        string matchId = (string)(await MatchesAsync()).Single()["matchId"]!;
+        Assert.False(JsonNode.Parse((await Db.StringGetAsync(matchId)).ToString())!["p2p"]!.GetValue<bool>());
+        Assert.Equal([matchId], ports.Deployed);
     }
 
     [Fact]

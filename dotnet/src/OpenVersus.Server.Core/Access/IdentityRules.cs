@@ -163,11 +163,13 @@ public static partial class IdentityRules
     /// Whether the account holding a login's install id is that login's person (2026-10-14: players pass their plugin
     /// folder, install id included, to friends, whose first launch then signed into the sender's account). A login that
     /// proves no Steam or Epic id is its install, as before. One that does is the install's account's person when the
-    /// account holds the same Steam or Epic id; never when it holds a different one proved (a ticket or an Epic token: two
-    /// people on one install); and otherwise, a different one only claimed or none of the login's ids, only from the
-    /// same machine: both strong fingerprints equal for a claimed id (a claim is someone else's unless the machine says
-    /// otherwise), not two different strong fingerprints for an account without the login's ids (an older install-only
-    /// account takes its platform id, unless another machine has the copy).
+    /// account holds the same Steam or Epic id; never when it holds a different Steam id, proved or only claimed (a
+    /// different Steam id is a different person: they get their own account; Tuggernuts, 2026-10-19), nor a different
+    /// Epic id proved (an Epic token); and otherwise, a different Epic id only claimed or none of the login's ids, only
+    /// from the same machine: both strong fingerprints equal for a claimed Epic id, not two different strong fingerprints
+    /// for an account without the login's ids (an older install-only account takes its platform id, unless another
+    /// machine has the copy). A claimed Steam id used to pass on equal fingerprints too, but fingerprints collide across
+    /// PCs (the profile clashes of 2026-10-18), so a copied plugin folder could hand someone else's account over.
     /// </summary>
     /// <param name="steamId">The login's proved Steam id, or "".</param>
     /// <param name="epicId">The login's Epic id (proved, or a claim while Epic ids are not checked), or "".</param>
@@ -187,21 +189,17 @@ public static partial class IdentityRules
 
         bool otherSteam = steamId.Length > 0 && ownSteam.Length > 0;
         bool otherEpic = epicId.Length > 0 && ownEpic.Length > 0;
-        if ((otherSteam && SteamProved(owner, ownSteam)) || (otherEpic && EpicProved(owner)))
+        if (otherSteam || (otherEpic && EpicProved(owner)))
         {
             return false;
         }
 
         var stored = NormalizeHardware(Str(owner, "hardwareId"), Str(owner, "hardwareIdVersion"), Str(owner, "hardwareIdQuality"));
         bool compared = stored.HardwareId.Length > 0 && hardware.HardwareId.Length > 0;
-        return otherSteam || otherEpic
+        return otherEpic
             ? compared && stored.HardwareId == hardware.HardwareId
             : !compared || stored.HardwareId == hardware.HardwareId;
     }
-
-    // The account's Steam id was proved: its last verified ticket names it (as AccessService reads it).
-    private static bool SteamProved(BsonDocument account, string steamId) =>
-        account.TryGetValue(Identity.IdentityRecord.TicketField, out var ticket) && ticket is BsonDocument doc && doc.GetValue("steam_id", "") == steamId;
 
     // The account's Epic id was written with the game's token's proof.
     private static bool EpicProved(BsonDocument account) =>

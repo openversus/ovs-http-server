@@ -226,17 +226,23 @@ public sealed class AccessIdentityTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    public async Task AProvedSteamIdReplacesOneTheInstallsAccountHeldAsAClaimFromTheSameMachine()
+    // A different Steam id on the install's account is a different person, claimed only and from the same machine too
+    // (2026-10-19: fingerprints collide across PCs, so a copied plugin folder handed the account over): this login gets
+    // its own account, and the account keeps its claim and its install id, as with a sibling's proved id.
+    public async Task AProvedSteamIdDoesNotTakeOverTheInstallsAccountHeldAsAnotherClaimEvenFromTheSameMachine()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         const string claimed = "76561198000000002";
         var account = await SeedAsync("Claimed", steam: claimed, install: Install, hardware: Here);
         await Redis.HashSetAsync($"identity:{Ip}", [new HashEntry("steamId", s_steam), new HashEntry("steamVerified", "1"), new HashEntry("steamTicket", TicketJson()), new HashEntry("installId", Install)]);
         var result = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, IdentifyToken(s_steam, verified: true, hardware: Here)));
-        Assert.Equal(account.ToString(), result.PlayerId);
+        Assert.NotEqual(account.ToString(), result.PlayerId);
         var saved = await Players.Find(new BsonDocument("_id", account)).SingleAsync();
-        Assert.Equal(s_steam, saved["steamId"].AsString);
-        Assert.Equal(s_steam, saved["steamTicket"]["steam_id"].AsString);
+        Assert.Equal(claimed, saved["steamId"].AsString);
+        Assert.Equal(Install, saved["installId"].AsString);
+        var own = await Players.Find(new BsonDocument("_id", ObjectId.Parse(result.PlayerId))).SingleAsync();
+        Assert.Equal(s_steam, own["steamId"].AsString);
+        Assert.Equal(s_steam, own["steamTicket"]["steam_id"].AsString);
     }
 
     [SkippableFact]

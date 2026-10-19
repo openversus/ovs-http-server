@@ -150,9 +150,11 @@ public sealed class IdentityRulesTests
     }
 
     [Fact]
-    public void AnotherClaimedSteamIdGivesWayOnlyOnTheSameMachine()
+    // A different Steam id is a different person, only claimed too, even on what looks like the same machine: hardware
+    // fingerprints collide across PCs (2026-10-19; before, a claim gave way on equal fingerprints).
+    public void AnotherClaimedSteamIdIsAnotherPersonEvenOnTheSameMachine()
     {
-        Assert.True(IdentityRules.InstallOwnerIsThisPerson(Holder(steam: Steam, hardware: s_here), Friend, "", s_here));
+        Assert.False(IdentityRules.InstallOwnerIsThisPerson(Holder(steam: Steam, hardware: s_here), Friend, "", s_here));
         Assert.False(IdentityRules.InstallOwnerIsThisPerson(Holder(steam: Steam, hardware: s_there), Friend, "", s_here));
         // Nothing to compare: someone else's claim stays theirs.
         Assert.False(IdentityRules.InstallOwnerIsThisPerson(Holder(steam: Steam), Friend, "", s_here));

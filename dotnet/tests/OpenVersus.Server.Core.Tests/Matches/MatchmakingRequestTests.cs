@@ -1039,4 +1039,14 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         Assert.All(BotFighters.All, f => Assert.NotEmpty(f.Skins));
         Assert.DoesNotContain(BotFighters.All, f => f.Character is "character_Meeseeks" or "character_supershaggy" or "character_c022" or "character_C022");
     }
+
+    [Theory]
+    // Skins the game does not have (none of its paks holds their SkinData): a bot or Random fighter in one spawns
+    // invisible and crashes both players when a move re-applies the skin (Arya's face steal on skin_c006_s15, 2026-10-24).
+    [InlineData("skin_c001_s15"), InlineData("skin_c006_s15"), InlineData("skin_c010_s15"), InlineData("skin_c014_s15")]
+    [InlineData("skin_c011_s03"), InlineData("skin_c011_s06"), InlineData("skin_c011_s09"), InlineData("skin_c011_s15")]
+    public void NoBotOrRandomFighterWearsASkinTheGameDoesNotHave(string skin)
+    {
+        Assert.DoesNotContain(BotFighters.All, f => f.Skins.Contains(skin));
+    }
 }

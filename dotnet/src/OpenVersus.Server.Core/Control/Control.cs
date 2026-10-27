@@ -148,6 +148,9 @@ public static class ControlApi
             ToResult(await ops.LiftBanValueAsync(kind, value, await new StreamReader(request.Body).ReadToEndAsync())));
         control.MapPost("/ops/bans/lift-all/{who}", async (string who, HttpRequest request, IOpsService ops) =>
             ToResult(await ops.LiftBanValuesOfAsync(who, await new StreamReader(request.Body).ReadToEndAsync())));
+        // The season's rating reset: a dry run unless apply=true.
+        control.MapPost("/ops/ranked/floor-reset", async (bool? apply, int? minSets, IOpsService ops) =>
+            ToResult(await ops.RankedFloorResetAsync(apply == true, minSets ?? 10)));
 
         // Any other path under /control is said to be one, with the service and its version (a CLI newer than the service
         // asks for endpoints it does not have): the game's fallback would answer it, asking for a game token.

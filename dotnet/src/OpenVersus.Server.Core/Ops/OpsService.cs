@@ -8,6 +8,7 @@ using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Control;
 using OpenVersus.Server.Core.CustomLobbies;
+using OpenVersus.Server.Core.Leaderboards;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Ops;
@@ -137,6 +138,9 @@ public interface IOpsService
 
     /// <summary>Lifts every single ban value (a ban file's entry) that is one of a player's identifiers.</summary>
     Task<ControlResult<BanLiftView>> LiftBanValuesOfAsync(string who, string reason);
+
+    /// <summary>The season's rating reset (Leaderboards.RankedFloorReset): every rating to the bottom of its tier; written only with <paramref name="apply"/>.</summary>
+    Task<ControlResult<RankedFloorResetView>> RankedFloorResetAsync(bool apply, int minSets);
 }
 
 internal sealed class OpsService : IOpsService
@@ -579,6 +583,25 @@ internal sealed class OpsService : IOpsService
     }
 
     private static string Reason(string reason) => reason.Trim().Length > 0 ? reason.Trim() : "lifted by an administrator";
+
+    // The default rating is the service's Ranked:DefaultElo when it has the setting (every service that rates or reads
+    // ratings does), else the setting's own default.
+    public async Task<ControlResult<RankedFloorResetView>> RankedFloorResetAsync(bool apply, int minSets)
+    {
+        if (_services.GetService<IMongoDatabase>() is not { } mongo)
+        {
+            return NoMongo<RankedFloorResetView>();
+        }
+
+        if (minSets is < 0 or > RankedFloorReset.MaxMinSets)
+        {
+            return ControlResult<RankedFloorResetView>.Refused($"min sets must be 0 to {RankedFloorReset.MaxMinSets}");
+        }
+
+        double defaultElo = (_services.GetService<Microsoft.Extensions.Options.IOptionsMonitor<Leaderboards.RankedSettings>>()?.CurrentValue ?? new Leaderboards.RankedSettings()).DefaultElo;
+        var view = await Leaderboards.RankedFloorReset.RunAsync(mongo.GetCollection<BsonDocument>("eloratings"), minSets, defaultElo, apply, _log, CancellationToken.None);
+        return ControlResult<RankedFloorResetView>.Ok(view);
+    }
 
     private async Task<(BsonDocument? Value, string? Error)> ResolveAsync(IMongoCollection<BsonDocument> players, string who)
     {

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Ops;
 using OpenVersus.Server.Core.Steam;
 using Spectre.Console;
@@ -487,6 +488,63 @@ public sealed class PlayerRenameCommand : AsyncCommand<RenameSettings>
     {
         using var client = ControlClient.For(settings);
         return OvsCtl.Report(_console, settings, await client.RenameAsync(settings.Who, settings.Name), p => PlayerRender.Show(_console, p));
+    }
+}
+
+/// <summary>ovsctl ranked floor-reset: the match flow service by default (it rates the sets; any service with Mongo will do).</summary>
+public sealed class RankedFloorResetSettings : ConnectionSettings
+{
+    protected override string DefaultService => "matchflow";
+
+    [CommandOption("--apply")]
+    [Description("Write the reset. Without it, a dry run: the counts of what would change, nothing written.")]
+    public bool Apply { get; set; }
+
+    [CommandOption("--min-sets <SETS>")]
+    [Description("A character (or mode rating) with fewer sets than this goes to the default rating instead of its tier's floor: a couple of provisional sets are noise, and one lost set would otherwise send a 976 to Silver. Default 10.")]
+    [DefaultValue(10)]
+    public int MinSets { get; set; } = 10;
+
+    public override ValidationResult Validate() =>
+        base.Validate() is { Successful: false } connection ? connection
+        : MinSets is < 0 or > RankedFloorReset.MaxMinSets ? ValidationResult.Error($"--min-sets must be 0 to {RankedFloorReset.MaxMinSets}")
+        : ValidationResult.Success();
+}
+
+public sealed class RankedFloorResetCommand : AsyncCommand<RankedFloorResetSettings>
+{
+    private readonly IAnsiConsole _console;
+
+    public RankedFloorResetCommand(IAnsiConsole console)
+    {
+        _console = console;
+    }
+
+    protected override async Task<int> ExecuteAsync(CommandContext context, RankedFloorResetSettings settings, CancellationToken cancellation)
+    {
+        using var client = ControlClient.For(settings);
+        // Markup only in the format string: what is interpolated is escaped, markup included.
+        return OvsCtl.Report(_console, settings, await client.RankedFloorResetAsync(settings.Apply, settings.MinSets), r =>
+        {
+            if (r.Applied)
+            {
+                _console.MarkupLineInterpolated($"[red]Reset applied[/]: {r.PlayersChanged} of {r.Players} players changed (min sets {r.MinSets}, default {r.DefaultElo:0}).");
+            }
+            else
+            {
+                _console.MarkupLineInterpolated($"[yellow]Dry run[/]: {r.PlayersChanged} of {r.Players} players would change (min sets {r.MinSets}, default {r.DefaultElo:0}); add --apply to write it.");
+            }
+
+            var table = new Table().Border(TableBorder.Rounded).AddColumn("Mode").AddColumn("Character ratings to their floor").AddColumn("To the default").AddColumn("Unchanged")
+                .AddColumn("Mode ratings floored").AddColumn("Mode ratings to the default");
+            foreach (var m in r.Modes)
+            {
+                table.AddRow(Markup.Escape(m.Mode), Markup.Escape(m.Floored.Count == 0 ? "-" : string.Join(", ", m.Floored.Select(f => $"{f.Value} to {f.Key}"))),
+                    m.ToDefault.ToString(), m.Unchanged.ToString(), m.ModeFloored.ToString(), m.ModeToDefault.ToString());
+            }
+
+            _console.Write(table);
+        });
     }
 }
 

@@ -34,6 +34,21 @@ Where the flag comes from:
 No rewards are granted: the claim answers what the TS catch-all answered (`{Crc, MatchmakingCrc}`,
 `return_code` 200).
 
+## The season's rating reset
+
+A new season does not wipe the ratings. `ovsctl ranked floor-reset` (`Core/Leaderboards/RankedFloorReset.cs`) sends
+every rating back to the bottom of its tier: Gold to 1000, Platinum to 1500, Diamond to 2000, and so on; under 500
+stays where it is. A character (or a mode rating) with fewer than `--min-sets` sets (default 10) goes to
+`Ranked:DefaultElo` instead, since a couple of provisional sets say little and one lost set sits at 976, which the
+floor rule would send to Silver. Each character's rating is reset on its own; the mode's rating (`elo_1v1`,
+`elo_2v2`) becomes the best reset character's. Wins, losses and streaks are kept, so established players keep the
+regular K rather than a provisional one. The command is a dry run until `--apply`; back up `eloratings` first, there
+is no undo. Planned cadence: every two months.
+
+Why: the wipe put everyone back to unrated, so the first days of a season paired by arrival order while the ladder
+re-sorted itself, and threw away what the matchmaker knew. With the floor, a Gold still meets Golds on day one and
+has something to climb.
+
 ## Open items
 
 1. **The TS websocket still sends Season 5 as not granted.** `src/websocket.ts` builds `FullRankUpdate` after a ranked

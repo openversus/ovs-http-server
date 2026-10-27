@@ -46,6 +46,12 @@ public static class OvsCtl
                 player.AddCommand<PlayerBanCommand>("ban").WithDescription("Ban the person behind a player for good: their IP, Steam, Epic, hardware and install ids and the player id; recorded in Mongo and the auto-ban file, and their connection is closed.");
                 player.AddCommand<PlayerUnbanCommand>("unban").WithDescription("Lift a player's bans: their ban records are marked lifted (kept), and each identifier no other ban holds is let through; one still held is listed with what holds it (a ban file's entry is lifted with `bans lift`).");
             });
+            config.AddBranch("ranked", ranked =>
+            {
+                ranked.SetDescription("The ranked ratings. Asks the match flow service by default (it rates the sets).");
+                ranked.AddCommand<RankedFloorResetCommand>("floor-reset").WithDescription("The season's rating reset: every rating (each character's, and the mode's) back to the bottom of its tier (Gold to 1000, Platinum to 1500, ...); under 500 stays; fewer than --min-sets sets goes to the default rating. Wins, losses and streaks are kept. A dry run unless --apply; back up eloratings first.")
+                    .WithExample("ranked", "floor-reset").WithExample("ranked", "floor-reset", "--apply").WithExample("ranked", "floor-reset", "--min-sets", "5", "--apply");
+            });
             config.AddBranch("steam", steam =>
             {
                 steam.SetDescription("The Steam identity service: the connection to Steam and the auth sessions it holds.");

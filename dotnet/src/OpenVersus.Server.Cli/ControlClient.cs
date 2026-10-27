@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Text.Json;
 using OpenVersus.Server.Core.Control;
 using OpenVersus.Server.Core.Hosting;
+using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Ops;
 using OpenVersus.Server.Core.Settings;
 using OpenVersus.Server.Core.Steam;
@@ -196,6 +197,9 @@ public sealed class ControlClient : IDisposable
 
     public Task<ControlReply<UnbanView>> UnbanAsync(string who, string reason) =>
         SendAsync<UnbanView>(HttpMethod.Post, $"/control/ops/players/{Uri.EscapeDataString(who)}/unban", new StringContent(reason));
+
+    public Task<ControlReply<RankedFloorResetView>> RankedFloorResetAsync(bool apply, int minSets) =>
+        SendAsync<RankedFloorResetView>(HttpMethod.Post, $"/control/ops/ranked/floor-reset?apply={(apply ? "true" : "false")}&minSets={minSets}");
 
     private async Task<ControlReply<T>> SendAsync<T>(HttpMethod method, string path, HttpContent? body = null)
     {

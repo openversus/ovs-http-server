@@ -30,7 +30,8 @@ namespace OpenVersus.Server.Core.Matchmaking;
 // answering the websocket (player_heartbeats, ms, older than 41 s; none of this while that set does not exist). Then:
 //   1v1  solo tickets, oldest first; a pair matches when their average skills are within the stricter of their two
 //        ranges (250 under 5 s waiting, 500 under 10 s, anything after). A 1v1 queue with fewer than 2 tickets is not
-//        cleaned at all (as there).
+//        cleaned at all (as there). Ranked 1v1's ranges follow its population instead while Matchmaking:Population is
+//        on (PopulationWindows.cs; on by default since 2026-10-26).
 //   2v2  from the oldest ticket, add tickets (parties whole) whose average skill is within the range of the longest
 //        wait among them, until 4 players.
 //   Either way, a group with a player who blocked another in it (player:{id}:blocked, a JSON list) is passed over.
@@ -78,8 +79,8 @@ public sealed class MatchmakingSettings
 }
 
 internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLauncher launcher, IOptionsMonitor<MatchmakingSettings> settings,
-    IOptionsMonitor<RollbackSettings> rollback, IOptionsMonitor<FfaSettings> ffa, TimeProvider time,
-    ILogger<MatchmakingWorker> log) : BackgroundService
+    IOptionsMonitor<RollbackSettings> rollback, IOptionsMonitor<FfaSettings> ffa, IOptionsMonitor<MatchmakingPopulationSettings> population,
+    TimeProvider time, ILogger<MatchmakingWorker> log) : BackgroundService
 {
     public const string HeartbeatsKey = "player_heartbeats";
     public static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromMilliseconds(41_000);
@@ -199,6 +200,22 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
         }
 
         double now = Math.Floor(time.GetUtcNow().ToUnixTimeMilliseconds() / 1000.0);
+        // Ranked 1v1 by population (PopulationWindows): each ticket's tier from the players near its RP, now or soon.
+        var byPopulation = skilled && queue == "1v1" && population.CurrentValue is { Enabled: true } populationSettings ? populationSettings : null;
+        PopulationWindows.Side[] sides = [];
+        int[] pools = [];
+        if (byPopulation is not null)
+        {
+            var searching = solo.Select(t => t.AverageSkill).ToList();
+            var backSoon = await PopulationWindows.BackSoonAsync(redis, byPopulation.BackSoonAfterGames);
+            pools = [.. solo.Select(t => PopulationWindows.Pool(t.AverageSkill, searching, backSoon, byPopulation.NearRp))];
+            sides = [.. solo.Select((t, k) =>
+            {
+                var tier = PopulationWindows.TierOf(pools[k], byPopulation);
+                return new PopulationWindows.Side(tier, PopulationWindows.StepsOf(tier, byPopulation), now - t.CreatedAt);
+            })];
+        }
+
         for (int i = 0; i < solo.Count; i++)
         {
             for (int j = i + 1; j < solo.Count; j++)
@@ -209,11 +226,22 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
                     continue;
                 }
 
-                // Both must be in range: the stricter (shorter wait) range of the two.
-                double range = skilled ? Math.Min(SkillRange(now - a.CreatedAt), SkillRange(now - b.CreatedAt)) : double.PositiveInfinity;
-                if (Math.Abs(a.AverageSkill - b.AverageSkill) > range)
+                double gap = Math.Abs(a.AverageSkill - b.AverageSkill);
+                if (byPopulation is not null)
                 {
-                    continue;
+                    if (!PopulationWindows.Allows(sides[i], sides[j], gap))
+                    {
+                        continue;
+                    }
+                }
+                else
+                {
+                    // Both must be in range: the stricter (shorter wait) range of the two.
+                    double range = skilled ? Math.Min(SkillRange(now - a.CreatedAt), SkillRange(now - b.CreatedAt)) : double.PositiveInfinity;
+                    if (gap > range)
+                    {
+                        continue;
+                    }
                 }
 
                 if (await BlockedPairAsync(redis, [a, b]) is { } blocked)
@@ -225,6 +253,14 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
                 await RemoveAsync(redis, queue, [a, b]);
                 await CreateMatchAsync(redis, [a, b], mode, queue);
                 log.LogInformation("Skill matched in {Queue}: {First} vs {Second}", queue, a.AverageSkill, b.AverageSkill);
+                if (byPopulation is not null)
+                {
+                    // One line per ranked 1v1 match, to tune Matchmaking:Population by: each side's pool, tier, wait and window.
+                    log.LogInformation("Population match in {Queue}: gap {Gap}; {First} pool {FirstPool} {FirstTier} waited {FirstWait} s window {FirstWindow}{FirstCapped}; {Second} pool {SecondPool} {SecondTier} waited {SecondWait} s window {SecondWindow}{SecondCapped}",
+                        queue, Math.Round(gap), Math.Round(a.AverageSkill), pools[i], sides[i].Tier, sides[i].Waited, sides[i].Window, sides[i].Capped ? " (capped)" : "",
+                        Math.Round(b.AverageSkill), pools[j], sides[j].Tier, sides[j].Waited, sides[j].Window, sides[j].Capped ? " (capped)" : "");
+                }
+
                 return true;
             }
         }
@@ -783,6 +819,7 @@ public static class MatchmakingHosting
     public static WebApplicationBuilder AddMatchmaking(this WebApplicationBuilder builder)
     {
         builder.AddSetting<MatchmakingSettings>("Matchmaking");
+        builder.AddSetting<MatchmakingPopulationSettings>("Matchmaking:Population");
         builder.AddSetting<FfaSettings>("Ffa");
         builder.AddSetting<TestingGroundsSettings>("TestingGrounds");
         builder.Services.TryAddSingleton(TimeProvider.System);

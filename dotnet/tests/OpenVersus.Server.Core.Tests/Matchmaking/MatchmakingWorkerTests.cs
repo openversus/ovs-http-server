@@ -70,9 +70,10 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
     private IDatabase Db => _redis!.GetDatabase();
 
     // FFA always open unless a test says otherwise (the window has tests of its own: FfaScheduleTests).
-    private MatchmakingWorker Worker(Ports? ports = null, bool p2p = false, FfaSettings? ffa = null, TimeProvider? time = null) => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
+    private MatchmakingWorker Worker(Ports? ports = null, bool p2p = false, FfaSettings? ffa = null, TimeProvider? time = null, MatchmakingPopulationSettings? population = null) => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
         ports ?? new Ports(), new TestOptions<MatchmakingSettings>(new MatchmakingSettings()), new TestOptions<RollbackSettings>(new RollbackSettings { P2P = p2p }),
-        new TestOptions<FfaSettings>(ffa ?? new FfaSettings { WeekendOnly = false }), time ?? TimeProvider.System, NullLogger<MatchmakingWorker>.Instance);
+        new TestOptions<FfaSettings>(ffa ?? new FfaSettings { WeekendOnly = false }), new TestOptions<MatchmakingPopulationSettings>(population ?? new MatchmakingPopulationSettings()),
+        time ?? TimeProvider.System, NullLogger<MatchmakingWorker>.Instance);
 
     private sealed class Clock(DateTimeOffset now) : TimeProvider
     {
@@ -124,15 +125,17 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
             return;
         }
 
+        // The fixed window (Matchmaking:Population off): with it on, a capped wait matches anyone (PopulationWindowsTests).
+        var fixedWindow = new MatchmakingPopulationSettings { Enabled = false };
         await QueueAsync("1v1", [1], age: 30, skill: 0);
         await QueueAsync("1v1", [2], age: 1, skill: 300);
-        await Worker().TickAsync(Db);
+        await Worker(population: fixedWindow).TickAsync(Db);
         Assert.Equal(2, (await QueuedAsync("1v1")).Count);
 
         await CleanAsync();
         await QueueAsync("1v1", [1], age: 30, skill: 0);
         await QueueAsync("1v1", [2], age: 6, skill: 300);
-        await Worker().TickAsync(Db);
+        await Worker(population: fixedWindow).TickAsync(Db);
         Assert.Empty(await QueuedAsync("1v1"));
     }
 
@@ -514,5 +517,128 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
         Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Id(1)));
         Assert.False(await Db.HashExistsAsync(MatchmakingQueue.QueuedKey, Id(2)));
         await Db.KeyDeleteAsync(MatchmakingQueue.QueuedKey);
+    }
+
+    /// <summary>A live ranked 1v1 set (ranked_set:{id}) with its first game's match record (match:{id}: the players' RP).</summary>
+    private async Task LiveSetAsync(int set, int gamesPlayed, params double[] skills)
+    {
+        string id = Id(900 + set);
+        var players = new JsonArray([.. skills.Select((_, k) => (JsonNode)new JsonObject { ["playerId"] = Id(800 + set * 10 + k) })]);
+        await Db.StringSetAsync($"ranked_set:{id}", Js.Stringify(new JsonObject
+        {
+            ["players"] = players,
+            ["mode"] = "1v1",
+            ["gamesPlayed"] = gamesPlayed,
+            ["scores"] = new JsonArray(gamesPlayed, 0),
+            ["checkins"] = new JsonArray(),
+        }));
+        var tickets = new JsonArray([.. skills.Select((skill, k) => (JsonNode)new JsonObject
+        {
+            ["players"] = new JsonArray(new JsonObject { ["id"] = Id(800 + set * 10 + k), ["skill"] = skill }),
+        })]);
+        await Db.StringSetAsync($"match:{id}", Js.Stringify(new JsonObject { ["matchId"] = id, ["tickets"] = tickets }));
+    }
+
+    [Fact]
+    // Two tickets 250 apart, 1 s in: Quiet (the fixed window, 250) matches them; four players near them in sets past their
+    // first game make the pool 6, Medium, whose window is 100 for 10 s.
+    public async Task PlayersBackSoonFromLiveSetsNarrowRanked1v1sWindow()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await QueueAsync("1v1", [1], age: 1, skill: 1000);
+        await QueueAsync("1v1", [2], age: 1, skill: 1250);
+        await Worker().TickAsync(Db);
+        Assert.Empty(await QueuedAsync("1v1"));
+
+        await CleanAsync();
+        await LiveSetAsync(1, 1, 1100, 1150);
+        await LiveSetAsync(2, 2, 1050, 1200);
+        await QueueAsync("1v1", [1], age: 1, skill: 1000);
+        await QueueAsync("1v1", [2], age: 1, skill: 1250);
+        await Worker().TickAsync(Db);
+        Assert.Equal(2, (await QueuedAsync("1v1")).Count);
+
+        // Medium's cap: either has waited 30 s, so the gap no longer matters.
+        await CleanAsync();
+        await LiveSetAsync(1, 1, 1100, 1150);
+        await LiveSetAsync(2, 2, 1050, 1200);
+        await QueueAsync("1v1", [1], age: 30, skill: 1000);
+        await QueueAsync("1v1", [2], age: 1, skill: 1250);
+        await Worker().TickAsync(Db);
+        Assert.Empty(await QueuedAsync("1v1"));
+    }
+
+    [Fact]
+    // Players far from the ticket's RP do not count toward its pool; with BackSoonAfterGames 1, a set still in its first
+    // game is not back soon either. The default, 0, counts every live set.
+    public async Task OnlyPlayersNearCountTowardThePoolAndBackSoonAfterGamesSaysWhichSets()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await LiveSetAsync(1, 0, 1100, 1150);
+        await LiveSetAsync(2, 2, 2000, 2100);
+        await QueueAsync("1v1", [1], age: 1, skill: 1000);
+        await QueueAsync("1v1", [2], age: 1, skill: 1250);
+        await Worker(population: new MatchmakingPopulationSettings { BackSoonAfterGames = 1 }).TickAsync(Db);
+        Assert.Empty(await QueuedAsync("1v1"));
+
+        // The default: every live set counts, game 1 included, so the pool is 2 + 2 + 2 (one set near each), Medium.
+        await CleanAsync();
+        await LiveSetAsync(1, 0, 1100, 1150);
+        await LiveSetAsync(2, 0, 1050, 1200);
+        await QueueAsync("1v1", [1], age: 1, skill: 1000);
+        await QueueAsync("1v1", [2], age: 1, skill: 1250);
+        await Worker().TickAsync(Db);
+        Assert.Equal(2, (await QueuedAsync("1v1")).Count);
+
+        // The far set is 750 and more from either ticket: outside NearRp (500), not in the pool, which stays Quiet.
+        await CleanAsync();
+        await LiveSetAsync(1, 0, 2000, 2100);
+        await LiveSetAsync(2, 0, 2050, 2200);
+        await QueueAsync("1v1", [1], age: 1, skill: 1000);
+        await QueueAsync("1v1", [2], age: 1, skill: 1250);
+        await Worker().TickAsync(Db);
+        Assert.Empty(await QueuedAsync("1v1"));
+    }
+
+    [Fact]
+    // Matchmaking:Population off (changeable while running): the fixed window, live sets or not.
+    public async Task TurningPopulationOffBringsBackTheFixedWindow()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await LiveSetAsync(1, 1, 1100, 1150);
+        await LiveSetAsync(2, 2, 1050, 1200);
+        await QueueAsync("1v1", [1], age: 1, skill: 1000);
+        await QueueAsync("1v1", [2], age: 1, skill: 1250);
+        await Worker(population: new MatchmakingPopulationSettings { Enabled = false }).TickAsync(Db);
+        Assert.Empty(await QueuedAsync("1v1"));
+    }
+
+    [Fact]
+    // 2v2 keeps the fixed window whatever the population: 400 apart at 6 s (window 500) matches.
+    public async Task TwoVsTwoIgnoresThePopulation()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await LiveSetAsync(1, 1, 1100, 1150);
+        await LiveSetAsync(2, 2, 1050, 1200);
+        await QueueAsync("2v2", [1, 2], age: 6, skill: 1000);
+        await QueueAsync("2v2", [3, 4], age: 6, skill: 1400);
+        await Worker().TickAsync(Db);
+        Assert.Empty(await QueuedAsync("2v2"));
     }
 }

@@ -86477,61 +86477,61 @@ for (const { trackSlug, skinSlug } of CHROMIUM_FIGHTER_PASS) {
 const battlepassTiers = MILESTONE_REWARDS.mrt_battlepass_season_five.data.Tiers as any[];
 // The End Game battle pass, one reward per tier, in Tuggernuts's order (2026-10-07): the valuable items spread out
 // (early: One Tough Banana, Sailor Aquaman, the Tooniverse skins; mid: Jason, Cackle, Bugs Crying, Painter
-// Beetlejuice; late: Finn's dance, Laughing Shaggy, Peace Among Worlds, Twerk It Out; last: Dumpster Fire), no two
+// Beetlejuice; late: Finn's dance, Laughing Shaggy, Peace Among Worlds; last: Twerk It Out; Dumpster Fire at tier 5), no two
 // skins in a row, taunts apart, the Toasties every few tiers.
 export const OVS_BATTLEPASS_REWARD_SLUGS: string[] = [
   "profileicon_ovs_multiversus_tattoo", // 1: No Regrets (SoraMVS), the free tier
   "emote_superman_smile", // 2
   "emote_ovs_toastie_beaten", // 3
   "skin_C027_s14", // 4: Tooniverse Nubia
-  "emote_ovs_wut", // 5
-  ONE_TOUGH_BANANA_SLUG, // 6: One Tough Banana, early valuable
-  "emote_ovs_snowflake", // 7
-  "skin_c029_s05", // 8: Sailor Aquaman, early valuable
-  "emote_ovs_toastie_sleepy", // 9
-  "profileicon_ovs_duck_season", // 10: Time is Ticking (ALFREDO JOHNSON)
-  "emote_ovs_pleading_cat", // 11
-  "skin_c030_s14", // 12: Tooniverse The Powerpuff Girls
-  "emote_taz_tongue", // 13
-  "banner_pve_unknown_rare", // 14
-  "emote_ovs_toastie_sick", // 15
-  "emote_ovs_mistletoe", // 16
-  "profileicon_ovs_icy_glare", // 17
-  "emote_arya_laugh", // 18
-  "emote_ovs_dizzy", // 19
-  PINK_MOUNTAINEER_JASON_SLUG, // 20: Pink Abdominal Mountaineer Jason, mid valuable
-  "emote_ovs_toastie_shocked", // 21
-  "emote_ovs_green_light_go", // 22
-  "taunt_c023b_cackle", // 23: Stripe's Cackle, mid valuable
-  "emote_c016_mind", // 24
-  "emote_ovs_bugs_cry", // 25: Bugs Bunny Crying, mid valuable
-  "emote_ovs_toastie_cute", // 26
-  "skin_ovs_painter_beetlejuice", // 27: Painter Beetlejuice, mid
-  "emote_ovs_gizmo_smith", // 28
-  "profileicon_ovs_jason", // 29
-  "emote_ovs_popcorn", // 30
-  "Taunt_C028_CardSpring", // 31
-  "emote_ovs_toastie_lol", // 32
-  "emote_ovs_halo", // 33
-  "skin_ovs_omniman_superman", // 34: Supraman
-  "emote_ovs_taz_get_in", // 35
-  "HB_SD_ProfileIcon_IntoTheMysteryMachineGang", // 36
-  "emote_ovs_toastie_starstruck", // 37
-  "taunt_finn_dance2", // 38: Finn's dance, late
-  "emote_67_hands", // 39
-  "ring_out_vfx_pfg_arrival", // 40
-  "emote_ovs_cozy_tea", // 41
-  SHIRTLESS_TATTOO_SHAGGY_SLUG, // 42: Laughing Shaggy, late valuable
-  "emote_ovs_toastie_angry", // 43
-  "emote_reindog_hearts", // 44
-  "profileicon_ovs_batmobile", // 45
-  "emote_ovs_rickflick", // 46: Peace Among Worlds, late valuable
-  "emote_ovs_jdawg", // 47: J-800 (Glassconsumer69)
-  "emote_ovs_toastie_cool", // 48
-  LEBRON_50CENT_SLUG, // 49: Get Rich or Dunk Tryin' (Glassconsumer69), near the end (Tuggernuts 2026-10-08)
-  "emote_ovs_gingerbread_man", // 50
-  TWERK_IT_OUT_SLUG, // 51: Twerk It Out (Tuggernuts)
-  "emote_ovs_dumpster_fire", // 52: Dumpster Fire (RosettaSt0ned), the last tier
+  "emote_ovs_dumpster_fire", // 5: Dumpster Fire (RosettaSt0ned), moved up from the last tier at his request (2026-10-26)
+  "emote_ovs_wut", // 6
+  ONE_TOUGH_BANANA_SLUG, // 7: One Tough Banana, early valuable
+  "emote_ovs_snowflake", // 8
+  "skin_c029_s05", // 9: Sailor Aquaman, early valuable
+  "emote_ovs_toastie_sleepy", // 10
+  "profileicon_ovs_duck_season", // 11: Time is Ticking (ALFREDO JOHNSON)
+  "emote_ovs_pleading_cat", // 12
+  "skin_c030_s14", // 13: Tooniverse The Powerpuff Girls
+  "emote_taz_tongue", // 14
+  "banner_pve_unknown_rare", // 15
+  "emote_ovs_toastie_sick", // 16
+  "emote_ovs_mistletoe", // 17
+  "profileicon_ovs_icy_glare", // 18
+  "emote_arya_laugh", // 19
+  "emote_ovs_dizzy", // 20
+  PINK_MOUNTAINEER_JASON_SLUG, // 21: Pink Abdominal Mountaineer Jason, mid valuable
+  "emote_ovs_toastie_shocked", // 22
+  "emote_ovs_green_light_go", // 23
+  "taunt_c023b_cackle", // 24: Stripe's Cackle, mid valuable
+  "emote_c016_mind", // 25
+  "emote_ovs_bugs_cry", // 26: Bugs Bunny Crying, mid valuable
+  "emote_ovs_toastie_cute", // 27
+  "skin_ovs_painter_beetlejuice", // 28: Painter Beetlejuice, mid
+  "emote_ovs_gizmo_smith", // 29
+  "profileicon_ovs_jason", // 30
+  "emote_ovs_popcorn", // 31
+  "Taunt_C028_CardSpring", // 32
+  "emote_ovs_toastie_lol", // 33
+  "emote_ovs_halo", // 34
+  "skin_ovs_omniman_superman", // 35: Supraman
+  "emote_ovs_taz_get_in", // 36
+  "HB_SD_ProfileIcon_IntoTheMysteryMachineGang", // 37
+  "emote_ovs_toastie_starstruck", // 38
+  "taunt_finn_dance2", // 39: Finn's dance, late
+  "emote_67_hands", // 40
+  "ring_out_vfx_pfg_arrival", // 41
+  "emote_ovs_cozy_tea", // 42
+  SHIRTLESS_TATTOO_SHAGGY_SLUG, // 43: Laughing Shaggy, late valuable
+  "emote_ovs_toastie_angry", // 44
+  "emote_reindog_hearts", // 45
+  "profileicon_ovs_batmobile", // 46
+  "emote_ovs_rickflick", // 47: Peace Among Worlds, late valuable
+  "emote_ovs_jdawg", // 48: J-800 (Glassconsumer69)
+  "emote_ovs_toastie_cool", // 49
+  LEBRON_50CENT_SLUG, // 50: Get Rich or Dunk Tryin' (Glassconsumer69), near the end (Tuggernuts 2026-10-08)
+  "emote_ovs_gingerbread_man", // 51
+  TWERK_IT_OUT_SLUG, // 52: Twerk It Out (Tuggernuts), the last tier
 ];
 
 // Every tier is 2,000 XP apart (~4 matches at 500 XP): tier N unlocks at (N-1) x 2000.

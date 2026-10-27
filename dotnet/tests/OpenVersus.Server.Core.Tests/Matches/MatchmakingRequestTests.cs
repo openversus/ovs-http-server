@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using MongoDB.Bson;
 using OpenVersus.Server.Core.Hiss;
 using OpenVersus.Server.Core.Arenas;
 using OpenVersus.Server.Core.Clients;
@@ -135,7 +136,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
 
     // FFA always open unless a test says otherwise (FfaScheduleTests has the window).
     private MatchmakingRequestService Service(MongoDB.Driver.IMongoDatabase? mongo = null, FfaSettings? ffa = null, TimeProvider? time = null, bool withRedis = true,
-        TestingGroundsSettings? testingGrounds = null, BetaSpeedSettings? betaSpeed = null)
+        TestingGroundsSettings? testingGrounds = null, BetaSpeedSettings? betaSpeed = null, RankedSettings? ranked = null)
     {
         var collection = new ServiceCollection();
         if (testingGrounds is not null)
@@ -159,10 +160,11 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         }
 
         var services = collection.BuildServiceProvider();
+        var rankedOptions = new TestOptions<RankedSettings>(ranked ?? new RankedSettings());
         return new MatchmakingRequestService(services, _gate, _cosmetics,
-            new EloRatings(services, new TestOptions<RankedSettings>(new RankedSettings()), TimeProvider.System, NullLogger<EloRatings>.Instance), _launcher,
+            new EloRatings(services, rankedOptions, TimeProvider.System, NullLogger<EloRatings>.Instance), _launcher,
             new TestOptions<LobbySettings>(new LobbySettings { GameVersion = "195303.1.1" }), new TestOptions<FfaSettings>(ffa ?? new FfaSettings { WeekendOnly = false }),
-            time ?? TimeProvider.System, NullLogger<MatchmakingRequestService>.Instance);
+            rankedOptions, time ?? TimeProvider.System, NullLogger<MatchmakingRequestService>.Instance);
     }
 
     // start_arena_direct's (the arenas service's), on the same Redis, gate and launcher.
@@ -536,6 +538,68 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         {
             await client.DropDatabaseAsync(database);
         }
+    }
+
+    [SkippableFact]
+    // A character the player has no rating for searches at their rating in the mode (their best character's), a new player
+    // at the default, a rating that is not a positive number at the default too; Ranked:NewCharacterSkill Zero is the TS
+    // server's 0, which nobody is near.
+    public async Task ANewCharacterSearchesAtThePlayersModeRating()
+    {
+        string? mongoUri = Environment.GetEnvironmentVariable("OVS_TEST_MONGO");
+        Skip.If(_redis is null || string.IsNullOrEmpty(mongoUri), "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        var client = new MongoDB.Driver.MongoClient(mongoUri);
+        const string database = "ovs_matchmaking_request_new_character_tests";
+        await client.DropDatabaseAsync(database);
+        var mongo = client.GetDatabase(database);
+        var ratings = mongo.GetCollection<BsonDocument>("eloratings");
+        try
+        {
+            // Me: Gold on Jason, queueing Shaggy for the first time. Mate: no rating at all. Third: a rating of 0 (the old floor).
+            await PlayerAsync(Me, character: "character_shaggy");
+            await PlayerAsync(Mate, character: "character_shaggy");
+            await PlayerAsync(Third, character: "character_shaggy");
+            await ratings.InsertManyAsync(
+            [
+                new BsonDocument
+                {
+                    ["account_id"] = Me, ["elo_1v1"] = 1420, ["elo_2v2"] = 1000,
+                    ["characters_1v1"] = new BsonDocument("character_jason", new BsonDocument { ["elo"] = 1420, ["wins"] = 9, ["losses"] = 3 }),
+                },
+                new BsonDocument { ["account_id"] = Third, ["elo_1v1"] = 0, ["elo_2v2"] = 0 },
+            ]);
+
+            Assert.Equal(1420, await SkillOfAsync(Me, mongo));
+            Assert.Equal(1000, await SkillOfAsync(Mate, mongo));
+            Assert.Equal(1000, await SkillOfAsync(Third, mongo));
+            // Mate's rating was made, at the default, as any ranked request does.
+            Assert.Equal(3, await ratings.CountDocumentsAsync(MongoDB.Driver.FilterDefinition<BsonDocument>.Empty));
+
+            var zero = new RankedSettings { NewCharacterSkill = NewCharacterSkill.Zero };
+            Assert.Equal(0, await SkillOfAsync(Me, mongo, zero));
+            Assert.Equal(0, await SkillOfAsync(Mate, mongo, zero));
+            // A different default: a new player's rating is made at it, and they search at it.
+            await PlayerAsync(Fourth, character: "character_shaggy");
+            Assert.Equal(1200, await SkillOfAsync(Fourth, mongo, new RankedSettings { DefaultElo = 1200 }));
+            // The character's own rating still wins.
+            await PlayerAsync(Me, character: "character_jason");
+            Assert.Equal(1420, await SkillOfAsync(Me, mongo, zero));
+        }
+        finally
+        {
+            await client.DropDatabaseAsync(database);
+        }
+    }
+
+    // The skill of the player's ranked 1v1 ticket, queued now.
+    private async Task<double> SkillOfAsync(string player, MongoDB.Driver.IMongoDatabase mongo, RankedSettings? ranked = null)
+    {
+        var answer = (await Service(mongo, ranked: ranked).RequestAsync("1v1-retail", Asking(player), CancellationToken.None))!;
+        await answer.After!();
+        double skill = (double)Js.Parse(await QueuedAsync())!["players"]![0]!["skill"]!;
+        await Db.KeyDeleteAsync("1v1");
+        await Db.HashDeleteAsync(MatchmakingQueue.QueuedKey, player);
+        return skill;
     }
 
     [SkippableFact]

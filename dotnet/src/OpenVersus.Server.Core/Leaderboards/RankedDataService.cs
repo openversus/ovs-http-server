@@ -46,11 +46,24 @@ namespace OpenVersus.Server.Core.Leaderboards;
 // catch-all's, which the game has always had: {body: {Crc, MatchmakingCrc}, metadata: null, return_code: 200}. The
 // game reads RewardsGranted from it and, with none, carries on to its season-reset notice; no rewards are granted.
 
+/// <summary>What a ranked ticket searches with for a character the player has no rating for (Ranked:NewCharacterSkill).</summary>
+public enum NewCharacterSkill
+{
+    /// <summary>The player's rating in the mode (their best character's; DefaultElo for a new player): what the character's first set rates from.</summary>
+    Account,
+
+    /// <summary>0, as the TS server searched: no rated player is near 0, so the ticket waits out the window and takes whoever is there.</summary>
+    Zero,
+}
+
 /// <summary>Ranked settings.</summary>
 public sealed class RankedSettings
 {
     [Description("The rating a player starts with in both modes, and a character with no rating of its own (DEFAULT_ELO). 1000, as production has always run with; the TS code's own fallback was 0.")]
     public double DefaultElo { get; set; } = 1000;
+
+    [Description("The skill a ranked ticket searches with when the player's character has no rating yet. Account: the player's rating in the mode (their best character's; DefaultElo for a new player), what the character's first set rates from and where the players like them are. Zero: 0, as the TS server searched; no rated player is near 0, so the ticket waited out the whole window (10 s) and took whoever was there, an 1,800 as readily as a 1,000. Changeable while running.")]
+    public NewCharacterSkill NewCharacterSkill { get; set; } = NewCharacterSkill.Account;
 
     // The rating arithmetic's knobs (SetRatings). Each default is what production rates with today: the TS server's .env
     // names them (K_1V1, ...), but its rating code had used constants since the set ratings, so its K_2V2=24 never applied.

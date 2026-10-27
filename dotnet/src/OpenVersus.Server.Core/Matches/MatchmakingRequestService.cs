@@ -59,8 +59,9 @@ namespace OpenVersus.Server.Core.Matches;
 // The ticket's bytes matter: the matchmaker removes a matched ticket with LREM of JSON.stringify(JSON.parse(ticket)), so
 // its keys are the TS queueMatch's, in its order, and a player's ip is left out (not null) when player:{id} has none.
 // Each player's skill is their rating for the character in player:{id} (eloratings characters_1v1/characters_2v2, made
-// with the default rating when missing, as getOrCreateRating), 0 when there is none or Mongo fails. partyId is the
-// request's match (the game's lobby match), not the lobby id.
+// with the default rating when missing, as getOrCreateRating); for a character with none, their rating in the mode
+// (Ranked:NewCharacterSkill Account; the TS server searched at 0, and so waited out the window: Zero), 0 when this
+// service has no Mongo. partyId is the request's match (the game's lobby match), not the lobby id.
 //
 // Cancel: everyone in the requester's lobby (or the requester) is canceled (MatchmakingQueue; the TS server published
 // matchmaking:cancel for its websocket); each of those players' party_ready:{lobby} is deleted. Answer {body: {}, metadata: null,
@@ -89,7 +90,8 @@ public interface IMatchmakingRequestService
 }
 
 internal sealed class MatchmakingRequestService(IServiceProvider services, IClientUpdateGate gate, ICosmeticsService cosmetics, EloRatings ratings, IMatchLauncher launcher,
-    IOptionsMonitor<LobbySettings> settings, IOptionsMonitor<Matchmaking.FfaSettings> ffa, TimeProvider time, ILogger<MatchmakingRequestService> log) : IMatchmakingRequestService
+    IOptionsMonitor<LobbySettings> settings, IOptionsMonitor<Matchmaking.FfaSettings> ffa, IOptionsMonitor<RankedSettings> ranked, TimeProvider time,
+    ILogger<MatchmakingRequestService> log) : IMatchmakingRequestService
 {
 
     private static readonly JsonObject s_founders = new()
@@ -587,8 +589,8 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         return Js.Stringify(ticket);
     }
 
-    // The player's rating for the character they locked in this mode; 0 for a character not played yet or when the rating
-    // cannot be read.
+    // The player's rating for the character they locked in this mode; for a character not played yet, their rating in the
+    // mode (Ranked:NewCharacterSkill Account), or 0 (Zero, the TS server's); the same when the rating cannot be read.
     private async Task<JsonNode> SkillAsync(string playerId, string character, string matchType, CancellationToken ct)
     {
         if (matchType is not ("1v1" or "2v2"))
@@ -624,15 +626,34 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
                 return JsonValue.Create(best);
             }
 
-            log.LogInformation("Player {Player} using new character ELO: 0 (char: {Character}, no ranked data)", playerId, character.Length > 0 ? character : "unknown");
-            return 0;
+            if (ranked.CurrentValue.NewCharacterSkill == NewCharacterSkill.Zero)
+            {
+                log.LogInformation("Player {Player} using new character ELO: 0 (char: {Character}, no ranked data)", playerId, character.Length > 0 ? character : "unknown");
+                return 0;
+            }
+
+            // Their rating in the mode: their best character's (SetRatings keeps it so), Ranked:DefaultElo for a player with no
+            // set yet. It is what the character's first set rates from, and where the players like them are: at 0 nobody is
+            // near, the ticket waits out the window and takes whoever is there (prod, September 2026: 9 in 10 new-character
+            // tickets waited the full 10 s; searched this way, 2 in 3 match within 5 s, against the same kind of opponent).
+            double mode = ModeRating(rating, matchType);
+            log.LogInformation("Player {Player} using new character ELO: {Elo} (char: {Character}, no ranked data: their {Mode} rating)", playerId, mode,
+                character.Length > 0 ? character : "unknown", matchType);
+            return JsonValue.Create(mode);
         }
         catch (Exception e) when (e is MongoDB.Driver.MongoException or TimeoutException)
         {
-            log.LogWarning("Could not fetch ELO for player {Player}, defaulting to 0: {Error}", playerId, e.Message);
-            return 0;
+            double fallback = ranked.CurrentValue.NewCharacterSkill == NewCharacterSkill.Zero ? 0 : ranked.CurrentValue.DefaultElo;
+            log.LogWarning("Could not fetch ELO for player {Player}, defaulting to {Elo}: {Error}", playerId, fallback, e.Message);
+            return JsonValue.Create(fallback);
         }
     }
+
+    // The player's rating in the mode (elo_1v1 / elo_2v2), Ranked:DefaultElo when it is missing or not a positive number.
+    private double ModeRating(BsonDocument rating, string matchType) =>
+        rating.TryGetValue(matchType == "1v1" ? "elo_1v1" : "elo_2v2", out var elo) && elo.IsNumeric && elo.ToDouble() is var value && value > 0 && !double.IsNaN(value)
+            ? value
+            : ranked.CurrentValue.DefaultElo;
 
     public async Task<JsonObject> CancelAsync(string requestId, PartyRequest request, CancellationToken ct)
     {

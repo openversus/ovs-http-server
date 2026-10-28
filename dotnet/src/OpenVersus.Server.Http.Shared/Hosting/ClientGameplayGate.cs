@@ -82,10 +82,10 @@ public static class ClientGameplayGate
         if (modalRequested)
         {
             var settings = context.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<ClientSettings>>().CurrentValue;
-            log.LogWarning("Blocked {Method} {Path}{Query} for {Account} (version={Version}, identity={Identity}, minimum={Minimum}, other paks={OtherPaks}); requested its toast or banner",
+            log.LogWarning("Blocked {Method} {Path}{Query} for {Account} (version={Version}, identity={Identity}, minimum={Minimum}, other paks={OtherPaks}, outdated paks={OutdatedPaks}); requested its toast, banner or restart",
                 context.Request.Method, context.Request.Path, context.Request.QueryString, state.AccountId.Length > 0 ? state.AccountId : "unresolved",
                 state.ClientVersion.Length > 0 ? state.ClientVersion : "legacy", state.IdentityRegistered ? "registered" : "missing",
-                settings.MinimumVersion.Length > 0 ? settings.MinimumVersion : "disabled", state.OtherPaks.Length > 0 ? state.OtherPaks : "none");
+                settings.MinimumVersion.Length > 0 ? settings.MinimumVersion : "disabled", state.OtherPaks.Length > 0 ? state.OtherPaks : "none", state.OutdatedPaks);
         }
 
         await HydraBodies.WriteAsync(context, gate.FailureBody(), context.RequestAborted);

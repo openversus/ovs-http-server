@@ -14,9 +14,10 @@ using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Clients;
 
-// The OVS paks players must run, and telling the ones that do not to restart (2026-10-14). Nobody is locked out for paks:
-// the client version gate already keeps old clients out, and every client it lets in closes itself when told to
-// (update_required), so its next launch's startup update installs the paks.
+// The OVS paks players must run, and telling the ones that do not to restart (2026-10-14): every client the version gate
+// lets in closes itself when told to (update_required), so its next launch's startup update installs the paks. A player
+// who still runs other paks is kept out of anything that leads into a match (ClientUpdateGate; Tuggernuts, 2026-10-28:
+// one told nothing while busy could queue on old paks) and told again there.
 //
 //   What a player runs: the client's X-OVS-Paks header ("name=sha256" of each OVS_* pak's .utoc, of its .pak when it has
 //     none, ";"-separated), on every game request; the login keeps it on the connection (connections:{id} paks). Paks
@@ -357,7 +358,7 @@ public static class PakUpdateNotices
         foreach (string id in playerIds.Where(id => id.Length > 0).Distinct())
         {
             var reported = await redis.HashGetAsync($"connections:{id}", "paks");
-            if (reported.IsNullOrEmpty || PakReport.Matches(list.Paks, PakReport.Parse(reported.ToString())))
+            if (!Outdated(list, reported.IsNullOrEmpty ? null : reported.ToString()))
             {
                 continue;
             }
@@ -367,13 +368,24 @@ public static class PakUpdateNotices
                 continue;
             }
 
-            await PlayerMessages.NotifyClientAsync(redis, id, Type, Title, message, new JsonObject { ["version"] = list.Version },
-                time.GetUtcNow().ToUnixTimeMilliseconds());
+            await SendAsync(redis, id, list, message, time);
             told++;
         }
 
         return told;
     }
+
+    /// <summary>
+    /// Whether a login that reported <paramref name="reported"/> runs other paks than <paramref name="list"/>'s. No list, or
+    /// no report (a session from before clients reported every pak): no.
+    /// </summary>
+    public static bool Outdated(RequiredPakList? list, string? reported) =>
+        list is not null && !string.IsNullOrEmpty(reported) && !PakReport.Matches(list.Paks, PakReport.Parse(reported));
+
+    /// <summary>Sends <paramref name="playerId"/> update_required: the game closes, and its next launch installs <paramref name="list"/>.</summary>
+    public static Task SendAsync(IDatabase redis, string playerId, RequiredPakList list, string message, TimeProvider time) =>
+        PlayerMessages.NotifyClientAsync(redis, playerId, Type, Title, message, new JsonObject { ["version"] = list.Version },
+            time.GetUtcNow().ToUnixTimeMilliseconds());
 
     /// <summary>
     /// Whether a player is not to be interrupted: in a match (its config is kept until the match ends, GameplayConfigs,

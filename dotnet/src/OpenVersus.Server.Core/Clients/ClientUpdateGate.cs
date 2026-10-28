@@ -21,8 +21,11 @@ namespace OpenVersus.Server.Core.Clients;
 // changes gameplay desyncs a match, but most are skins, which do not (Tuggernuts: "technically, that's not hurting the
 // game"), so by default the login only logs them (AccessService), for desync reports. Offline (the Lab, Local Play) never
 // asks the server either way. A blocked player gets a banner naming the paks instead of the update toast.
+// The same doors close to a player whose OVS paks are not the required ones (RequiredPaks.cs; Tuggernuts, 2026-10-28), who
+// is sent update_required instead: the game closes and its next launch installs them. A ranked set is not cut short:
+// queueing ends it anyway.
 //
-// Redis, read     connections:{id} clientVersion, identityRegistered ("1"), otherPaks; client_update_modal_nonce:{id} (the calendar)
+// Redis, read     connections:{id} clientVersion, identityRegistered ("1"), otherPaks, paks; client_update_modal_nonce:{id} (the calendar)
 // Redis, written  client_update_modal_cooldown:{id} "1" (SET NX EX 15: one request per player per 15 s)
 //                 client_update_modal_nonce:{id} (INCR, then EXPIRE 86400)
 // Sent (ws:send)  the update toast (ToastReceivedNotification from the update notifier). The TS server published
@@ -48,7 +51,7 @@ public sealed class ClientSettings
     [Description("The GitHub \"owner/repo\" whose latest release the client's update check offers (CLIENT_RELEASE_REPO); anything else means the default, openversus/ovs-client.")]
     public string ReleaseRepo { get; set; } = "openversus/ovs-client";
 
-    [Description("The OVS paks players must run (RequiredPaks.cs): release = the latest ReleaseRepo release's OVS_* paks at GitHub's sha256 digests, the ones the client's startup update installs; off = none; or a literal Name=sha256;... list (local tests). A player whose paks (X-OVS-Paks, kept at login) differ is told to close the game and relaunch to update: when the list changes, unless in a match, and at the end of each match. Nobody is locked out for it.")]
+    [Description("The OVS paks players must run (RequiredPaks.cs): release = the latest ReleaseRepo release's OVS_* paks at GitHub's sha256 digests, the ones the client's startup update installs; off = none; or a literal Name=sha256;... list (local tests). A player whose paks (X-OVS-Paks, kept at login) differ is told to close the game and relaunch to update: when the list changes, unless in a match, and at the end of each match; until then, they are kept out of matches and told again at each try.")]
     public string RequiredPaks { get; set; } = "release";
 
     [Description("What the game shows before it closes to install new paks.")]
@@ -68,8 +71,11 @@ public sealed record ClientUpdateState(string AccountId, string ClientVersion, b
     /// <summary>The paks the game runs that are neither the game's nor OVS_* (";"-separated), when the gate blocks them; else "".</summary>
     public string OtherPaks { get; init; } = "";
 
-    /// <summary>Kept out of online play: an update required, or other paks.</summary>
-    public bool Blocked => Required || OtherPaks.Length > 0;
+    /// <summary>The OVS paks the game runs are not the required ones (<see cref="PakUpdateNotices.Outdated"/>).</summary>
+    public bool OutdatedPaks { get; init; }
+
+    /// <summary>Kept out of online play: an update required, other paks, or outdated OVS paks.</summary>
+    public bool Blocked => Required || OtherPaks.Length > 0 || OutdatedPaks;
 }
 
 public interface IClientUpdateGate
@@ -175,14 +181,16 @@ internal sealed class ClientUpdateGate(IServiceProvider services, IAccountResolv
     {
         var redis = Redis;
         var current = settings.CurrentValue;
+        var required = await RequiredPaksAsync();
         var states = await Task.WhenAll(playerIds.Where(id => id.Length > 0).Distinct().Select(async id =>
         {
-            var fields = await redis.HashGetAsync($"connections:{id}", ["clientVersion", "identityRegistered", "otherPaks"]);
+            var fields = await redis.HashGetAsync($"connections:{id}", ["clientVersion", "identityRegistered", "otherPaks", "paks"]);
             string version = fields[0].HasValue ? fields[0].ToString() : "";
             bool registered = fields[1] == "1";
             return new ClientUpdateState(id, version, registered, ClientVersions.GameplayAccessRequired(version, current.MinimumVersion, registered, current.VersionCheck))
             {
                 OtherPaks = current.BlockOtherPaks && fields[2].HasValue ? fields[2].ToString() : "",
+                OutdatedPaks = PakUpdateNotices.Outdated(required, fields[3].HasValue ? fields[3].ToString() : null),
             };
         }));
         return states.Where(s => s.Blocked).ToList();
@@ -205,8 +213,13 @@ internal sealed class ClientUpdateGate(IServiceProvider services, IAccountResolv
         return new ClientUpdateState(accountId, version, registered, ClientVersions.GameplayAccessRequired(version, current.MinimumVersion, registered, current.VersionCheck))
         {
             OtherPaks = current.BlockOtherPaks ? Field("otherPaks") : "",
+            OutdatedPaks = PakUpdateNotices.Outdated(await RequiredPaksAsync(), Field("paks")),
         };
     }
+
+    // The required list, or null when there is none or this service cannot read it.
+    private async Task<RequiredPakList?> RequiredPaksAsync() =>
+        services.GetService<IRequiredPaks>() is { } required ? await required.CurrentAsync() : null;
 
     public async Task<double> ModalNonceAsync(string playerId)
     {
@@ -238,6 +251,14 @@ internal sealed class ClientUpdateGate(IServiceProvider services, IAccountResolv
                 await Realtime.PlayerMessages.NotifyClientAsync(redis, id, "admin_banner", "Other paks installed",
                     current.OtherPaksMessage.Replace("{paks}", other.Replace(";", ", "), StringComparison.Ordinal), new JsonObject { ["timeout"] = 10 },
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                return true;
+            }
+
+            // Outdated OVS paks: closed so the next launch installs them (the toast would send them to GitHub for nothing).
+            if (await RequiredPaksAsync() is { } required
+                && PakUpdateNotices.Outdated(required, (string?)await redis.HashGetAsync($"connections:{id}", "paks")))
+            {
+                await PakUpdateNotices.SendAsync(redis, id, required, current.PaksUpdateMessage, services.GetService<TimeProvider>() ?? TimeProvider.System);
                 return true;
             }
 
@@ -297,8 +318,8 @@ public static class ClientUpdateGates
         }
 
         await gate.RequestModalsAsync(outdated.Select(o => o.AccountId));
-        log.LogWarning("Blocked {What}: update required or other paks for {Players}", what,
-            string.Join(", ", outdated.Select(o => $"{o.AccountId}:{(o.ClientVersion.Length > 0 ? o.ClientVersion : "legacy")}{(o.OtherPaks.Length > 0 ? " paks " + o.OtherPaks : "")}")));
+        log.LogWarning("Blocked {What}: update required, other paks or outdated paks for {Players}", what,
+            string.Join(", ", outdated.Select(o => $"{o.AccountId}:{(o.ClientVersion.Length > 0 ? o.ClientVersion : "legacy")}{(o.OtherPaks.Length > 0 ? " paks " + o.OtherPaks : "")}{(o.OutdatedPaks ? " outdated paks" : "")}")));
         return true;
     }
 }

@@ -138,6 +138,43 @@ public sealed class ClientUpdateGateTests : IAsyncLifetime
 
     }
 
+    private sealed class FixedPaks(RequiredPakList? list) : IRequiredPaks
+    {
+        public Task<RequiredPakList?> CurrentAsync() => Task.FromResult(list);
+    }
+
+    // Outdated OVS paks (2026-10-28): a game whose login reported other OVS paks than the required ones is kept out and told
+    // to restart (update_required), not toasted. No report (an older session) and no list let everyone through.
+    private ClientUpdateGate Requiring(RequiredPakList? list) => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!)
+        .AddSingleton<IRequiredPaks>(new FixedPaks(list)).BuildServiceProvider(), null!, new TestOptions<ClientSettings>(new ClientSettings()));
+
+    [SkippableFact]
+    public async Task AGameOnOutdatedPaksIsBlockedAndToldToRestart()
+    {
+        Skip.If(_redis is null, "OVS_TEST_REDIS not set");
+        string current = new('a', 64), old = new('b', 64);
+        var list = new RequiredPakList("2026.10.27.92", new Dictionary<string, string> { ["OVS_P"] = current });
+        var p3 = Id(3);
+        await Db.HashSetAsync($"connections:{P1}", [new HashEntry("clientVersion", "2026.10.27.91"), new HashEntry("identityRegistered", "1"), new HashEntry("paks", $"OVS_P={old}")]);
+        await Db.HashSetAsync($"connections:{P2}", [new HashEntry("clientVersion", "2026.10.27.91"), new HashEntry("identityRegistered", "1"), new HashEntry("paks", $"OVS_P={current}")]);
+        await Db.HashSetAsync($"connections:{p3}", [new HashEntry("clientVersion", "2026.10.27.91"), new HashEntry("identityRegistered", "1")]);
+
+        Assert.Empty(await Requiring(null).RequiringUpdateAsync([P1, P2, p3]));
+
+        var blocked = Assert.Single(await Requiring(list).RequiringUpdateAsync([P1, P2, p3]));
+        Assert.Equal(P1, blocked.AccountId);
+        Assert.False(blocked.Required);
+        Assert.True(blocked.OutdatedPaks);
+        Assert.True(blocked.Blocked);
+
+        Assert.Equal([true], await Requiring(list).RequestModalsAsync([P1]));
+        await Task.Delay(200);
+        Assert.Empty(_published);   // no update toast
+        var notice = (JsonObject)Js.Parse((string?)await Db.ListGetByIndexAsync(PlayerMessages.NotificationPrefix + P1, 0))!;
+        Assert.Equal(PakUpdateNotices.Type, (string?)notice["type"]);
+        Assert.Equal("2026.10.27.92", (string?)notice["data"]?["version"]);
+    }
+
     [Theory]
     [InlineData(null, "")]
     [InlineData(" ; ;", "")]

@@ -14,8 +14,11 @@ namespace OpenVersus.Server.Core.RewardTracks;
 //   - After that, whoever quit (conceded, walked out, dodged before game 2 or 3) gets nothing; everyone else is paid,
 //     the winners and a 2v2 teammate who stayed alike. A concede that names nobody counts every loser as a quitter.
 //   - A public FFA game pays every human in it, the winner as a win.
+//   - A Testing Grounds game pays TestingGrounds:XpPercent of what an FFA game does, each player's first
+//     TestingGrounds:DailyXpGames a day only (MatchResultStream counts them).
 //
-// Redis, appended  match:results set_xp {playerId, won, character, setKey ("ranked:{set}" or "ffa:{match}"), source}
+// Redis, appended  match:results set_xp {playerId, won, character, setKey ("ranked:{set}", "ffa:{match}" or
+//                  "testinggrounds:{match}"), source, percent (a Testing Grounds game's, when not 100)}
 
 /// <summary>Appends End Game's ranked-set and FFA XP to match:results, for <see cref="RankedSetXpPayer"/> to pay.</summary>
 public static class RankedSetXpPayout
@@ -53,13 +56,28 @@ public static class RankedSetXpPayout
     public static Task AppendFfaAsync(IDatabase redis, string playerId, bool won, string character, string matchId) =>
         AppendAsync(redis, playerId, won, character, $"ffa:{matchId}", $"FFA {(won ? "win" : "game")} {matchId}");
 
-    private static Task AppendAsync(IDatabase redis, string playerId, bool won, string character, string setKey, string source) =>
-        redis.StreamAddAsync(Matches.MatchResults.Stream, Field, new JsonObject
+    /// <summary>
+    /// Appends what a Testing Grounds game pays one of its players: <paramref name="percent"/> of an FFA game's
+    /// (TestingGrounds:XpPercent; the daily limit is the caller's).
+    /// </summary>
+    public static Task AppendTestingGroundsAsync(IDatabase redis, string playerId, bool won, string character, string matchId, int percent) =>
+        AppendAsync(redis, playerId, won, character, $"testinggrounds:{matchId}", $"Testing Grounds {(won ? "win" : "game")} {matchId}", percent);
+
+    private static Task AppendAsync(IDatabase redis, string playerId, bool won, string character, string setKey, string source, int percent = 100)
+    {
+        var record = new JsonObject
         {
             ["playerId"] = playerId,
             ["won"] = won,
             ["character"] = character,
             ["setKey"] = setKey,
             ["source"] = source,
-        }.ToJsonString(), maxLength: 10_000, useApproximateMaxLength: true);
+        };
+        if (percent != 100)
+        {
+            record["percent"] = percent;
+        }
+
+        return redis.StreamAddAsync(Matches.MatchResults.Stream, Field, record.ToJsonString(), maxLength: 10_000, useApproximateMaxLength: true);
+    }
 }

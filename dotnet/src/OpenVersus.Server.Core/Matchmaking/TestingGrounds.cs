@@ -7,7 +7,9 @@ using Microsoft.Extensions.Options;
 namespace OpenVersus.Server.Core.Matchmaking;
 
 // Testing Grounds, the game's own event queues, as OpenVersus runs them: unranked matches with OpenVersus's mutators, no
-// XP or missions. Two of them (Tuggernuts, 2026-10-27, for the Season 1 launch):
+// missions; a player's first TestingGrounds:DailyXpGames games a day pay TestingGrounds:XpPercent of an FFA game's End
+// Game XP (MatchResultStream; Tuggernuts, 2026-10-27: 10 games at half, so it cannot be farmed). Two of them
+// (Tuggernuts, 2026-10-27, for the Season 1 launch):
 //   1v1  evtq_1v1testinggrounds, matchmaking criteria EVT_2_Player_1, solo only; TestingGrounds:Mutators (Beta Speed, the
 //        whole match at BetaSpeed:Percent, and Shield HP, Smash-style shields). Open every day.
 //   2v2  evtq_2v2testinggrounds, criteria EVT_4_Player_2, parties of two welcome (the game's bPartyEligible);
@@ -44,6 +46,14 @@ public sealed class TestingGroundsSettings
     [Description("The lives each fighter has in a 2v2 Testing Grounds match while its mutators include Individual Stocks (ovs_2v2_individual_stocks): the match is played to twice this many ringouts. Without Individual Stocks the match keeps 2v2's 4 shared ringouts.")]
     [Range(1, 49)]
     public int TwoVsTwoLives { get; set; } = 6;
+
+    [Description("The Testing Grounds games (1v1 and 2v2 together) each player is paid End Game's XP for every day, 00:00 to 24:00 US Eastern: TestingGrounds:XpPercent of what a public FFA game pays (the battle pass, account and character levels; the winners the win bonus). Later games that day pay nothing. Missions never progress there. 0: no XP.")]
+    [Range(0, 1000)]
+    public int DailyXpGames { get; set; } = 10;
+
+    [Description("How much of a public FFA game's XP a Testing Grounds game pays, in percent (Tuggernuts, 2026-10-27: 50, half), rounded down; only within TestingGrounds:DailyXpGames.")]
+    [Range(0, 100)]
+    public int XpPercent { get; set; } = 50;
 }
 
 public static class TestingGrounds
@@ -189,7 +199,8 @@ public static class TestingGrounds
 
     /// <summary>
     /// Merged over its match's config: unranked, not a custom game, the event queue, the mutators, and no progress: no
-    /// XP or missions on the server (MissionService), none in the game.
+    /// match XP or missions on the server (MissionService), none in the game. Its End Game XP is MatchResultStream's, by
+    /// the event queue.
     /// </summary>
     public static JsonObject ConfigOverride(TestingGroundsSettings settings, Queue queue) => new()
     {

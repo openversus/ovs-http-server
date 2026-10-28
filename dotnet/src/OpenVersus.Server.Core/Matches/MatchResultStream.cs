@@ -17,7 +17,9 @@ namespace OpenVersus.Server.Core.Matches;
 // a "leave" record (MatchLeaves: the game said over HTTP its player left) is settled as the game's websocket close is;
 // one appended while no replica runs (a restart, a deploy) waits for the next instead of being lost. Per result:
 //   match XP and missions for the reporter (IMissionService; missions with Missions:Enabled), rift progress for the match
-//   (IRiftProgressService), each once per match and player (their own SET NX keys), so handling one again is harmless.
+//   (IRiftProgressService), each once per match and player (their own SET NX keys), so handling one again is harmless;
+//   End Game's XP for a public FFA or Testing Grounds game (RankedSetXpPayout; Testing Grounds within the player's
+//   TestingGrounds:DailyXpGames a day).
 //   Then the match's stats (IGameStats), once (game_stats_recorded:{match}, SET NX EX 10 min), when every human of the
 //   match (the config's players that are not bots, spectators included) has reported; or, by the sweep every second,
 //   30 s after the first report (match_results:due). They come from the first player's report that agrees with the
@@ -164,7 +166,7 @@ internal sealed class MatchResultStream(IServiceProvider services, IMissionServi
                 if (Text(result["playerId"]) is { Length: > 0 } playerId)
                 {
                     await missions.RecordMatchXpAsync(matchId, playerId, winning, ct);
-                    await FfaXpAsync(redis, matchId, playerId, winning);
+                    await EventXpAsync(redis, matchId, playerId, winning);
                     if (missionSettings.CurrentValue.Enabled)
                     {
                         await missions.RecordMatchAsync(matchId, playerId, winning, counters, ct);
@@ -186,12 +188,21 @@ internal sealed class MatchResultStream(IServiceProvider services, IMissionServi
         }
     }
 
-    // End Game's XP for a public FFA game (the TS submit_end_of_match_stats paid it, rankedSetXpService.ts): the reporter,
-    // when a human of a public FFA match, the winner as a win. Paid once per match and player by RankedSetXpPayer.
-    private static async Task FfaXpAsync(IDatabase redis, string matchId, string playerId, int? winning)
+    // End Game's XP for a public FFA game (the TS submit_end_of_match_stats paid it, rankedSetXpService.ts) or a Testing
+    // Grounds game (its event queue in the config's gameplayConfigOverride, which only the matchmaker and its rematches
+    // write; their isCustomGame is the unranked marker): the reporter, when a human of the match, the winner as a win. Paid
+    // once per match and player by RankedSetXpPayer. A Testing Grounds game pays TestingGrounds:XpPercent of that, and
+    // counts once (its claim) towards the player's TestingGrounds:DailyXpGames of the day, US Eastern: nothing past them.
+    private async Task EventXpAsync(IDatabase redis, string matchId, string playerId, int? winning)
     {
-        if (Js.Parse((string?)await redis.StringGetAsync(matchId) ?? "null") is not JsonObject config || Text(config["mode"]) != "FFA"
-            || config["isCustomGame"] is JsonValue custom && custom.GetValueKind() == System.Text.Json.JsonValueKind.True
+        if (Js.Parse((string?)await redis.StringGetAsync(matchId) ?? "null") is not JsonObject config)
+        {
+            return;
+        }
+
+        var testingGrounds = Matchmaking.TestingGrounds.ByEventQueue(Text((config["gameplayConfigOverride"] as JsonObject)?["EventQueueSlug"]));
+        bool ffa = Text(config["mode"]) == "FFA" && !(config["isCustomGame"] is JsonValue custom && custom.GetValueKind() == System.Text.Json.JsonValueKind.True);
+        if ((!ffa && testingGrounds is null)
             || (config["players"] as JsonArray ?? []).FirstOrDefault(p => Text(p?["playerId"]) == playerId) is not JsonObject player
             || player["isBot"] is JsonValue bot && bot.GetValueKind() == System.Text.Json.JsonValueKind.True
             || player["isSpectator"] is JsonValue spectator && spectator.GetValueKind() == System.Text.Json.JsonValueKind.True)
@@ -202,7 +213,40 @@ internal sealed class MatchResultStream(IServiceProvider services, IMissionServi
         string character = Text((Js.Parse((string?)await redis.StringGetAsync($"match_characters:{matchId}") ?? "null") as JsonObject)?[playerId])
             ?? (string?)await redis.HashGetAsync($"connections:{playerId}", "character") ?? "";
         bool won = winning is { } team && MatchWinner.Number(player["teamIndex"]) is { } index && (int)index == team;
-        await RewardTracks.RankedSetXpPayout.AppendFfaAsync(redis, playerId, won, character, matchId);
+        if (testingGrounds is null)
+        {
+            await RewardTracks.RankedSetXpPayout.AppendFfaAsync(redis, playerId, won, character, matchId);
+            return;
+        }
+
+        var rules = Matchmaking.TestingGrounds.Of(services);
+        int limit = rules.DailyXpGames;
+        string claim = $"testing_grounds_xp:{matchId}:{playerId}";
+        if (limit <= 0 || rules.XpPercent <= 0 || !await redis.StringSetAsync(claim, "1", TimeSpan.FromHours(1), When.NotExists))
+        {
+            return;
+        }
+
+        string day = $"testing_grounds_xp_day:{Matchmaking.FfaSchedule.EasternDate(time.GetUtcNow()):yyyy-MM-dd}:{playerId}";
+        long games = await redis.StringIncrementAsync(day);
+        await redis.KeyExpireAsync(day, TimeSpan.FromDays(2));
+        if (games > limit)
+        {
+            log.LogInformation("Testing Grounds XP for {Player} from match {Match}: none, game {Games} today (TestingGrounds:DailyXpGames {Limit})", playerId, matchId, games, limit);
+            return;
+        }
+
+        try
+        {
+            await RewardTracks.RankedSetXpPayout.AppendTestingGroundsAsync(redis, playerId, won, character, matchId, rules.XpPercent);
+        }
+        catch
+        {
+            // Not paid: the game is not counted, so the result's retry pays it.
+            await redis.StringDecrementAsync(day);
+            await redis.KeyDeleteAsync(claim);
+            throw;
+        }
     }
 
     // Every human of the match (the config's players that are not bots) has reported.

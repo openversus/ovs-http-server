@@ -22,6 +22,8 @@ namespace OpenVersus.Server.Core.Matches;
 // fighterStats.{name} ($inc) for every Fighter:/Hitbox:/Marceline: counter above 0; and the game on recent_matches_{mode}
 // ($push, the last 10): {matchId, timestamp, mode, map, result, score, players: [{accountId, character, teamIndex,
 // damage, ringouts, deaths (the other teams' ringouts), isWinner}]}. Every number rounded as JavaScript does.
+// A public FFA game (mode FFA, not a custom game; Tuggernuts, 2026-10-27) also counts, beside those (still in the 2v2
+// fields, as TS had them): ffa.games and ffa.wins ($inc), and the same per character, ffa.characters.{slug}.games / .wins.
 //
 // Mongo, written  playerstats {account_id} (upsert; $setOnInsert: __v 0 and the schema's defaults for the paths the
 //                 update does not write, as mongoose sends it); match_archives {match_id} (upsert, $setOnInsert:
@@ -61,6 +63,7 @@ internal sealed class GameStats(IServiceProvider services, TimeProvider time, IL
         bool is1v1 = mode == "1v1" || mode.Contains("1v1", StringComparison.Ordinal);
         string charsField = is1v1 ? "characters_1v1" : "characters_2v2";
         string recentField = is1v1 ? "recent_matches_1v1" : "recent_matches_2v2";
+        bool ffa = mode == "FFA" && !(config?["isCustomGame"] is JsonValue customFfa && customFfa.GetValueKind() == System.Text.Json.JsonValueKind.True);
         var matchChars = Js.Parse((string?)await redis.StringGetAsync($"match_characters:{matchId}") ?? "null") as JsonObject ?? [];
         double winningTeam = MatchWinner.Number(endOfMatchStats["WinningTeamIndex"]) ?? -1;
         var teams = new Dictionary<string, double>();
@@ -144,6 +147,17 @@ internal sealed class GameStats(IServiceProvider services, TimeProvider time, IL
 
             var line = lines.First(l => l.Id == accountId);
             double myTeam = line.Team;
+            if (ffa)
+            {
+                inc["ffa.games"] = 1;
+                inc[$"ffa.characters.{character}.games"] = 1;
+                if (line.Won)
+                {
+                    inc["ffa.wins"] = 1;
+                    inc[$"ffa.characters.{character}.wins"] = 1;
+                }
+            }
+
             var entry = new BsonDocument
             {
                 { "matchId", matchId },

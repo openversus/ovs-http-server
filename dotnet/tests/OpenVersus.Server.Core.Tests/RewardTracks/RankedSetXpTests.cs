@@ -45,6 +45,20 @@ public sealed class RankedSetXpTests
     }
 
     [Fact]
+    // A Testing Grounds game's record carries TestingGrounds:XpPercent: half of an FFA game's, rounded down.
+    public void ARecordsPercentScalesEveryTrack()
+    {
+        Assert.Equal(new Dictionary<string, int>
+        {
+            ["mrt_battlepass_season_five"] = 225,
+            ["mrt_mastery_account"] = 300,
+            ["mrt_mastery_banana_guard"] = 300,
+        }, RankedSetXpPayer.Points(new RewardTrackSettings(), won: true, "character_BananaGuard", percent: 50));
+        Assert.Equal(new Dictionary<string, int> { ["mrt_battlepass_season_five"] = 7 },
+            RankedSetXpPayer.Points(new RewardTrackSettings { BattlePassSetXp = 10, BattlePassWinXp = 5, CharacterSetXp = 0, CharacterWinXp = 0 }, won: true, "character_BananaGuard", percent: 50));
+    }
+
+    [Fact]
     public void AFinishedTrackStopsAtItsLastTier()
     {
         const string pass = "mrt_battlepass_season_five";

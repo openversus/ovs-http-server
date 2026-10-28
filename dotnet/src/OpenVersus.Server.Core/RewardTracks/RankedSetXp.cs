@@ -17,7 +17,7 @@ namespace OpenVersus.Server.Core.RewardTracks;
 // dodge pays nobody; after one, a player who quit gets nothing, everyone else is paid. It appends {playerId, won,
 // character, setKey, source} for each player to match:results (field set_xp), and the match flow's consumer of that
 // stream (MatchResultStream) hands each record to the payer here.
-// Once per player and set:
+// Once per player and set, scaled by the record's percent when it has one (a Testing Grounds game's):
 //
 //   - the battle pass (mrt_battlepass_season_five) gains RewardTracks:BattlePassSetXp, +BattlePassWinXp for a win;
 //   - the account level (mrt_mastery_account) and the played character's level (its CharacterData MrtSlug, which
@@ -124,7 +124,8 @@ internal sealed class RankedSetXpPayer(IServiceProvider services, IOptionsMonito
         string source = Text(set["source"]) ?? setKey;
         bool won = set["won"] is JsonValue w && w.TryGetValue(out bool b) && b;
         string character = Text(set["character"]) ?? "";
-        var points = Points(settings.CurrentValue, won, character);
+        int percent = set["percent"] is JsonValue p && p.TryGetValue(out int pct) ? pct : 100;
+        var points = Points(settings.CurrentValue, won, character, percent);
         Dictionary<string, JsonObject> changed;
         try
         {
@@ -200,11 +201,13 @@ internal sealed class RankedSetXpPayer(IServiceProvider services, IOptionsMonito
     }
 
     /// <summary>What a ranked set is worth to each track (tracks the hiss does not have are left out).</summary>
-    internal static Dictionary<string, int> Points(RewardTrackSettings settings, bool won, string character)
+    // percent: the record's share of it (a Testing Grounds game's TestingGrounds:XpPercent), rounded down.
+    internal static Dictionary<string, int> Points(RewardTrackSettings settings, bool won, string character, int percent = 100)
     {
         var points = new Dictionary<string, int>();
         void Add(string? track, int xp)
         {
+            xp = xp * percent / 100;
             if (track is not null && xp > 0 && Hiss.HissTables.Data("milestone-reward-tracks", track) is not null)
             {
                 points[track] = xp;

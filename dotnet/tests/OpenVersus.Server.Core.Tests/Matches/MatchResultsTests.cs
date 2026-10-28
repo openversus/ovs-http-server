@@ -7,6 +7,7 @@ using MongoDB.Driver;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Matches;
+using OpenVersus.Server.Core.Matchmaking;
 using OpenVersus.Server.Core.Missions;
 using OpenVersus.Server.Core.RewardTracks;
 using OpenVersus.Server.Core.Rifts;
@@ -179,9 +180,12 @@ public sealed class MatchResultsTests : IAsyncLifetime
         public Task PayAsync(string record) => fail ? throw new InvalidOperationException("not paid yet") : Task.Run(() => Paid.Add(record));
     }
 
-    private MatchResultStream Stream(Missions missions, Rifts rifts, Stats stats, StatusEvents? events = null, Payer? payer = null) =>
-        new(payer is null ? Services() : new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).AddSingleton(Mongo)
-                .AddSingleton<IRankedSetXpPayer>(payer).BuildServiceProvider(), missions, new TestOptions<MissionSettings>(new MissionSettings { Enabled = true }), rifts, stats, events ?? new StatusEvents(), TimeProvider.System, NullLogger<MatchResultStream>.Instance);
+    private MatchResultStream Stream(Missions missions, Rifts rifts, Stats stats, StatusEvents? events = null, Payer? payer = null,
+        TestingGroundsSettings? testingGrounds = null) =>
+        new(payer is null && testingGrounds is null ? Services() : new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).AddSingleton(Mongo)
+                .AddSingleton<IRankedSetXpPayer>(payer ?? new Payer())
+                .AddSingleton<Microsoft.Extensions.Options.IOptionsMonitor<TestingGroundsSettings>>(new TestOptions<TestingGroundsSettings>(testingGrounds ?? new TestingGroundsSettings()))
+                .BuildServiceProvider(), missions, new TestOptions<MissionSettings>(new MissionSettings { Enabled = true }), rifts, stats, events ?? new StatusEvents(), TimeProvider.System, NullLogger<MatchResultStream>.Instance);
 
     // A 1v1 (or a custom game with a spectator) as the matchmaker or lobby left it, with P1 and P2 in ranked set Set.
     private async Task SeedAsync(bool custom = false, bool spectator = false, bool set = true)
@@ -404,6 +408,52 @@ public sealed class MatchResultsTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // A Testing Grounds game pays End Game's XP as an FFA game does (its isCustomGame is only the unranked marker), each
+    // player's first TestingGrounds:DailyXpGames of the day, once per match; a custom game with the same mode pays none.
+    public async Task TestingGroundsGamesPayXpUpToTheDailyLimit()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        var payer = new Payer();
+        var stream = Stream(new Missions(), new Rifts(), new Stats(), payer: payer, testingGrounds: new TestingGroundsSettings { DailyXpGames = 2 });
+        await stream.EnsureGroupAsync(Db);
+        string[] matches = [Id(200), Id(201), Id(202), Id(203)];
+        for (int i = 0; i < matches.Length; i++)
+        {
+            var config = new JsonObject
+            {
+                ["players"] = new JsonArray(new JsonObject { ["playerId"] = P1, ["teamIndex"] = 0, ["isBot"] = false },
+                    new JsonObject { ["playerId"] = P2, ["teamIndex"] = 1, ["isBot"] = false }),
+                ["matchId"] = matches[i],
+                ["map"] = "M001",
+                ["mode"] = i == 1 ? "2v2" : "1v1",
+                ["isCustomGame"] = true,
+            };
+            if (i < 3)
+            {
+                config["gameplayConfigOverride"] = TestingGrounds.ConfigOverride(new TestingGroundsSettings(), i == 1 ? TestingGrounds.TwoVsTwo : TestingGrounds.OneVsOne);
+            }
+
+            await Db.StringSetAsync(matches[i], Js.Stringify(config));
+        }
+
+        async Task ReportAsync(string match, string player, int winner) => await Db.StreamAddAsync(MatchResults.Stream, "result",
+            Js.Stringify(new JsonObject { ["matchId"] = match, ["playerId"] = player, ["winningTeamIndex"] = winner }));
+        await ReportAsync(matches[0], P1, 0);
+        await ReportAsync(matches[0], P1, 0); // the same game again: counted once
+        await ReportAsync(matches[1], P1, 1);
+        await ReportAsync(matches[2], P1, 0); // the third today: over the limit
+        await ReportAsync(matches[3], P1, 0); // a custom game
+        await ReportAsync(matches[2], P2, 0);
+        await stream.ReadAsync(Db, default);
+        await stream.ReadAsync(Db, default);
+
+        var paid = payer.Paid.Select(r => JsonNode.Parse(r)!).Select(r => ((string)r["playerId"]!, (string)r["setKey"]!, (bool)r["won"]!, (int)r["percent"]!)).ToList();
+        // At TestingGrounds:XpPercent (50 by default).
+        Assert.Equal([(P1, $"testinggrounds:{matches[0]}", true, 50), (P1, $"testinggrounds:{matches[1]}", false, 50), (P2, $"testinggrounds:{matches[2]}", false, 50)], paid);
+        Assert.Equal(3, (int)await Db.StringGetAsync($"testing_grounds_xp_day:{FfaSchedule.EasternDate(DateTimeOffset.UtcNow):yyyy-MM-dd}:{P1}"));
+    }
+
+    [SkippableFact]
     public async Task AMatchWhoseHumansDoNotAllReportGetsItsStatsAfterTheWait()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
@@ -506,6 +556,43 @@ public sealed class MatchResultsTests : IAsyncLifetime
         Assert.Equal(0, json["winning_team"]!.GetValue<int>());
         // As received: the whole double stays wrapped.
         Assert.Equal(900, json["mission_updates"]![P1]!["Stat:Game:Character:TotalKnockbackAdded"]!["_hydra_double"]!.GetValue<int>());
+    }
+
+    [SkippableFact]
+    // A public FFA game counts each account's FFA games and wins, and each character's; a custom FFA game does not.
+    public async Task AnFfaGameCountsGamesAndWinsPerAccountAndCharacter()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        var stats = new GameStats(Services(), TimeProvider.System, NullLogger<GameStats>.Instance);
+        async Task PlayAsync(string match, bool custom, int winner)
+        {
+            var config = new JsonObject
+            {
+                ["players"] = new JsonArray(new JsonObject { ["playerId"] = P1, ["teamIndex"] = 0, ["isBot"] = false },
+                    new JsonObject { ["playerId"] = P2, ["teamIndex"] = 1, ["isBot"] = false }),
+                ["matchId"] = match,
+                ["map"] = "M001",
+                ["mode"] = "FFA",
+                ["isCustomGame"] = custom,
+            };
+            await Db.StringSetAsync(match, Js.Stringify(config));
+            await Db.StringSetAsync($"match_characters:{match}", Js.Stringify(new JsonObject { [P1] = "character_Jason", [P2] = "character_finn" }));
+            var report = Report(winner)["EndOfMatchStats"]!.AsObject();
+            await stats.RecordAsync(match, report, default);
+        }
+
+        await PlayAsync(Id(300), custom: false, winner: 0);
+        await PlayAsync(Id(301), custom: false, winner: 1);
+        await PlayAsync(Id(302), custom: true, winner: 0);
+
+        var collection = Mongo.GetCollection<BsonDocument>("playerstats");
+        var p1 = (await collection.Find(new BsonDocument("account_id", P1)).FirstAsync())["ffa"].AsBsonDocument;
+        Assert.Equal((2, 1), (p1["games"].AsInt32, p1["wins"].AsInt32));
+        // The slug as the game sent it.
+        Assert.Equal((2, 1), (p1["characters"]["character_Jason"]["games"].AsInt32, p1["characters"]["character_Jason"]["wins"].AsInt32));
+        var p2 = (await collection.Find(new BsonDocument("account_id", P2)).FirstAsync())["ffa"].AsBsonDocument;
+        Assert.Equal((2, 1), (p2["games"].AsInt32, p2["wins"].AsInt32));
+        Assert.Equal(1, p2["characters"]["character_finn"]["wins"].AsInt32);
     }
 
     private static BsonDocument Sorted(BsonDocument doc, string[] order) => new(order.Select(k => new BsonElement(k, doc[k])));

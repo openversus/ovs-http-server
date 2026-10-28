@@ -102,6 +102,22 @@ public sealed class RankedSetXpPayerTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // A Testing Grounds game's record, as RankedSetXpPayout writes it: its percent of the amounts.
+    public async Task ARecordWithAPercentPaysThatShare()
+    {
+        Skip.If(_mongo is null, "set OVS_TEST_MONGO and OVS_TEST_REDIS to run");
+        using var services = Services();
+        string player = ObjectId.GenerateNewId().ToString(), match = ObjectId.GenerateNewId().ToString();
+        await RankedSetXpPayout.AppendTestingGroundsAsync(_redis!.GetDatabase(), player, true, "character_shaggy", match, 50);
+        var record = (await _redis.GetDatabase().StreamRangeAsync(OpenVersus.Server.Core.Matches.MatchResults.Stream, messageOrder: Order.Descending, count: 50))
+            .Select(e => (string?)e[RankedSetXpPayout.Field]).First(r => r is not null && r.Contains(player, StringComparison.Ordinal))!;
+
+        await Subscriber(services).HandleAsync(record);
+        Assert.Equal(225, await Score(services, player, "mrt_battlepass_season_five"));
+        Assert.Equal(300, await Score(services, player, "mrt_mastery_shaggy"));
+    }
+
+    [SkippableFact]
     // Nothing paid (the score's write failed): the claim is given back and the record's failure goes to the stream, which
     // keeps it pending; its retry pays, once.
     public async Task AFailureBeforeTheScoreIsWrittenLeavesTheRecordForItsRetry()

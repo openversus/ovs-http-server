@@ -87,6 +87,9 @@ public static class FfaSchedule
         ? eastern
         : TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
 
+    /// <summary>The date at <paramref name="now"/>, US Eastern: the day the schedule's days are.</summary>
+    public static DateOnly EasternDate(DateTimeOffset now) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, s_eastern).DateTime);
+
     /// <summary>
     /// Whether the FFA queue takes players at <paramref name="now"/> (isFfaQueueOpen): always with Ffa:WeekendOnly off, else
     /// on Ffa:Days, US Eastern, outside <paramref name="twosday"/>.

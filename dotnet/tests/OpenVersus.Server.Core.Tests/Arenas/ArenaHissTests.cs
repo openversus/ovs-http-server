@@ -66,20 +66,25 @@ public sealed class ArenaHissTests
         Assert.Equal(HissService.DefaultCrc + 15 + offset, await HissService.CurrentCrcAsync(services, CancellationToken.None));
     }
 
+    // Every schedule of the Testing Grounds and FFA tiles the server makes (TestingGrounds.ScheduleAt: 2v2 open never
+    // shows FFA's tile).
+    private static readonly double[] s_scheduleOffsets = [.. (from a in new[] { false, true } from b in new[] { false, true } from c in new[] { false, true }
+        where !(b && c) select new TestingGrounds.Schedule(a, b, c).CrcOffset)];
+
     [Fact]
-    // Every combination of the two on/off offsets and any two timeouts gives its own Crc, and the largest stays an int.
+    // Every combination of the on/off offsets and any two timeouts gives its own Crc, and the largest stays an int.
     public void NoTwoCombinationsShareACrc()
     {
         var crcs = new List<double>();
         foreach (int seconds in (int[])[11, 12, 15, 240, 241, 500, 1800])
         {
-            foreach (double testingGrounds in (double[])[0, HissService.TestingGroundsCrcOffset, HissService.NoQueueTileCrcOffset])
+            foreach (double testingGrounds in s_scheduleOffsets)
             {
                 crcs.Add(testingGrounds + ArenaHiss.CrcOffset + seconds * ArenaHiss.CrcPerBotTimeoutSecond);
             }
         }
 
-        crcs.AddRange([0, HissService.TestingGroundsCrcOffset, HissService.NoQueueTileCrcOffset]);
+        crcs.AddRange(s_scheduleOffsets);
         Assert.Equal(crcs.Count, crcs.Distinct().Count());
         Assert.True(HissService.DefaultCrc + 15 + crcs.Max() < int.MaxValue);
     }

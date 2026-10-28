@@ -127,18 +127,21 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
             await Db.KeyDeleteAsync(key);
         }
 
-        await Db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, MatchmakingWorker.Ffa, ArenaMatchmaking.List, $"connections:{Ip}"]);
+        await Db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, MatchmakingWorker.Ffa, ArenaMatchmaking.List,
+            TestingGrounds.TwoVsTwo.List, $"connections:{Ip}", DelayedMessages.Key]);
         await Db.HashDeleteAsync(MatchmakingQueue.QueuedKey, [Me, Mate, Third, Fourth]);
         await Db.SortedSetRemoveAsync(ArenaRunStore.DeadlinesKey, Lobby);
     }
 
     private IDatabase Db => _redis!.GetDatabase();
 
-    // FFA always open unless a test says otherwise (FfaScheduleTests has the window).
+    // FFA always open unless a test says otherwise (FfaScheduleTests has the window). Twosday off unless a test turns it
+    // on (Twosday:Enabled), so a run on a real Tuesday evening is like any other.
     private MatchmakingRequestService Service(MongoDB.Driver.IMongoDatabase? mongo = null, FfaSettings? ffa = null, TimeProvider? time = null, bool withRedis = true,
-        TestingGroundsSettings? testingGrounds = null, BetaSpeedSettings? betaSpeed = null, RankedSettings? ranked = null)
+        TestingGroundsSettings? testingGrounds = null, BetaSpeedSettings? betaSpeed = null, RankedSettings? ranked = null, bool twosday = false)
     {
         var collection = new ServiceCollection();
+        collection.Configure<TwosdaySettings>(o => o.Enabled = twosday);
         if (testingGrounds is not null)
         {
             collection.AddSingleton<IOptionsMonitor<TestingGroundsSettings>>(new TestOptions<TestingGroundsSettings>(testingGrounds));
@@ -227,7 +230,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         }
     }
 
-    private static readonly string[] s_lists = ["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, ArenaMatchmaking.List];
+    private static readonly string[] s_lists = ["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, ArenaMatchmaking.List, TestingGrounds.TwoVsTwo.List];
 
     // An Arena lobby led by <paramref name="players"/>[0], as ArenaLobbyService stores one.
     private async Task ArenaLobbyAsync(params string[] players)
@@ -320,6 +323,66 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         Assert.Equal("1v1", (string?)ticket["matchType"]);
         Assert.Equal((string?)body["id"], (string?)ticket["matchmakingRequestId"]);
         Assert.Equal("0000000000000000000b0700", (string?)ticket["partyId"]);
+    }
+
+    [SkippableFact]
+    // Twosday (a Tuesday evening, its hash's defaults): 1v1 is off, so a solo ranked 1v1 search is refused and nothing is
+    // queued; a party's goes to 2v2 as always; Casual is left alone. With the deployment's switch off, 1v1 is as any day.
+    public async Task OnTwosdayASolo1v1SearchIsRefused()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        Skip.If(await Db.KeyExistsAsync(Twosday.Key), "the test Redis has a twosday hash");
+        await PlayerAsync(Me);
+        var tuesdayEvening = new Clock(DateTimeOffset.Parse("2026-10-06T20:00:00Z"));
+
+        var answer = (await Service(time: tuesdayEvening, twosday: true).RequestAsync("1v1-retail", Asking(Me), CancellationToken.None))!;
+        Assert.Equal((200, Js.Stringify(Twosday.OneVsOneOffFailure())), (answer.Status, Js.Stringify(answer.Body)));
+        Assert.Null(answer.After);
+        Assert.Empty(await TicketsAsync());
+
+        answer = (await Service(time: tuesdayEvening, twosday: true).RequestAsync("casual-retail", Asking(Me), CancellationToken.None))!;
+        await answer.After!();
+        Assert.Equal(MatchmakingWorker.Casual1v1, (string?)Js.Parse(await QueuedAsync())!["matchType"]);
+
+        answer = (await Service(time: tuesdayEvening, twosday: false).RequestAsync("1v1-retail", Asking(Me), CancellationToken.None))!;
+        await answer.After!();
+        Assert.Equal("1v1", (string?)Js.Parse(await QueuedAsync())!["matchType"]);
+    }
+
+    [SkippableFact]
+    // 2v2 Testing Grounds takes a party whole, on its own list; on FFA's day (or during Twosday) it is closed.
+    public async Task A2v2TestingGroundsRequestQueuesThePartyOnItsListWhileOpen()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await PlayerAsync(Me);
+        await PlayerAsync(Mate);
+        await LobbyAsync(Me, Mate);
+        var wednesday = new Clock(DateTimeOffset.Parse("2026-10-07T18:00:00Z"));
+        var request = Asking(Me) with { BetaSpeed = "110" };
+
+        var answer = (await Service(ffa: new FfaSettings(), time: wednesday).RequestAsync("EVT_4_Player_2-retail", request, CancellationToken.None))!;
+        Assert.Equal("EVT_4_Player_2-retail", (string?)answer.Body["criteria_slug"]);
+        Assert.Equal(Lobby, (string?)answer.Body["party_id"]);
+        await answer.After!();
+        var ticket = Js.Parse(await QueuedAsync())!;
+        Assert.Equal(TestingGrounds.TwoVsTwo.List, (string?)ticket["matchType"]);
+        Assert.Equal([Me, Mate], ticket["players"]!.AsArray().Select(p => (string?)p!["id"]));
+
+        var saturday = new Clock(DateTimeOffset.Parse("2026-10-03T15:00:00Z"));
+        answer = (await Service(ffa: new FfaSettings(), time: saturday).RequestAsync("EVT_4_Player_2", request, CancellationToken.None))!;
+        Assert.Equal((200, Js.Stringify(TestingGrounds.ClosedFailure(TestingGrounds.TwoVsTwo, new FfaSettings()))), (answer.Status, Js.Stringify(answer.Body)));
+        // Closed: once the refusal has gone, the whole lobby is disconnected a second later, so their games log in again
+        // and show the queues that are open now.
+        Assert.Empty(await Db.SortedSetRangeByRankAsync(DelayedMessages.Key));
+        await answer.After!();
+        var due = await Db.SortedSetRangeByRankWithScoresAsync(DelayedMessages.Key);
+        Assert.Equal([Me, Mate], due.Select(d => (string?)Js.Parse(d.Element.ToString())!["message"]!["playerId"]).Order());
+        Assert.All(due, d => Assert.Equal(GatewayChannels.Disconnect, (string?)Js.Parse(d.Element.ToString())!["channel"]));
+        Assert.All(due, d => Assert.Equal(saturday.GetUtcNow().AddSeconds(1).ToUnixTimeMilliseconds(), (long)d.Score));
+
+        // Another Beta Speed than the server's: told to restart.
+        answer = (await Service(ffa: new FfaSettings(), time: wednesday).RequestAsync("EVT_4_Player_2-retail", request with { BetaSpeed = "100" }, CancellationToken.None))!;
+        Assert.Equal((200, Js.Stringify(TestingGrounds.BetaSpeedFailure())), (answer.Status, Js.Stringify(answer.Body)));
     }
 
     [SkippableFact]
@@ -673,18 +736,21 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         Assert.Equal([Me], _gate.Modals);
     }
 
-    [SkippableFact]
-    // FFA alone: the 1v1 request answered with criteria ffa, onto the FFA list with skill 0 (MatchmakingQueue); a ticket of the player's in
-    // another queue goes first, and a stale FFA ticket goes when they ask for another queue.
-    public async Task AnFfaRequestAloneIsAnFfaTicket()
+    [SkippableTheory]
+    [InlineData("ffa")]
+    [InlineData("ffa-retail")]
+    // FFA alone: the 1v1 request answered with the criteria asked for (ffa, or ffa-retail as the game also asks for it), onto the
+    // FFA list with skill 0 (MatchmakingQueue); a ticket of the player's in another queue goes first, and a stale FFA ticket goes
+    // when they ask for another queue.
+    public async Task AnFfaRequestAloneIsAnFfaTicket(string criteria)
     {
         Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
         await PlayerAsync(Me);
         await Db.ListRightPushAsync("2v2", """{"players":[{"id":"0000000000000000000b0001"}]}""");
 
-        var answer = (await Service().RequestAsync("ffa", Asking(Me) with { BetaSpeed = "110" }, CancellationToken.None))!;
+        var answer = (await Service().RequestAsync(criteria, Asking(Me) with { BetaSpeed = "110" }, CancellationToken.None))!;
 
-        Assert.Equal((200, "ffa", 1), (answer.Status, (string?)answer.Body["criteria_slug"], (int)answer.Body["data"]!["player_count"]!));
+        Assert.Equal((200, criteria, 1), (answer.Status, (string?)answer.Body["criteria_slug"], (int)answer.Body["data"]!["player_count"]!));
         Assert.Empty(await Db.ListRangeAsync("2v2"));
         await answer.After!();
         // MatchmakingQueue pushes the ticket onto the list its matchType names.
@@ -757,7 +823,8 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
 
         var answer = (await service.RequestAsync("ffa", Asking(Me), CancellationToken.None))!;
         Assert.Equal((200, Js.Stringify(FfaSchedule.ClosedFailure(new FfaSettings()))), (answer.Status, Js.Stringify(answer.Body)));
-        Assert.Null(answer.After);
+        // Then the searcher is disconnected (MatchmakingRequestTests' 2v2 Testing Grounds test runs it), to log in again.
+        Assert.NotNull(answer.After);
 
         _gate.Outdated.Add(Me);
         answer = (await service.RequestAsync("ffa", Asking(Me), CancellationToken.None))!;

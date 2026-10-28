@@ -54,6 +54,14 @@ public sealed class TsEnvironmentTests
         Assert.Equal(expected, With(new() { ["FFA_WEEKEND_ONLY"] = value })["Ffa:WeekendOnly"]);
 
     [Theory]
+    // TWOSDAY_ENABLED, the deployment's Twosday switch (a test server turns it off), reads as the other booleans.
+    [InlineData("false", "false")]
+    [InlineData("0", "false")]
+    [InlineData("t", "true")]
+    public void TwosdayEnabledReadsAsTheOtherBooleans(string value, string expected) =>
+        Assert.Equal(expected, With(new() { ["TWOSDAY_ENABLED"] = value })["Twosday:Enabled"]);
+
+    [Theory]
     // MISSIONS_ENABLED is envalid's bool too (src/env/env.ts).
     [InlineData("t", "true")]
     [InlineData("0", "false")]

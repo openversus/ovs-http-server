@@ -114,20 +114,32 @@ public sealed class PartyServiceTests : IAsyncLifetime
         {
             await _redis.GetDatabase().KeyDeleteAsync(key);
         }
+
+        // A search a failed test left (its players' marks in realtime:queued): the next test's party would read as searching.
+        await _redis.GetDatabase().HashDeleteAsync(MatchmakingQueue.QueuedKey, [Owner, Guest]);
     }
 
     private IDatabase Db => _redis!.GetDatabase();
 
-    private IPartyService Service()
+    // Twosday off unless a test turns it on (Twosday:Enabled), so a run on a real Tuesday evening is like any other.
+    private IPartyService Service(TimeProvider? time = null, bool twosday = false)
     {
         var services = new ServiceCollection()
+            .Configure<OpenVersus.Server.Core.Matchmaking.TwosdaySettings>(o => o.Enabled = twosday)
             .AddSingleton<IConnectionMultiplexer>(_redis!)
             .AddSingleton(_mongo!.GetDatabase(TestMongoDb))
             .AddSingleton<IArenaLobbyService>(provider => new ArenaLobbyService(provider,
                 new TestOptions<LobbySettings>(new LobbySettings()), TimeProvider.System, NullLogger<ArenaLobbyService>.Instance))
             .BuildServiceProvider();
-        return new PartyService(services, new Cosmetics(), new NoFacts(), _gate, new TestOptions<LobbySettings>(new LobbySettings()), TimeProvider.System, NullLogger<PartyService>.Instance);
+        return new PartyService(services, new Cosmetics(), new NoFacts(), _gate, new TestOptions<LobbySettings>(new LobbySettings()), time ?? TimeProvider.System, NullLogger<PartyService>.Instance);
     }
+
+    private sealed class Clock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private static readonly Clock s_tuesdayEvening = new(DateTimeOffset.Parse("2026-10-06T20:00:00Z"));
 
     private static PartyRequest Asking(string player, string body) => new(player, null, "198.51.100.7", (JsonObject)JsonNode.Parse(body)!);
 
@@ -360,7 +372,8 @@ public sealed class PartyServiceTests : IAsyncLifetime
         await SearchAsync($"test_queue:{Lobby}", "owner-search", Owner);
         await SearchAsync($"test_queue2:{Lobby}", "guest-search", Guest);
         var heard = await ListenAsync();
-        var lobbies = new PartyLobbyService(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
+        var lobbies = new PartyLobbyService(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!)
+                .Configure<OpenVersus.Server.Core.Matchmaking.TwosdaySettings>(o => o.Enabled = false).BuildServiceProvider(),
             new TestOptions<LobbySettings>(new LobbySettings()), TimeProvider.System, NullLogger<PartyLobbyService>.Instance);
 
         var answer = await lobbies.PutAsync(new LobbyPlayer(Guest, "Guest_h", "Guest", Guest), Lobby, CancellationToken.None);
@@ -499,6 +512,86 @@ public sealed class PartyServiceTests : IAsyncLifetime
         Assert.Equal(Guest, told["playerIds"]!.AsArray().Single()!.GetValue<string>());
         Assert.Equal("InviteReceivedForLobby", told["message"]!["data"]!["template_id"]!.GetValue<string>());
         Assert.Equal(Lobby, (string?)await Db.StringGetAsync($"pending_join_lobby:{Guest}"));
+    }
+
+    [Fact]
+    // Twosday: no party lobbies. An invite is answered and never delivered, a join into someone else's party (an invite
+    // accepted in the window) is refused as an expired one; an Arena lobby's invite still goes.
+    public async Task OnTwosdayNoPartyIsFormed()
+    {
+        if (_redis is null || await Db.KeyExistsAsync(OpenVersus.Server.Core.Matchmaking.Twosday.Key))
+        {
+            return;
+        }
+
+        var heard = await ListenAsync();
+        await SeedLobbyAsync(Owner);
+        var twosday = Service(s_tuesdayEvening, twosday: true);
+
+        await twosday.InviteAsync(Asking(Owner, $$"""{"InviteeAccountID": "{{Guest}}", "LobbyId": "{{Lobby}}"}"""));
+        await Task.Delay(200);
+        Assert.Empty(heard);
+        Assert.False(await Db.KeyExistsAsync($"pending_join_lobby:{Guest}"));
+
+        await Db.StringSetAsync($"pending_join_lobby:{Guest}", Lobby);
+        var answer = await twosday.JoinAsync(Asking(Guest, "{}"));
+        Assert.Equal(1, answer["return_code"]!.GetValue<int>());
+        Assert.DoesNotContain(Guest, await LobbyJson(Lobby));
+        Assert.False(await Db.KeyExistsAsync($"pending_join_lobby:{Guest}"));
+
+        // The deployment's switch off: the same invite goes.
+        await Service(s_tuesdayEvening, twosday: false).InviteAsync(Asking(Owner, $$"""{"InviteeAccountID": "{{Guest}}", "LobbyId": "{{Lobby}}"}"""));
+        await Eventually(() => heard.TryPeek(out var m) ? m : null);
+        await Db.KeyDeleteAsync($"pending_join_lobby:{Guest}");
+    }
+
+    [Fact]
+    // Twosday: 1v1 is off, so a lobby set to 1v1 stays on 2v2 and the game is told 2v2; other modes are untouched.
+    public async Task OnTwosdayALobbySetTo1v1StaysOn2v2()
+    {
+        if (_redis is null || await Db.KeyExistsAsync(OpenVersus.Server.Core.Matchmaking.Twosday.Key))
+        {
+            return;
+        }
+
+        var heard = await ListenAsync();
+        await SeedModeLobbyAsync("2v2", Owner);
+        await Db.StringSetAsync($"player_lobby:{Owner}", Lobby);
+
+        await Service(s_tuesdayEvening, twosday: true).SetModeAsync(Asking(Owner, """{"ModeString": "1v1"}"""));
+        Assert.Equal("2v2", (string?)JsonNode.Parse(await LobbyJson(Lobby))!["mode"]);
+        var told = await Eventually(() => heard.FirstOrDefault(m => (string?)m["message"]!["data"]?["template_id"] == "OnLobbyModeUpdated"));
+        Assert.Equal("2v2", (string?)told["message"]!["data"]!["ModeString"]);
+
+        await Service(s_tuesdayEvening, twosday: true).SetModeAsync(Asking(Owner, """{"ModeString": "ranked-1v1"}"""));
+        Assert.Equal("ranked-2v2", (string?)JsonNode.Parse(await LobbyJson(Lobby))!["mode"]);
+
+        await Service(s_tuesdayEvening, twosday: false).SetModeAsync(Asking(Owner, """{"ModeString": "1v1"}"""));
+        Assert.Equal("1v1", (string?)JsonNode.Parse(await LobbyJson(Lobby))!["mode"]);
+    }
+
+    [Fact]
+    // Twosday's breakup: the party is left by the player who does not lead it, both told why.
+    public async Task ABrokenUpPartyIsLeftByItsGuestAndBothAreTold()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        var heard = await ListenAsync();
+        await SeedModeLobbyAsync("2v2", Owner, Guest);
+        var lobby = (await OpenVersus.Server.Core.Lobbies.LobbyStore.GetAsync(Db, Lobby))!;
+
+        await Service().BreakUpAsync(lobby, OpenVersus.Server.Core.Matchmaking.Twosday.PartiesOffMessage);
+
+        Assert.DoesNotContain(Guest, await LobbyJson(Lobby));
+        Assert.Contains(Owner, await LobbyJson(Lobby));
+        foreach (string player in (string[])[Owner, Guest])
+        {
+            var notices = (await Db.ListRangeAsync($"dll_notifications:{player}")).Select(v => v.ToString()).ToList();
+            Assert.Contains(notices, n => n.Contains("party_left") && n.Contains("Parties are off for Twosday"));
+        }
     }
 
     [Fact]

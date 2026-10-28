@@ -59,6 +59,7 @@ public sealed class LobbyDisconnectsTests : IAsyncLifetime
         }
 
         public Task ForgetLobbyAsync(string playerId) => Record($"forget {playerId}");
+        public Task BreakUpAsync(OpenVersus.Server.Core.Lobbies.Lobby lobby, string message) => throw new NotSupportedException();
         Task ICustomLobbyService.PlayerDisconnectedAsync(string playerId) => Record($"custom {playerId}");
 
         public Task<string?> CustomLobbyAsync(string route, PartyRequest request) => throw new NotSupportedException();

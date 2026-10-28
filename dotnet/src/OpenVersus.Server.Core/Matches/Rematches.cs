@@ -298,6 +298,12 @@ internal sealed class Rematches(IServiceProvider services, ICustomLobbyService l
             fields["worldBuffs"] = worldBuffs.DeepClone();
         }
 
+        // And its ringouts to win when its queue set them (2v2 Testing Grounds' lives with Individual Stocks).
+        if (config["customNumRingouts"] is JsonValue ringouts)
+        {
+            fields["customNumRingouts"] = ringouts.DeepClone();
+        }
+
         var launched = await launcher.LaunchAsync(new MatchLaunch(mode, MatchmakingMaps.Pick(mode, matchId, log), mode, players,
             GameplayConfigOverride: config["gameplayConfigOverride"] as JsonObject ?? BotDefaults.UnrankedConfigOverride(),
             BotPerks: BotDefaults.PerksArray(), NotificationFields: fields), ct);

@@ -171,7 +171,7 @@
           font-weight: 700;
           letter-spacing: 1px;
       }
-      /* 1v1 Testing Grounds and FFA: unranked, no set score, a pill of their own. */
+      /* Testing Grounds (1v1 and 2v2) and FFA: unranked, no set score, a pill of their own. */
       .mode_pill.mode_tg {
           background: #0d9488;
       }
@@ -346,6 +346,7 @@
   }
 
   const TESTING_GROUNDS = '1v1 Testing Grounds';
+  const TESTING_GROUNDS_2V2 = '2v2 Testing Grounds';
 
   function renderMatch(m) {
     // FFA: every player is a team of their own (0 to 3): the even ones on the left, the odd ones on the right.
@@ -356,9 +357,10 @@
     const s0 = (m.scores && m.scores[0]) || 0;
     const s1 = (m.scores && m.scores[1]) || 0;
     // Testing Grounds and FFA matches are single unranked games: no set score.
-    const unranked = ffa || m.mode === TESTING_GROUNDS;
+    const testingGrounds = m.mode === TESTING_GROUNDS || m.mode === TESTING_GROUNDS_2V2;
+    const unranked = ffa || testingGrounds;
     const score = unranked ? '<div class="score versus">VS</div>' : `<div class="score">${s0} - ${s1}</div>`;
-    const pillClass = ffa ? ' mode_ffa' : m.mode === TESTING_GROUNDS ? ' mode_tg' : '';
+    const pillClass = ffa ? ' mode_ffa' : testingGrounds ? ' mode_tg' : '';
     const pillText = ffa ? 'FREE FOR ALL' : m.mode;
     const concede = m.conceded ? '<span class="concede_flag">CONCEDED</span>' : '';
     // A match that ended a few minutes ago (the server lists it for a while after its end).
@@ -399,8 +401,9 @@
 
       const searching = data.searching || {};
       const chip = (mode) => `<span class="queue_chip">${escapeHtml(mode)}<b>${typeof searching[mode] === 'number' ? searching[mode] : 0}</b></span>`;
-      // FFA and 1v1 Testing Grounds only while their queue is open.
-      const queues = ['1v1', '2v2'].concat(data.ffaOpen ? ['FFA'] : [], data.testingGroundsOpen ? [TESTING_GROUNDS] : []);
+      // FFA and Testing Grounds only while their queue is open.
+      const queues = ['1v1', '2v2'].concat(data.ffaOpen ? ['FFA'] : [], data.testingGroundsOpen ? [TESTING_GROUNDS] : [],
+        data.testingGrounds2v2Open ? [TESTING_GROUNDS_2V2] : []);
       document.getElementById('searching_count').innerHTML = '<span class="searching_label">Searching:</span>' + queues.map(chip).join('');
 
       if (matches.length === 0) {

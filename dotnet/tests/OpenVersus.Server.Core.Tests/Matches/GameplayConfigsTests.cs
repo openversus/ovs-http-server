@@ -185,6 +185,36 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // A 2v2 Testing Grounds match's config, from the notification the matchmaker writes (MatchmakingWorkerTests): its four
+    // mutators in WorldBuffs (Individual Stocks gives each fighter half the ringouts, the client's StockRules), 12 ringouts (6 lives each),
+    // ModeString 2v2 (not ranked-), unranked, not a custom game, its event queue, and no progress (friendly fire's marker too).
+    public async Task A2v2TestingGroundsMatchRunsItsFourMutatorsUnranked()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        var settings = new OpenVersus.Server.Core.Matchmaking.TestingGroundsSettings();
+        var queue = OpenVersus.Server.Core.Matchmaking.TestingGrounds.TwoVsTwo;
+        var notification = Notification(Match);
+        notification["mode"] = "2v2";
+        foreach (var (key, value) in BotDefaults.UnrankedNotificationFields())
+        {
+            notification[key] = value?.DeepClone();
+        }
+
+        notification["worldBuffs"] = OpenVersus.Server.Core.Matchmaking.TestingGrounds.WorldBuffs(settings, queue);
+        notification["gameplayConfigOverride"] = OpenVersus.Server.Core.Matchmaking.TestingGrounds.ConfigOverride(settings, queue);
+        notification["customNumRingouts"] = OpenVersus.Server.Core.Matchmaking.TestingGrounds.RingoutsOf(settings, queue);
+
+        var config = (await Configs().BuildAsync(notification, default))![0].Message["data"]!["GameplayConfig"]!;
+        Assert.Equal(["ovs_beta_speed", "ovs_shield_hp", "ovs_2v2_individual_stocks", "ovs_friendly_fire"],
+            config["WorldBuffs"]!.AsArray().Select(b => b!.GetValue<string>()));
+        Assert.Equal(12, (int)config["CustomGameSettings"]!["NumRingouts"]!);
+        Assert.Equal(("2v2", false, false, "evtq_2v2testinggrounds", false),
+            ((string?)config["ModeString"], (bool)config["bIsRanked"]!, (bool)config["bIsCustomGame"]!, (string?)config["EventQueueSlug"], (bool)config["bModeGrantsProgress"]!));
+        Assert.True((bool)config["CustomGameSettings"]!["bShieldsEnabled"]!);
+    }
+
+    [SkippableFact]
     public async Task ThePerksLockKeepsTheConfigsTtlAndMergesEveryLockedPlayer()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");

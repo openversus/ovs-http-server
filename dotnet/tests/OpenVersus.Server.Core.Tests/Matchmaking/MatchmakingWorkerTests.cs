@@ -64,13 +64,19 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
             await db.KeyDeleteAsync(key);
         }
 
-        await db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, MatchmakingWorker.Ffa, "matchmaking:lock:casual1v1", "matchmaking:lock:casual2v2", "matchmaking:lock:FFA", MatchmakingWorker.HeartbeatsKey, "matchmaking:lock:1v1", "matchmaking:lock:2v2"]);
+        await db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, MatchmakingWorker.Ffa, "matchmaking:lock:casual1v1", "matchmaking:lock:casual2v2", "matchmaking:lock:FFA", MatchmakingWorker.HeartbeatsKey, "matchmaking:lock:1v1", "matchmaking:lock:2v2",
+            TestingGrounds.OneVsOne.List, TestingGrounds.TwoVsTwo.List, $"matchmaking:lock:{TestingGrounds.OneVsOne.List}", $"matchmaking:lock:{TestingGrounds.TwoVsTwo.List}"]);
     }
 
     private IDatabase Db => _redis!.GetDatabase();
 
-    // FFA always open unless a test says otherwise (the window has tests of its own: FfaScheduleTests).
-    private MatchmakingWorker Worker(Ports? ports = null, bool p2p = false, FfaSettings? ffa = null, TimeProvider? time = null, MatchmakingPopulationSettings? population = null) => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
+    // FFA always open unless a test says otherwise (the window has tests of its own: FfaScheduleTests). Testing Grounds as its
+    // settings say (closed on FFA's days), Twosday off, so a run on a real Tuesday evening is like any other.
+    private MatchmakingWorker Worker(Ports? ports = null, bool p2p = false, FfaSettings? ffa = null, TimeProvider? time = null, MatchmakingPopulationSettings? population = null,
+        TestingGroundsSettings? testingGrounds = null) => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!)
+            .Configure<TwosdaySettings>(o => o.Enabled = false)
+            .AddSingleton<Microsoft.Extensions.Options.IOptionsMonitor<TestingGroundsSettings>>(new TestOptions<TestingGroundsSettings>(testingGrounds ?? new TestingGroundsSettings()))
+            .BuildServiceProvider(),
         ports ?? new Ports(), new TestOptions<MatchmakingSettings>(new MatchmakingSettings()), new TestOptions<RollbackSettings>(new RollbackSettings { P2P = p2p }),
         new TestOptions<FfaSettings>(ffa ?? new FfaSettings { WeekendOnly = false }), new TestOptions<MatchmakingPopulationSettings>(population ?? new MatchmakingPopulationSettings()),
         time ?? TimeProvider.System, NullLogger<MatchmakingWorker>.Instance);
@@ -417,6 +423,55 @@ public sealed class MatchmakingWorkerTests : IAsyncLifetime
         string matchId = (string)(await MatchesAsync()).Single()["matchId"]!;
         Assert.False(JsonNode.Parse((await Db.StringGetAsync(matchId)).ToString())!["p2p"]!.GetValue<bool>());
         Assert.Equal([matchId], ports.Deployed);
+    }
+
+    [Fact]
+    // Testing Grounds (open: AlwaysOpen): 2v2 makes a match of four from a party and two solos, the party on one team; 1v1 a
+    // pair. Each unranked as Casual (a password match, queue testinggrounds, no set; isCustomGame for the websocket, set
+    // back in the game's config), with its queue's mutators in worldBuffs (the config and the rollback tick rate read them)
+    // and its event queue and no progress in the config override: 2v2 Beta Speed, Shield HP, Individual Stocks and Friendly
+    // Fire; 1v1 Beta Speed and Shield HP.
+    public async Task TestingGroundsMatchesRunTheirQueuesMutatorsUnranked()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        await QueueAsync(TestingGrounds.TwoVsTwo.List, [1, 2], age: 4);
+        await QueueAsync(TestingGrounds.TwoVsTwo.List, [3], age: 3);
+        await QueueAsync(TestingGrounds.TwoVsTwo.List, [4], age: 2);
+        await QueueAsync(TestingGrounds.OneVsOne.List, [5], age: 2);
+        await QueueAsync(TestingGrounds.OneVsOne.List, [6], age: 1);
+        await Worker(testingGrounds: new TestingGroundsSettings { AlwaysOpen = true }).TickAsync(Db);
+
+        var matches = await MatchesAsync();
+        Assert.Equal(2, matches.Count);
+        foreach (var (queue, mode, players, buffs) in new[]
+        {
+            (TestingGrounds.TwoVsTwo, "2v2", 4, new[] { "ovs_beta_speed", "ovs_shield_hp", "ovs_2v2_individual_stocks", "ovs_friendly_fire" }),
+            (TestingGrounds.OneVsOne, "1v1", 2, new[] { "ovs_beta_speed", "ovs_shield_hp" }),
+        })
+        {
+            var match = Assert.Single(matches, m => (string?)m["matchType"] == queue.List);
+            Assert.Equal((players, true, "testinggrounds"), ((int)match["totalPlayers"]!, (bool)match["isPasswordMatch"]!, (string?)match["queue"]));
+            string matchId = (string)match["matchId"]!;
+            var notification = JsonNode.Parse((await Db.StringGetAsync(matchId)).ToString())!;
+            Assert.Equal((mode, true), ((string?)notification["mode"], (bool)notification["isCustomGame"]!));
+            Assert.Equal(buffs, notification["worldBuffs"]!.AsArray().Select(b => b!.GetValue<string>()));
+            var configOverride = notification["gameplayConfigOverride"]!;
+            Assert.Equal((queue.EventQueue, false, false), ((string?)configOverride["EventQueueSlug"], (bool)configOverride["bModeGrantsProgress"]!, (bool)configOverride["bIsCustomGame"]!));
+            Assert.Equal(buffs, configOverride["WorldBuffs"]!.AsArray().Select(b => b!.GetValue<string>()));
+            Assert.False(await Db.KeyExistsAsync($"ranked_set:{matchId}"));
+            // 2v2: 6 lives each (Individual Stocks), so 12 ringouts to win; 1v1 keeps its own.
+            Assert.Equal(queue == TestingGrounds.TwoVsTwo ? 12 : null, (int?)notification["customNumRingouts"]);
+            if (queue == TestingGrounds.TwoVsTwo)
+            {
+                var team = notification["players"]!.AsArray().ToDictionary(p => (string)p!["playerId"]!, p => (int)p!["teamIndex"]!);
+                Assert.Equal(team[Id(1)], team[Id(2)]);
+                Assert.NotEqual(team[Id(1)], team[Id(3)]);
+            }
+        }
     }
 
     [Fact]

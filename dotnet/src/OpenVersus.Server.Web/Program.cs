@@ -18,6 +18,7 @@ builder.AddGameHttp(typeof(Program).Assembly);
 builder.AddSetting<AdminSettings>("Admin");
 builder.AddSetting<FfaSettings>("Ffa");
 builder.AddSetting<TestingGroundsSettings>("TestingGrounds");
+builder.AddSetting<TwosdaySettings>("Twosday");
 builder.AddLeaderboards();
 builder.Services.AddSingleton<LiveMatches>();
 // /namechange checks names and bans; /ovs/notifications finds its player as the game routes do; /api/identify registers

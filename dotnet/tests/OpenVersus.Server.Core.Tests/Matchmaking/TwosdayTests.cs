@@ -1,10 +1,11 @@
+using Microsoft.Extensions.DependencyInjection;
 using OpenVersus.Server.Core.Matchmaking;
 
 namespace OpenVersus.Server.Core.Tests.Matchmaking;
 
 /// <summary>
-/// Twosday's window, read as the TS server reads it (tests/twosdayWindow.test.ts, branch openversus, the same cases), and
-/// 1v1 Testing Grounds closed while it is on. Needs no stores.
+/// Twosday's window, read as the TS server reads it (tests/twosdayWindow.test.ts, branch openversus, the same cases), its
+/// settings, and Testing Grounds closed while it is on. Needs no stores.
 /// </summary>
 public sealed class TwosdayTests
 {
@@ -69,11 +70,45 @@ public sealed class TwosdayTests
     [Fact]
     public void TestingGroundsClosesForTwosdayUnlessAlwaysOpen()
     {
-        // On a Testing Grounds day (FFA on the old weekend, so Tuesday is one).
+        // On a 2v2 Testing Grounds day (FFA on the old weekend, so Tuesday is one).
         var tuesdayEvening = DateTimeOffset.Parse("2026-10-06T20:00:00Z");
         var weekendFfa = new FfaSettings { Days = "Fri,Sat,Sun" };
-        Assert.True(TestingGrounds.IsOpen(tuesdayEvening, enabled: true, weekendFfa));
-        Assert.False(TestingGrounds.IsOpen(tuesdayEvening, enabled: true, weekendFfa, twosday: true));
-        Assert.True(TestingGrounds.IsOpen(tuesdayEvening, enabled: true, weekendFfa, alwaysOpen: true, twosday: true));
+        Assert.Equal(new TestingGrounds.Schedule(true, true, false), TestingGrounds.ScheduleAt(tuesdayEvening, new TestingGroundsSettings(), weekendFfa));
+        Assert.Equal(new TestingGrounds.Schedule(false, false, false), TestingGrounds.ScheduleAt(tuesdayEvening, new TestingGroundsSettings(), weekendFfa, twosday: true));
+        Assert.Equal(new TestingGrounds.Schedule(true, true, false),
+            TestingGrounds.ScheduleAt(tuesdayEvening, new TestingGroundsSettings { AlwaysOpen = true }, weekendFfa, twosday: true));
+    }
+
+    [Theory]
+    // How far into the window, for the party breakup's first minutes; null outside it.
+    [InlineData("2026-10-06T19:00:00Z", 0)]
+    [InlineData("2026-10-06T19:29:59Z", 1799)]
+    [InlineData("2026-10-07T03:59:59Z", 32399)]
+    [InlineData("2026-10-06T18:59:59Z", null)]
+    [InlineData("2026-10-07T04:00:00Z", null)]
+    public void SecondsIntoTheWindow(string now, int? seconds) =>
+        Assert.Equal(seconds, Twosday.SecondsInto(DateTimeOffset.Parse(now), Twosday.Default));
+
+    [Fact]
+    public void TheHashsSettingsWithTheirDefaults()
+    {
+        var defaults = Twosday.SettingsOf(new Dictionary<string, string>());
+        Assert.Equal(new Twosday.Settings(true, Twosday.Default, 30), defaults);
+        var set = Twosday.SettingsOf(new Dictionary<string, string> { ["enabled"] = "false", ["day"] = "3", ["start"] = "18:00", ["breakup_minutes"] = "0" });
+        Assert.Equal(new Twosday.Settings(false, Twosday.Default with { Day = DayOfWeek.Wednesday, Start = "18:00" }, 0), set);
+        Assert.ThrowsAny<FormatException>(() => Twosday.SettingsOf(new Dictionary<string, string> { ["breakup_minutes"] = "-1" }));
+        Assert.ThrowsAny<FormatException>(() => Twosday.SettingsOf(new Dictionary<string, string> { ["breakup_minutes"] = "soon" }));
+    }
+
+    [Fact]
+    // Twosday:Enabled off (a test server): never Twosday, whatever the hash says, without reading Redis.
+    public async Task TheDeploymentsSwitchTurnsItOffEverywhere()
+    {
+        var tuesdayEvening = DateTimeOffset.Parse("2026-10-06T20:00:00Z");
+        var off = new ServiceCollection().Configure<TwosdaySettings>(o => o.Enabled = false).BuildServiceProvider();
+        Assert.False(Twosday.IsEnabled(off));
+        Assert.False(await Twosday.IsActiveAsync(off, tuesdayEvening));
+        Assert.True(Twosday.IsEnabled(new ServiceCollection().BuildServiceProvider()));
+        Assert.True(new TwosdaySettings().Enabled);
     }
 }

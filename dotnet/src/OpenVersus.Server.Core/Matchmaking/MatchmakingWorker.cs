@@ -156,11 +156,12 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
         bool casual1 = await WithLockAsync(redis, Casual1v1, () => OneVsOneAsync(redis, Casual1v1, "1v1", skilled: false));
         bool casual2 = await WithLockAsync(redis, Casual2v2, () => TwoVsTwoAsync(redis, Casual2v2, "2v2", skilled: false));
         bool ffaMatch = await WithLockAsync(redis, Ffa, () => FfaAsync(redis));
-        bool testingGrounds = await WithLockAsync(redis, TestingGrounds.List, () => TestingGroundsAsync(redis));
-        if (oneVsOne || twoVsTwo || casual1 || casual2 || ffaMatch || testingGrounds)
+        bool testingGrounds = await WithLockAsync(redis, TestingGrounds.List, () => TestingGroundsAsync(redis, TestingGrounds.OneVsOne));
+        bool testingGrounds2 = await WithLockAsync(redis, TestingGrounds.TwoVsTwo.List, () => TestingGroundsAsync(redis, TestingGrounds.TwoVsTwo));
+        if (oneVsOne || twoVsTwo || casual1 || casual2 || ffaMatch || testingGrounds || testingGrounds2)
         {
-            log.LogInformation("Matches made this tick: 1v1={OneVsOne} 2v2={TwoVsTwo} casual1v1={Casual1} casual2v2={Casual2} FFA={Ffa} testinggrounds1v1={TestingGrounds}",
-                oneVsOne, twoVsTwo, casual1, casual2, ffaMatch, testingGrounds);
+            log.LogInformation("Matches made this tick: 1v1={OneVsOne} 2v2={TwoVsTwo} casual1v1={Casual1} casual2v2={Casual2} FFA={Ffa} testinggrounds1v1={TestingGrounds} testinggrounds2v2={TestingGrounds2}",
+                oneVsOne, twoVsTwo, casual1, casual2, ffaMatch, testingGrounds, testingGrounds2);
         }
     }
 
@@ -324,27 +325,30 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
     }
 
     // ── FFA ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-    // 1v1 Testing Grounds: paired as Casual 1v1 (no skill range) while open; closed, its tickets are cancelled as FFA's are.
-    private async Task<bool> TestingGroundsAsync(IDatabase redis)
+    // Testing Grounds: paired as Casual (no skill range) while open, 1v1 as 1v1 and 2v2 as 2v2 (parties whole); closed, its
+    // tickets are cancelled as FFA's are.
+    private async Task<bool> TestingGroundsAsync(IDatabase redis, TestingGrounds.Queue queue)
     {
-        if (!await TestingGrounds.IsOpenAsync(services, time.GetUtcNow()))
+        if (!await TestingGrounds.IsOpenAsync(services, time.GetUtcNow(), queue))
         {
-            var tickets = await TicketsAsync(redis, TestingGrounds.List);
+            var tickets = await TicketsAsync(redis, queue.List);
             if (tickets.Count > 0)
             {
-                await RemoveAsync(redis, TestingGrounds.List, tickets);
+                await RemoveAsync(redis, queue.List, tickets);
                 foreach (var ticket in tickets)
                 {
                     await CancelAsync(redis, ticket);
                 }
 
-                log.LogInformation("Testing Grounds queue closed (FFA's weekend or Twosday); cancelled {Count} queued ticket(s)", tickets.Count);
+                log.LogInformation("{Queue} queue closed (its days or Twosday); cancelled {Count} queued ticket(s)", queue.ListedMode, tickets.Count);
             }
 
             return false;
         }
 
-        return await OneVsOneAsync(redis, TestingGrounds.List, "1v1", skilled: false);
+        return queue == TestingGrounds.TwoVsTwo
+            ? await TwoVsTwoAsync(redis, queue.List, queue.Mode, skilled: false)
+            : await OneVsOneAsync(redis, queue.List, queue.Mode, skilled: false);
     }
 
     private async Task<bool> FfaAsync(IDatabase redis)
@@ -552,8 +556,8 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
 
     private async Task CreateMatchAsync(IDatabase redis, List<Ticket> tickets, string mode, string queue)
     {
-        bool testingGrounds = queue == TestingGrounds.List;
-        bool casual = queue is Casual1v1 or Casual2v2 || testingGrounds;
+        var testingGrounds = TestingGrounds.ByList(queue);
+        bool casual = queue is Casual1v1 or Casual2v2 || testingGrounds is not null;
         int total = tickets.Sum(t => t.Players.Count);
         string matchId = ObjectId.GenerateNewId().ToString();
         string resultId = ObjectId.GenerateNewId().ToString();
@@ -578,7 +582,7 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
         {
             // Never rated (the TS match result skips a password match); the queue, for a Casual rating of its own later.
             match["isPasswordMatch"] = true;
-            match["queue"] = testingGrounds ? "testinggrounds" : "casual";
+            match["queue"] = testingGrounds is not null ? "testinggrounds" : "casual";
         }
 
         await redis.StringSetAsync($"match:{matchId}", Js.Stringify(match), s_matchTtl);
@@ -611,13 +615,18 @@ internal sealed class MatchmakingWorker(IServiceProvider services, IMatchLaunche
             notification["worldBuffs"] = FfaSchedule.WorldBuffs(ffa.CurrentValue);
         }
 
-        if (testingGrounds)
+        if (testingGrounds is not null)
         {
             // Its mutators: with Beta Speed the rollback registry gives the match its tick_rate from worldBuffs (66 at
             // BetaSpeed:Percent 110), and every client runs it at that speed.
             var rules = TestingGrounds.Of(services);
-            notification["worldBuffs"] = TestingGrounds.WorldBuffs(rules);
-            notification["gameplayConfigOverride"] = TestingGrounds.ConfigOverride(rules);
+            notification["worldBuffs"] = TestingGrounds.WorldBuffs(rules, testingGrounds);
+            notification["gameplayConfigOverride"] = TestingGrounds.ConfigOverride(rules, testingGrounds);
+            // 2v2 with Individual Stocks: TwoVsTwoLives each, so twice that to win (GameplayConfigs: CustomGameSettings.NumRingouts).
+            if (TestingGrounds.RingoutsOf(rules, testingGrounds) is { } ringouts)
+            {
+                notification["customNumRingouts"] = ringouts;
+            }
         }
 
         // As the TS worker's markP2P: a P2P match gets no rollback server unless its nodes find no direct path.
@@ -822,6 +831,7 @@ public static class MatchmakingHosting
         builder.AddSetting<MatchmakingPopulationSettings>("Matchmaking:Population");
         builder.AddSetting<FfaSettings>("Ffa");
         builder.AddSetting<TestingGroundsSettings>("TestingGrounds");
+        builder.AddSetting<TwosdaySettings>("Twosday");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddHostedService<MatchmakingWorker>();
         return builder;

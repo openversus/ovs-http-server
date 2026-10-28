@@ -113,6 +113,12 @@ public interface IPartyService
 
     /// <summary>After a disconnect: the player's player_lobby goes, and their place in that lobby (the lobby too, when it is left empty).</summary>
     Task ForgetLobbyAsync(string playerId);
+
+    /// <summary>
+    /// Twosday's party breakup (TwosdayPartyBreakup): the party lobby is left by a player who does not lead it, as a leave
+    /// does (the owner keeps it, the others get solo lobbies), and both games are told <paramref name="message"/>.
+    /// </summary>
+    Task BreakUpAsync(Lobby lobby, string message);
 }
 
 internal sealed class PartyService(IServiceProvider services, ICosmeticsService cosmetics, IFunFacts funFacts, IClientUpdateGate gate, IOptionsMonitor<LobbySettings> settings,
@@ -250,6 +256,12 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
 
         var mode = request.Body?["ModeString"]?.DeepClone();
         string modeText = mode is JsonValue mv && mv.TryGetValue(out string? s) ? s : Js.Stringify(mode);
+        // Twosday: 1v1 is off, so a party lobby set to 1v1 stays on its 2v2, and the game is told that (Matchmaking/Twosday.cs).
+        if (Matchmaking.Twosday.IsOneVsOneMode(modeText) && await Matchmaking.Twosday.IsActiveAsync(services, time.GetUtcNow()))
+        {
+            log.LogInformation("[Twosday]: {Player} set lobby {Lobby} to {Mode}; kept on {Kept}", me, lobbyId, modeText, PartyLobby.DuoMode(modeText));
+            modeText = PartyLobby.DuoMode(modeText);
+        }
 
         // changeLobbyMode: only the lobby's owner changes its mode. A party lobby keeps it (a join's lobby then shows it); a
         // rift or Arena lobby's mode is its kind, so it is not overwritten.
@@ -341,6 +353,13 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             }
         }
 
+        // Twosday: no party lobbies, so the invite is answered as sent and never delivered (an Arena or rift lobby's is).
+        if (invitedTo is not (ArenaLobby or RiftLobby) && await Matchmaking.Twosday.IsActiveAsync(services, time.GetUtcNow()))
+        {
+            log.LogInformation("[Twosday]: party invite from {Inviter} to {Invitee} for lobby {Lobby} not delivered", me, invitee, lobbyId);
+            return LobbyDocuments.Ssc([]);
+        }
+
         // The invite's origin is the lobby's kind (an Arena lobby's invite is answered with join_arena_lobby); the invitee's
         // join goes to this lobby when they accept.
         await LobbyInvites.SendAsync(redis, invitee, lobbyId, LobbyInvites.OriginOf(invitedTo), me);
@@ -376,6 +395,19 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         if (await LobbyStore.GetAsync(redis, target) is not { } lobby)
         {
             log.LogWarning("join_party_lobby: Lobby {Lobby} not found: invite expired", target);
+            return LobbyDocuments.Ssc([], returnCode: 1);
+        }
+
+        // Twosday: no new party members (an invite sent before the window and accepted in it): the answer an expired invite
+        // gets. A party formed before the window keeps working.
+        if (lobby is PartyLobby && !lobby.PlayerIds.Contains(me) && lobby.OwnerId != me && await Matchmaking.Twosday.IsActiveAsync(services, time.GetUtcNow()))
+        {
+            log.LogInformation("[Twosday]: {Player} not joined to party lobby {Lobby}", me, target);
+            if (!string.IsNullOrEmpty(pending))
+            {
+                await redis.KeyDeleteAsync($"pending_join_lobby:{me}");
+            }
+
             return LobbyDocuments.Ssc([], returnCode: 1);
         }
 
@@ -573,9 +605,18 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         return LobbyDocuments.Answer(LobbyDocuments.Lobby([member], me, "local", mode, soloId));
     }
 
+    public async Task BreakUpAsync(Lobby lobby, string message)
+    {
+        if (lobby.PlayerIds.FirstOrDefault(p => p != lobby.OwnerId) is { } leaving)
+        {
+            await GenuineLeaveAsync(Redis(), leaving, lobby, message);
+        }
+    }
+
     // performGenuineLeave: the owner keeps the lobby, everyone else gets a new solo lobby; the OpenVersus client is told
-    // (party_left) and rejoins.
-    private async Task GenuineLeaveAsync(IDatabase redis, string leaving, Lobby lobby)
+    // (party_left) and rejoins. `message`, when given, is what every game is told instead (a party the server broke up:
+    // Twosday).
+    private async Task GenuineLeaveAsync(IDatabase redis, string leaving, Lobby lobby, string? message = null)
     {
         if (lobby.PlayerIds.Count <= 1)
         {
@@ -596,15 +637,15 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             return LobbyWrite.Save;
         });
         await redis.StringSetAsync($"pending_join_lobby:{owner}", lobby.Id, TimeSpan.FromSeconds(60));
-        await PlayerMessages.NotifyClientAsync(redis, owner, "party_left", "Party Update", owner == leaving ? "Returning to solo lobby" : "Your party member left",
-            new JsonObject { ["newLobbyId"] = lobby.Id }, NowMs());
+        await PlayerMessages.NotifyClientAsync(redis, owner, "party_left", "Party Update",
+            message ?? (owner == leaving ? "Returning to solo lobby" : "Your party member left"), new JsonObject { ["newLobbyId"] = lobby.Id }, NowMs());
 
         foreach (string pid in nonOwners)
         {
             var solo = await NewLobbyAsync(redis, pid, await HashAsync(redis, $"connections:{pid}"), KeptMode(lobby));
             await redis.StringSetAsync($"pending_join_lobby:{pid}", solo.Id, TimeSpan.FromSeconds(60));
-            await PlayerMessages.NotifyClientAsync(redis, pid, "party_left", "Party Update", pid == leaving ? "Returning to solo lobby" : "Your party member left",
-                new JsonObject { ["newLobbyId"] = solo.Id }, NowMs());
+            await PlayerMessages.NotifyClientAsync(redis, pid, "party_left", "Party Update",
+                message ?? (pid == leaving ? "Returning to solo lobby" : "Your party member left"), new JsonObject { ["newLobbyId"] = solo.Id }, NowMs());
         }
     }
 

@@ -275,6 +275,29 @@ public sealed class RematchesTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // A 2v2 Testing Grounds match played again keeps what makes it one: its mutators (the rollback tick rate reads Beta
+    // Speed) and its ringouts to win (6 lives each with Individual Stocks), beside its config override.
+    public async Task ATestingGroundsRematchKeepsItsMutatorsAndRingouts()
+    {
+        Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
+        var config = CasualConfig();
+        config["worldBuffs"] = new JsonArray("ovs_beta_speed", "ovs_shield_hp", "ovs_2v2_individual_stocks", "ovs_friendly_fire");
+        config["customNumRingouts"] = 12;
+        config["gameplayConfigOverride"] = new JsonObject { ["bIsCustomGame"] = false, ["EventQueueSlug"] = "evtq_2v2testinggrounds" };
+        await RematchVotes.OpenCasualAsync(Db, TimeProvider.System, Match, config);
+        var launcher = new Launcher();
+        var rematches = Service(new Lobbies(), launcher);
+
+        await rematches.AcceptAsync(P1);
+        await rematches.AcceptAsync(P2);
+
+        var launch = Assert.Single(launcher.Launched);
+        Assert.Equal(config["worldBuffs"]!.ToJsonString(), launch.NotificationFields!["worldBuffs"]!.ToJsonString());
+        Assert.Equal(12, launch.NotificationFields["customNumRingouts"]!.GetValue<int>());
+        Assert.Equal("evtq_2v2testinggrounds", launch.GameplayConfigOverride!["EventQueueSlug"]!.GetValue<string>());
+    }
+
+    [SkippableFact]
     public async Task ACasualDeclineSendsEveryoneBackAndEndsTheVote()
     {
         Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");

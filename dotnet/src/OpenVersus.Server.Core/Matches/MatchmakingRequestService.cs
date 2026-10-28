@@ -43,7 +43,9 @@ namespace OpenVersus.Server.Core.Matches;
 //
 // The request, in the TS server's order:
 //   1v1: the requester's client must be current (else the update modal and the gate's failure body, 200)
-//   ffa: the queue must be open (else the closed failure, 200)
+//   ffa: the queue must be open (else the closed failure, 200; Testing Grounds' too); a second after a closed queue's
+//        refusal the searcher's lobby is disconnected, so the game logs in again and shows the open queues
+//        (DisconnectForClosedQueueAsync)
 //   both: the requester's tickets leave every list (1v1, 2v2, FFA and Casual's; LREM, silently), and a ranked set they
 //         were in is ended
 //   ffa: a lobby of two or more is refused (1v1: it is the 2v2 request)
@@ -116,8 +118,12 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
                 return await OneVersusOneAsync(request, Casual, ct);
             case "ffa":
                 return await OneVersusOneAsync(request, FreeForAll, ct);
+            case "ffa-retail":
+                return await OneVersusOneAsync(request, FreeForAllRetail, ct);
             case Matchmaking.TestingGrounds.Criteria or Matchmaking.TestingGrounds.BareCriteria:
-                return await OneVersusOneAsync(request, TestingGroundsQueue, ct);
+                return await OneVersusOneAsync(request, TestingGrounds1v1Queue, ct);
+            case "EVT_4_Player_2-retail" or "EVT_4_Player_2":
+                return await TwoVersusTwoAsync(request, TestingGrounds2v2Queue, ct);
             case Arenas.ArenaMatchmaking.Criteria or Arenas.ArenaMatchmaking.BareCriteria:
                 return await ArenaAsync(request, ct);
             default:
@@ -132,19 +138,27 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
 
         public bool IsFfa => List1v1 == Matchmaking.MatchmakingWorker.Ffa;
 
-        public bool IsTestingGrounds => List1v1 == Matchmaking.TestingGrounds.List;
+        /// <summary>The Testing Grounds queue it is, or null.</summary>
+        public Matchmaking.TestingGrounds.Queue? TestingGrounds => Matchmaking.TestingGrounds.ByList(List1v1);
 
-        /// <summary>Solo entry only: FFA and Testing Grounds (the game's bPartyEligible false).</summary>
-        public bool IsSoloOnly => IsFfa || IsTestingGrounds;
+        /// <summary>Solo entry only: FFA and 1v1 Testing Grounds (the game's bPartyEligible false; 2v2's takes parties).</summary>
+        public bool IsSoloOnly => IsFfa || TestingGrounds == Matchmaking.TestingGrounds.OneVsOne;
     }
 
     private static readonly Queue Regular = new("1v1-retail", "2v2-retail", "1v1", "2v2");
     private static readonly Queue Casual = new("casual-retail", "casual-retail", Matchmaking.MatchmakingWorker.Casual1v1, Matchmaking.MatchmakingWorker.Casual2v2);
     // Solo only: its 2v2 names are never used.
     private static readonly Queue FreeForAll = new("ffa", "ffa", Matchmaking.MatchmakingWorker.Ffa, Matchmaking.MatchmakingWorker.Ffa);
-    // 1v1 Testing Grounds (Beta Speed), solo only: its 2v2 names are never used.
-    private static readonly Queue TestingGroundsQueue = new(Matchmaking.TestingGrounds.Criteria, Matchmaking.TestingGrounds.Criteria,
+    // The same queue as the game also asks for it, with the retail suffix as every other criteria (seen 2026-10-27 from the
+    // Deck: POST /matches/matchmaking/ffa-retail/request; the TS server routed only ffa, and a request it does not know is
+    // answered with nothing queued, so the game waited on its search for ever). Answered with the criteria it asked for.
+    private static readonly Queue FreeForAllRetail = FreeForAll with { Criteria1v1 = "ffa-retail", Criteria2v2 = "ffa-retail" };
+    // 1v1 Testing Grounds, solo only: its 2v2 names are never used.
+    private static readonly Queue TestingGrounds1v1Queue = new(Matchmaking.TestingGrounds.Criteria, Matchmaking.TestingGrounds.Criteria,
         Matchmaking.TestingGrounds.List, Matchmaking.TestingGrounds.List);
+    // 2v2 Testing Grounds, solos and parties of two: its 1v1 names are never used.
+    private static readonly Queue TestingGrounds2v2Queue = new(Matchmaking.TestingGrounds.TwoVsTwo.Criteria, Matchmaking.TestingGrounds.TwoVsTwo.Criteria,
+        Matchmaking.TestingGrounds.TwoVsTwo.List, Matchmaking.TestingGrounds.TwoVsTwo.List);
     // The Arena lobby, whole, as one ticket: its 1v1 names are never used.
     private static readonly Queue ArenaQueue = new(Arenas.ArenaMatchmaking.Criteria, Arenas.ArenaMatchmaking.Criteria, Arenas.ArenaMatchmaking.List,
         Arenas.ArenaMatchmaking.List);
@@ -168,7 +182,7 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
     private async Task<MatchmakingAnswer> OneVersusOneAsync(PartyRequest request, Queue queue, CancellationToken ct)
     {
         string me = request.AccountId;
-        string kind = queue.IsFfa ? "FFA" : queue.IsTestingGrounds ? "Testing Grounds" : "1v1";
+        string kind = queue.IsFfa ? "FFA" : queue.TestingGrounds is not null ? "Testing Grounds" : "1v1";
         log.LogInformation("Received {Kind} {Criteria} matchmaking request", kind, queue.Criteria1v1);
 
         if (await gate.BlockOutdatedAsync([me], log, "1v1 matchmaking"))
@@ -179,19 +193,17 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         if (queue.IsFfa && !await Matchmaking.FfaSchedule.IsOpenAsync(services, time.GetUtcNow(), ffa.CurrentValue))
         {
             log.LogInformation("Rejected FFA matchmaking for {Player}: outside the weekend window", me);
-            return new MatchmakingAnswer(200, Matchmaking.FfaSchedule.ClosedFailure(ffa.CurrentValue));
+            return new MatchmakingAnswer(200, Matchmaking.FfaSchedule.ClosedFailure(ffa.CurrentValue), () => DisconnectForClosedQueueAsync(me));
         }
 
-        if (queue.IsTestingGrounds && !await Matchmaking.TestingGrounds.IsOpenAsync(services, time.GetUtcNow()))
+        if (await TestingGroundsRefusalAsync(queue, request) is { } refused)
         {
-            log.LogInformation("Rejected Testing Grounds matchmaking for {Player}: the queue is closed (FFA's weekend, Twosday, or TestingGrounds:Enabled off)", me);
-            return new MatchmakingAnswer(200, Matchmaking.TestingGrounds.ClosedFailure(ffa.CurrentValue));
+            return refused;
         }
 
-        // Beta Speed (Testing Grounds', and FFA's with Ffa:Mutators): a game that runs another speed than the server's
+        // Beta Speed (FFA's with Ffa:Mutators; Testing Grounds' above): a game that runs another speed than the server's
         // (started before a change) would desync the match.
-        if ((queue.IsTestingGrounds && Matchmaking.TestingGrounds.WrongBetaSpeed(Matchmaking.TestingGrounds.Of(services), BetaSpeed.Of(services), request.BetaSpeed))
-            || (queue.IsFfa && Matchmaking.FfaSchedule.WrongBetaSpeed(ffa.CurrentValue, BetaSpeed.Of(services), request.BetaSpeed)))
+        if (queue.IsFfa && Matchmaking.FfaSchedule.WrongBetaSpeed(ffa.CurrentValue, BetaSpeed.Of(services), request.BetaSpeed))
         {
             log.LogInformation("Rejected {Kind} matchmaking for {Player}: X-OVS-BetaSpeed {Theirs}, the server's is {Ours}", kind, me, request.BetaSpeed ?? "none", BetaSpeed.Of(services).Percent);
             return new MatchmakingAnswer(200, Matchmaking.TestingGrounds.BetaSpeedFailure());
@@ -230,6 +242,13 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             return await TwoVersusTwoAsync(request, queue, ct);
         }
 
+        // Twosday (Matchmaking/Twosday.cs): 1v1 is off; a solo 1v1 search is refused (a party's went to 2v2 above).
+        if (queue == Regular && await Matchmaking.Twosday.IsActiveAsync(services, time.GetUtcNow()))
+        {
+            log.LogInformation("[Twosday]: refused 1v1 matchmaking for {Player}: 1v1 is off", me);
+            return new MatchmakingAnswer(200, Matchmaking.Twosday.OneVsOneOffFailure());
+        }
+
         var (id, profile, failure) = await PrepareRequesterAsync(redis, request, ct);
         if (failure is not null)
         {
@@ -238,6 +257,52 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
 
         var answer = OneVersusOneAnswer(request, queue, id, profile);
         return new MatchmakingAnswer(200, answer, () => QueueAsync(redis, id, [id], request.Body?["match"], (string)answer["id"]!, queue.List1v1));
+    }
+
+    // A Testing Grounds request outside its queue's window, or from a game that runs another Beta Speed than its matches
+    // (started before a change: the match would desync; only the requester's game reports its speed): the refusal.
+    private async Task<MatchmakingAnswer?> TestingGroundsRefusalAsync(Queue queue, PartyRequest request)
+    {
+        if (queue.TestingGrounds is not { } testingGrounds)
+        {
+            return null;
+        }
+
+        string me = request.AccountId;
+        if (!await Matchmaking.TestingGrounds.IsOpenAsync(services, time.GetUtcNow(), testingGrounds))
+        {
+            log.LogInformation("Rejected {Queue} matchmaking for {Player}: the queue is closed (its days, Twosday, or TestingGrounds:Enabled off)", testingGrounds.ListedMode, me);
+            return new MatchmakingAnswer(200, Matchmaking.TestingGrounds.ClosedFailure(testingGrounds, ffa.CurrentValue), () => DisconnectForClosedQueueAsync(me));
+        }
+
+        if (Matchmaking.TestingGrounds.WrongBetaSpeed(Matchmaking.TestingGrounds.Of(services), testingGrounds, BetaSpeed.Of(services), request.BetaSpeed))
+        {
+            log.LogInformation("Rejected {Queue} matchmaking for {Player}: X-OVS-BetaSpeed {Theirs}, the server's is {Ours}", testingGrounds.ListedMode, me, request.BetaSpeed ?? "none", BetaSpeed.Of(services).Percent);
+            return new MatchmakingAnswer(200, Matchmaking.TestingGrounds.BetaSpeedFailure());
+        }
+
+        return null;
+    }
+
+    /// <summary>How long after a closed queue's refusal the searcher's game is disconnected (DisconnectForClosedQueueAsync).</summary>
+    internal static TimeSpan ClosedQueueDisconnectDelay = TimeSpan.FromSeconds(1);
+
+    // A search for a queue that closed while the game was running (FFA or Testing Grounds at midnight US Eastern, or a
+    // setting changed): the game only learns which tiles to show when it logs in (the hiss), and it hangs on the refusal
+    // (Tuggernuts, 2026-10-27: froze on a closed FFA). So ClosedQueueDisconnectDelay after the refusal, the searcher and
+    // everyone in their lobby are disconnected, as ovsctl player disconnect does: the game logs out, logs back in and shows
+    // the queues that are open now (tried by hand the same day). Runs once the refusal has gone.
+    private async Task DisconnectForClosedQueueAsync(string me)
+    {
+        var redis = Redis();
+        var players = await LobbyPlayersAsync(redis, me) is { Count: > 0 } lobby ? lobby : [me];
+        foreach (string id in players.Append(me).Distinct())
+        {
+            await DelayedMessages.ScheduleDisconnectAsync(redis, time, new JsonObject { ["playerId"] = id }, ClosedQueueDisconnectDelay);
+        }
+
+        log.LogInformation("Searched a closed queue: disconnecting {Players} in {Delay} s so their games log in again and show the open queues",
+            string.Join(", ", players.Append(me).Distinct()), ClosedQueueDisconnectDelay.TotalSeconds);
     }
 
     private JsonObject OneVersusOneAnswer(PartyRequest request, Queue queue, string id, JsonNode? profile) =>
@@ -296,6 +361,11 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         var redis = Redis();
         string me = request.AccountId;
         log.LogInformation("Received 2v2 {Criteria} matchmaking request", queue.Criteria2v2);
+
+        if (await TestingGroundsRefusalAsync(queue, request) is { } refused)
+        {
+            return refused;
+        }
 
         await RemoveTicketsAsync(redis, me, s_allLists);
         await EndRankedSetAsync(redis, me);
@@ -749,8 +819,8 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         MatchmakingQueue.CancelAsync(redis, players, requestId);
 
     // Every queue's list: a player queueing anywhere leaves all of them.
-    private static readonly string[] s_allLists = [Regular.List1v1, Regular.List2v2, FreeForAll.List1v1, Casual.List1v1, Casual.List2v2, TestingGroundsQueue.List1v1,
-        ArenaQueue.List2v2];
+    private static readonly string[] s_allLists = [Regular.List1v1, Regular.List2v2, FreeForAll.List1v1, Casual.List1v1, Casual.List2v2, TestingGrounds1v1Queue.List1v1,
+        TestingGrounds2v2Queue.List2v2, ArenaQueue.List2v2];
 
     private Task RemoveTicketsAsync(IDatabase redis, string playerId, IReadOnlyList<string> lists) => RemoveTicketsAsync(redis, playerId, lists, log);
 
@@ -861,6 +931,7 @@ public static class MatchmakingRequestHosting
         builder.AddEloRatings();
         builder.AddSetting<Matchmaking.FfaSettings>("Ffa");
         builder.AddSetting<Matchmaking.TestingGroundsSettings>("TestingGrounds");
+        builder.AddSetting<Matchmaking.TwosdaySettings>("Twosday");
         builder.AddSetting<BetaSpeedSettings>("BetaSpeed");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IMatchmakingRequestService, MatchmakingRequestService>();

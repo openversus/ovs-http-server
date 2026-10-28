@@ -117,6 +117,13 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
             return await ArenaAsync(redis, player, connection, matchId, arena);
         }
 
+        // Twosday: no new party members; the player is answered alone, as with no lobby (Matchmaking/Twosday.cs).
+        if (lobby is PartyLobby && lobby.OwnerId != me && !lobby.PlayerIds.Contains(me) && await Matchmaking.Twosday.IsActiveAsync(services, time.GetUtcNow()))
+        {
+            log.LogInformation("[Twosday]: {Player} not joined to party lobby {Lobby}", me, matchId);
+            return Alone(player, connection, matchId);
+        }
+
         if (lobby is not null && lobby.OwnerId != me)
         {
             return await JoinAsync(redis, player, connection, matchId, lobby);
@@ -450,9 +457,11 @@ public static class PartyLobbyHosting
     public static WebApplicationBuilder AddPartyLobbies(this WebApplicationBuilder builder)
     {
         builder.AddSetting<LobbySettings>("Lobbies");
+        builder.AddSetting<Matchmaking.TwosdaySettings>("Twosday");
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IPartyLobbyService, PartyLobbyService>();
         builder.Services.AddSingleton<IPartyService, PartyService>();
+        builder.Services.AddHostedService<TwosdayPartyBreakup>();
         builder.Services.AddFunFacts();
         return builder;
     }

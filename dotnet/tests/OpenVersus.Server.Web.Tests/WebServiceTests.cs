@@ -63,8 +63,10 @@ public sealed class WebServiceTests : IClassFixture<ServiceFactory<Program>>
         using var response = await _factory.CreateClient().GetAsync("/api/matches");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var snapshot = System.Text.Json.Nodes.JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
-        Assert.Equal(["matches", "count", "onlinePlayers", "searching", "ffaOpen", "testingGroundsOpen", "arenaOpen", "generatedAt"], snapshot.Select(p => p.Key));
-        Assert.Equal(["1v1", "2v2", "FFA", "1v1 Testing Grounds", "Arena"], snapshot["searching"]!.AsObject().Select(p => p.Key));
+        Assert.Equal(["matches", "count", "onlinePlayers", "searching", "playing", "ffaOpen", "testingGroundsOpen", "testingGrounds2v2Open", "twosday",
+            "arenaOpen", "generatedAt"], snapshot.Select(p => p.Key));
+        Assert.Equal(["1v1", "2v2", "FFA", "1v1 Testing Grounds", "2v2 Testing Grounds", "Arena"], snapshot["searching"]!.AsObject().Select(p => p.Key));
+        Assert.Equal(["1v1", "2v2", "FFA", "1v1 Testing Grounds", "2v2 Testing Grounds", "Arena"], snapshot["playing"]!.AsObject().Select(p => p.Key));
     }
 
     [Theory]

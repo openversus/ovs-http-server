@@ -36,8 +36,9 @@ public sealed class LobbiesServiceTests : IClassFixture<ServiceFactory<Program>>
             .Where(t => t.Namespace?.StartsWith("OpenVersus.", StringComparison.Ordinal) == true).Select(t => t.Name).Order().ToList();
 
         // RematchSweep starts a rematch whose vote is still open when its timer runs out (rematch:due); LobbyDisconnects
-        // takes a player whose game is gone out of their lobbies (realtime:connections).
-        Assert.Equal(["BannedPlayers", "ClusterSettingsSync", "InstanceHeartbeat", "LobbyDisconnects", "RematchSweep"], hosted);
+        // takes a player whose game is gone out of their lobbies (realtime:connections); TwosdayPartyBreakup breaks up the
+        // party lobbies at Twosday's start.
+        Assert.Equal(["BannedPlayers", "ClusterSettingsSync", "InstanceHeartbeat", "LobbyDisconnects", "RematchSweep", "TwosdayPartyBreakup"], hosted);
     }
 
     [Fact]

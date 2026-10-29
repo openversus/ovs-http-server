@@ -140,7 +140,6 @@ public sealed class HydraBodiesTests : IAsyncLifetime, IClassFixture<GameAppFact
     [InlineData("GET", "/accounts/me/notifications", "AnyAccountsMeNotifications", """{"notifications":[],"total":0}""")]
     [InlineData("GET", "/accounts/me/notifications/bulk", "AnyAccountsMeNotificationsById", """{"notifications":[],"total":0}""")]
     [InlineData("POST", "/datarouter/api/v1/public/data/clients", "PostDatarouterApiV1PublicDataClients", "{}")]
-    [InlineData("GET", "/global_configuration_types/eula/global_configurations/x", "GetGlobalConfigurationTypesByTypeGlobalConfigurationsById", "200")]
     // Without the stores the lookup answers {} as the TS catch does.
     [InlineData("GET", "/accounts/wb_network/abc", "GetAccountsByIdBySub", "{}")]
     // Methods and ids the TS server has no route for: its catch-all.
@@ -165,6 +164,23 @@ public sealed class HydraBodiesTests : IAsyncLifetime, IClassFixture<GameAppFact
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(endpoint, response.Headers.GetValues("X-OVS-Endpoint").Single());
         Assert.Equal(body, await response.Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("en-CA")]
+    [InlineData("pt-BR")]
+    public async Task TheEulaIsAnObjectWithItsVersionAndText(string locale)
+    {
+        // The game reads version and text from the body's object; the TS server's bare 200 crashed it on a first launch.
+        var response = await _server.CreateGameClient().GetAsync($"/global_configuration_types/eula/global_configurations/{locale}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("GetGlobalConfigurationTypesByTypeGlobalConfigurationsById", response.Headers.GetValues("X-OVS-Endpoint").Single());
+        var body = Assert.IsType<JsonObject>(JsonNode.Parse(await response.Content.ReadAsStringAsync()));
+        Assert.Equal(5, (int)body["version"]!);
+        Assert.False(string.IsNullOrWhiteSpace((string?)body["text"]));
+        Assert.Equal(5, (int)body["data"]!["version"]!);
+        Assert.Equal((string?)body["text"], (string?)body["data"]!["text"]);
     }
 
     [Fact]

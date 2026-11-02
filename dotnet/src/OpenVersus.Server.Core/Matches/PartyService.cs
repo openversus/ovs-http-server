@@ -56,8 +56,9 @@ namespace OpenVersus.Server.Core.Matches;
 //     the mode into a party lobby (the TS server wrote it into that record, which nothing read). A solo party lobby that
 //     a join makes a duo takes the duo form of its mode (PartyLobby.Join: 1v1 and FFA are 2v2, ranked 1v1 is ranked 2v2):
 //     the TS server's PUT /matches join sent such a duo 1v1, and its join_party_lobby 2v2 whatever the mode.
-//   - a login's new party lobby starts in 2v2 (PartyLobby.LoginMode; the TS server's 1v1). A player who leaves a lobby,
-//     or is left alone in one, keeps the mode it had: the TS server put them back in 1v1.
+//   - a login's new party lobby starts in Lobbies:LoginMode (2v2 Testing Grounds by default) while that queue is open, else
+//     2v2 (TestingGrounds.LoginMode, PartyLobby.LoginMode; the TS server's 1v1). A player who leaves a lobby, or is left alone in one, keeps the mode it
+//     had: the TS server put them back in 1v1.
 //   - set_lobby_not_joinable keeps the lobby's lifetime and set_lobby_joinable marks it joinable again (both below).
 //   - an un-ready takes back only that player's ready; the TS server deleted the whole party's (party_ready:{lobby}), so
 //     the other player, still shown ready, had to ready again before the party could be all ready. While a party lobby of
@@ -223,7 +224,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             await LobbyStore.ClearPointerAsync(redis, me);
         }
 
-        var lobby = await NewLobbyAsync(redis, me, connection, PartyLobby.LoginMode);
+        var lobby = await NewLobbyAsync(redis, me, connection, await LoginModeAsync());
         var member = new LobbyDocuments.Member(me, Now(), Preferences(connection), shownCharacter, shownSkin);
         return LobbyDocuments.Answer(LobbyDocuments.Lobby([member], me, settings.CurrentValue.GameVersion, lobby.Mode, lobby.Id));
     }
@@ -236,7 +237,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         string? lobbyId = await LobbyStore.PointerAsync(redis, me);
         if (lobbyId is null)
         {
-            lobbyId = (await NewLobbyAsync(redis, me, await HashAsync(redis, $"connections:{me}"), PartyLobby.LoginMode)).Id;
+            lobbyId = (await NewLobbyAsync(redis, me, await HashAsync(redis, $"connections:{me}"), await LoginModeAsync())).Id;
             log.LogInformation("create_party: Created new lobby {Lobby} for player {Player}", lobbyId, me);
         }
 
@@ -531,7 +532,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
             }
 
             // The mode they last played stays theirs (KeptMode).
-            return await SoloAnswerAsync(redis, me, KeptMode(left));
+            return await SoloAnswerAsync(redis, me, await KeptModeAsync(left));
         }
 
         // An Arena lobby that is already gone (its owner's game went away while this game still showed it): the game still
@@ -545,7 +546,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
                 return LobbyDocuments.Answer(await LobbyOfAsync(redis, party, ModeOf(party), writeCosmetics: false, ct));
             }
 
-            return await SoloAnswerAsync(redis, me, PartyLobby.LoginMode);
+            return await SoloAnswerAsync(redis, me, await LoginModeAsync());
         }
 
         // Otherwise the player's own lobby: a step of joining another (pending join), or a real leave.
@@ -590,7 +591,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         }
 
         // Their party lobby is gone (it expires an hour after its last write): a new one, saved, as a party leave makes.
-        return (JsonObject)(await SoloAnswerAsync(redis, playerId, PartyLobby.LoginMode))["body"]!["lobby"]!.DeepClone();
+        return (JsonObject)(await SoloAnswerAsync(redis, playerId, await LoginModeAsync()))["body"]!["lobby"]!.DeepClone();
     }
 
     private async Task<JsonObject> SoloAnswerAsync(IDatabase redis, string me, string mode)
@@ -642,7 +643,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
 
         foreach (string pid in nonOwners)
         {
-            var solo = await NewLobbyAsync(redis, pid, await HashAsync(redis, $"connections:{pid}"), KeptMode(lobby));
+            var solo = await NewLobbyAsync(redis, pid, await HashAsync(redis, $"connections:{pid}"), await KeptModeAsync(lobby));
             await redis.StringSetAsync($"pending_join_lobby:{pid}", solo.Id, TimeSpan.FromSeconds(60));
             await PlayerMessages.NotifyClientAsync(redis, pid, "party_left", "Party Update",
                 message ?? (pid == leaving ? "Returning to solo lobby" : "Your party member left"), new JsonObject { ["newLobbyId"] = solo.Id }, NowMs());
@@ -713,7 +714,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
                 // Each on its own, as there: one player's failure does not cost the others their lobby.
                 try
                 {
-                    var solo = await NewLobbyAsync(redis, pid, await HashAsync(redis, $"connections:{pid}"), KeptMode(lobby));
+                    var solo = await NewLobbyAsync(redis, pid, await HashAsync(redis, $"connections:{pid}"), await KeptModeAsync(lobby));
                     await redis.StringSetAsync($"pending_join_lobby:{pid}", solo.Id, TimeSpan.FromSeconds(60));
                 }
                 catch (Exception e) when (e is RedisException or TimeoutException)
@@ -987,7 +988,11 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
     // The mode a new party lobby keeps from the lobby a player left or lost: a party lobby's game mode. An Arena or rift
     // lobby's mode is its kind, not a game mode (kept, it made the new party lobby an Arena lobby to the store, and the game
     // showed it as Custom: bench, 2026-10-10), so that player starts in the login's mode.
-    private static string KeptMode(Lobby left) => left is PartyLobby ? Or(left.Mode, "1v1") : PartyLobby.LoginMode;
+    private async Task<string> KeptModeAsync(Lobby left) => left is PartyLobby ? Or(left.Mode, "1v1") : await LoginModeAsync();
+
+    // The mode a login's new party lobby starts in: Lobbies:LoginMode while its queue is open, else 2v2 (TestingGrounds.LoginMode).
+    private async Task<string> LoginModeAsync() =>
+        Matchmaking.TestingGrounds.LoginMode(await Matchmaking.TestingGrounds.ScheduleAsync(services, time.GetUtcNow()), settings.CurrentValue.LoginMode);
 
     private static string ModeOf(Lobby lobby) => lobby.PlayerIds.Count >= 2 ? PartyLobby.DuoMode(lobby.Mode) : Or(lobby.Mode, "1v1");
 

@@ -394,19 +394,27 @@ public sealed class PartyServiceTests : IAsyncLifetime
         }
     }
 
-    // A login's new party lobby is a 2v2 lobby, and its answer says so.
+    // A login's new party lobby is in Lobbies:LoginMode (2v2 Testing Grounds by default) while that queue is open, and its
+    // answer says so; on FFA's day, when 2v2 Testing Grounds is closed, it is a 2v2 lobby.
     [Fact]
-    public async Task ALoginsNewPartyLobbyIsA2v2Lobby()
+    public async Task ALoginsNewPartyLobbyIsInTheLoginMode()
     {
         if (_redis is null)
         {
             return;
         }
 
-        var answer = await Service().CreatePartyLobbyAsync(Asking(Owner, "{}"));
-
-        Assert.Equal("2v2", (string?)answer["body"]!["lobby"]!["ModeString"]);
+        var wednesday = new Clock(DateTimeOffset.Parse("2026-10-07T18:00:00Z"));
+        var answer = await Service(wednesday).CreatePartyLobbyAsync(Asking(Owner, "{}"));
+        Assert.Equal("evtq_2v2testinggrounds", (string?)answer["body"]!["lobby"]!["ModeString"]);
         string lobby = (string)(await Db.StringGetAsync($"player_lobby:{Owner}"))!;
+        Assert.Equal("evtq_2v2testinggrounds", (string?)JsonNode.Parse(await LobbyJson(lobby))!["mode"]);
+        await Db.KeyDeleteAsync([$"lobby:{lobby}", $"player_lobby:{Owner}"]);
+
+        var saturday = new Clock(DateTimeOffset.Parse("2026-10-03T15:00:00Z"));
+        answer = await Service(saturday).CreatePartyLobbyAsync(Asking(Owner, "{}"));
+        Assert.Equal("2v2", (string?)answer["body"]!["lobby"]!["ModeString"]);
+        lobby = (string)(await Db.StringGetAsync($"player_lobby:{Owner}"))!;
         Assert.Equal("2v2", (string?)JsonNode.Parse(await LobbyJson(lobby))!["mode"]);
         await Db.KeyDeleteAsync($"lobby:{lobby}");
     }
@@ -638,7 +646,8 @@ public sealed class PartyServiceTests : IAsyncLifetime
         await SeedModeLobbyAsync("arena_lobby", Guest);
         await Db.StringSetAsync($"player_lobby:{Guest}", Lobby);
 
-        var answer = await Service().LeaveAsync(Asking(Guest, $$"""{"LobbyId": "{{Lobby}}"}"""));
+        // A Saturday (FFA's day): 2v2 Testing Grounds is closed, so the login's mode is 2v2.
+        var answer = await Service(new Clock(DateTimeOffset.Parse("2026-10-03T15:00:00Z"))).LeaveAsync(Asking(Guest, $$"""{"LobbyId": "{{Lobby}}"}"""));
 
         string solo = answer["body"]!["lobby"]!["MatchID"]!.GetValue<string>();
         Assert.Equal("2v2", (string?)answer["body"]!["lobby"]!["ModeString"]);
@@ -656,7 +665,8 @@ public sealed class PartyServiceTests : IAsyncLifetime
         }
 
         await Db.KeyDeleteAsync($"player_lobby:{Guest}");
-        var answer = await Service().LeaveAsync(Asking(Guest, """{"LobbyId": "0000000000000000000e0999", "LobbyTemplate": "arena_lobby"}"""));
+        // A Saturday (FFA's day): 2v2 Testing Grounds is closed, so the login's mode is 2v2.
+        var answer = await Service(new Clock(DateTimeOffset.Parse("2026-10-03T15:00:00Z"))).LeaveAsync(Asking(Guest, """{"LobbyId": "0000000000000000000e0999", "LobbyTemplate": "arena_lobby"}"""));
 
         string solo = answer["body"]!["lobby"]!["MatchID"]!.GetValue<string>();
         Assert.Equal("2v2", (string?)answer["body"]!["lobby"]!["ModeString"]);

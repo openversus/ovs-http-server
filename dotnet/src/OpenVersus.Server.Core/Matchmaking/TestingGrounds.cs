@@ -143,6 +143,19 @@ public static class TestingGrounds
         return new Schedule(oneVsOne, twoVsTwo, ffaTile);
     }
 
+    /// <summary>
+    /// The mode a login's new party lobby starts in (the game shows the lobby in it): <paramref name="wanted"/>
+    /// (Lobbies:LoginMode, as the game names modes), unless it is an event queue that <paramref name="schedule"/> has closed,
+    /// which falls back to 2v2 (<see cref="Lobbies.PartyLobby.LoginMode"/>).
+    /// </summary>
+    public static string LoginMode(Schedule schedule, string wanted)
+    {
+        bool closed = wanted == TwoVsTwo.EventQueue ? !schedule.TwoVsTwo
+            : wanted == OneVsOne.EventQueue ? !schedule.OneVsOne
+            : wanted == FfaEventQueue && !schedule.FfaTile;
+        return closed || wanted.Trim().Length == 0 ? Lobbies.PartyLobby.LoginMode : wanted.Trim();
+    }
+
     /// <summary><see cref="ScheduleAt"/> with the service's settings and Twosday's (a Task for its callers' sake: it reads nothing).</summary>
     public static Task<Schedule> ScheduleAsync(IServiceProvider services, DateTimeOffset now) =>
         Task.FromResult(ScheduleAt(now, Of(services), services.GetService<IOptionsMonitor<FfaSettings>>()?.CurrentValue ?? new FfaSettings(),

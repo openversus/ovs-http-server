@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using OpenVersus.Server.Core.Hiss;
+using OpenVersus.Server.Core.Matches;
 using OpenVersus.Server.Core.Matchmaking;
 
 namespace OpenVersus.Server.Core.Tests.Matchmaking;
@@ -50,6 +51,25 @@ public sealed class TestingGroundsTests
         Assert.Equal(new TestingGrounds.Schedule(true, true, false),
             TestingGrounds.ScheduleAt(tuesday, new TestingGroundsSettings { AlwaysOpen = true }, new FfaSettings(), twosday: true));
         Assert.False(s_on.AlwaysOpen);
+    }
+
+    [Fact]
+    // Lobbies:LoginMode: the mode wanted while its queue is open; an event queue that is closed falls back to 2v2; a plain
+    // mode is taken as it is; nothing at all is 2v2.
+    public void TheLoginModeFallsBackTo2v2WhenItsQueueIsClosed()
+    {
+        var open = new TestingGrounds.Schedule(true, true, false);
+        var ffaDay = new TestingGrounds.Schedule(true, false, true);
+        var nothing = new TestingGrounds.Schedule(false, false, false);
+        Assert.Equal("evtq_2v2testinggrounds", TestingGrounds.LoginMode(open, "evtq_2v2testinggrounds"));
+        Assert.Equal("2v2", TestingGrounds.LoginMode(ffaDay, "evtq_2v2testinggrounds"));
+        Assert.Equal("evtq_1v1testinggrounds", TestingGrounds.LoginMode(ffaDay, "evtq_1v1testinggrounds"));
+        Assert.Equal("2v2", TestingGrounds.LoginMode(nothing, "evtq_1v1testinggrounds"));
+        Assert.Equal("evtq_ffa", TestingGrounds.LoginMode(ffaDay, "evtq_ffa"));
+        Assert.Equal("2v2", TestingGrounds.LoginMode(open, "evtq_ffa"));
+        Assert.Equal("1v1", TestingGrounds.LoginMode(nothing, "1v1"));
+        Assert.Equal("2v2", TestingGrounds.LoginMode(nothing, ""));
+        Assert.Equal("evtq_2v2testinggrounds", new LobbySettings().LoginMode);
     }
 
     [Fact]

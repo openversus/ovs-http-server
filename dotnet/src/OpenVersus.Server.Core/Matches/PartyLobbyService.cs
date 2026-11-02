@@ -69,6 +69,9 @@ public sealed class LobbySettings
     [Description("The game build the lobby answers state (GameVersion; GAME_VERSION).")]
     public string GameVersion { get; set; } = "195303.1.1";
 
+    [Description("The mode a login's new party lobby starts in, as the game names modes: 2v2, 1v1, or an event queue (evtq_2v2testinggrounds, evtq_1v1testinggrounds, evtq_ffa). An event queue that is closed at that moment (its days, Twosday, its switch) falls back to 2v2.")]
+    public string LoginMode { get; set; } = "evtq_2v2testinggrounds";
+
     [Description("The address a player on this machine (127.0.0.1) is given to the matchmaker as, as the TS server's LOCAL_PUBLIC_IP does. Empty: 127.0.0.1 stays as it is.")]
     public string LocalPublicIp { get; set; } = "";
 }

@@ -128,7 +128,10 @@ public sealed class PartyLobby : Lobby
 
     public override string Template => TemplateName;
 
-    /// <summary>The mode a login's new party lobby starts in: 2v2, the game's main mode.</summary>
+    /// <summary>
+    /// The mode a login's new party lobby falls back to: 2v2, the game's main mode. Lobbies:LoginMode names the mode wanted
+    /// (2v2 Testing Grounds by default), taken while its queue is open (Matchmaking.TestingGrounds.LoginMode).
+    /// </summary>
     public const string LoginMode = "2v2";
 
     /// <summary>A solo party lobby that a join makes a duo takes the duo's form of its mode (<see cref="DuoMode"/>).</summary>

@@ -410,7 +410,20 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             }
         }
 
-        foreach (string pid in all.Where(p => p != id))
+        // A party's 2v2 Testing Grounds search with TestingGrounds:SplitParties on: the leader is answered as a solo searcher
+        // (the answer names them alone); once the answer has gone the party is broken up as the TS server's Twosday breakup
+        // does (IPartyService.BreakUpAsync: the others get solo lobbies of their own, every game is told party_left), and
+        // only then the tickets go, one per player (SplitAndQueueAsync).
+        var members = all;
+        var split = new List<string>();
+        if (queue.TestingGrounds == Matchmaking.TestingGrounds.TwoVsTwo && all.Count >= 2 && lobbyId is not null && Matchmaking.TestingGrounds.Of(services).SplitParties)
+        {
+            split = all.Where(p => p != id).ToList();
+            all = [id];
+            log.LogInformation("[TestingGrounds]: parties are split: {Leader} searches alone; {Others} kicked from lobby {Lobby} to search alone", id, string.Join(", ", split), lobbyId);
+        }
+
+        foreach (string pid in members.Where(p => p != id))
         {
             var loadout = await HashAsync(redis, $"player:{pid}");
             if (Get(loadout, "character") is { Length: > 0 } character && Get(loadout, "skin") is { Length: > 0 } skin
@@ -436,7 +449,45 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
 
         var answer = Answer(request, id, queue.Criteria2v2, all.Count, 724.7928014055103, "character_TODO_SAME_CHAR_IN_SAME_TEAM", null,
             connectionInfo, connections, players, recentlyPlayed, partyId: lobbyId, profileId: "1252928", idFirst: true);
+        if (split.Count > 0)
+        {
+            return new MatchmakingAnswer(200, answer, () => SplitAndQueueAsync(redis, lobbyId!, id, split, request.Body?["match"], (string)answer["id"]!, queue.List2v2));
+        }
+
         return new MatchmakingAnswer(200, answer, () => QueueAsync(redis, id, all, request.Body?["match"], (string)answer["id"]!, queue.List2v2));
+    }
+
+    /// <summary>What a split party's players are told (TestingGrounds:SplitParties).</summary>
+    internal const string SplitBannerTitle = "Testing Grounds", SplitBanner = "Parties are temporarily disabled in 2v2 Testing Grounds. Your party was split and individual matchmaking tickets were created instead.";
+
+    // The party is broken up first (the Twosday breakup's path: the others get solo lobbies of their own, their games are
+    // told party_left with the message, as the TS server's performGenuineLeave told them; a banner says it too), then the
+    // tickets go: the leader's, then one per player created with their new solo lobby as its party and a request id of its
+    // own, which their cancel names; QueueAsync tells each game OnMatchmakerStarted with it. A player who does not want the
+    // search cancels it as any solo search.
+    private async Task SplitAndQueueAsync(IDatabase redis, string lobbyId, string leader, IReadOnlyList<string> others, JsonNode? fromMatch, string requestId, string list)
+    {
+        if (await LobbyStore.GetAsync(redis, lobbyId) is { } lobby && services.GetService<IPartyService>() is { } party)
+        {
+            await party.BreakUpAsync(lobby, SplitBanner);
+            foreach (string pid in lobby.PlayerIds)
+            {
+                // The party's ready goes with the party (a breakup leaves it; a cancel would take it).
+                await LobbyStore.ResetReadyOfAsync(redis, pid);
+                await PlayerMessages.NotifyClientAsync(redis, pid, "admin_banner", SplitBannerTitle, SplitBanner, new JsonObject { ["timeout"] = 10 }, time.GetUtcNow().ToUnixTimeMilliseconds());
+            }
+        }
+        else
+        {
+            log.LogWarning("[TestingGrounds]: lobby {Lobby} is gone or this service has no party service; {Others} queued alone without a split", lobbyId, string.Join(", ", others));
+        }
+
+        await QueueAsync(redis, leader, [leader], fromMatch, requestId, list);
+        foreach (string pid in others)
+        {
+            string? solo = await LobbyStore.PointerAsync(redis, pid);
+            await QueueAsync(redis, pid, [pid], solo is null ? null : JsonValue.Create(solo), ObjectId.GenerateNewId().ToString(), list);
+        }
     }
 
     // The requester's part of both requests: their session, cosmetics and loadout.

@@ -12,7 +12,8 @@ namespace OpenVersus.Server.Core.Matchmaking;
 // (Tuggernuts, 2026-10-27, for the Season 1 launch):
 //   1v1  evtq_1v1testinggrounds, matchmaking criteria EVT_2_Player_1, solo only; TestingGrounds:Mutators (Beta Speed, the
 //        whole match at BetaSpeed:Percent, and Shield HP, Smash-style shields). Open every day.
-//   2v2  evtq_2v2testinggrounds, criteria EVT_4_Player_2, parties of two welcome (the game's bPartyEligible);
+//   2v2  evtq_2v2testinggrounds, criteria EVT_4_Player_2, parties of two welcome (the game's bPartyEligible) unless
+//        TestingGrounds:SplitParties is on (a party's search is split: MatchmakingRequestService.SplitAndQueueAsync);
 //        TestingGrounds:TwoVsTwoMutators (Beta Speed, Shield HP, Individual Stocks and Friendly Fire). It shares the menu's
 //        event slot with Free For All: open on the days FFA is not (FfaSchedule, Ffa:Days while Ffa:WeekendOnly is on).
 //        With Individual Stocks each fighter has TestingGrounds:TwoVsTwoLives lives (Tuggernuts, 2026-10-27: 6): the match's
@@ -40,6 +41,9 @@ public sealed class TestingGroundsSettings
 
     [Description("2v2 Testing Grounds: on its days (those FFA is not) its tile takes FFA's place. Off: FFA's tile shows all week, as before it existed; 1v1 Testing Grounds is unaffected.")]
     public bool TwoVsTwoEnabled { get; set; } = true;
+
+    [Description("2v2 Testing Grounds takes solo players only: a party's search is split. The party is broken up as Twosday breaks parties up (the leader keeps the lobby, the others get solo lobbies of their own, every game told party_left), then each player searches alone with a ticket of their own; a banner says why. Off: a party of two searches together.")]
+    public bool SplitParties { get; set; }
 
     [Description("The mutators every 2v2 Testing Grounds match runs, separated by commas.")]
     public string TwoVsTwoMutators { get; set; } = "ovs_beta_speed,ovs_shield_hp,ovs_2v2_individual_stocks,ovs_friendly_fire";

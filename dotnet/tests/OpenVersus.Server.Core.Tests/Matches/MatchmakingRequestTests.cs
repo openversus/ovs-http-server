@@ -127,9 +127,19 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
             await Db.KeyDeleteAsync(key);
         }
 
+        // A lobby the code under test made for a test player (a split partner's solo lobby): its id is a real one.
+        foreach (var key in server.Keys(15, "lobby:*"))
+        {
+            if ((await Db.StringGetAsync(key)).ToString().Contains("0000000000000000000b", StringComparison.Ordinal))
+            {
+                await Db.KeyDeleteAsync(key);
+            }
+        }
+
         await Db.KeyDeleteAsync(["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, MatchmakingWorker.Ffa, ArenaMatchmaking.List,
             TestingGrounds.TwoVsTwo.List, $"connections:{Ip}", DelayedMessages.Key]);
         await Db.HashDeleteAsync(MatchmakingQueue.QueuedKey, [Me, Mate, Third, Fourth]);
+        await Db.SetRemoveAsync("online_players", [Me, Mate, Third, Fourth]);
         await Db.SortedSetRemoveAsync(ArenaRunStore.DeadlinesKey, Lobby);
     }
 
@@ -138,7 +148,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     // FFA always open unless a test says otherwise (FfaScheduleTests has the window). Twosday off unless a test turns it
     // on (Twosday:Enabled), so a run on a real Tuesday evening is like any other.
     private MatchmakingRequestService Service(MongoDB.Driver.IMongoDatabase? mongo = null, FfaSettings? ffa = null, TimeProvider? time = null, bool withRedis = true,
-        TestingGroundsSettings? testingGrounds = null, BetaSpeedSettings? betaSpeed = null, RankedSettings? ranked = null, bool twosday = false)
+        TestingGroundsSettings? testingGrounds = null, BetaSpeedSettings? betaSpeed = null, RankedSettings? ranked = null, bool twosday = false, bool party = false)
     {
         var collection = new ServiceCollection();
         collection.Configure<TwosdaySettings>(o => o.Enabled = twosday);
@@ -155,6 +165,14 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         if (withRedis && _redis is not null)
         {
             collection.AddSingleton<IConnectionMultiplexer>(_redis);
+        }
+
+        // The party service (the lobbies service has it), for the tests that need it: TestingGrounds:SplitParties breaks a
+        // party up through it. Not for every test: the Arena tests run without one, as they always have.
+        if (party && _redis is not null)
+        {
+            collection.AddSingleton<IPartyService>(sp => new PartyService(sp, _cosmetics, new NoFacts(), _gate,
+                new TestOptions<LobbySettings>(new LobbySettings()), time ?? TimeProvider.System, NullLogger<PartyService>.Instance));
         }
 
         if (mongo is not null)
@@ -204,6 +222,11 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     }
 
     private async Task<JsonObject> KeptConfigAsync() => (JsonObject)JsonNode.Parse((string)(await Db.StringGetAsync(GameplayConfigs.Key(Me)))!)!;
+
+    private sealed class NoFacts : OpenVersus.Server.Core.FunFacts.IFunFacts
+    {
+        public Task<OpenVersus.Server.Core.FunFacts.FunFact?> RandomAsync(string playerId, CancellationToken ct) => Task.FromResult<OpenVersus.Server.Core.FunFacts.FunFact?>(null);
+    }
 
     private sealed class Clock(DateTimeOffset now) : TimeProvider
     {
@@ -410,6 +433,75 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         // Another Beta Speed than the server's: told to restart.
         answer = (await Service(ffa: new FfaSettings(), time: wednesday).RequestAsync("EVT_4_Player_2-retail", request with { BetaSpeed = "100" }, CancellationToken.None))!;
         Assert.Equal((200, Js.Stringify(TestingGrounds.BetaSpeedFailure())), (answer.Status, Js.Stringify(answer.Body)));
+    }
+
+    [SkippableFact]
+    // TestingGrounds:SplitParties: a party's 2v2 Testing Grounds search is split. The leader is answered as a solo searcher;
+    // then the party is broken up as Twosday's breakup does (the partner gets a solo lobby of their own, both games are told
+    // party_left with the message, and a banner) and only then the tickets go: the leader's, and the partner's with their
+    // solo lobby as its party and a request id of their own, each told OnMatchmakerStarted with theirs. Off, the party
+    // searches whole (the test above).
+    public async Task A2v2TestingGroundsPartyIsSplitWhileSplitPartiesIsOn()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await PlayerAsync(Me);
+        await PlayerAsync(Mate);
+        await Db.StringSetAsync($"lobby:{Lobby}", Js.Stringify(new JsonObject { ["lobbyId"] = Lobby, ["ownerId"] = Me, ["playerIds"] = new JsonArray(Me, Mate), ["mode"] = "2v2" }));
+        await Db.StringSetAsync($"player_lobby:{Me}", Lobby);
+        await Db.StringSetAsync($"player_lobby:{Mate}", Lobby);
+        await Db.SetAddAsync($"party_ready:{Lobby}", [Me, Mate]);
+        foreach (string pid in new[] { Me, Mate })
+        {
+            await Db.StringSetAsync(OpenVersus.Server.Core.Realtime.GatewayPresence.ConnectionKey(pid), "1");
+        }
+
+        var wednesday = new Clock(DateTimeOffset.Parse("2026-10-07T18:00:00Z"));
+        var service = Service(ffa: new FfaSettings(), time: wednesday, testingGrounds: new TestingGroundsSettings { SplitParties = true }, party: true);
+        var answer = (await service.RequestAsync("EVT_4_Player_2-retail", Asking(Me) with { BetaSpeed = "110" }, CancellationToken.None))!;
+        Assert.Equal("EVT_4_Player_2-retail", (string?)answer.Body["criteria_slug"]);
+        Assert.Equal([Me], answer.Body["players"]!.AsObject().Select(p => p.Key));
+        Assert.Equal(Lobby, (string?)answer.Body["party_id"]);
+        string leaderRequest = (string)answer.Body["id"]!;
+
+        await answer.After!();
+
+        // The party: the leader alone in it; the partner in a solo lobby of their own (pointer, pending join), nobody ready.
+        Assert.Equal([Me], JsonNode.Parse((await Db.StringGetAsync($"lobby:{Lobby}")).ToString())!["playerIds"]!.AsArray().Select(p => (string?)p));
+        Assert.Equal(Lobby, await Db.StringGetAsync($"player_lobby:{Me}"));
+        string solo = (await Db.StringGetAsync($"player_lobby:{Mate}")).ToString();
+        Assert.NotEqual(Lobby, solo);
+        Assert.Equal([Mate], JsonNode.Parse((await Db.StringGetAsync($"lobby:{solo}")).ToString())!["playerIds"]!.AsArray().Select(p => (string?)p));
+        Assert.Equal(solo, await Db.StringGetAsync($"pending_join_lobby:{Mate}"));
+        Assert.False(await Db.KeyExistsAsync($"party_ready:{Lobby}"));
+
+        var tickets = (await Db.ListRangeAsync(TestingGrounds.TwoVsTwo.List)).Select(t => Js.Parse(t.ToString())!.AsObject()).ToList();
+        Assert.Equal(2, tickets.Count);
+        var leaders = tickets.Single(t => (string?)t["players"]![0]!["id"] == Me);
+        var partners = tickets.Single(t => (string?)t["players"]![0]!["id"] == Mate);
+        Assert.All(tickets, t => Assert.Equal(1, (int)t["party_size"]!));
+        Assert.Equal(leaderRequest, (string?)leaders["matchmakingRequestId"]);
+        Assert.Equal("0000000000000000000b0700", (string?)leaders["partyId"]); // the request's match, as every ticket's
+        string partnerRequest = (string)partners["matchmakingRequestId"]!;
+        Assert.NotEqual(leaderRequest, partnerRequest);
+        Assert.Equal(solo, (string?)partners["partyId"]);
+        Assert.Equal("queued", await Db.HashGetAsync($"player:{Mate}", "status"));
+
+        // What each game was told: party_left with the message and its lobby (the OpenVersus client's queue, as the TS
+        // server's performGenuineLeave sent it), the banner, and its own OnMatchmakerStarted.
+        foreach (var (pid, lobbyToJoin) in new[] { (Me, Lobby), (Mate, solo) })
+        {
+            var queued = (await Db.ListRangeAsync($"{PlayerMessages.NotificationPrefix}{pid}")).Select(n => n.ToString()).ToList();
+            string left = Assert.Single(queued, n => n.Contains("\"party_left\"", StringComparison.Ordinal));
+            Assert.Contains(MatchmakingRequestService.SplitBanner, left, StringComparison.Ordinal);
+            Assert.Contains($"\"newLobbyId\":\"{lobbyToJoin}\"", left, StringComparison.Ordinal);
+            Assert.Contains(queued, n => n.Contains("\"admin_banner\"", StringComparison.Ordinal) && n.Contains(MatchmakingRequestService.SplitBanner, StringComparison.Ordinal));
+        }
+
+        static IEnumerable<string> Told(StreamEntry[] log) => log.Select(e => e.Values.Select(v => v.Value.ToString()).FirstOrDefault(v => v.Contains("template_id") || v.Contains("OnMatchmakerStarted"))).OfType<string>();
+        string leaderTold = Assert.Single(Told(await Db.StreamRangeAsync(PlayerMessages.LogKey(Me))));
+        Assert.Contains($"\"MatchmakingRequestId\":\"{leaderRequest}\"", leaderTold, StringComparison.Ordinal);
+        string partnerTold = Assert.Single(Told(await Db.StreamRangeAsync(PlayerMessages.LogKey(Mate))));
+        Assert.Contains($"\"MatchmakingRequestId\":\"{partnerRequest}\"", partnerTold, StringComparison.Ordinal);
     }
 
     [SkippableFact]

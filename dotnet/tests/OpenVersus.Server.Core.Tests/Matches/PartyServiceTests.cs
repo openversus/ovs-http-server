@@ -546,7 +546,7 @@ public sealed class PartyServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    // Twosday: 1v1 is off, so a lobby set to 1v1 stays on 2v2 and the game is told 2v2; other modes are untouched.
+    // Twosday: every 1v1 search goes to 2v2, so a lobby set to 1v1 stays on 2v2 and the game is told 2v2; other modes are untouched.
     public async Task OnTwosdayALobbySetTo1v1StaysOn2v2()
     {
         if (_redis is null || await Db.KeyExistsAsync(OpenVersus.Server.Core.Matchmaking.Twosday.Key))

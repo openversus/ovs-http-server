@@ -6,7 +6,8 @@ namespace OpenVersus.Server.Core.Tests.Matchmaking;
 
 /// <summary>
 /// Testing Grounds (OpenVersus's modes): 1v1 (Beta Speed + Shield HP) every day, 2v2 (those plus Individual Stocks and
-/// Friendly Fire) in FFA's place on the days FFA is not, neither during Twosday; the hiss shows the open ones only, and a
+/// Friendly Fire) in FFA's place on the days FFA is not and during Twosday, when 1v1's searches go to 2v2's queue; the hiss
+/// shows the open ones only, and a
 /// player whose game runs another Beta Speed is refused. Needs no stores.
 /// </summary>
 public sealed class TestingGroundsTests
@@ -33,15 +34,19 @@ public sealed class TestingGroundsTests
     }
 
     [Fact]
-    // Tuggernuts, 2026-10-27: during Twosday everything but 2v2 closes, Testing Grounds and FFA alike.
-    public void TwosdayClosesEveryQueueTileUnlessAlwaysOpen()
+    // During Twosday FFA closes and 2v2 takes its slot; 1v1 stays open, its searches going to 2v2's queue, so no FFA tile.
+    // With 2v2 off, 1v1 stays (its searches stay 1v1) and FFA's tile shows as it does all week then.
+    public void TwosdayOpensTwoVsTwoInFfasPlace()
     {
         var tuesday = new DateTimeOffset(2026, 10, 13, 22, 0, 0, TimeSpan.FromHours(-4));
         var wednesday = new DateTimeOffset(2026, 10, 14, 22, 0, 0, TimeSpan.FromHours(-4));
-        Assert.Equal(new TestingGrounds.Schedule(false, false, false), TestingGrounds.ScheduleAt(tuesday, s_on, new FfaSettings(), twosday: true));
-        // Twosday moved onto a 2v2 day by its hash: closed all the same.
-        Assert.Equal(new TestingGrounds.Schedule(false, false, false), TestingGrounds.ScheduleAt(wednesday, s_on, new FfaSettings(), twosday: true));
-        // Always open: both Testing Grounds queues, so no FFA tile.
+        Assert.Equal(new TestingGrounds.Schedule(true, true, false), TestingGrounds.ScheduleAt(tuesday, s_on, new FfaSettings(), twosday: true));
+        // Twosday moved onto a 2v2 day by its hash: the same.
+        Assert.Equal(new TestingGrounds.Schedule(true, true, false), TestingGrounds.ScheduleAt(wednesday, s_on, new FfaSettings(), twosday: true));
+        // 2v2 off: as any day with 2v2 off.
+        Assert.Equal(new TestingGrounds.Schedule(true, false, true),
+            TestingGrounds.ScheduleAt(tuesday, new TestingGroundsSettings { TwoVsTwoEnabled = false }, new FfaSettings(), twosday: true));
+        // Always open: as any day.
         Assert.Equal(new TestingGrounds.Schedule(true, true, false),
             TestingGrounds.ScheduleAt(tuesday, new TestingGroundsSettings { AlwaysOpen = true }, new FfaSettings(), twosday: true));
         Assert.False(s_on.AlwaysOpen);
@@ -73,7 +78,7 @@ public sealed class TestingGroundsTests
         // A schedule with 2v2 open never shows FFA's tile, so those two pairs may share theirs.
         Assert.Equal(6, offsets.Distinct().Count());
         Assert.All(offsets, o => Assert.InRange(o, 0, 199_999));
-        // FFA's tile alone stays 0, nothing at all 50,000 (Twosday), as before.
+        // FFA's tile alone stays 0, nothing at all 50,000, as before.
         Assert.Equal(0, new TestingGrounds.Schedule(false, false, true).CrcOffset);
         Assert.Equal(50_000, new TestingGrounds.Schedule(false, false, false).CrcOffset);
     }
@@ -81,10 +86,10 @@ public sealed class TestingGroundsTests
     [Fact]
     public void TheClosedAnswerNamesTheQueuesDays()
     {
-        Assert.Equal("1v1 Testing Grounds is open every day, except during Twosday.",
+        Assert.Equal("1v1 Testing Grounds is open every day; during Twosday its searches go to 2v2 Testing Grounds.",
             (string?)TestingGrounds.ClosedFailure(TestingGrounds.OneVsOne, new FfaSettings())["body"]!["ErrorMessage"]);
         Assert.Equal(
-            "2v2 Testing Grounds is open Monday, Wednesday, Friday and Sunday (US Eastern), except during Twosday; Free For All takes its place on Tuesday, Thursday and Saturday.",
+            "2v2 Testing Grounds is open Monday, Wednesday, Friday and Sunday (US Eastern) and during Twosday; Free For All takes its place on Tuesday, Thursday and Saturday.",
             (string?)TestingGrounds.ClosedFailure(TestingGrounds.TwoVsTwo, new FfaSettings())["body"]!["ErrorMessage"]);
     }
 

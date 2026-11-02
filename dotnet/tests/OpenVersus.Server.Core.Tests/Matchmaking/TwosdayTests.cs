@@ -5,7 +5,7 @@ namespace OpenVersus.Server.Core.Tests.Matchmaking;
 
 /// <summary>
 /// Twosday's window, read as the TS server reads it (tests/twosdayWindow.test.ts, branch openversus, the same cases), its
-/// settings, and Testing Grounds closed while it is on. Needs no stores.
+/// settings. Needs no stores.
 /// </summary>
 public sealed class TwosdayTests
 {
@@ -68,15 +68,16 @@ public sealed class TwosdayTests
     }
 
     [Fact]
-    public void TestingGroundsClosesForTwosdayUnlessAlwaysOpen()
+    // Twosday keeps both Testing Grounds queues open: on a 2v2 day as it was, and on FFA's day 2v2 opens in FFA's place
+    // (the 1v1 searches go to it); the schedule's own cases are TestingGroundsTests.
+    public void TestingGroundsStaysOpenForTwosday()
     {
-        // On a 2v2 Testing Grounds day (FFA on the old weekend, so Tuesday is one).
         var tuesdayEvening = DateTimeOffset.Parse("2026-10-06T20:00:00Z");
         var weekendFfa = new FfaSettings { Days = "Fri,Sat,Sun" };
         Assert.Equal(new TestingGrounds.Schedule(true, true, false), TestingGrounds.ScheduleAt(tuesdayEvening, new TestingGroundsSettings(), weekendFfa));
-        Assert.Equal(new TestingGrounds.Schedule(false, false, false), TestingGrounds.ScheduleAt(tuesdayEvening, new TestingGroundsSettings(), weekendFfa, twosday: true));
-        Assert.Equal(new TestingGrounds.Schedule(true, true, false),
-            TestingGrounds.ScheduleAt(tuesdayEvening, new TestingGroundsSettings { AlwaysOpen = true }, weekendFfa, twosday: true));
+        Assert.Equal(new TestingGrounds.Schedule(true, true, false), TestingGrounds.ScheduleAt(tuesdayEvening, new TestingGroundsSettings(), weekendFfa, twosday: true));
+        Assert.Equal(new TestingGrounds.Schedule(true, false, true), TestingGrounds.ScheduleAt(tuesdayEvening, new TestingGroundsSettings(), new FfaSettings()));
+        Assert.Equal(new TestingGrounds.Schedule(true, true, false), TestingGrounds.ScheduleAt(tuesdayEvening, new TestingGroundsSettings(), new FfaSettings(), twosday: true));
     }
 
     [Theory]

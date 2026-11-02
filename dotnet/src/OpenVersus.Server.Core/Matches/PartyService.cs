@@ -256,7 +256,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
 
         var mode = request.Body?["ModeString"]?.DeepClone();
         string modeText = mode is JsonValue mv && mv.TryGetValue(out string? s) ? s : Js.Stringify(mode);
-        // Twosday: 1v1 is off, so a party lobby set to 1v1 stays on its 2v2, and the game is told that (Matchmaking/Twosday.cs).
+        // Twosday: every 1v1 search goes to 2v2, so a party lobby set to 1v1 stays on its 2v2, and the game is told that (Matchmaking/Twosday.cs).
         if (Matchmaking.Twosday.IsOneVsOneMode(modeText) && await Matchmaking.Twosday.IsActiveAsync(services, time.GetUtcNow()))
         {
             log.LogInformation("[Twosday]: {Player} set lobby {Lobby} to {Mode}; kept on {Kept}", me, lobbyId, modeText, PartyLobby.DuoMode(modeText));

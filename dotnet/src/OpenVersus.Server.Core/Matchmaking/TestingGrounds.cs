@@ -17,7 +17,8 @@ namespace OpenVersus.Server.Core.Matchmaking;
 //        event slot with Free For All: open on the days FFA is not (FfaSchedule, Ffa:Days while Ffa:WeekendOnly is on).
 //        With Individual Stocks each fighter has TestingGrounds:TwoVsTwoLives lives (Tuggernuts, 2026-10-27: 6): the match's
 //        ringouts to win are twice that (customNumRingouts), and the client gives each fighter half of them.
-// Both close while Twosday is on (its window, Tuesday evenings: every 1v1 goes to 2v2 then), as FFA does. A mutator that
+// While Twosday is on (its window, Tuesday evenings: every 1v1 search goes to 2v2 then) FFA closes and 2v2 takes its slot; 1v1
+// stays open and its searches go to 2v2's queue while that is open (MatchmakingRequestService). A mutator that
 // lives in a pak needs every player to have that exact pak: the release's paks, which a client that runs others is told
 // to restart for (Clients/RequiredPaks.cs). Beta Speed needs every player's game to run the server's speed (checked
 // against the requester's X-OVS-BetaSpeed), or the match desyncs.
@@ -28,10 +29,10 @@ namespace OpenVersus.Server.Core.Matchmaking;
 /// <summary>Testing Grounds settings.</summary>
 public sealed class TestingGroundsSettings
 {
-    [Description("Testing Grounds (unranked matches with OpenVersus's mutators): 1v1 every day, 2v2 on the days not in Ffa:Days (while Ffa:WeekendOnly is on), neither during Twosday. Off: neither is ever open, and the menu shows FFA all week.")]
+    [Description("Testing Grounds (unranked matches with OpenVersus's mutators): 1v1 every day, 2v2 on the days not in Ffa:Days (while Ffa:WeekendOnly is on) and during Twosday, when 1v1 searches go to 2v2. Off: neither is ever open, and the menu shows FFA all week.")]
     public bool Enabled { get; set; } = true;
 
-    [Description("Open every day, FFA's days and Twosday included (the menu then shows 2v2 Testing Grounds, not FFA): for testing, or an event. Off: on their days, outside Twosday.")]
+    [Description("Open every day, FFA's days included (the menu then shows 2v2 Testing Grounds, not FFA): for testing, or an event. Off: on their days, and during Twosday.")]
     public bool AlwaysOpen { get; set; }
 
     [Description("The mutators (world buff slugs) every 1v1 Testing Grounds match runs, separated by commas. ovs_beta_speed also sets the match's rollback tick rate.")]
@@ -124,15 +125,16 @@ public static class TestingGrounds
     }
 
     /// <summary>
-    /// The schedule at <paramref name="now"/>: 1v1 open every day outside <paramref name="twosday"/>, 2v2 on the days
-    /// FFA is not, outside it (both every day while AlwaysOpen); FFA's tile while 2v2 is not open and the FFA queue is
-    /// (Tuggernuts, 2026-10-13: during Twosday no tile shows), or all week with 2v2 off, as before it existed.
+    /// The schedule at <paramref name="now"/>: 1v1 every day, Twosday included (its searches go to 2v2's queue then, while
+    /// that is open); 2v2 on the days FFA is not and during <paramref name="twosday"/> (FFA closes then and 2v2 takes its
+    /// slot; every day while AlwaysOpen); FFA's tile while 2v2 is not open and the FFA queue is, or all week with 2v2 off,
+    /// as before it existed.
     /// </summary>
     public static Schedule ScheduleAt(DateTimeOffset now, TestingGroundsSettings settings, FfaSettings ffa, bool twosday = false)
     {
-        bool oneVsOne = settings.Enabled && (settings.AlwaysOpen || !twosday);
         bool twoVsTwoOn = settings.Enabled && settings.TwoVsTwoEnabled;
-        bool twoVsTwo = twoVsTwoOn && (settings.AlwaysOpen || (!FfaSchedule.IsOpen(now, ffa) && !twosday));
+        bool twoVsTwo = twoVsTwoOn && (settings.AlwaysOpen || twosday || !FfaSchedule.IsOpen(now, ffa));
+        bool oneVsOne = settings.Enabled;
         bool ffaTile = !twoVsTwo && (!twoVsTwoOn || FfaSchedule.IsOpen(now, ffa, twosday));
         return new Schedule(oneVsOne, twoVsTwo, ffaTile);
     }
@@ -153,12 +155,12 @@ public static class TestingGrounds
     {
         if (queue != TwoVsTwo)
         {
-            return "1v1 Testing Grounds is open every day, except during Twosday.";
+            return "1v1 Testing Grounds is open every day; during Twosday its searches go to 2v2 Testing Grounds.";
         }
 
         var ffaDays = FfaSchedule.DaysOf(ffa.Days);
         var days = Enum.GetValues<DayOfWeek>().Where(d => !ffaDays.Contains(d)).OrderBy(d => ((int)d + 6) % 7);
-        return $"2v2 Testing Grounds is open {FfaSchedule.DayList(days)} (US Eastern), except during Twosday; Free For All takes its place on {FfaSchedule.DayList(ffaDays)}.";
+        return $"2v2 Testing Grounds is open {FfaSchedule.DayList(days)} (US Eastern) and during Twosday; Free For All takes its place on {FfaSchedule.DayList(ffaDays)}.";
     }
 
     /// <summary>The mutators of <paramref name="queue"/>'s matches, in order, without blanks or repeats.</summary>

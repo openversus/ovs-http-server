@@ -9,16 +9,17 @@ namespace OpenVersus.Server.Core.Matchmaking;
 // Twosday, ported from the TS server (src/services/twosdayService.ts, twosdayPartyBreakup.ts and src/utils/twosdayWindow.ts,
 // branch openversus). While it is on and inside its window (Tuesdays 15:00 to 24:00 America/New_York by default) everyone
 // solo queues 2v2 and gets a random partner:
-//   - 1v1 is off (Tuggernuts, 2026-10-27; the TS server sent a 1v1 search to the 2v2 queue instead, and players did not
-//     know why their 1v1 was a 2v2): a party lobby set to 1v1 is kept on 2v2 and the game told so (PartyService.SetModeAsync,
-//     OnLobbyModeUpdated), and a 1v1 search that comes anyway is refused with OneVsOneOffFailure (MatchmakingRequestService);
-//     the catalog has no switch for the 1v1 tile itself, as it has for the event queues;
+//   - every 1v1 search goes to its 2v2 queue, as the TS server sent it (restored 2026-11-02; from 10-27 to then the port
+//     refused 1v1 instead): ranked 1v1 to the ranked 2v2 queue, with the 2v2 rating as its skill, and 1v1 Testing Grounds to
+//     2v2 Testing Grounds (MatchmakingRequestService.OneVersusOneAsync); the answer stays the 1v1 request's, the ticket is a
+//     2v2 one. A party lobby set to 1v1 is kept on 2v2 and the game told so (PartyService.SetModeAsync, OnLobbyModeUpdated;
+//     not in the TS server), so the lobby shows what the search will be;
 //   - no party lobby can be formed: a party invite is answered as sent and never delivered (PartyService.InviteAsync),
 //     and a join into someone else's party lobby is refused (PartyService.JoinAsync, PartyLobbyService); a party formed
 //     before the window keeps working and can still queue together;
 //   - for its first `breakup_minutes` (default 30) every party lobby is broken up as soon as none of its players is
 //     queued, in a match or in a ranked set (TwosdayPartyBreakup, every 15 s);
-//   - Testing Grounds and FFA are closed (TestingGrounds, FfaSchedule).
+//   - FFA is closed, and 2v2 Testing Grounds takes its slot (TestingGrounds, FfaSchedule).
 // Custom lobbies and Arena lobbies, their invites and their joins, are untouched.
 // Twosday:Enabled (TWOSDAY_ENABLED, on by default) is the deployment's switch: off, Twosday never happens there whatever
 // the hash says (a test server). Then, switched hot through the Redis hash `twosday`, read on every check (no restart):
@@ -35,7 +36,7 @@ namespace OpenVersus.Server.Core.Matchmaking;
 /// <summary>Twosday's deployment switch.</summary>
 public sealed class TwosdaySettings
 {
-    [Description("Twosday on this deployment (TWOSDAY_ENABLED): its window (the Redis hash twosday: enabled, day, start, end, tz, breakup_minutes) sends every ranked 1v1 search to 2v2, stops new parties, breaks up existing ones and closes Testing Grounds and FFA. Off: never Twosday here, whatever the hash says (a test server).")]
+    [Description("Twosday on this deployment (TWOSDAY_ENABLED): its window (the Redis hash twosday: enabled, day, start, end, tz, breakup_minutes) sends every 1v1 search to its 2v2 queue (ranked and Testing Grounds), stops new parties, breaks up existing ones and closes FFA. Off: never Twosday here, whatever the hash says (a test server).")]
     public bool Enabled { get; set; } = true;
 }
 
@@ -54,19 +55,6 @@ public static class Twosday
 
     /// <summary>What both players of a party that is broken up are told.</summary>
     public const string PartiesOffMessage = "Parties are off for Twosday: queue solo for a random partner";
-
-    /// <summary>The answer to a 1v1 search during Twosday: a Hydra action failure, HTTP 200, as a closed queue's.</summary>
-    public static System.Text.Json.Nodes.JsonObject OneVsOneOffFailure() => new()
-    {
-        ["body"] = new System.Text.Json.Nodes.JsonObject
-        {
-            ["error"] = "twosday_one_vs_one_off",
-            ["ErrorCode"] = "QueueClosed",
-            ["ErrorMessage"] = "It's Twosday: 1v1 is off until midnight (US Eastern). Queue 2v2 for a random partner.",
-        },
-        ["metadata"] = null,
-        ["return_code"] = 1,
-    };
 
     /// <summary>A lobby mode that is 1v1 (as the game's mode select and the TS server have named it), which Twosday turns into its 2v2.</summary>
     public static bool IsOneVsOneMode(string mode) => mode is "1v1" or "ranked-1v1" or "1v1_ranked";

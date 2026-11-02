@@ -196,7 +196,22 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             return new MatchmakingAnswer(200, Matchmaking.FfaSchedule.ClosedFailure(ffa.CurrentValue), () => DisconnectForClosedQueueAsync(me));
         }
 
-        if (await TestingGroundsRefusalAsync(queue, request) is { } refused)
+        // Twosday (Matchmaking/Twosday.cs): a 1v1 search goes to its 2v2 queue, as the TS server sent it: ranked 1v1 to ranked
+        // 2v2, 1v1 Testing Grounds to 2v2 Testing Grounds. The answer stays the 1v1 request's; the ticket is queued on the
+        // 2v2 list (its skill the 2v2 rating), a party's search is the 2v2 request, and the checks are the 2v2 queue's. A 1v1
+        // Testing Grounds search stays 1v1 while 2v2 Testing Grounds is off (TestingGrounds:TwoVsTwoEnabled): nowhere to send it.
+        Queue? twosday = null;
+        if ((queue == Regular || queue.TestingGrounds == Matchmaking.TestingGrounds.OneVsOne) && await Matchmaking.Twosday.IsActiveAsync(services, time.GetUtcNow()))
+        {
+            twosday = queue == Regular ? Regular
+                : await Matchmaking.TestingGrounds.IsOpenAsync(services, time.GetUtcNow(), Matchmaking.TestingGrounds.TwoVsTwo) ? TestingGrounds2v2Queue : null;
+            if (twosday is not null)
+            {
+                log.LogInformation("[Twosday]: {Kind} search by {Player} goes to the {Queue} queue", kind, me, twosday.List2v2);
+            }
+        }
+
+        if (await TestingGroundsRefusalAsync(twosday ?? queue, request) is { } refused)
         {
             return refused;
         }
@@ -232,21 +247,15 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
                 return new MatchmakingAnswer(200, accepted, () => CancelFfaPartyAsync(redis, players, accepted["id"], request.Body?["match"]));
             }
 
-            if (queue.IsSoloOnly)
+            // 1v1 Testing Grounds is solo only, except that during Twosday the party's search is 2v2 Testing Grounds', which takes parties.
+            if (queue.IsSoloOnly && twosday is null)
             {
                 log.LogWarning("Rejected {Kind} matchmaking for {Player}, whose lobby has {Count} players; {Kind} is solo-entry only", kind, me, players.Count, kind);
                 return new MatchmakingAnswer(200, new JsonObject { ["error"] = $"{kind} matchmaking requires a solo party" });
             }
 
             log.LogInformation("Lobby of {Player} has {Count} players, redirecting 1v1 request to 2v2 handler", me, players.Count);
-            return await TwoVersusTwoAsync(request, queue, ct);
-        }
-
-        // Twosday (Matchmaking/Twosday.cs): 1v1 is off; a solo 1v1 search is refused (a party's went to 2v2 above).
-        if (queue == Regular && await Matchmaking.Twosday.IsActiveAsync(services, time.GetUtcNow()))
-        {
-            log.LogInformation("[Twosday]: refused 1v1 matchmaking for {Player}: 1v1 is off", me);
-            return new MatchmakingAnswer(200, Matchmaking.Twosday.OneVsOneOffFailure());
+            return await TwoVersusTwoAsync(request, twosday ?? queue, ct);
         }
 
         var (id, profile, failure) = await PrepareRequesterAsync(redis, request, ct);
@@ -256,7 +265,8 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         }
 
         var answer = OneVersusOneAnswer(request, queue, id, profile);
-        return new MatchmakingAnswer(200, answer, () => QueueAsync(redis, id, [id], request.Body?["match"], (string)answer["id"]!, queue.List1v1));
+        string list = twosday?.List2v2 ?? queue.List1v1;
+        return new MatchmakingAnswer(200, answer, () => QueueAsync(redis, id, [id], request.Body?["match"], (string)answer["id"]!, list));
     }
 
     // A Testing Grounds request outside its queue's window, or from a game that runs another Beta Speed than its matches

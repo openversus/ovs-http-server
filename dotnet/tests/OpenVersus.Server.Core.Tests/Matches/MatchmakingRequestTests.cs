@@ -230,7 +230,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         }
     }
 
-    private static readonly string[] s_lists = ["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, ArenaMatchmaking.List, TestingGrounds.TwoVsTwo.List];
+    private static readonly string[] s_lists = ["1v1", "2v2", MatchmakingWorker.Casual1v1, MatchmakingWorker.Casual2v2, ArenaMatchmaking.List, TestingGrounds.OneVsOne.List, TestingGrounds.TwoVsTwo.List];
 
     // An Arena lobby led by <paramref name="players"/>[0], as ArenaLobbyService stores one.
     private async Task ArenaLobbyAsync(params string[] players)
@@ -326,19 +326,35 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    // Twosday (a Tuesday evening, its hash's defaults): 1v1 is off, so a solo ranked 1v1 search is refused and nothing is
-    // queued; a party's goes to 2v2 as always; Casual is left alone. With the deployment's switch off, 1v1 is as any day.
-    public async Task OnTwosdayASolo1v1SearchIsRefused()
+    // Twosday (a Tuesday evening, its hash's defaults): a solo ranked 1v1 search is answered as the 1v1 request and queued on
+    // the 2v2 list, as the TS server did; a solo 1v1 Testing Grounds search is queued on 2v2 Testing Grounds' list (open
+    // during Twosday, FFA's day or not; with 2v2 Testing Grounds off it stays 1v1), and a party's is 2v2 Testing Grounds'
+    // request; Casual is left alone. With the deployment's switch off, 1v1 is as any day.
+    public async Task OnTwosdayA1v1SearchGoesToThe2v2Queue()
     {
         Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
         Skip.If(await Db.KeyExistsAsync(Twosday.Key), "the test Redis has a twosday hash");
         await PlayerAsync(Me);
         var tuesdayEvening = new Clock(DateTimeOffset.Parse("2026-10-06T20:00:00Z"));
+        var testingGrounds = Asking(Me) with { BetaSpeed = "110" };
 
         var answer = (await Service(time: tuesdayEvening, twosday: true).RequestAsync("1v1-retail", Asking(Me), CancellationToken.None))!;
-        Assert.Equal((200, Js.Stringify(Twosday.OneVsOneOffFailure())), (answer.Status, Js.Stringify(answer.Body)));
-        Assert.Null(answer.After);
-        Assert.Empty(await TicketsAsync());
+        Assert.Equal("1v1-retail", (string?)answer.Body["criteria_slug"]);
+        await answer.After!();
+        var ticket = Js.Parse(await QueuedAsync())!;
+        Assert.Equal("2v2", (string?)ticket["matchType"]);
+        Assert.Equal([Me], ticket["players"]!.AsArray().Select(p => (string?)p!["id"]));
+
+        answer = (await Service(ffa: new FfaSettings(), time: tuesdayEvening, twosday: true).RequestAsync(TestingGrounds.Criteria, testingGrounds, CancellationToken.None))!;
+        Assert.Equal(TestingGrounds.Criteria, (string?)answer.Body["criteria_slug"]);
+        await answer.After!();
+        Assert.Equal(TestingGrounds.TwoVsTwo.List, (string?)Js.Parse(await QueuedAsync())!["matchType"]);
+
+        // 2v2 Testing Grounds off: a 1v1 Testing Grounds search stays 1v1.
+        answer = (await Service(ffa: new FfaSettings(), time: tuesdayEvening, twosday: true, testingGrounds: new TestingGroundsSettings { TwoVsTwoEnabled = false })
+            .RequestAsync(TestingGrounds.Criteria, testingGrounds, CancellationToken.None))!;
+        await answer.After!();
+        Assert.Equal(TestingGrounds.OneVsOne.List, (string?)Js.Parse(await QueuedAsync())!["matchType"]);
 
         answer = (await Service(time: tuesdayEvening, twosday: true).RequestAsync("casual-retail", Asking(Me), CancellationToken.None))!;
         await answer.After!();
@@ -347,10 +363,21 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         answer = (await Service(time: tuesdayEvening, twosday: false).RequestAsync("1v1-retail", Asking(Me), CancellationToken.None))!;
         await answer.After!();
         Assert.Equal("1v1", (string?)Js.Parse(await QueuedAsync())!["matchType"]);
+
+        // A party formed before the window, searching 1v1 Testing Grounds (solo only on any other day): 2v2 Testing Grounds'
+        // request, the party whole.
+        await PlayerAsync(Mate);
+        await LobbyAsync(Me, Mate);
+        answer = (await Service(ffa: new FfaSettings(), time: tuesdayEvening, twosday: true).RequestAsync(TestingGrounds.Criteria, testingGrounds, CancellationToken.None))!;
+        Assert.Equal(TestingGrounds.TwoVsTwo.Criteria, (string?)answer.Body["criteria_slug"]);
+        await answer.After!();
+        ticket = Js.Parse(await QueuedAsync())!;
+        Assert.Equal(TestingGrounds.TwoVsTwo.List, (string?)ticket["matchType"]);
+        Assert.Equal([Me, Mate], ticket["players"]!.AsArray().Select(p => (string?)p!["id"]));
     }
 
     [SkippableFact]
-    // 2v2 Testing Grounds takes a party whole, on its own list; on FFA's day (or during Twosday) it is closed.
+    // 2v2 Testing Grounds takes a party whole, on its own list; on FFA's day it is closed (during Twosday it is open).
     public async Task A2v2TestingGroundsRequestQueuesThePartyOnItsListWhileOpen()
     {
         Skip.If(_redis is null, "set OVS_TEST_REDIS to run");

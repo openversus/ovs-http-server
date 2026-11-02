@@ -1,8 +1,8 @@
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Matchmaking;
 
@@ -17,44 +17,63 @@ namespace OpenVersus.Server.Core.Matchmaking;
 //   - no party lobby can be formed: a party invite is answered as sent and never delivered (PartyService.InviteAsync),
 //     and a join into someone else's party lobby is refused (PartyService.JoinAsync, PartyLobbyService); a party formed
 //     before the window keeps working and can still queue together;
-//   - for its first `breakup_minutes` (default 30) every party lobby is broken up as soon as none of its players is
+//   - for its first Twosday:BreakupMinutes (default 30) every party lobby is broken up as soon as none of its players is
 //     queued, in a match or in a ranked set (TwosdayPartyBreakup, every 15 s);
 //   - FFA is closed, and 2v2 Testing Grounds takes its slot (TestingGrounds, FfaSchedule).
 // Custom lobbies and Arena lobbies, their invites and their joins, are untouched.
-// Twosday:Enabled (TWOSDAY_ENABLED, on by default) is the deployment's switch: off, Twosday never happens there whatever
-// the hash says (a test server). Then, switched hot through the Redis hash `twosday`, read on every check (no restart):
-//   HSET twosday enabled 0        off (also false / off); 1 or no field: on
-//   HSET twosday day 2            0 Sunday .. 6 Saturday (default 2, Tuesday)
-//   HSET twosday start 15:00      HH:MM or HH:MM:SS, inclusive (default 15:00)
-//   HSET twosday end 24:00        HH:MM or HH:MM:SS, exclusive, 24:00 = midnight (default 24:00)
-//   HSET twosday tz America/New_York   the clock the hours are on (default America/New_York, daylight saving included)
-//   HSET twosday breakup_minutes 30    how long after the window opens the party lobbies are broken up (0: never)
-// To try it on a local server: HSET twosday day <today, 0 = Sunday> start <a minute ago> end 24:00.
-// A value that cannot be read (a bad time, day or zone) or Redis failing counts as off. The TS server also wrote
-// `enabled 1` at startup when the field was missing; a missing field already reads as on, so nothing is written here.
+// The switch and the window are settings (2026-11-02; the TS server kept them in the Redis hash `twosday`, which is not read
+// any more: an HSET on it does nothing), changed while running with ovsctl, cluster-wide:
+//   ovsctl settings set Twosday:Enabled false          off (a test server; or Twosday called off)
+//   ovsctl settings set Twosday:Day Wednesday          the day (Sunday .. Saturday; default Tuesday)
+//   ovsctl settings set Twosday:Start 15:00            HH:MM or HH:MM:SS, inclusive (default 15:00)
+//   ovsctl settings set Twosday:End 24:00              HH:MM or HH:MM:SS, exclusive, 24:00 = midnight (default 24:00)
+//   ovsctl settings set Twosday:TimeZone America/New_York   the clock the hours are on (daylight saving included)
+//   ovsctl settings set Twosday:BreakupMinutes 30      how long after the window opens party lobbies are broken up (0: never)
+// To try it on a local server: Day <today>, Start <a minute ago>, End 24:00. A window that cannot be read (a bad time, a
+// start at or after the end, an unknown zone) counts as off.
 
-/// <summary>Twosday's deployment switch.</summary>
+/// <summary>Twosday's switch and window.</summary>
 public sealed class TwosdaySettings
 {
-    [Description("Twosday on this deployment (TWOSDAY_ENABLED): its window (the Redis hash twosday: enabled, day, start, end, tz, breakup_minutes) sends every 1v1 search to its 2v2 queue (ranked and Testing Grounds), stops new parties, breaks up existing ones and closes FFA. Off: never Twosday here, whatever the hash says (a test server).")]
+    [Description("Twosday on this deployment: in its window (Twosday:Day, Twosday:Start to Twosday:End on Twosday:TimeZone's clock) every 1v1 search goes to its 2v2 queue (ranked and Testing Grounds), no party can form, party lobbies are broken up for Twosday:BreakupMinutes, FFA closes and 2v2 Testing Grounds takes its slot. Off: never Twosday here (a test server).")]
     public bool Enabled { get; set; } = true;
+
+    [Description("The day of the week Twosday is on.")]
+    public DayOfWeek Day { get; set; } = DayOfWeek.Tuesday;
+
+    [Description("When the window opens, HH:MM or HH:MM:SS on Twosday:TimeZone's clock, inclusive; must be before Twosday:End.")]
+    [RegularExpression(@"^\d{1,2}:\d{2}(:\d{2})?$")]
+    public string Start { get; set; } = "15:00";
+
+    [Description("When the window closes, HH:MM or HH:MM:SS on Twosday:TimeZone's clock, exclusive; 24:00 is midnight.")]
+    [RegularExpression(@"^\d{1,2}:\d{2}(:\d{2})?$")]
+    public string End { get; set; } = "24:00";
+
+    [Description("The IANA time zone the hours are on (daylight saving included), e.g. America/New_York.")]
+    public string TimeZone { get; set; } = "America/New_York";
+
+    [Description("How long after the window opens the party lobbies are broken up, in minutes (every party lobby is broken up as soon as none of its players is queued, in a match or in a ranked set); 0: never.")]
+    [Range(0, 1440)]
+    public int BreakupMinutes { get; set; } = 30;
 }
 
 public static class Twosday
 {
-    public const string Key = "twosday";
-
     /// <summary>Twosday's weekly window: one day, start (inclusive) to end (exclusive) on that zone's wall clock.</summary>
     public sealed record Window(DayOfWeek Day, string Start, string End, string TimeZone);
 
-    /// <summary>Tuesdays from 3 PM to midnight, US Eastern time.</summary>
-    public static readonly Window Default = new(DayOfWeek.Tuesday, "15:00", "24:00", "America/New_York");
-
-    /// <summary>The minutes into the window during which party lobbies are broken up, when the hash does not say.</summary>
-    public const int DefaultBreakupMinutes = 30;
+    /// <summary>Tuesdays from 3 PM to midnight, US Eastern time: the settings' defaults.</summary>
+    public static readonly Window Default = WindowOf(new TwosdaySettings());
 
     /// <summary>What both players of a party that is broken up are told.</summary>
     public const string PartiesOffMessage = "Parties are off for Twosday: queue solo for a random partner";
+
+    /// <summary>The window <paramref name="settings"/> describe.</summary>
+    public static Window WindowOf(TwosdaySettings settings) => new(settings.Day, settings.Start, settings.End, settings.TimeZone);
+
+    /// <summary>The settings in force (defaults when the service has none).</summary>
+    public static TwosdaySettings Of(IServiceProvider services) =>
+        services.GetService<IOptionsMonitor<TwosdaySettings>>()?.CurrentValue ?? new TwosdaySettings();
 
     /// <summary>A lobby mode that is 1v1 (as the game's mode select and the TS server have named it), which Twosday turns into its 2v2.</summary>
     public static bool IsOneVsOneMode(string mode) => mode is "1v1" or "ranked-1v1" or "1v1_ranked";
@@ -96,66 +115,26 @@ public static class Twosday
     }
 
     /// <summary>Whether the deployment allows Twosday at all (Twosday:Enabled).</summary>
-    public static bool IsEnabled(IServiceProvider services) =>
-        (services.GetService<IOptionsMonitor<TwosdaySettings>>()?.CurrentValue ?? new TwosdaySettings()).Enabled;
+    public static bool IsEnabled(IServiceProvider services) => Of(services).Enabled;
 
     /// <summary>
-    /// Whether Twosday is on at <paramref name="now"/>: the deployment allows it (Twosday:Enabled), the hash's switch is on
-    /// (a missing field is on) and it is inside its window. Off without Redis, when Redis fails, or when a value cannot be read.
+    /// Whether Twosday is on at <paramref name="now"/>: the switch is on and it is inside the window (the Twosday settings).
+    /// Off when the window cannot be read.
     /// </summary>
-    public static async Task<bool> IsActiveAsync(IServiceProvider services, DateTimeOffset now)
-    {
-        if (!IsEnabled(services) || services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis)
-        {
-            return false;
-        }
+    public static bool IsActive(IServiceProvider services, DateTimeOffset now) => IsActive(Of(services), now);
 
+    /// <summary>Whether <paramref name="settings"/> put Twosday on at <paramref name="now"/>; off when the window cannot be read.</summary>
+    public static bool IsActive(TwosdaySettings settings, DateTimeOffset now)
+    {
         try
         {
-            var fields = (await redis.HashGetAllAsync(Key)).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
-            return IsActive(fields, now);
+            return settings.Enabled && IsInWindow(now, WindowOf(settings));
         }
-        catch (Exception e) when (e is RedisException or FormatException or TimeZoneNotFoundException or InvalidTimeZoneException)
+        catch (Exception e) when (e is FormatException or TimeZoneNotFoundException or InvalidTimeZoneException)
         {
             return false;
         }
     }
-
-    /// <summary>The switch and window from the hash's fields (defaults filled in). Throws on a value it cannot read.</summary>
-    public static bool IsActive(IReadOnlyDictionary<string, string> fields, DateTimeOffset now)
-    {
-        var settings = SettingsOf(fields);
-        return settings.Enabled && IsInWindow(now, settings.Window);
-    }
-
-    /// <summary>The hash as stored: the switch, the window and the breakup minutes, defaults filled in.</summary>
-    public sealed record Settings(bool Enabled, Window Window, int BreakupMinutes);
-
-    /// <summary>
-    /// The settings from the hash's fields (readTwosdaySettings). Throws on a day or breakup_minutes it cannot read (a bad
-    /// time or zone throws when the window is read).
-    /// </summary>
-    public static Settings SettingsOf(IReadOnlyDictionary<string, string> fields)
-    {
-        string Get(string name) => fields.TryGetValue(name, out var v) ? v : "";
-        bool enabled = Get("enabled").Trim().ToLowerInvariant() is not ("0" or "false" or "off");
-        string day = Get("day");
-        var window = new Window(
-            day == "" ? Default.Day : int.TryParse(day, CultureInfo.InvariantCulture, out int d) && d is >= 0 and <= 6 ? (DayOfWeek)d
-                : throw new FormatException($"bad Twosday day: {day}"),
-            Get("start") is { Length: > 0 } start ? start : Default.Start,
-            Get("end") is { Length: > 0 } end ? end : Default.End,
-            Get("tz") is { Length: > 0 } tz ? tz : Default.TimeZone);
-        string breakup = Get("breakup_minutes");
-        int breakupMinutes = breakup == "" ? DefaultBreakupMinutes
-            : int.TryParse(breakup, NumberStyles.None, CultureInfo.InvariantCulture, out int minutes) ? minutes
-            : throw new FormatException($"bad Twosday breakup_minutes: {breakup}");
-        return new Settings(enabled, window, breakupMinutes);
-    }
-
-    /// <summary>The settings in Redis (<see cref="SettingsOf"/>). Throws when Redis fails or a value cannot be read.</summary>
-    public static async Task<Settings> ReadAsync(IDatabase redis) =>
-        SettingsOf((await redis.HashGetAllAsync(Key)).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString()));
 
     // The IANA zone; on Windows with invariant globalization IANA names do not resolve, so through its Windows id.
     private static TimeZoneInfo Zone(string ianaId)

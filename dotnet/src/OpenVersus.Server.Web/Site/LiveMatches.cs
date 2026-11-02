@@ -151,7 +151,7 @@ public sealed class LiveMatches(IServiceProvider services, IOpsService ops, IOpt
         bool testingGroundsOpen = false, testingGrounds2v2Open = false, ffaOpen = false, twosday = false;
         try
         {
-            twosday = await Twosday.IsActiveAsync(services, now);
+            twosday = Twosday.IsActive(services, now);
             var schedule = await TestingGrounds.ScheduleAsync(services, now);
             (testingGroundsOpen, testingGrounds2v2Open) = (schedule.OneVsOne, schedule.TwoVsTwo);
             // FFA's tile gives way to 2v2 Testing Grounds while both are open (TestingGrounds.AlwaysOpen): as the menu shows them.

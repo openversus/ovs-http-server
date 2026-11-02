@@ -97,20 +97,13 @@ public static class FfaSchedule
     public static bool IsOpen(DateTimeOffset now, FfaSettings settings, bool twosday = false) =>
         !settings.WeekendOnly || (DaysOf(settings.Days).Contains(TimeZoneInfo.ConvertTime(now, s_eastern).DayOfWeek) && !twosday);
 
-    /// <summary><see cref="IsOpen"/> with the service's settings and Twosday's switch (Redis), read only on an FFA day.</summary>
+    /// <summary><see cref="IsOpen"/> with the service's settings and Twosday's (a Task for its callers' sake: it reads nothing).</summary>
     public static Task<bool> IsOpenAsync(IServiceProvider services, DateTimeOffset now) =>
         IsOpenAsync(services, now, services.GetService<Microsoft.Extensions.Options.IOptionsMonitor<FfaSettings>>()?.CurrentValue ?? new FfaSettings());
 
-    /// <summary><see cref="IsOpen"/> with <paramref name="settings"/> and Twosday's switch (Redis), read only on an FFA day.</summary>
-    public static async Task<bool> IsOpenAsync(IServiceProvider services, DateTimeOffset now, FfaSettings settings)
-    {
-        if (!IsOpen(now, settings) || !settings.WeekendOnly)
-        {
-            return IsOpen(now, settings);
-        }
-
-        return IsOpen(now, settings, await Twosday.IsActiveAsync(services, now));
-    }
+    /// <summary><see cref="IsOpen"/> with <paramref name="settings"/> and Twosday's settings, looked at only on an FFA day.</summary>
+    public static Task<bool> IsOpenAsync(IServiceProvider services, DateTimeOffset now, FfaSettings settings) =>
+        Task.FromResult(!IsOpen(now, settings) || !settings.WeekendOnly ? IsOpen(now, settings) : IsOpen(now, settings, Twosday.IsActive(services, now)));
 
     /// <summary>The answer to an FFA request outside the window (ffaQueueClosedFailure): a Hydra action failure, HTTP 200.</summary>
     public static JsonObject ClosedFailure(FfaSettings settings) => new()

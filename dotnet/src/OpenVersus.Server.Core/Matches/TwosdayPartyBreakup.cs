@@ -10,7 +10,7 @@ namespace OpenVersus.Server.Core.Matches;
 
 /// <summary>
 /// Twosday's party breakup, ported from the TS server's twosdayPartyBreakup.ts: for the first breakup_minutes of the
-/// window (default 30; Matchmaking/Twosday.cs), every 15 s, each party lobby (lobby:{id}, 2+ players) is broken up as
+/// window (Twosday:BreakupMinutes, default 30; Matchmaking/Twosday.cs), every 15 s, each party lobby (lobby:{id}, 2+ players) is broken up as
 /// soon as none of its players is queued, in a match or in a ranked set: the owner keeps the lobby, the others get a solo
 /// lobby of their own, and both games are told (<see cref="IPartyService.BreakUpAsync"/>, the leave path; its party_left
 /// notice is what the client acts on). A party that is busy when the window opens is broken up once it is idle, if that
@@ -55,22 +55,16 @@ internal sealed class TwosdayPartyBreakup(IServiceProvider services, IPartyServi
     /// <summary>One round: the party lobbies broken up (0 outside the breakup minutes, or when another replica has the round).</summary>
     internal async Task<int> BreakUpIdlePartiesAsync(IConnectionMultiplexer multiplexer, DateTimeOffset now)
     {
-        if (!Twosday.IsEnabled(services))
-        {
-            return 0;
-        }
-
+        var settings = Twosday.Of(services);
         var redis = multiplexer.GetDatabase();
         int? into;
-        Twosday.Settings settings;
         try
         {
-            settings = await Twosday.ReadAsync(redis);
-            into = settings.Enabled && settings.BreakupMinutes > 0 ? Twosday.SecondsInto(now, settings.Window) : null;
+            into = settings.Enabled && settings.BreakupMinutes > 0 ? Twosday.SecondsInto(now, Twosday.WindowOf(settings)) : null;
         }
-        catch (Exception e) when (e is RedisException or FormatException or TimeZoneNotFoundException or InvalidTimeZoneException)
+        catch (Exception e) when (e is FormatException or TimeZoneNotFoundException or InvalidTimeZoneException)
         {
-            log.LogError("[Twosday]: party breakup skipped: could not read the twosday setting: {Error}", e.Message);
+            log.LogError("[Twosday]: party breakup skipped: the Twosday window cannot be read: {Error}", e.Message);
             return 0;
         }
 

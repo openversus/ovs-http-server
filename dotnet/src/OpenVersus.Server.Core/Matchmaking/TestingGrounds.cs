@@ -143,10 +143,10 @@ public static class TestingGrounds
         return new Schedule(oneVsOne, twoVsTwo, ffaTile);
     }
 
-    /// <summary><see cref="ScheduleAt"/> with the service's settings and Twosday's switch (Redis).</summary>
-    public static async Task<Schedule> ScheduleAsync(IServiceProvider services, DateTimeOffset now) =>
-        ScheduleAt(now, Of(services), services.GetService<IOptionsMonitor<FfaSettings>>()?.CurrentValue ?? new FfaSettings(),
-            await Twosday.IsActiveAsync(services, now));
+    /// <summary><see cref="ScheduleAt"/> with the service's settings and Twosday's (a Task for its callers' sake: it reads nothing).</summary>
+    public static Task<Schedule> ScheduleAsync(IServiceProvider services, DateTimeOffset now) =>
+        Task.FromResult(ScheduleAt(now, Of(services), services.GetService<IOptionsMonitor<FfaSettings>>()?.CurrentValue ?? new FfaSettings(),
+            Twosday.IsActive(services, now)));
 
     /// <summary>Whether 1v1 Testing Grounds takes players at <paramref name="now"/>.</summary>
     public static async Task<bool> IsOpenAsync(IServiceProvider services, DateTimeOffset now) => (await ScheduleAsync(services, now)).OneVsOne;

@@ -349,14 +349,13 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    // Twosday (a Tuesday evening, its hash's defaults): a solo ranked 1v1 search is answered as the 1v1 request and queued on
+    // Twosday (a Tuesday evening, the settings' default window): a solo ranked 1v1 search is answered as the 1v1 request and queued on
     // the 2v2 list, as the TS server did; a solo 1v1 Testing Grounds search is queued on 2v2 Testing Grounds' list (open
     // during Twosday, FFA's day or not; with 2v2 Testing Grounds off it stays 1v1), and a party's is 2v2 Testing Grounds'
     // request; Casual is left alone. With the deployment's switch off, 1v1 is as any day.
     public async Task OnTwosdayA1v1SearchGoesToThe2v2Queue()
     {
         Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
-        Skip.If(await Db.KeyExistsAsync(Twosday.Key), "the test Redis has a twosday hash");
         await PlayerAsync(Me);
         var tuesdayEvening = new Clock(DateTimeOffset.Parse("2026-10-06T20:00:00Z"));
         var testingGrounds = Asking(Me) with { BetaSpeed = "110" };

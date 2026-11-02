@@ -257,7 +257,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         var mode = request.Body?["ModeString"]?.DeepClone();
         string modeText = mode is JsonValue mv && mv.TryGetValue(out string? s) ? s : Js.Stringify(mode);
         // Twosday: every 1v1 search goes to 2v2, so a party lobby set to 1v1 stays on its 2v2, and the game is told that (Matchmaking/Twosday.cs).
-        if (Matchmaking.Twosday.IsOneVsOneMode(modeText) && await Matchmaking.Twosday.IsActiveAsync(services, time.GetUtcNow()))
+        if (Matchmaking.Twosday.IsOneVsOneMode(modeText) && Matchmaking.Twosday.IsActive(services, time.GetUtcNow()))
         {
             log.LogInformation("[Twosday]: {Player} set lobby {Lobby} to {Mode}; kept on {Kept}", me, lobbyId, modeText, PartyLobby.DuoMode(modeText));
             modeText = PartyLobby.DuoMode(modeText);
@@ -354,7 +354,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
         }
 
         // Twosday: no party lobbies, so the invite is answered as sent and never delivered (an Arena or rift lobby's is).
-        if (invitedTo is not (ArenaLobby or RiftLobby) && await Matchmaking.Twosday.IsActiveAsync(services, time.GetUtcNow()))
+        if (invitedTo is not (ArenaLobby or RiftLobby) && Matchmaking.Twosday.IsActive(services, time.GetUtcNow()))
         {
             log.LogInformation("[Twosday]: party invite from {Inviter} to {Invitee} for lobby {Lobby} not delivered", me, invitee, lobbyId);
             return LobbyDocuments.Ssc([]);
@@ -400,7 +400,7 @@ internal sealed class PartyService(IServiceProvider services, ICosmeticsService 
 
         // Twosday: no new party members (an invite sent before the window and accepted in it): the answer an expired invite
         // gets. A party formed before the window keeps working.
-        if (lobby is PartyLobby && !lobby.PlayerIds.Contains(me) && lobby.OwnerId != me && await Matchmaking.Twosday.IsActiveAsync(services, time.GetUtcNow()))
+        if (lobby is PartyLobby && !lobby.PlayerIds.Contains(me) && lobby.OwnerId != me && Matchmaking.Twosday.IsActive(services, time.GetUtcNow()))
         {
             log.LogInformation("[Twosday]: {Player} not joined to party lobby {Lobby}", me, target);
             if (!string.IsNullOrEmpty(pending))

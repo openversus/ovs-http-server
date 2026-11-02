@@ -118,7 +118,7 @@ internal sealed class PartyLobbyService(IServiceProvider services, IOptionsMonit
         }
 
         // Twosday: no new party members; the player is answered alone, as with no lobby (Matchmaking/Twosday.cs).
-        if (lobby is PartyLobby && lobby.OwnerId != me && !lobby.PlayerIds.Contains(me) && await Matchmaking.Twosday.IsActiveAsync(services, time.GetUtcNow()))
+        if (lobby is PartyLobby && lobby.OwnerId != me && !lobby.PlayerIds.Contains(me) && Matchmaking.Twosday.IsActive(services, time.GetUtcNow()))
         {
             log.LogInformation("[Twosday]: {Player} not joined to party lobby {Lobby}", me, matchId);
             return Alone(player, connection, matchId);

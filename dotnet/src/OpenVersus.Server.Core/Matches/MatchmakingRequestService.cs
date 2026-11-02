@@ -201,7 +201,7 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         // 2v2 list (its skill the 2v2 rating), a party's search is the 2v2 request, and the checks are the 2v2 queue's. A 1v1
         // Testing Grounds search stays 1v1 while 2v2 Testing Grounds is off (TestingGrounds:TwoVsTwoEnabled): nowhere to send it.
         Queue? twosday = null;
-        if ((queue == Regular || queue.TestingGrounds == Matchmaking.TestingGrounds.OneVsOne) && await Matchmaking.Twosday.IsActiveAsync(services, time.GetUtcNow()))
+        if ((queue == Regular || queue.TestingGrounds == Matchmaking.TestingGrounds.OneVsOne) && Matchmaking.Twosday.IsActive(services, time.GetUtcNow()))
         {
             twosday = queue == Regular ? Regular
                 : await Matchmaking.TestingGrounds.IsOpenAsync(services, time.GetUtcNow(), Matchmaking.TestingGrounds.TwoVsTwo) ? TestingGrounds2v2Queue : null;

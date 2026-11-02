@@ -4,8 +4,8 @@ using OpenVersus.Server.Core.Matchmaking;
 namespace OpenVersus.Server.Core.Tests.Matchmaking;
 
 /// <summary>
-/// Twosday's window, read as the TS server reads it (tests/twosdayWindow.test.ts, branch openversus, the same cases), its
-/// settings. Needs no stores.
+/// Twosday's window, read as the TS server read it (tests/twosdayWindow.test.ts, branch openversus, the same cases), and
+/// its settings (ovsctl's, in place of the TS server's Redis hash). Needs no stores.
 /// </summary>
 public sealed class TwosdayTests
 {
@@ -42,7 +42,6 @@ public sealed class TwosdayTests
         Assert.ThrowsAny<Exception>(() => Twosday.IsInWindow(now, Twosday.Default with { Start = "3pm" }));
         Assert.ThrowsAny<Exception>(() => Twosday.IsInWindow(now, Twosday.Default with { Start = "16:00", End = "15:00" }));
         Assert.ThrowsAny<Exception>(() => Twosday.IsInWindow(now, Twosday.Default with { TimeZone = "Eastern/Nowhere" }));
-        Assert.ThrowsAny<Exception>(() => Twosday.IsActive(new Dictionary<string, string> { ["day"] = "7" }, now));
     }
 
     [Fact]
@@ -56,15 +55,23 @@ public sealed class TwosdayTests
     }
 
     [Fact]
-    public void TheSwitchIsOnUnlessTurnedOff()
+    // The settings: on by default in the default window; off by the switch; moved by the day, the hours and the zone; a
+    // window that cannot be read is off, not an error.
+    public void TheSettingsSwitchAndMoveIt()
     {
         var tuesdayEvening = DateTimeOffset.Parse("2026-10-06T20:00:00Z");
-        Assert.True(Twosday.IsActive(new Dictionary<string, string>(), tuesdayEvening));
-        Assert.True(Twosday.IsActive(new Dictionary<string, string> { ["enabled"] = "1" }, tuesdayEvening));
-        Assert.False(Twosday.IsActive(new Dictionary<string, string> { ["enabled"] = "off" }, tuesdayEvening));
-        Assert.False(Twosday.IsActive(new Dictionary<string, string> { ["enabled"] = "0" }, tuesdayEvening));
-        // Moved to Wednesday by the hash: Tuesday is then not Twosday.
-        Assert.False(Twosday.IsActive(new Dictionary<string, string> { ["day"] = "3" }, tuesdayEvening));
+        Assert.True(Twosday.IsActive(new TwosdaySettings(), tuesdayEvening));
+        Assert.False(Twosday.IsActive(new TwosdaySettings { Enabled = false }, tuesdayEvening));
+        Assert.False(Twosday.IsActive(new TwosdaySettings { Day = DayOfWeek.Wednesday }, tuesdayEvening));
+        Assert.False(Twosday.IsActive(new TwosdaySettings { Start = "17:00" }, tuesdayEvening));
+        Assert.True(Twosday.IsActive(new TwosdaySettings { Start = "17:00" }, tuesdayEvening.AddHours(1)));
+        Assert.False(Twosday.IsActive(new TwosdaySettings { End = "16:00" }, tuesdayEvening));
+        Assert.True(Twosday.IsActive(new TwosdaySettings { TimeZone = "Europe/London" }, DateTimeOffset.Parse("2026-10-06T14:00:00Z")));
+        Assert.False(Twosday.IsActive(new TwosdaySettings { Start = "3pm" }, tuesdayEvening));
+        Assert.False(Twosday.IsActive(new TwosdaySettings { Start = "16:00", End = "15:00" }, tuesdayEvening));
+        Assert.False(Twosday.IsActive(new TwosdaySettings { TimeZone = "Eastern/Nowhere" }, tuesdayEvening));
+        Assert.Equal(new Twosday.Window(DayOfWeek.Tuesday, "15:00", "24:00", "America/New_York"), Twosday.Default);
+        Assert.Equal(30, new TwosdaySettings().BreakupMinutes);
     }
 
     [Fact]
@@ -91,25 +98,16 @@ public sealed class TwosdayTests
         Assert.Equal(seconds, Twosday.SecondsInto(DateTimeOffset.Parse(now), Twosday.Default));
 
     [Fact]
-    public void TheHashsSettingsWithTheirDefaults()
-    {
-        var defaults = Twosday.SettingsOf(new Dictionary<string, string>());
-        Assert.Equal(new Twosday.Settings(true, Twosday.Default, 30), defaults);
-        var set = Twosday.SettingsOf(new Dictionary<string, string> { ["enabled"] = "false", ["day"] = "3", ["start"] = "18:00", ["breakup_minutes"] = "0" });
-        Assert.Equal(new Twosday.Settings(false, Twosday.Default with { Day = DayOfWeek.Wednesday, Start = "18:00" }, 0), set);
-        Assert.ThrowsAny<FormatException>(() => Twosday.SettingsOf(new Dictionary<string, string> { ["breakup_minutes"] = "-1" }));
-        Assert.ThrowsAny<FormatException>(() => Twosday.SettingsOf(new Dictionary<string, string> { ["breakup_minutes"] = "soon" }));
-    }
-
-    [Fact]
-    // Twosday:Enabled off (a test server): never Twosday, whatever the hash says, without reading Redis.
-    public async Task TheDeploymentsSwitchTurnsItOffEverywhere()
+    // Twosday:Enabled off (a test server): never Twosday, whatever the window says; the service's settings are read live.
+    public void TheDeploymentsSwitchTurnsItOffEverywhere()
     {
         var tuesdayEvening = DateTimeOffset.Parse("2026-10-06T20:00:00Z");
         var off = new ServiceCollection().Configure<TwosdaySettings>(o => o.Enabled = false).BuildServiceProvider();
         Assert.False(Twosday.IsEnabled(off));
-        Assert.False(await Twosday.IsActiveAsync(off, tuesdayEvening));
-        Assert.True(Twosday.IsEnabled(new ServiceCollection().BuildServiceProvider()));
+        Assert.False(Twosday.IsActive(off, tuesdayEvening));
+        var on = new ServiceCollection().BuildServiceProvider();
+        Assert.True(Twosday.IsEnabled(on));
+        Assert.True(Twosday.IsActive(on, tuesdayEvening));
         Assert.True(new TwosdaySettings().Enabled);
     }
 }

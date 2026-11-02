@@ -420,6 +420,25 @@ public sealed class RollbackCallbacksTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // With servers already running (Rollback:OnDemand off), the match's port is one of theirs: the nodes are sent there
+    // and nothing is deployed.
+    public async Task WithoutOnDemandTheRelayIsTheRunningServerOnTheMatchPort()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS to run");
+        await SeedAsync(p2p: true);
+        var launcher = new Launcher();
+        var callbacks = Callbacks(launcher, settings: new RollbackSettings { UdpServerIp = "203.0.113.5", OnDemand = false });
+
+        var first = await callbacks.P2PFailedAsync(Body());
+        var second = await callbacks.P2PFailedAsync(Body());
+
+        Assert.Equal("""{"host":"203.0.113.5","port":57003}""", first!.ToJsonString());
+        Assert.Equal(first.ToJsonString(), second!.ToJsonString());
+        Assert.Empty(launcher.Deployed);
+        Assert.Equal("1", (string?)await Db.StringGetAsync($"p2p_relay:{Match}"));
+    }
+
+    [SkippableFact]
     public async Task ARelayRequestForAMatchThatIsNotP2PIsAnsweredWithNothing()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS to run");

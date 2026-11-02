@@ -40,7 +40,8 @@ namespace OpenVersus.Server.Core.Matches;
 //
 // The rollback port, as the TS rollbackService.ts picks it:
 //   fixed (Rollback:OnDemand off, ON_DEMAND_ROLLBACK=0): servers already running; a random port in
-//     [UdpPortLow, UdpPortHigh).
+//     [UdpPortLow, UdpPortHigh). One difference: UdpPortLow == UdpPortHigh is that one port (one long-lived server,
+//     which serves every match at once; the TS randomInt threw on the empty range), and only a reversed range has none.
 //   on demand (ON_DEMAND_ROLLBACK=1, prod): one short-lived server per match. The port is INCR rollback:current_port,
 //     back to OnDemandPortLow (and the key set to it) past OnDemandPortHigh; then the deploy webhook gets a POST of
 //     {entrypoint (CHANGEMEDEFAULTPORT replaced by the port), image, ovs_server, port, servicename, created_at 0}
@@ -60,7 +61,7 @@ public sealed class RollbackSettings
     [Range(1, 65535)]
     public int UdpPortLow { get; set; } = 57000;
 
-    [Description("One past the highest such port (ROLLBACK_UDP_PORT_HIGH; the TS server's randomInt excludes it).")]
+    [Description("One past the highest such port (ROLLBACK_UDP_PORT_HIGH; the TS server's randomInt excludes it). Equal to UdpPortLow: that one port, a single long-lived server.")]
     [Range(2, 65536)]
     public int UdpPortHigh { get; set; } = 57019;
 
@@ -193,7 +194,7 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
         var rollback = settings.CurrentValue;
         if (await RollbackPortAsync(redis) is not { } rollbackPort)
         {
-            log.LogError("A {Mode} match was not started: no rollback port (on demand {OnDemand}; fixed range {Low}..{High} exclusive, on-demand range {DemandLow}..{DemandHigh})",
+            log.LogError("A {Mode} match was not started: no rollback port (on demand {OnDemand}; fixed range {Low}..{High} exclusive, or that one port when equal; on-demand range {DemandLow}..{DemandHigh})",
                 launch.Mode, rollback.OnDemand, rollback.UdpPortLow, rollback.UdpPortHigh, rollback.OnDemandPortLow, rollback.OnDemandPortHigh);
             return null;
         }
@@ -401,9 +402,17 @@ internal sealed class MatchLauncher(IServiceProvider services, IOptionsMonitor<R
         }
     }
 
-    /// <summary>A port in [UdpPortLow, UdpPortHigh), as the TS randomInt; null when on-demand or the range is empty.</summary>
-    internal static int? RollbackPort(RollbackSettings settings) =>
-        !settings.OnDemand && settings.UdpPortHigh > settings.UdpPortLow ? Random.Shared.Next(settings.UdpPortLow, settings.UdpPortHigh) : null;
+    /// <summary>
+    /// A port in [UdpPortLow, UdpPortHigh), as the TS randomInt; UdpPortLow itself when the two are equal (one long-lived
+    /// server); null when on-demand or the range is reversed.
+    /// </summary>
+    internal static int? RollbackPort(RollbackSettings settings) => settings switch
+    {
+        { OnDemand: true } => null,
+        var s when s.UdpPortHigh > s.UdpPortLow => Random.Shared.Next(s.UdpPortLow, s.UdpPortHigh),
+        var s when s.UdpPortHigh == s.UdpPortLow => s.UdpPortLow,
+        _ => null,
+    };
 }
 
 public static class MatchLauncherHosting

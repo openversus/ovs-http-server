@@ -6,14 +6,16 @@ namespace OpenVersus.Server.Core.Tests.Matches;
 public sealed class MatchLauncherTests
 {
     [Fact]
-    // [Low, High) as the TS randomInt: High is never picked, and Low == High has no port (the TS server throws there).
+    // [Low, High) as the TS randomInt: High is never picked. Low == High is that one port (one long-lived server; the TS
+    // server threw there), a reversed range has none, and on demand picks none here.
     public void TheFixedPortIsInTheHalfOpenRange()
     {
         var settings = new RollbackSettings { UdpPortLow = 57000, UdpPortHigh = 57002 };
         var ports = Enumerable.Range(0, 200).Select(_ => MatchLauncher.RollbackPort(settings)).ToHashSet();
 
         Assert.Equal([57000, 57001], ports.Order());
-        Assert.Null(MatchLauncher.RollbackPort(new RollbackSettings { UdpPortLow = 57000, UdpPortHigh = 57000 }));
+        Assert.Equal(41236, MatchLauncher.RollbackPort(new RollbackSettings { UdpPortLow = 41236, UdpPortHigh = 41236 }));
+        Assert.Null(MatchLauncher.RollbackPort(new RollbackSettings { UdpPortLow = 57002, UdpPortHigh = 57000 }));
         Assert.Null(MatchLauncher.RollbackPort(new RollbackSettings { UdpPortLow = 57000, UdpPortHigh = 57002, OnDemand = true }));
     }
 

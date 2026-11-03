@@ -45,4 +45,30 @@ public sealed class CommerceEndpointTests(GameAppFactory factory) : IClassFixtur
         Assert.False(response.Headers.Contains(Stub.Header));
         Assert.Equal(HydraCodec.EncodeJson("""{"body":{"Crc":1267552971,"MatchmakingCrc":2},"metadata":null,"return_code":200}"""), await response.Content.ReadAsByteArrayAsync());
     }
+
+    private async Task<HttpResponseMessage> PostHydraAsync(string path)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, path);
+        request.Content = new ByteArrayContent(HydraCodec.EncodeJson("""{"price_slug":"steam"}"""));
+        request.Content.Headers.ContentType = new(HydraBodies.ContentType);
+        return await _client.SendAsync(request);
+    }
+
+    [Theory]
+    [InlineData("/commerce/catalog/me/products/founderspack-1-steam/purchase")]
+    [InlineData("/commerce/catalog/me/products/founderspack-2-steam/purchase")]
+    public async Task AFoundersPackClaimIsRefusedSoTheGameDoesNotReadTheAnswerAsTheAccount(string path)
+    {
+        using var response = await PostHydraAsync(path);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(HydraCodec.EncodeJson("""{"error":"already_owned"}"""), await response.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
+    public async Task AnyOtherPurchaseIsStillTheTsCatchAll()
+    {
+        using var response = await PostHydraAsync("/commerce/catalog/me/products/some-bundle/purchase");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HydraCodec.EncodeJson("""{"body":{"Crc":1267552971,"MatchmakingCrc":2},"metadata":null,"return_code":200}"""), await response.Content.ReadAsByteArrayAsync());
+    }
 }

@@ -113,7 +113,7 @@ public sealed class OpsTests : IAsyncLifetime
         ]);
 
         await Redis.SetAddAsync("online_players", [a, b, "ghost"]);
-        await Redis.HashSetAsync($"connections:{a}", [new HashEntry("username", "Alice"), new HashEntry("character", "character_shaggy")]);
+        await Redis.HashSetAsync($"connections:{a}", [new HashEntry("username", "Alice"), new HashEntry("character", "character_shaggy"), new HashEntry("nodePort", "57000")]);
         await Redis.HashSetAsync($"connections:{b}", [new HashEntry("hydraUsername", "Gen_Bob")]);
         await Redis.HashSetAsync($"player:{a}", "status", "queued");
         await Redis.ListRightPushAsync("1v1", $$"""{"party_size":1,"players":[{"id":"{{a}}","skill":1200,"region":"us"}],"created_at":{{now - 30}},"partyId":"party-a","matchmakingRequestId":"req-a"}""");
@@ -166,6 +166,66 @@ public sealed class OpsTests : IAsyncLifetime
         Assert.Equal("Gen_Bob", names[_bob.ToString()]);
         Assert.Equal("Unknown", names["ghost"]);
         Assert.Equal("queued", online.Players!.Single(p => p.Id == _alice.ToString()).Status);
+    }
+
+    [SkippableFact]
+    // Who has no P2P node, read as the matchmaker reads it: Alice's connection names a port, Bob's names none, and the
+    // ghost has no connection record at all. A port the client sent that does not parse (the TS parseNodePort) is none.
+    public async Task NodelessListsTheConnectedPlayersWithoutANodePort()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        string a = _alice.ToString(), b = _bob.ToString();
+        await Redis.HashSetAsync($"connections:{b}", "current_ip", "203.0.113.9");
+        Assert.Equal(57000, (await Ops.OnlineAsync(withPlayers: true)).Value!.Players!.Single(p => p.Id == a).NodePort);
+
+        var nodeless = (await Ops.NodelessAsync()).Value!;
+        Assert.Equal(3, nodeless.Connected);
+        Assert.Equal(["Gen_Bob", "Unknown"], nodeless.Players.Select(p => p.Name));
+        var bob = nodeless.Players.Single(p => p.Id == b);
+        Assert.Equal(("203.0.113.9", null, 0), (bob.Ip, bob.Status, bob.NodePort));
+
+        // --warn: the same banner for each of them, and none for a player with a node.
+        var warned = (await Ops.WarnNodelessAsync("Heads up", "No node.", 9)).Value!;
+        Assert.Equal((3L, 9), (warned.Connected, warned.TimeoutSeconds));
+        Assert.Equal([b, "ghost"], warned.Warned.Select(p => p.Id));
+        foreach (string id in new[] { b, "ghost" })
+        {
+            var queued = System.Text.Json.Nodes.JsonNode.Parse((await Redis.ListRangeAsync($"dll_notifications:{id}")).Single().ToString())!;
+            Assert.Equal(("admin_banner", "Heads up", "No node.", 9), ((string?)queued["type"], (string?)queued["title"], (string?)queued["message"], (int?)queued["data"]!["timeout"]));
+        }
+
+        Assert.False(await Redis.KeyExistsAsync($"dll_notifications:{a}"));
+        Assert.NotNull((await Ops.WarnNodelessAsync("", " ", 9)).Error);
+
+        await Redis.HashSetAsync($"connections:{a}", "nodePort", "0");
+        Assert.Contains(a, (await Ops.NodelessAsync()).Value!.Players.Select(p => p.Id));
+        await Redis.HashSetAsync($"connections:{a}", "nodePort", "abc");
+        Assert.Contains(a, (await Ops.NodelessAsync()).Value!.Players.Select(p => p.Id));
+    }
+
+    [SkippableFact]
+    // The banner is the OpenVersus client's admin_banner, queued where the client polls (dll_notifications:{id}, 60 s),
+    // for a player found by any handle; an offline player's is queued too, and said to be offline.
+    public async Task ABannerIsQueuedForTheClientToPoll()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        string a = _alice.ToString();
+        var sent = (await Ops.BannerAsync("alice", "Heads up", "Your P2P node isn't running.", 12)).Value!;
+        Assert.Equal((a, "Alice", true, 12), (sent.Id, sent.Name, sent.WasOnline, sent.TimeoutSeconds));
+
+        var queued = await Redis.ListRangeAsync($"dll_notifications:{a}");
+        var notification = System.Text.Json.Nodes.JsonNode.Parse(queued.Single().ToString())!;
+        Assert.Equal("admin_banner", (string?)notification["type"]);
+        Assert.Equal("Heads up", (string?)notification["title"]);
+        Assert.Equal("Your P2P node isn't running.", (string?)notification["message"]);
+        Assert.Equal(12, (int?)notification["data"]!["timeout"]);
+        Assert.InRange((long)notification["timestamp"]!, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - 10_000, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        Assert.InRange((await Redis.KeyTimeToLiveAsync($"dll_notifications:{a}"))!.Value.TotalSeconds, 50, 60);
+
+        Assert.False((await Ops.BannerAsync(_dup1.ToString(), "", "Hello", 8)).Value!.WasOnline);
+        Assert.NotNull((await Ops.BannerAsync("nobody-here", "", "Hello", 8)).Error);
+        Assert.NotNull((await Ops.BannerAsync("alice", "", "   ", 8)).Error);
+        Assert.NotNull((await Ops.BannerAsync("alice", "", "Hello", 0)).Error);
     }
 
     [SkippableFact]

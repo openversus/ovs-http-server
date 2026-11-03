@@ -170,6 +170,11 @@ public sealed class ControlClient : IDisposable
 
     public Task<ControlReply<OnlineView>> OnlineAsync(bool players) => SendAsync<OnlineView>(HttpMethod.Get, $"/control/ops/online?players={(players ? "true" : "false")}");
 
+    public Task<ControlReply<NodelessView>> NodelessAsync() => SendAsync<NodelessView>(HttpMethod.Get, "/control/ops/nodeless");
+
+    public Task<ControlReply<NodelessWarnView>> WarnNodelessAsync(string title, string message, int timeoutSeconds) =>
+        SendAsync<NodelessWarnView>(HttpMethod.Post, $"/control/ops/nodeless/warn?title={Uri.EscapeDataString(title)}&timeout={timeoutSeconds}", new StringContent(message));
+
     public Task<ControlReply<MatchView[]>> MatchesAsync() => SendAsync<MatchView[]>(HttpMethod.Get, "/control/ops/matches");
 
     public Task<ControlReply<LobbyView[]>> LobbiesAsync() => SendAsync<LobbyView[]>(HttpMethod.Get, "/control/ops/lobbies");
@@ -185,6 +190,10 @@ public sealed class ControlClient : IDisposable
 
     public Task<ControlReply<DisconnectView>> DisconnectAsync(string who) =>
         SendAsync<DisconnectView>(HttpMethod.Post, $"/control/ops/players/{Uri.EscapeDataString(who)}/disconnect");
+
+    public Task<ControlReply<BannerView>> BannerAsync(string who, string title, string message, int timeoutSeconds) =>
+        SendAsync<BannerView>(HttpMethod.Post, $"/control/ops/players/{Uri.EscapeDataString(who)}/banner?title={Uri.EscapeDataString(title)}&timeout={timeoutSeconds}",
+            new StringContent(message));
 
     public Task<ControlReply<BanView>> BanAsync(string who, string reason) =>
         SendAsync<BanView>(HttpMethod.Post, $"/control/ops/players/{Uri.EscapeDataString(who)}/ban", new StringContent(reason));

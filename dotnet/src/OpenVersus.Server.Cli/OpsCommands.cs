@@ -112,15 +112,87 @@ internal static class OnlineRender
 
         var table = new Table().Border(TableBorder.Rounded)
             .AddColumn("Name").AddColumn("Username").AddColumn("Id").AddColumn("Steam id").AddColumn("IP").AddColumn("Status")
-            .AddColumn("Gateway node").AddColumn("Edge");
+            .AddColumn("Gateway node").AddColumn("Edge").AddColumn("Node port");
         foreach (var p in players)
         {
             table.AddRow(Markup.Escape(p.Name), Markup.Escape(p.Username ?? "-"), $"[grey]{Markup.Escape(p.Id)}[/]",
                 Markup.Escape(p.SteamId ?? "-"), Markup.Escape(p.Ip ?? "-"), Markup.Escape(p.Status ?? "-"),
-                Markup.Escape(p.Node ?? "-"), PlayerRender.Edge(p.Edge));
+                Markup.Escape(p.Node ?? "-"), PlayerRender.Edge(p.Edge), NodePort(p));
         }
 
         console.Write(table);
+    }
+
+    /// <summary>ovsctl player nodeless: who is connected without a P2P node, so their matches go to a relay.</summary>
+    public static void ShowNodeless(IAnsiConsole console, NodelessView nodeless)
+    {
+        console.MarkupLineInterpolated($"[bold]{nodeless.Players.Count}[/] of {nodeless.Connected} connected player(s) reported no P2P node (their matches run on a relay)");
+        if (nodeless.Players.Count == 0)
+        {
+            return;
+        }
+
+        var table = new Table().Border(TableBorder.Rounded)
+            .AddColumn("Name").AddColumn("Id").AddColumn("Status").AddColumn("IP").AddColumn("Username").AddColumn("Steam id");
+        foreach (var p in nodeless.Players)
+        {
+            table.AddRow(Markup.Escape(p.Name), $"[grey]{Markup.Escape(p.Id)}[/]", Markup.Escape(p.Status ?? "-"), Markup.Escape(p.Ip ?? "-"),
+                Markup.Escape(p.Username ?? "-"), Markup.Escape(p.SteamId ?? "-"));
+        }
+
+        console.Write(table);
+    }
+
+    private static string NodePort(OnlinePlayer p) => p.NodePort > 0 ? p.NodePort.ToString() : "[yellow]none[/]";
+}
+
+public sealed class PlayerNodelessSettings : ConnectionSettings
+{
+    /// <summary>The canned warning <c>--warn</c> sends; <c>--message</c> replaces it for one run.</summary>
+    public const string DefaultMessage = "All of your matches will be played through a relay server and will likely be MUCH lower in quality as a result.\nTry restarting your game to fix it, or ask for help in the OVS Discord server.";
+
+    protected override string DefaultService => "access";
+
+    [CommandOption("--warn")]
+    [Description("Also send every listed player a banner (the OpenVersus client's admin banner).")]
+    public bool Warn { get; set; }
+
+    [CommandOption("--message <MESSAGE>")]
+    [Description("The banner's text (its lower line), with --warn. Default: \"" + DefaultMessage + "\"")]
+    public string Message { get; set; } = DefaultMessage;
+
+    [CommandOption("--title <TITLE>")]
+    [Description("The banner's upper line, with --warn. Default: OpenVersus.")]
+    public string Title { get; set; } = "Your P2P rollback node isn't running.";
+
+    [CommandOption("--timeout <SECONDS>")]
+    [Description("How long the banner shows, in seconds (1 to 300), with --warn. Default: 8.")]
+    public int Timeout { get; set; } = 30;
+}
+
+public sealed class PlayerNodelessCommand : AsyncCommand<PlayerNodelessSettings>
+{
+    private readonly IAnsiConsole _console;
+
+    public PlayerNodelessCommand(IAnsiConsole console)
+    {
+        _console = console;
+    }
+
+    protected override async Task<int> ExecuteAsync(CommandContext context, PlayerNodelessSettings settings, CancellationToken cancellation)
+    {
+        using var client = ControlClient.For(settings);
+        if (!settings.Warn)
+        {
+            return OvsCtl.Report(_console, settings, await client.NodelessAsync(), nodeless => OnlineRender.ShowNodeless(_console, nodeless));
+        }
+
+        // Markup only in the format string: what is interpolated is escaped, markup included.
+        return OvsCtl.Report(_console, settings, await client.WarnNodelessAsync(settings.Title, settings.Message, settings.Timeout), warned =>
+        {
+            OnlineRender.ShowNodeless(_console, new NodelessView(warned.Connected, warned.Warned));
+            _console.MarkupLineInterpolated($"Banner queued for {warned.Warned.Count} player(s), shown for {warned.TimeoutSeconds} s: [bold]{settings.Title}[/] / {settings.Message}");
+        });
     }
 }
 
@@ -257,6 +329,21 @@ public sealed class RenameSettings : PlayerSettings
     public string Name { get; set; } = "";
 }
 
+public sealed class PlayerBannerSettings : PlayerSettings
+{
+    [CommandArgument(1, "<MESSAGE>")]
+    [Description("The banner's text (its lower line).")]
+    public string Message { get; set; } = "";
+
+    [CommandOption("--title <TITLE>")]
+    [Description("The banner's upper line. Default: OpenVersus.")]
+    public string Title { get; set; } = "OpenVersus";
+
+    [CommandOption("--timeout <SECONDS>")]
+    [Description("How long the banner shows, in seconds (1 to 300). Default: 8.")]
+    public int Timeout { get; set; } = 8;
+}
+
 internal static class PlayerRender
 {
     public static void Show(IAnsiConsole console, PlayerView p)
@@ -344,6 +431,33 @@ public sealed class PlayerDisconnectCommand : AsyncCommand<PlayerSettings>
             else
             {
                 _console.MarkupLineInterpolated($"Disconnect sent for [bold]{d.Name}[/] ({d.Id}) to {d.Websockets} websocket service(s); [yellow]they were not online[/].");
+            }
+        });
+    }
+}
+
+public sealed class PlayerBannerCommand : AsyncCommand<PlayerBannerSettings>
+{
+    private readonly IAnsiConsole _console;
+
+    public PlayerBannerCommand(IAnsiConsole console)
+    {
+        _console = console;
+    }
+
+    protected override async Task<int> ExecuteAsync(CommandContext context, PlayerBannerSettings settings, CancellationToken cancellation)
+    {
+        using var client = ControlClient.For(settings);
+        // Markup only in the format string: what is interpolated is escaped, markup included.
+        return OvsCtl.Report(_console, settings, await client.BannerAsync(settings.Who, settings.Title, settings.Message, settings.Timeout), b =>
+        {
+            if (b.WasOnline)
+            {
+                _console.MarkupLineInterpolated($"Banner queued for [bold]{b.Name}[/] ({b.Id}), shown for {b.TimeoutSeconds} s; they are online.");
+            }
+            else
+            {
+                _console.MarkupLineInterpolated($"Banner queued for [bold]{b.Name}[/] ({b.Id}), shown for {b.TimeoutSeconds} s; [yellow]they are not online[/]: it expires in 60 s unless they connect.");
             }
         });
     }

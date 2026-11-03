@@ -39,10 +39,14 @@ public static class OvsCtl
             config.AddBranch("player", player =>
             {
                 player.SetDescription("Player records. Asks the access service by default.");
-                player.AddCommand<PlayerOnlineCommand>("online").WithDescription("Who is connected, with each one's name, username, id, Steam id, IP, gateway node and edge.");
+                player.AddCommand<PlayerOnlineCommand>("online").WithDescription("Who is connected, with each one's name, username, id, Steam id, IP, gateway node, edge and P2P node port.");
+                player.AddCommand<PlayerNodelessCommand>("nodeless").WithDescription("Who is connected without a P2P node (their matches run on a relay): name, id, status, IP, username, Steam id. --warn sends each of them a banner (--message, --title, --timeout).")
+                    .WithExample("player", "nodeless").WithExample("player", "nodeless", "--warn", "--title", "Heads up");
                 player.AddCommand<PlayerShowCommand>("show").WithDescription("A player's record, and their connection: the gateway node and the edge it goes through.");
                 player.AddCommand<PlayerRenameCommand>("rename").WithDescription("Rename a player (an administrator's rename: no censoring).");
                 player.AddCommand<PlayerDisconnectCommand>("disconnect").WithDescription("Close a player's game connection, as a heartbeat timeout would (the game logs out).");
+                player.AddCommand<PlayerBannerCommand>("banner").WithDescription("Show a banner in a player's game (the OpenVersus client's admin banner): --title for the upper line, --timeout for the seconds it shows. Queued for 60 s, so the player must be connected to see it.")
+                    .WithExample("player", "banner", "SomeName", "\"Your P2P node isn't running, so your matches go through the relay.\"", "--title", "Heads up");
                 player.AddCommand<PlayerBanCommand>("ban").WithDescription("Ban the person behind a player for good: their IP, Steam, Epic, hardware and install ids and the player id; recorded in Mongo and the auto-ban file, and their connection is closed.");
                 player.AddCommand<PlayerUnbanCommand>("unban").WithDescription("Lift a player's bans: their ban records are marked lifted (kept), and each identifier no other ban holds is let through; one still held is listed with what holds it (a ban file's entry is lifted with `bans lift`).");
             });

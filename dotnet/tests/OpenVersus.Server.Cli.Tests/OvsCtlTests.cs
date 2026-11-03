@@ -109,7 +109,7 @@ public sealed class OvsCtlTests : IAsyncLifetime
         Skip.If(!string.IsNullOrEmpty(Environment.GetEnvironmentVariable(ConnectionSettings.ServiceVariable)), "OVS_SERVICE is set here");
         Assert.Equal("matchmaking", new QueuesSettings().Service);
         Assert.Equal("matchflow", new MatchesSettings().Service);
-        Assert.Equal(["access", "access", "access"], new ConnectionSettings[] { new OnlineSettings(), new PlayerOnlineSettings(), new PlayerSettings() }.Select(s => s.Service));
+        Assert.Equal(["access", "access", "access", "access", "access"], new ConnectionSettings[] { new OnlineSettings(), new PlayerOnlineSettings(), new PlayerSettings(), new PlayerBannerSettings(), new PlayerNodelessSettings() }.Select(s => s.Service));
         Assert.False(new PlayerSettings().ServiceNamed);
         Assert.True(new PlayerSettings { Service = "ws" }.ServiceNamed);
         Assert.Equal("ws", new PlayerSettings { Service = "ws" }.Service);

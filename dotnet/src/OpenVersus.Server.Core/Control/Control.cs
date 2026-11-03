@@ -132,6 +132,9 @@ public static class ControlApi
         // The live game's state: queues, who is connected, matches in progress, custom lobbies, player records.
         control.MapGet("/ops/queues", async (IOpsService ops) => ToResult(await ops.QueuesAsync()));
         control.MapGet("/ops/online", async (bool? players, IOpsService ops) => ToResult(await ops.OnlineAsync(players == true)));
+        control.MapGet("/ops/nodeless", async (IOpsService ops) => ToResult(await ops.NodelessAsync()));
+        control.MapPost("/ops/nodeless/warn", async (string? title, int? timeout, HttpRequest request, IOpsService ops) =>
+            ToResult(await ops.WarnNodelessAsync(title ?? "", await new StreamReader(request.Body).ReadToEndAsync(), timeout ?? 8)));
         control.MapGet("/ops/matches", async (IOpsService ops) => ToResult(await ops.MatchesAsync()));
         control.MapGet("/ops/lobbies", async (IOpsService ops) => ToResult(await ops.LobbiesAsync()));
         control.MapGet("/ops/lobbies/{code}", async (string code, IOpsService ops) => ToResult(await ops.LobbyAsync(code)));
@@ -139,6 +142,9 @@ public static class ControlApi
         control.MapPut("/ops/players/{who}/name", async (string who, HttpRequest request, IOpsService ops) =>
             ToResult(await ops.RenamePlayerAsync(who, await new StreamReader(request.Body).ReadToEndAsync())));
         control.MapPost("/ops/players/{who}/disconnect", async (string who, IOpsService ops) => ToResult(await ops.DisconnectPlayerAsync(who)));
+        // The message is the body, as plain text; the title and the seconds it shows are in the query.
+        control.MapPost("/ops/players/{who}/banner", async (string who, string? title, int? timeout, HttpRequest request, IOpsService ops) =>
+            ToResult(await ops.BannerAsync(who, title ?? "", await new StreamReader(request.Body).ReadToEndAsync(), timeout ?? 8)));
         control.MapPost("/ops/players/{who}/ban", async (string who, HttpRequest request, IOpsService ops) =>
             ToResult(await ops.BanPlayerAsync(who, await new StreamReader(request.Body).ReadToEndAsync())));
         control.MapPost("/ops/players/{who}/unban", async (string who, HttpRequest request, IOpsService ops) =>

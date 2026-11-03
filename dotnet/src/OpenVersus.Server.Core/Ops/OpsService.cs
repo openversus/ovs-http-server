@@ -48,14 +48,24 @@ public sealed record QueuedTicket(string PartyId, string MatchmakingRequestId, l
 public sealed record QueueView(string Queue, int Tickets, int Players, IReadOnlyList<QueuedTicket> Entries);
 
 /// <summary>
-/// A connected player: who, the handles the player commands take (username, Steam id, the IP connected from), and the
-/// way in: the gateway node holding the connection, and the edge it comes through ("": directly; null: not recorded).
+/// A connected player: who, the handles the player commands take (username, Steam id, the IP connected from), the
+/// way in: the gateway node holding the connection, and the edge it comes through ("": directly; null: not recorded),
+/// and the UDP port of their P2P node (<paramref name="NodePort"/>; 0: none reported, so their matches go to a relay).
 /// </summary>
 public sealed record OnlinePlayer(string Id, string Name, string? Status, string? Username = null, string? SteamId = null, string? Ip = null,
-    string? Node = null, string? Edge = null);
+    string? Node = null, string? Edge = null, int NodePort = 0);
 
 /// <summary>How many players are connected, and (when asked) who.</summary>
 public sealed record OnlineView(long Count, IReadOnlyList<OnlinePlayer>? Players);
+
+/// <summary>The connected players without a P2P node, and how many are connected in all.</summary>
+public sealed record NodelessView(long Connected, IReadOnlyList<OnlinePlayer> Players);
+
+/// <summary>The node-less players a banner was queued for (<see cref="NodelessView"/>'s list), and how many are connected in all.</summary>
+public sealed record NodelessWarnView(long Connected, IReadOnlyList<OnlinePlayer> Warned, int TimeoutSeconds);
+
+/// <summary>A banner queued for a player's OpenVersus client: to whom, whether they were online, and how long it shows.</summary>
+public sealed record BannerView(string Id, string Name, bool WasOnline, int TimeoutSeconds);
 
 /// <summary>A player in a match.</summary>
 public sealed record MatchPlayer(string Id, string Name, string Character);
@@ -109,6 +119,12 @@ public interface IOpsService
 
     Task<ControlResult<OnlineView>> OnlineAsync(bool withPlayers);
 
+    /// <summary>The connected players whose client reported no P2P node (connections:{id} nodePort, read as the matchmaker reads it): their matches run on a relay.</summary>
+    Task<ControlResult<NodelessView>> NodelessAsync();
+
+    /// <summary>Queues the same admin banner for every player <see cref="NodelessAsync"/> lists.</summary>
+    Task<ControlResult<NodelessWarnView>> WarnNodelessAsync(string title, string message, int timeoutSeconds);
+
     Task<ControlResult<IReadOnlyList<MatchView>>> MatchesAsync();
 
     /// <summary>A custom lobby by its join code (any case) or its id.</summary>
@@ -126,6 +142,9 @@ public interface IOpsService
 
     /// <summary>Closes the player's game websocket, as a heartbeat timeout would (the client logs out).</summary>
     Task<ControlResult<DisconnectView>> DisconnectPlayerAsync(string who);
+
+    /// <summary>Queues an admin banner for the player's OpenVersus client (shown for <paramref name="timeoutSeconds"/>); it waits 60 s for the client to poll it.</summary>
+    Task<ControlResult<BannerView>> BannerAsync(string who, string title, string message, int timeoutSeconds);
 
     /// <summary>Bans the person behind a player through every identifier known for them (source manual), and cuts them off.</summary>
     Task<ControlResult<BanView>> BanPlayerAsync(string who, string reason);
@@ -216,17 +235,62 @@ internal sealed class OpsService : IOpsService
             return ControlResult<OnlineView>.Ok(new OnlineView(count, null));
         }
 
+        return ControlResult<OnlineView>.Ok(new OnlineView(count, await OnlinePlayersAsync(redis)));
+    }
+
+    public async Task<ControlResult<NodelessView>> NodelessAsync()
+    {
+        if (Redis is not { } redis)
+        {
+            return NoRedis<NodelessView>();
+        }
+
+        long count = await redis.SetLengthAsync("online_players");
+        var players = await OnlinePlayersAsync(redis);
+        return ControlResult<NodelessView>.Ok(new NodelessView(count, players.Where(p => p.NodePort == 0).ToList()));
+    }
+
+    public async Task<ControlResult<NodelessWarnView>> WarnNodelessAsync(string title, string message, int timeoutSeconds)
+    {
+        if (Redis is not { } redis)
+        {
+            return NoRedis<NodelessWarnView>();
+        }
+
+        if (BannerProblem(message, timeoutSeconds) is { } problem)
+        {
+            return ControlResult<NodelessWarnView>.Refused(problem);
+        }
+
+        long count = await redis.SetLengthAsync("online_players");
+        var nodeless = (await OnlinePlayersAsync(redis)).Where(p => p.NodePort == 0).ToList();
+        long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        foreach (var player in nodeless)
+        {
+            await Realtime.PlayerMessages.NotifyClientAsync(redis, player.Id, "admin_banner", title, message, new JsonObject { ["timeout"] = timeoutSeconds }, now);
+        }
+
+        _log.LogInformation("Queued a banner for the {Count} connected player(s) without a P2P node ({Players}), {Timeout} s: {Title} / {Message}",
+            nodeless.Count, string.Join(", ", nodeless.Select(p => p.Id)), timeoutSeconds, title, message);
+        return ControlResult<NodelessWarnView>.Ok(new NodelessWarnView(count, nodeless, timeoutSeconds));
+    }
+
+    // Every connected player, by name. The node port is read as the matchmaker reads it when it decides whether a match
+    // runs P2P (Matches.P2P.MarkAsync): a connection without one, or without a connections hash at all, has no node.
+    private static async Task<List<OnlinePlayer>> OnlinePlayersAsync(IDatabase redis)
+    {
         var players = new List<OnlinePlayer>();
         foreach (var member in await redis.SetMembersAsync("online_players"))
         {
             string id = member.ToString();
-            var handles = await redis.HashGetAsync($"connections:{id}", ["hydraUsername", "steamId", "current_ip"]);
+            var handles = await redis.HashGetAsync($"connections:{id}", ["hydraUsername", "steamId", "current_ip", "nodePort"]);
             var way = await redis.HashGetAsync(Realtime.GatewayPresence.ConnectionKey(id), ["node", "edge"]);
             players.Add(new OnlinePlayer(id, await DisplayNameAsync(redis, id), (string?)await redis.HashGetAsync($"player:{id}", "status"),
-                NullIfEmpty(handles[0]), NullIfEmpty(handles[1]), NullIfEmpty(handles[2]), NullIfEmpty(way[0]), (string?)way[1]));
+                NullIfEmpty(handles[0]), NullIfEmpty(handles[1]), NullIfEmpty(handles[2]), NullIfEmpty(way[0]), (string?)way[1],
+                Matches.P2P.ParseNodePort((string?)handles[3])));
         }
 
-        return ControlResult<OnlineView>.Ok(new OnlineView(count, players.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList()));
+        return players.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     // A Testing Grounds match (1v1 or 2v2): unranked, so its notification says isCustomGame as a custom game's does, but
@@ -477,6 +541,45 @@ internal sealed class OpsService : IOpsService
         _log.LogInformation("Asked {Heard} websocket service(s) to disconnect player {Id} (\"{Name}\", online: {Online})", heard, view.Id, view.Name, view.Online);
         return ControlResult<DisconnectView>.Ok(new DisconnectView(view.Id, view.Name, view.Online, heard));
     }
+
+    // The same notification the server's own banners use (a cancelled match, a party fact): the OpenVersus client polls
+    // dll_notifications:{id} every 2 s while the game runs and shows admin_banner for data.timeout seconds. The list
+    // lives 60 s (PlayerMessages.NotificationTtl), so a player who is not connected sees it only if they connect in time.
+    public async Task<ControlResult<BannerView>> BannerAsync(string who, string title, string message, int timeoutSeconds)
+    {
+        if (Players is not { } players)
+        {
+            return NoMongo<BannerView>();
+        }
+
+        if (Redis is not { } redis)
+        {
+            return NoRedis<BannerView>();
+        }
+
+        if (BannerProblem(message, timeoutSeconds) is { } problem)
+        {
+            return ControlResult<BannerView>.Refused(problem);
+        }
+
+        var found = await ResolveAsync(players, who);
+        if (found.Error is not null)
+        {
+            return ControlResult<BannerView>.Missing(found.Error);
+        }
+
+        var view = await ViewAsync(found.Value!);
+        await Realtime.PlayerMessages.NotifyClientAsync(redis, view.Id, "admin_banner", title, message,
+            new JsonObject { ["timeout"] = timeoutSeconds }, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        _log.LogInformation("Queued a banner for player {Id} (\"{Name}\", online: {Online}), {Timeout} s: {Title} / {Message}",
+            view.Id, view.Name, view.Online, timeoutSeconds, title, message);
+        return ControlResult<BannerView>.Ok(new BannerView(view.Id, view.Name, view.Online, timeoutSeconds));
+    }
+
+    private static string? BannerProblem(string message, int timeoutSeconds) =>
+        message.Trim().Length == 0 ? "the banner needs a message"
+        : timeoutSeconds is < 1 or > 300 ? "the banner's timeout is in seconds, 1 to 300"
+        : null;
 
     // A ban is made by the service that owns bans (access): it records it in Mongo and in the auto-ban file it can write.
     public async Task<ControlResult<BanView>> BanPlayerAsync(string who, string reason)

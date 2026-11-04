@@ -11,6 +11,10 @@ namespace OpenVersus.Server.Web.Endpoints.OpenVersus.Client;
 /// GET /ovs/client-version?v=: the OpenVersus client's update check. The latest GitHub release of the client repo
 /// (<see cref="IClientReleases"/>, cached), the files the updater may install (<see cref="ClientReleaseManifest"/>),
 /// whether the asking client is current and whether it must update (Clients:VersionCheck, Clients:MinimumVersion).
+/// With node=, the version of the rollback node the client has beside it ("" for none or one without a version):
+/// node_version is the release's node version (the version in its node archives' names; "" when it ships none) and
+/// node_is_latest whether the client's matches it, true for a release without a node so a client has nothing to do; the
+/// node archives are among the files, one per platform, each with its "platform".
 /// A release that cannot be offered, or GitHub not answering, gives the TS fallback: no version, is_latest true.
 /// Seen in: captured 10x; TS server: GET /ovs/client-version (server.ts).
 /// </summary>
@@ -25,6 +29,7 @@ public sealed class GetOvsClientVersion : EndpointWithoutRequest
     public override async Task HandleAsync(CancellationToken ct)
     {
         string clientVersion = Query<string?>("v", isRequired: false) ?? "";
+        string nodeVersion = Query<string?>("node", isRequired: false) ?? "";
         JsonObject body;
         try
         {
@@ -49,6 +54,13 @@ public sealed class GetOvsClientVersion : EndpointWithoutRequest
                 Logger.LogInformation("Client version {Client} is outdated (latest: {Latest})", clientVersion, latestVersion);
             }
 
+            string releaseNodeVersion = ClientReleaseManifest.NodeVersion(files);
+            bool nodeIsLatest = releaseNodeVersion.Length == 0 || nodeVersion == releaseNodeVersion;
+            if (!nodeIsLatest && nodeVersion.Length > 0)
+            {
+                Logger.LogInformation("Client {Client} runs node {Node}; the release's is {Latest}", clientVersion, nodeVersion, releaseNodeVersion);
+            }
+
             body = new JsonObject
             {
                 ["latest_version"] = latestVersion,
@@ -63,6 +75,9 @@ public sealed class GetOvsClientVersion : EndpointWithoutRequest
             {
                 body[key] = value?.DeepClone();
             }
+            // After the TS keys, whose order clients and tests know.
+            body["node_version"] = releaseNodeVersion;
+            body["node_is_latest"] = nodeIsLatest;
         }
         catch (Exception e) when (!ct.IsCancellationRequested)
         {

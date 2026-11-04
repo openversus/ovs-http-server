@@ -31,6 +31,32 @@ public sealed class ClientReleaseManifestTests
     }
 
     [Fact]
+    public void NodeArchivesAreOfferedPerPlatformAfterThePluginAndTheInstallZipIsNot()
+    {
+        var files = ClientReleaseManifest.Build(Assets(Asset("OpenVersus_v2026.11.04.01.zip"), Asset("OVS_Node_2026.11.04.01_osx-arm64.tar.gz"),
+            Asset("OpenVersus_2026.11.04.01.asi"), Asset("OVS_Node_2026.11.04.01_win-x64.zip"), Asset("OVS_Node_2026.11.04.01_linux-x64.tar.gz"), Asset("OVS_P.pak")), "2026.11.04.01");
+
+        Assert.Equal([("OVS_P.pak", "paks", ""), ("OpenVersus_2026.11.04.01.asi", "plugin", ""), ("OVS_Node_2026.11.04.01_linux-x64.tar.gz", "node", "linux-x64"),
+            ("OVS_Node_2026.11.04.01_osx-arm64.tar.gz", "node", "osx-arm64"), ("OVS_Node_2026.11.04.01_win-x64.zip", "node", "win-x64")], files.Select(f => (f.Name, f.Kind, f.Platform)));
+        Assert.Equal("2026.11.04.01", ClientReleaseManifest.NodeVersion(files));
+        Assert.Equal("win-x64", (string?)ClientReleaseManifest.ToJson(files[4])["platform"]);
+        Assert.Null(ClientReleaseManifest.ToJson(files[0])["platform"]);
+        var flat = ClientReleaseManifest.Flatten(files);
+        Assert.Equal("linux-x64", (string?)flat["file_2_platform"]);
+        Assert.Null(flat["file_0_platform"]);
+        Assert.Equal("", ClientReleaseManifest.NodeVersion(ClientReleaseManifest.Build(Assets(Asset("OpenVersus.asi")))));
+    }
+
+    [Fact]
+    public void ANodeArchiveForAnotherVersionOrTwoForOnePlatformIsRefused()
+    {
+        var other = Assert.Throws<ClientReleaseException>(() => ClientReleaseManifest.Build(Assets(Asset("OpenVersus_2026.11.04.01.asi"), Asset("OVS_Node_2026.11.03.01_win-x64.zip")), "2026.11.04.01"));
+        Assert.Contains("for a different version", other.Message);
+        var twice = Assert.Throws<ClientReleaseException>(() => ClientReleaseManifest.Build(Assets(Asset("OpenVersus.asi"), Asset("OVS_Node_1_win-x64.zip"), Asset("OVS_Node_1_WIN-X64.zip"))));
+        Assert.Contains("more than one node archive", twice.Message);
+    }
+
+    [Fact]
     public void RejectsAnIncompleteIoStoreGroup()
     {
         var e = Assert.Throws<ClientReleaseException>(() => ClientReleaseManifest.Build(Assets(Asset("OpenVersus.asi"), Asset("OVS_P.utoc"))));

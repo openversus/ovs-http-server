@@ -14,12 +14,14 @@ namespace OpenVersus.Server.Core.Clients;
 
 // The OpenVersus client's update check (GET /ovs/client-version), ported from the TS server (server.ts
 // getLatestClientRelease, services/clientReleaseManifest.ts): the latest GitHub release of the client repo, cached
-// for five minutes, turned into the list of files the in-game updater may install (the one plugin, complete pak groups),
-// each with the SHA-256 GitHub records for it. ZIPs stay for manual installs and are never offered to the updater.
+// for five minutes, turned into the list of files the in-game updater may install (the one plugin, complete pak groups,
+// the rollback node per platform), each with the SHA-256 GitHub records for it. The install ZIP stays for manual
+// installs and is never offered to the updater.
 
 /// <summary>One file of a release the updater may install.</summary>
-/// <param name="Kind">"plugin" (the .asi) or "paks" (an OVS_* pak, utoc, ucas or sig).</param>
-public sealed record ClientUpdateFile(string Name, string Kind, long Size, string Sha256, string DownloadUrl);
+/// <param name="Kind">"plugin" (the .asi), "paks" (an OVS_* pak, utoc, ucas or sig) or "node" (a rollback node archive).</param>
+/// <param name="Platform">node only: the .NET runtime identifier the archive is built for (win-x64, linux-x64, osx-x64, osx-arm64); "" otherwise.</param>
+public sealed record ClientUpdateFile(string Name, string Kind, long Size, string Sha256, string DownloadUrl, string Platform = "");
 
 /// <summary>Why a release cannot be offered (the TS messages, matched by its tests).</summary>
 public sealed class ClientReleaseException(string message) : Exception(message);
@@ -38,6 +40,12 @@ public static partial class ClientReleaseManifest
     // ("OpenVersus_<YYYY.MM.DD.N>.asi"). Their ".asi.sha256" sidecars and zips never match, so they are not offered.
     [GeneratedRegex(@"^openversus(?:_(\d{4}\.\d{2}\.\d{2}\.\d+))?\.asi$", RegexOptions.IgnoreCase)]
     private static partial Regex PluginAsset();
+
+    // The rollback node, one archive per platform, named for the release it was built for (the rollback repo's
+    // OVSRollbackNode/tools/archive-nodes.sh): a zip for Windows, tarballs for the Unix platforms (they keep the
+    // executable bits). The version in the name must be the release's, as the plugin's must.
+    [GeneratedRegex(@"^OVS_Node_(?<version>[A-Za-z0-9.-]+)_(?<rid>win-x64|linux-x64|osx-x64|osx-arm64)\.(?:zip|tar\.gz)$", RegexOptions.IgnoreCase)]
+    private static partial Regex NodeAsset();
 
     [GeneratedRegex("^sha256:[a-f0-9]{64}$")]
     private static partial Regex Digest();
@@ -75,6 +83,20 @@ public static partial class ClientReleaseManifest
         {
             throw new ClientReleaseException($"release {releaseVersion} ships plugin {plugins[0].Name} for a different version");
         }
+        // A node archive for another version, or two for one platform, is a mislabeled release: refused as the plugin is.
+        var nodes = files.Where(f => f.Kind == "node").ToList();
+        foreach (var node in nodes)
+        {
+            string nodeVersion = NodeAsset().Match(node.Name).Groups["version"].Value;
+            if (!string.IsNullOrEmpty(releaseVersion) && nodeVersion != releaseVersion)
+            {
+                throw new ClientReleaseException($"release {releaseVersion} ships node {node.Name} for a different version");
+            }
+        }
+        if (nodes.GroupBy(n => n.Platform).Any(g => g.Count() > 1))
+        {
+            throw new ClientReleaseException("release ships more than one node archive for a platform");
+        }
 
         // IoStore content is only usable as a complete .pak/.utoc/.ucas group; a standalone .pak is fine, .sig optional.
         var contentByStem = new Dictionary<string, HashSet<string>>();
@@ -99,8 +121,9 @@ public static partial class ClientReleaseManifest
             }
         }
 
-        // Content installs before the loaded plugin; the order is the same everywhere (logs, tests, the client's progress).
-        return files.OrderBy(f => f.Kind == "paks" ? 0 : 1).ThenBy(f => f.Name, StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.None)).ToList();
+        // Content installs before the loaded plugin, the node after it; the order is the same everywhere (logs, tests,
+        // the client's progress).
+        return files.OrderBy(f => f.Kind switch { "paks" => 0, "plugin" => 1, _ => 2 }).ThenBy(f => f.Name, StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.None)).ToList();
     }
 
     /// <summary>The TS flattening: file_count, then file_{i}_name|kind|size|sha256|url for each.</summary>
@@ -114,20 +137,36 @@ public static partial class ClientReleaseManifest
             flattened[$"file_{i}_size"] = files[i].Size;
             flattened[$"file_{i}_sha256"] = files[i].Sha256;
             flattened[$"file_{i}_url"] = files[i].DownloadUrl;
+            if (files[i].Platform.Length > 0)
+            {
+                flattened[$"file_{i}_platform"] = files[i].Platform;
+            }
         }
 
         return flattened;
     }
 
     /// <summary>A file as the response lists it under "files".</summary>
-    public static JsonObject ToJson(ClientUpdateFile file) => new()
+    public static JsonObject ToJson(ClientUpdateFile file)
     {
-        ["name"] = file.Name,
-        ["kind"] = file.Kind,
-        ["size"] = file.Size,
-        ["sha256"] = file.Sha256,
-        ["download_url"] = file.DownloadUrl,
-    };
+        var json = new JsonObject
+        {
+            ["name"] = file.Name,
+            ["kind"] = file.Kind,
+            ["size"] = file.Size,
+            ["sha256"] = file.Sha256,
+            ["download_url"] = file.DownloadUrl,
+        };
+        if (file.Platform.Length > 0)
+        {
+            json["platform"] = file.Platform;
+        }
+        return json;
+    }
+
+    /// <summary>The release's node version: the version in its node archives' names, or "" when it ships none.</summary>
+    public static string NodeVersion(IReadOnlyList<ClientUpdateFile> files) =>
+        files.Where(f => f.Kind == "node").Select(f => NodeAsset().Match(f.Name).Groups["version"].Value).FirstOrDefault() ?? "";
 
     private static ClientUpdateFile? Normalize(JsonObject? asset, string downloadPrefix)
     {
@@ -143,12 +182,14 @@ public static partial class ClientReleaseManifest
         string digest = Str(asset["digest"]).ToLowerInvariant();
         bool isPlugin = PluginAsset().IsMatch(name);
         bool isContent = ContentAsset().IsMatch(name);
-        if ((!isPlugin && !isContent) || size <= 0 || !url.StartsWith(downloadPrefix, StringComparison.Ordinal) || !Digest().IsMatch(digest))
+        var node = NodeAsset().Match(name);
+        if ((!isPlugin && !isContent && !node.Success) || size <= 0 || !url.StartsWith(downloadPrefix, StringComparison.Ordinal) || !Digest().IsMatch(digest))
         {
             return null;
         }
 
-        return new ClientUpdateFile(name, isPlugin ? "plugin" : "paks", size, digest["sha256:".Length..], url);
+        string kind = isPlugin ? "plugin" : isContent ? "paks" : "node";
+        return new ClientUpdateFile(name, kind, size, digest["sha256:".Length..], url, node.Success ? node.Groups["rid"].Value.ToLowerInvariant() : "");
     }
 
     private static string Str(JsonNode? node) => node?.GetValueKind() == JsonValueKind.String ? node.GetValue<string>() : "";

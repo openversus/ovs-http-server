@@ -120,6 +120,8 @@ public sealed class ClientRoutesTests : IAsyncLifetime
         Assert.Equal(("paks", 10L, new string('b', 64)), ((string?)body["files"]![0]!["kind"], (long?)body["files"]![0]!["size"], (string?)body["files"]![0]!["sha256"]));
         Assert.Equal((4, "OpenVersus_2026.10.08.1.asi", "plugin", 216576L), ((int?)body["file_count"], (string?)body["file_3_name"], (string?)body["file_3_kind"], (long?)body["file_3_size"]));
         Assert.Equal(["latest_version", "download_url", "is_latest", "minimum_version", "update_required", "release_name", "files", "file_count"], body.AsObject().Select(p => p.Key).Take(8));
+        // A release without node archives: nothing for a client's node to do, whatever it runs.
+        Assert.Equal(("", true), ((string?)body["node_version"], (bool?)body["node_is_latest"]));
 
         // A current client, and one newer than the latest release (a test build), are "latest" and owe no update.
         var (_, current) = await GetAsync(factory, "/ovs/client-version?v=2026.10.08.1");

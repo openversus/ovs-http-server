@@ -33,8 +33,10 @@ public sealed class ClientReleaseManifestTests
     [Fact]
     public void NodeArchivesAreOfferedPerPlatformAfterThePluginAndTheInstallZipIsNot()
     {
-        var files = ClientReleaseManifest.Build(Assets(Asset("OpenVersus_v2026.11.04.01.zip"), Asset("OVS_Node_2026.11.04.01_osx-arm64.tar.gz"),
-            Asset("OpenVersus_2026.11.04.01.asi"), Asset("OVS_Node_2026.11.04.01_win-x64.zip"), Asset("OVS_Node_2026.11.04.01_linux-x64.tar.gz"), Asset("OVS_P.pak")), "2026.11.04.01");
+        // The install zip, the package zip and the all-platforms node zip are for hand installs: never offered.
+        var files = ClientReleaseManifest.Build(Assets(Asset("OpenVersus_v2026.11.04.01.zip"), Asset("OpenVersus_2026.11.04.01.zip"), Asset("OVS_Node_2026.11.04.01_all.zip"),
+            Asset("OVS_Node_2026.11.04.01_osx-arm64.tar.gz"), Asset("OpenVersus_2026.11.04.01.asi"), Asset("OVS_Node_2026.11.04.01_win-x64.zip"),
+            Asset("OVS_Node_2026.11.04.01_linux-x64.tar.gz"), Asset("OVS_P.pak"), Asset("SHA256SUMS-node")), "2026.11.04.01");
 
         Assert.Equal([("OVS_P.pak", "paks", ""), ("OpenVersus_2026.11.04.01.asi", "plugin", ""), ("OVS_Node_2026.11.04.01_linux-x64.tar.gz", "node", "linux-x64"),
             ("OVS_Node_2026.11.04.01_osx-arm64.tar.gz", "node", "osx-arm64"), ("OVS_Node_2026.11.04.01_win-x64.zip", "node", "win-x64")], files.Select(f => (f.Name, f.Kind, f.Platform)));

@@ -96,7 +96,7 @@ public sealed record ConnectionView(string Id, string? Node, string? Edge, long?
 /// <summary>A player's record, and their current connection if they have one.</summary>
 public sealed record PlayerView(string Id, string Name, string? HydraUsername, string? SteamId, string? PublicId, string? ProfileId, bool Online, string? Status,
     ConnectionView? Connection = null, Steam.SteamSessions.SessionView? Steam = null, string? Runtime = null, bool VirtualMachine = false,
-    IReadOnlyList<DeviceIdView>? DeviceIds = null, IReadOnlyList<Access.NameChange>? NameHistory = null);
+    IReadOnlyList<DeviceIdView>? DeviceIds = null, IReadOnlyList<Access.NameChange>? NameHistory = null, int RecentQuits = 0, DateTimeOffset? QuitLockoutUntil = null, int QuitsTotal = 0, int QuitTimeouts = 0);
 
 /// <summary>One device id of a player: its kind, the hash, how many accounts hold it, and whether it is the account's current one of that kind.</summary>
 public sealed record DeviceIdView(string Kind, string Id, long Holders, bool Current);
@@ -805,6 +805,14 @@ internal sealed class OpsService : IOpsService
             }
         }
 
+        int recentQuits = 0;
+        DateTimeOffset? quitLockout = null;
+        if (_services.GetService<Matches.IQuitTracker>() is { } quits)
+        {
+            recentQuits = await quits.RecentAsync(id, DateTimeOffset.UtcNow);
+            quitLockout = await quits.LockedUntilAsync(id, DateTimeOffset.UtcNow);
+        }
+
         var devices = new List<DeviceIdView>();
         if (Players is { } players)
         {
@@ -823,7 +831,8 @@ internal sealed class OpsService : IOpsService
         return new PlayerView(id, Str(player, "name") ?? "", Str(player, "hydraUsername"), Str(player, "steamId"), Str(player, "public_id"),
             player.TryGetValue("profile_id", out var profile) && !profile.IsBsonNull ? profile.ToString() : null, online, status, connection, steam,
             Str(player, Access.DeviceIdsStore.RuntimeField), player.GetValue(Access.DeviceIdsStore.VirtualMachineField, BsonNull.Value) is { IsBoolean: true } vm && vm.AsBoolean,
-            devices, Access.NameHistory.Of(player));
+            devices, Access.NameHistory.Of(player), recentQuits, quitLockout,
+            player.GetValue(Matches.QuitTracker.TotalField, 0).ToInt32(), player.GetValue(Matches.QuitTracker.TimeoutsField, 0).ToInt32());
     }
 
     private async Task<MatchView> MatchAsync(IDatabase redis, string setId, string matchId, string? mode, JsonElement players, JsonElement? set, bool finished = false)

@@ -28,6 +28,7 @@ builder.AddAccountResolver();
 builder.AddIdentify();
 // /ovs/client-version offers the latest client release.
 builder.AddClientReleases();
+builder.AddQuitTracker();
 // /ovs/client-settings gives the client the Beta Speed it runs.
 builder.AddSetting<BetaSpeedSettings>("BetaSpeed");
 

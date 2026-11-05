@@ -148,9 +148,14 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     // FFA always open unless a test says otherwise (FfaScheduleTests has the window). Twosday off unless a test turns it
     // on (Twosday:Enabled), so a run on a real Tuesday evening is like any other.
     private MatchmakingRequestService Service(MongoDB.Driver.IMongoDatabase? mongo = null, FfaSettings? ffa = null, TimeProvider? time = null, bool withRedis = true,
-        TestingGroundsSettings? testingGrounds = null, BetaSpeedSettings? betaSpeed = null, RankedSettings? ranked = null, bool twosday = false, bool party = false)
+        TestingGroundsSettings? testingGrounds = null, BetaSpeedSettings? betaSpeed = null, RankedSettings? ranked = null, bool twosday = false, bool party = false, bool quits = false)
     {
         var collection = new ServiceCollection();
+        if (quits && _redis is not null)
+        {
+            collection.AddSingleton<IQuitTracker>(sp => new QuitTracker(sp, new TestOptions<QuitSettings>(new QuitSettings()), NullLogger<QuitTracker>.Instance));
+        }
+
         collection.Configure<TwosdaySettings>(o => o.Enabled = twosday);
         if (testingGrounds is not null)
         {
@@ -233,6 +238,22 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         public override DateTimeOffset GetUtcNow() => now;
     }
 
+    [SkippableFact]
+    public async Task APlayerLockedOutForWalkingOutIsRefusedLikeAnOutdatedClientAndToldWhy()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await Db.StringSetAsync(QuitTracker.LockoutPrefix + Me, DateTimeOffset.UtcNow.AddMinutes(9).ToUnixTimeMilliseconds());
+
+        var answer = (await Service(quits: true).RequestAsync("1v1-retail", Asking(Me), CancellationToken.None))!;
+
+        Assert.Equal(200, answer.Status);
+        Assert.Contains("client_update_required", Js.Stringify(answer.Body));
+        Assert.Empty(await TicketsAsync());
+        var banner = (JsonObject)Js.Parse((string?)await Db.ListGetByIndexAsync(PlayerMessages.NotificationPrefix + Me, 0))!;
+        Assert.Contains("touch some grass", Js.Stringify(banner));
+        Assert.Contains("9 minutes", Js.Stringify(banner));
+    }
+
     private static PartyRequest Asking(string player) => new(player, new JsonObject { ["id"] = player, ["profile_id"] = "0000000000000000000b0900" }, Ip,
         new JsonObject { ["data"] = new JsonObject { ["MultiplayParams"] = new JsonObject { ["MultiplayClusterSlug"] = "ec2-us-east-1-dokken" } }, ["match"] = "0000000000000000000b0700" });
 
@@ -260,8 +281,12 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     {
         await Db.StringSetAsync($"lobby:{Lobby}", Js.Stringify(new JsonObject
         {
-            ["lobbyId"] = Lobby, ["ownerId"] = players[0], ["ownerUsername"] = "Leader", ["mode"] = ArenaLobby.TemplateName,
-            ["playerIds"] = new JsonArray([.. players.Select(p => (JsonNode?)p)]), ["createdAt"] = 0,
+            ["lobbyId"] = Lobby,
+            ["ownerId"] = players[0],
+            ["ownerUsername"] = "Leader",
+            ["mode"] = ArenaLobby.TemplateName,
+            ["playerIds"] = new JsonArray([.. players.Select(p => (JsonNode?)p)]),
+            ["createdAt"] = 0,
         }));
         foreach (string p in players)
         {
@@ -1115,8 +1140,16 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         var (page, offer) = run.Players[Me].ShopPages.SelectMany((p, i) => p.Select((slug, j) => (i, j, slug)))
             .Where(o => ArenaItems.Of(o.slug)!.Cost <= run.Players[Me].Coins).Select(o => (o.i, o.j)).First();
         string bought = run.Players[Me].ShopPages[page][offer];
-        var closed = new JsonObject { ["ArenaRound"] = 1, ["ShopPhaseDetails"] = new JsonObject { ["NumRerolls"] = 0, ["ItemTransactions"] = new JsonArray(
-            new JsonObject { ["bPurchase"] = true, ["LocalShopIndex"] = page, ["ItemIndex"] = offer }) } };
+        var closed = new JsonObject
+        {
+            ["ArenaRound"] = 1,
+            ["ShopPhaseDetails"] = new JsonObject
+            {
+                ["NumRerolls"] = 0,
+                ["ItemTransactions"] = new JsonArray(
+            new JsonObject { ["bPurchase"] = true, ["LocalShopIndex"] = page, ["ItemIndex"] = offer })
+            }
+        };
         Assert.True((bool)(await arenas.AnswerAsync("arena_player_shop_closed", Arena(closed), CancellationToken.None)).Body["bSuccess"]!);
         Assert.Equal(ArenaPhase.Match, (await ArenaRunStore.GetAsync(Db, Lobby))!.Phase);
         var ready = await KeptConfigAsync();

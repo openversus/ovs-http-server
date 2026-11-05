@@ -17,6 +17,7 @@ builder.AddRiftLobbies();
 builder.AddArenaLobbies();
 builder.AddMatchHistory();
 builder.AddMatchmakingRequests();
+builder.AddQuitTracker();
 // A player's equipped cosmetics are copied for their match when they join a lobby.
 builder.AddCosmetics();
 // Custom matches start here, and the rematches of custom and Casual matches (their votes and timers).

@@ -134,13 +134,17 @@ public static class MatchmakingQueue
     /// <summary>A match was found for <paramref name="players"/>: their ticks stop, and those who held a ticket are in_match.</summary>
     public static async Task FoundAsync(IDatabase redis, IEnumerable<string> players)
     {
-        foreach (string player in players.Distinct())
+        var all = players.Distinct().ToList();
+        foreach (string player in all)
         {
             if (await redis.HashDeleteAsync(QueuedKey, player))
             {
                 await redis.HashSetAsync($"player:{player}", "status", "in_match");
             }
         }
+
+        // The match they were found for, as one group: the first of them to walk out is the one it counts against (QuitTracker).
+        await QuitTracker.GroupAsync(redis, all);
     }
 
     /// <summary>The ticket one of <paramref name="players"/> holds (the first found), as pushed; null when none holds one.</summary>

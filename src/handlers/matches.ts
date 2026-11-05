@@ -30,6 +30,7 @@ import { HYDRA_ACCESS_TOKEN, SECRET, decodeToken } from "../middleware/auth";
 import * as AuthUtils from "../utils/auth";
 import * as KitchenSink from "../utils/garbagecan";
 import { PlayerStatsModel, RecentMatchPlayerStats } from "../database/PlayerStats";
+import { isTwosdayActive } from "../services/twosdayService";
 import {
   getPlayersRequiringClientUpdate,
   hydraClientUpdateFailure,
@@ -113,7 +114,9 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
   // Skip if lobby data is from the new custom lobby system (has Teams/LeaderID instead of ownerId/playerIds)
   if (existingLobby && !existingLobby.playerIds) {
     logger.info(`${logPrefix} Lobby ${matchId} is a custom SSC lobby (no playerIds), skipping old join path`);
-  } else if (existingLobby && existingLobby.ownerId !== aID) {
+  } else if (existingLobby && existingLobby.ownerId !== aID
+    // Twosday: no new party members (a party formed before the window keeps working); the player gets their own lobby.
+    && (existingLobby.playerIds.includes(aID) || !(await isTwosdayActive()))) {
     // This is a JOIN — player is accepting an invite to an existing lobby
     const outdatedMembers = await getPlayersRequiringClientUpdate([
       aID,
@@ -211,7 +214,7 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
         },
         PlayerAutoPartyPreferences: { [existingLobby.ownerId]: false, [aID]: false },
         GameVersion: env.GAME_VERSION,
-        HissCrc: 1167552915,
+        HissCrc: 1167552916,
         Platforms: { [existingLobby.ownerId]: "PC", [aID]: "PC" },
         AllMultiplayParams: {
           "1": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252499", MultiplayRegionId: "" },
@@ -403,7 +406,7 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
         PlayerGameplayPreferences: refreshGameplayPrefs,
         PlayerAutoPartyPreferences: refreshAutoParty,
         GameVersion: env.GAME_VERSION,
-        HissCrc: 1167552915,
+        HissCrc: 1167552916,
         Platforms: refreshPlatforms,
         AllMultiplayParams: {
           "1": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252499", MultiplayRegionId: "" },
@@ -487,7 +490,7 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
       PlayerGameplayPreferences: { [aID]: gameplayPreferencesOf(rPlayerConnectionByID.GameplayPreferences) },
       PlayerAutoPartyPreferences: { [aID]: false },
       GameVersion: env.GAME_VERSION,
-      HissCrc: 1167552915,
+      HissCrc: 1167552916,
       Platforms: { [aID]: "PC" },
       AllMultiplayParams: {
         "1": { MultiplayClusterSlug: "ec2-us-east-1-dokken", MultiplayProfileId: "1252499", MultiplayRegionId: "" },

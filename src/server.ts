@@ -724,10 +724,6 @@ app.post("/mvsi_end_match", async (req, res, next) => {
 });
 
 // ============================================================
-// Party Web Page — Join parties via shareable key
-// ============================================================
-
-// ============================================================
 // Leaderboard — Top 100 rankings for 1v1 and 2v2
 // ============================================================
 
@@ -1711,6 +1707,7 @@ app.use([
 // New friends/search/accounts routes — BEFORE old router for priority
 import { friendsRouter } from "./modules/friends/friends.routes";
 import { fromBase64 } from "bytebuffer";
+import { isTwosdayActive } from "./services/twosdayService";
 app.use(friendsRouter);
 
 app.use(router);

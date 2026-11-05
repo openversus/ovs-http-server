@@ -48,6 +48,9 @@ public sealed class BanSettings
     [Description("Install id bans, one id per line.")]
     public string? InstallIdFile { get; set; } = "../data/installid_bans.txt";
 
+    [Description("A device id held by more accounts than this is left out of a person ban (an image's fixed machine id, a shared PC): it would ban them all. 0 bans any.")]
+    public int DeviceSharedLimit { get; set; } = 3;
+
     [Description("The trail of every ban and lift the services make (YAML, appended to, never read). The services that ban must be able to write it.")]
     public string? AutoBansFile { get; set; } = "../data/auto_bans.yaml";
 
@@ -69,18 +72,29 @@ public enum BanKind
     Hardware,
     Install,
     Player,
+    /// <summary>A device id (docs/IDENTIFY.md): any kind's hash, all in one set, since each kind hashes its own domain.</summary>
+    Device,
 }
 
-/// <summary>What identifies a person; "" for what is not known. Ids as IdentityRules normalizes them.</summary>
-public sealed record BanIdentifiers(string Ip = "", string SteamId = "", string EpicId = "", string HardwareId = "", string InstallId = "", string PlayerId = "")
+/// <summary>What identifies a person; "" (or none) for what is not known. Ids as IdentityRules normalizes them.</summary>
+/// <param name="DeviceIds">Every device id of the person: the account's current ones and every one it ever presented.</param>
+public sealed record BanIdentifiers(string Ip = "", string SteamId = "", string EpicId = "", string HardwareId = "", string InstallId = "", string PlayerId = "", IReadOnlyList<string>? DeviceIds = null)
 {
+    public IReadOnlyList<string> DeviceIds { get; init; } = DeviceIds ?? [];
+
     public IEnumerable<(BanKind Kind, string Value)> Known()
     {
         (BanKind, string)[] all = [(BanKind.Ip, Ip), (BanKind.Steam, SteamId), (BanKind.Epic, EpicId), (BanKind.Hardware, HardwareId), (BanKind.Install, InstallId), (BanKind.Player, PlayerId)];
-        return all.Where(k => k.Item2.Length > 0);
+        return all.Where(k => k.Item2.Length > 0).Concat(DeviceIds.Where(d => d.Length > 0).Select(d => (BanKind.Device, d)));
     }
 
-    /// <summary>A player record's identifiers as a ban checks and records them: the account's current IP (else its IP), ids as IdentityRules keeps them (the hardware hash only when strong).</summary>
+    public bool Equals(BanIdentifiers? other) =>
+        other is not null && (Ip, SteamId, EpicId, HardwareId, InstallId, PlayerId) == (other.Ip, other.SteamId, other.EpicId, other.HardwareId, other.InstallId, other.PlayerId)
+        && DeviceIds.SequenceEqual(other.DeviceIds);
+
+    public override int GetHashCode() => HashCode.Combine(Ip, SteamId, EpicId, HardwareId, InstallId, PlayerId, DeviceIds.Count);
+
+    /// <summary>A player record's identifiers as a ban checks and records them: the account's current IP (else its IP), ids as IdentityRules keeps them (the hardware hash only when strong), and every device id it holds (Access.DeviceIdsStore).</summary>
     public static BanIdentifiers OfPlayer(BsonDocument player)
     {
         static string S(BsonDocument? d, string f) => d is not null && d.TryGetValue(f, out var v) && v.IsString ? v.AsString : "";
@@ -90,7 +104,8 @@ public sealed record BanIdentifiers(string Ip = "", string SteamId = "", string 
             Access.IdentityRules.Normalize(Access.IdentityKind.Epic, S(player, "epicId")),
             Access.IdentityRules.NormalizeHardware(S(player, "hardwareId"), S(player, "hardwareIdVersion"), S(player, "hardwareIdQuality")).HardwareId,
             Access.IdentityRules.Normalize(Access.IdentityKind.Install, S(player, "installId")),
-            player.GetValue("_id", BsonNull.Value) is { IsObjectId: true } id ? id.AsObjectId.ToString() : "");
+            player.GetValue("_id", BsonNull.Value) is { IsObjectId: true } id ? id.AsObjectId.ToString() : "",
+            Access.DeviceIdsStore.IdsOf(player));
     }
 }
 
@@ -120,6 +135,7 @@ internal sealed class BanService(IServiceProvider services, ILogger<BanService> 
         BanKind.Epic => "bans:epic",
         BanKind.Hardware => "bans:hardware",
         BanKind.Install => "bans:install",
+        BanKind.Device => "bans:device",
         _ => BannedPlayers.Key,
     };
 
@@ -211,6 +227,7 @@ internal static class BanStore
         BanKind.Epic => "epic",
         BanKind.Hardware => "hardware",
         BanKind.Install => "install",
+        BanKind.Device => "device",
         _ => "player",
     };
 
@@ -222,6 +239,7 @@ internal static class BanStore
         BanKind.Epic => "identifiers.epic_id",
         BanKind.Hardware => "identifiers.hardware_id",
         BanKind.Install => "identifiers.install_id",
+        BanKind.Device => "identifiers.device_ids",
         _ => "player.id",
     };
 
@@ -233,6 +251,7 @@ internal static class BanStore
         "epic" => BanService.Key(BanKind.Epic),
         "hardware" => BanService.Key(BanKind.Hardware),
         "install" => BanService.Key(BanKind.Install),
+        "device" => BanService.Key(BanKind.Device),
         "id" => BanService.IdKey,
         _ => null,
     };

@@ -22,7 +22,15 @@ public sealed record BanRecord(
     string RequestIp = "",
     string UserAgent = "",
     bool Online = false,
-    bool Disconnected = false);
+    bool Disconnected = false,
+    IReadOnlyList<SkippedDeviceId>? DeviceIdsSkipped = null)
+{
+    /// <summary>Device ids of the person left out of the ban: held by more accounts than Bans:DeviceSharedLimit.</summary>
+    public IReadOnlyList<SkippedDeviceId> DeviceIdsSkipped { get; init; } = DeviceIdsSkipped ?? [];
+}
+
+/// <summary>A device id not banned with the person, and how many accounts hold it.</summary>
+public sealed record SkippedDeviceId(string Id, long Holders);
 
 // The auto-ban file: the trail of every ban and lift the services made, a YAML sequence appended to (one item per write,
 // under an exclusive lock: several services ban) and never rewritten or read back: Mongo holds the bans. Comments are fine.
@@ -33,7 +41,7 @@ public sealed record BanRecord(
 //     source: 'namechange'          (namechange, login, sweep, manual)
 //     player: {id, name_at_ban, attempted_name, created_at}
 //     matched: {list, term}
-//     identifiers: {ip, steam_id, epic_id, hardware_id, install_id}
+//     identifiers: {ip, steam_id, epic_id, hardware_id, install_id, device_ids: [...], device_ids_skipped: [{id, holders}]}
 //     request: {ip, user_agent}
 //     online: true
 //     disconnected: true
@@ -61,6 +69,13 @@ internal static class AutoBans
                 {
                     { "ip", S(r.Who.Ip) }, { "steam_id", S(r.Who.SteamId) }, { "epic_id", S(r.Who.EpicId) },
                     { "hardware_id", S(r.Who.HardwareId) }, { "install_id", S(r.Who.InstallId) },
+                    { "device_ids", new YamlSequenceNode(r.Who.DeviceIds.Select(d => (YamlNode)S(d))) { Style = YamlDotNet.Core.Events.SequenceStyle.Block } },
+                    {
+                        "device_ids_skipped", new YamlSequenceNode(r.DeviceIdsSkipped.Select(d => (YamlNode)new YamlMappingNode { { "id", S(d.Id) }, { "holders", new YamlScalarNode(d.Holders.ToString()) { Style = ScalarStyle.Plain } } }))
+                        {
+                            Style = YamlDotNet.Core.Events.SequenceStyle.Block,
+                        }
+                    },
                 }
             },
             { "request", new YamlMappingNode { { "ip", S(r.RequestIp) }, { "user_agent", S(r.UserAgent) } } },

@@ -78,6 +78,15 @@ internal sealed class IdentifyService(
     {
         public bool Any => SteamId.Length > 0 || EpicId.Length > 0 || InstallId.Length > 0;
 
+        /// <summary>The device ids sent (docs/IDENTIFY.md), kind to hash; none picks an account.</summary>
+        public IReadOnlyDictionary<string, string> DeviceIds { get; init; } = new SortedDictionary<string, string>(StringComparer.Ordinal);
+
+        /// <summary>The runtime the client reports (windows, proton, crossover, wine), or "".</summary>
+        public string Runtime { get; init; } = "";
+
+        /// <summary>Whether the client's firmware names a hypervisor.</summary>
+        public bool VirtualMachine { get; init; }
+
         /// <summary>Steam itself confirmed the ticket is live for this registration (an auth session is held: the game runs under that account).</summary>
         public bool SteamOnline { get; init; }
 
@@ -133,12 +142,16 @@ internal sealed class IdentifyService(
             new HashEntry("steamVerified", identity.SteamVerified ? "1" : ""),
             new HashEntry(IdentityRecord.TicketField, identity.SteamTicket),
             new HashEntry("epicVerified", identity.EpicVerified ? "1" : ""),
+            new HashEntry("deviceIds", IdentityRules.DeviceIdsJson(identity.DeviceIds).ToJsonString()),
+            new HashEntry("runtime", identity.Runtime),
+            new HashEntry("virtualMachine", identity.VirtualMachine ? "1" : ""),
         ]);
         await redis.KeyExpireAsync(key, s_recordLifetime);
-        log.LogInformation("Identity registered for IP {Ip} - steam:{Steam} epic:{Epic} install:{Install} hardware:{Hardware} version:{Version} identity:{Registered} node:{Node}",
+        log.LogInformation("Identity registered for IP {Ip} - steam:{Steam} epic:{Epic} install:{Install} hardware:{Hardware} devices:{Devices} runtime:{Runtime}{Vm} version:{Version} identity:{Registered} node:{Node}",
             ip, identity.SteamId.Length > 0 ? identity.SteamId + (identity.SteamOnline ? " (verified, live on Steam)" : " (verified)") : "-",
             identity.EpicId.Length > 0 ? identity.EpicId + (identity.EpicVerified ? " (verified)" : epicEnforced ? " (claim)" : "") : "-", identity.InstallId.Length > 0 ? "yes" : "no",
             identity.Hardware.HardwareId.Length > 0 ? $"v{identity.Hardware.HardwareIdVersion}/{identity.Hardware.HardwareIdQuality}" : "none",
+            identity.DeviceIds.Count > 0 ? string.Join("+", identity.DeviceIds.Keys) : "none", identity.Runtime.Length > 0 ? identity.Runtime : "-", identity.VirtualMachine ? " (vm)" : "",
             identity.ClientVersion.Length > 0 ? identity.ClientVersion : "legacy", registered ? "registered" : "missing", nodePort > 0 ? nodePort : "none");
 
         // The account these ids are indexed to (a first launch has none yet): the token's id claim, so the resolver
@@ -197,6 +210,9 @@ internal sealed class IdentifyService(
             ["steamVerified"] = identity.SteamVerified ? "1" : "",
             ["steamOnline"] = identity.SteamOnline ? "1" : "",
             ["epicVerified"] = identity.EpicVerified ? "1" : "",
+            ["deviceIds"] = IdentityRules.DeviceIdsJson(identity.DeviceIds),
+            ["runtime"] = identity.Runtime,
+            ["virtualMachine"] = identity.VirtualMachine ? "1" : "",
         };
         string token = IdentifyTokens.Sign(claims, secret, now);
 
@@ -311,6 +327,9 @@ internal sealed class IdentifyService(
         {
             AuthPart = authPart,
             TicketHash = hash,
+            DeviceIds = IdentityRules.NormalizeDeviceIds(body["deviceIds"]),
+            Runtime = IdentityRules.NormalizeRuntime(StringOnly(body["runtime"])),
+            VirtualMachine = body["virtualMachine"]?.GetValueKind() == JsonValueKind.True,
         };
     }
 
@@ -444,6 +463,9 @@ internal sealed class IdentifyService(
             new HardwareSignal(Field("hardwareId"), Field("hardwareIdVersion"), Field("hardwareIdQuality")), Field("installId"), Field("clientVersion"))
         {
             EpicVerified = epicVerified && Field("epicId").Length > 0,
+            DeviceIds = IdentityRules.ParseDeviceIds(Field("deviceIds")),
+            Runtime = IdentityRules.NormalizeRuntime(Field("runtime")),
+            VirtualMachine = Field("virtualMachine") == "1",
         };
     }
 
@@ -472,6 +494,10 @@ internal sealed class IdentifyService(
         {
             SteamOnline = steam.SteamId.Length > 0 && steam.SteamOnline,
             EpicVerified = epicSide.EpicId.Length > 0 && epicSide.EpicVerified,
+            // A later call from the same install sends its device ids again; one without any keeps the stored ones.
+            DeviceIds = incoming.DeviceIds.Count > 0 ? incoming.DeviceIds : stored.DeviceIds,
+            Runtime = incoming.Runtime.Length > 0 ? incoming.Runtime : stored.Runtime,
+            VirtualMachine = incoming.Runtime.Length > 0 ? incoming.VirtualMachine : stored.VirtualMachine,
         };
     }
 

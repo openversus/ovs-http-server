@@ -87,6 +87,28 @@ internal sealed class PersonBans(IServiceProvider services, IOptionsMonitor<BanS
             }
         }
 
+        // A device id many accounts hold (an image's fixed machine id, a shared PC) is left out: it would ban them all.
+        var skipped = new List<SkippedDeviceId>();
+        if (mongo is not null && who.DeviceIds.Count > 0 && settings.CurrentValue.DeviceSharedLimit > 0)
+        {
+            var kept = new List<string>();
+            foreach (string deviceId in who.DeviceIds)
+            {
+                long holders = await DeviceIdsStore.HoldersAsync(mongo.GetCollection<BsonDocument>(PlayerRecord.Collection), deviceId, ct);
+                if (holders > settings.CurrentValue.DeviceSharedLimit)
+                {
+                    skipped.Add(new SkippedDeviceId(deviceId, holders));
+                    log.LogWarning("Banning player {Player}: device id {Device} is held by {Holders} accounts (limit {Limit}) and is not banned with them", who.PlayerId, deviceId, holders, settings.CurrentValue.DeviceSharedLimit);
+                }
+                else
+                {
+                    kept.Add(deviceId);
+                }
+            }
+
+            who = who with { DeviceIds = kept };
+        }
+
         bool online = false, disconnected = false;
         if (redis is not null)
         {
@@ -121,7 +143,7 @@ internal sealed class PersonBans(IServiceProvider services, IOptionsMonitor<BanS
             NameAtBan: Str(player, "name"), AttemptedName: request.AttemptedName,
             PlayerCreatedAt: id.CreationTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"),
             MatchedList: request.MatchedList, MatchedTerm: request.MatchedTerm,
-            RequestIp: request.RequestIp, UserAgent: request.UserAgent, Online: online, Disconnected: disconnected);
+            RequestIp: request.RequestIp, UserAgent: request.UserAgent, Online: online, Disconnected: disconnected, DeviceIdsSkipped: skipped);
 
         if (mongo is not null)
         {
@@ -372,6 +394,7 @@ internal sealed class PersonBans(IServiceProvider services, IOptionsMonitor<BanS
         "epic" => BanKind.Epic,
         "hardware" => BanKind.Hardware,
         "install" => BanKind.Install,
+        "device" => BanKind.Device,
         _ => null,
     };
 
@@ -380,7 +403,8 @@ internal sealed class PersonBans(IServiceProvider services, IOptionsMonitor<BanS
     {
         var ids = record.GetValue("identifiers", BsonNull.Value) as BsonDocument;
         var player = record.GetValue("player", BsonNull.Value) as BsonDocument;
-        return new BanIdentifiers(Str(ids, "ip"), Str(ids, "steam_id"), Str(ids, "epic_id"), Str(ids, "hardware_id"), Str(ids, "install_id"), Str(player, "id"));
+        var devices = ids?.GetValue("device_ids", BsonNull.Value) is BsonArray list ? list.Where(v => v.IsString && v.AsString.Length > 0).Select(v => v.AsString).ToList() : [];
+        return new BanIdentifiers(Str(ids, "ip"), Str(ids, "steam_id"), Str(ids, "epic_id"), Str(ids, "hardware_id"), Str(ids, "install_id"), Str(player, "id"), devices);
     }
 
     internal static BsonDocument ToBson(BanRecord r) => new()
@@ -395,6 +419,8 @@ internal sealed class PersonBans(IServiceProvider services, IOptionsMonitor<BanS
             "identifiers", new BsonDocument
             {
                 { "ip", r.Who.Ip }, { "steam_id", r.Who.SteamId }, { "epic_id", r.Who.EpicId }, { "hardware_id", r.Who.HardwareId }, { "install_id", r.Who.InstallId },
+                { "device_ids", new BsonArray(r.Who.DeviceIds) },
+                { "device_ids_skipped", new BsonArray(r.DeviceIdsSkipped.Select(d => new BsonDocument { { "id", d.Id }, { "holders", d.Holders } })) },
             }
         },
         { "request", new BsonDocument { { "ip", r.RequestIp }, { "user_agent", r.UserAgent } } },

@@ -2,8 +2,13 @@
 
 A ban is on a person, not an account: it holds every identifier known for them, and each one is refused on its own.
 The identifiers are the IP, the Steam id, the Epic id, the hardware hash (only a strong version-2 one: a weak hash can
-be shared by many machines), the install id, and the player id. The player id is what refuses a session token that is
-still valid; the others refuse a login, including one that would make a new account.
+be shared by many machines), the install id, the device ids (docs/IDENTIFY.md: every one the account ever presented,
+each kind's hash in one `device` kind), and the player id. The player id is what refuses a session token that is still
+valid; the others refuse a login, including one that would make a new account.
+
+A device id held by more accounts than `Bans:DeviceSharedLimit` (3) is left out of a person ban and listed in the record
+as skipped, with the count: a machine id baked into an image, or a PC a household shares, would otherwise ban everyone
+on it. 0 bans any. (A hardware hash has no such count: it is one per machine or absent.)
 
 ## Where bans are
 
@@ -13,7 +18,7 @@ Mongo is the source of truth; Redis holds what is in effect; the files are an im
 |---|---|
 | Mongo `player_bans` | One record per ban the services made: every identifier of the person, and the evidence (below). |
 | Mongo `bans` | Single values `{kind, value}` (`ip`, `cidr`, `steam`, `epic`, `hardware`, `install`, and the older `id`: any identifier but the IP), imported from the ban files. |
-| Redis sets `bans:ip`, `bans:cidr`, `bans:steam`, `bans:epic`, `bans:hardware`, `bans:install`, `bans:player`, `bans:id` | The active values, which every check reads. Loaded from Mongo at the access service's start, after each import, and every minute (so a Redis emptied while running fills again); only added to: a lift removes its own. |
+| Redis sets `bans:ip`, `bans:cidr`, `bans:steam`, `bans:epic`, `bans:hardware`, `bans:install`, `bans:device`, `bans:player`, `bans:id` | The active values, which every check reads. Loaded from Mongo at the access service's start, after each import, and every minute (so a Redis emptied while running fills again); only added to: a lift removes its own. |
 | Ban files, one per kind (`Bans:IpFile`, `CidrFile`, `SteamIdFile`, `EpicIdFile`, `HardwareFile`, `InstallIdFile`) | Edited by hand: one entry per line, `#` starts a comment line (the comment just above an entry is kept with it as its note). Imported into `bans` at the access service's start and when a file changes (once it has been still for 2 s): an entry only when Mongo has no record of that value, active or lifted. Never written. |
 | `Bans:AutoBansFile` (`auto_bans.yaml`) | The trail: every ban and lift the services made, appended. Never read. |
 
@@ -48,6 +53,11 @@ and Redis.
     epic_id: '...'
     hardware_id: '...'
     install_id: '...'
+    device_ids:               # every device id of the person (current and past), minus the skipped ones
+    - '...'
+    device_ids_skipped:       # held by more accounts than Bans:DeviceSharedLimit: not banned
+    - id: '...'
+      holders: 7
   request:
     ip: '...'
     user_agent: '...'
@@ -86,7 +96,7 @@ and Redis.
   active ban holds is let through at once; one still held is listed with what holds it: another person's ban, or a ban
   file's entry (with the command that lifts it).
 - `ovsctl bans lift <kind> <value> --reason "..."` lifts one ban file entry (`ip`, `cidr`, `steam`, `epic`, `hardware`,
-  `install`, `id`); `ovsctl bans lift --all <who>` lifts every entry that is one of the player's identifiers, past or
+  `install`, `device`, `id`); `ovsctl bans lift --all <who>` lifts every entry that is one of the player's identifiers, past or
   present (IP blocks excepted: they cover others; an IP of theirs inside one is listed as still banned). A lifted entry
   is kept, marked lifted, so the import does not bring it back and its line can stay in the file.
 
@@ -116,3 +126,10 @@ the player's own generated `OpenVersus_` name, or a new one, before the session 
 (`/namechange`, the web service) checks the new name as typed, before it is cut to 24 characters: a banned term bans the
 person (source `namechange`, with the name they had and the one they tried, the request's IP and user agent) and the
 page says so; a force-change term refuses the name; while the lists have not loaded, a name change is refused.
+
+## Name history
+
+Every name change is kept on the account (`nameHistory`, the last 200): the name before and after, when, the request's
+IP, and the route (`web` for the website's `/namechange`, `manual` for `ovsctl player rename`, `login` for a forced
+change at login). `ovsctl player show` lists the last ten. Nothing acts on it: it is there to be read when a name that
+was fine at a glance turns out not to have been.

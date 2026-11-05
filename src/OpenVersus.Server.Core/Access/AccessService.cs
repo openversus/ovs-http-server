@@ -161,6 +161,10 @@ internal sealed partial class AccessService(
         public string SteamTicket = "";
         // The UDP port of the client's P2P node (Matches/P2P.cs); 0 when it reported none.
         public int NodePort;
+        // The device ids the client sent (docs/IDENTIFY.md): bans and the account's record, never which account this is.
+        public IReadOnlyDictionary<string, string> DeviceIds = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        public string Runtime = "";
+        public bool VirtualMachine;
         public string Source = "none";
 
         public bool Any => SteamId.Length > 0 || EpicId.Length > 0 || InstallId.Length > 0;
@@ -204,7 +208,7 @@ internal sealed partial class AccessService(
         }
 
         // Before an account is found or made: a banned person gets no new account under another identifier.
-        if (await bans.FindAsync(new BanIdentifiers(SteamId: identity.SteamId, EpicId: identity.EpicId, HardwareId: identity.Hardware.HardwareId, InstallId: identity.InstallId)) is { } identified)
+        if (await bans.FindAsync(new BanIdentifiers(SteamId: identity.SteamId, EpicId: identity.EpicId, HardwareId: identity.Hardware.HardwareId, InstallId: identity.InstallId, DeviceIds: [.. identity.DeviceIds.Values])) is { } identified)
         {
             log.LogWarning("A login from {Ip} was denied: its {Kind} {Value} is banned ({Source}).", ip, identified.Kind, identified.Value, identified.Source);
             return new AccessResult.Banned();
@@ -217,7 +221,8 @@ internal sealed partial class AccessService(
         if (await bans.FindAsync(new BanIdentifiers(
                 SteamId: IdentityRules.Normalize(IdentityKind.Steam, player.Str("steamId")), EpicId: IdentityRules.Normalize(IdentityKind.Epic, player.Str("epicId")),
                 HardwareId: IdentityRules.NormalizeHardware(player.Str("hardwareId"), player.Str("hardwareIdVersion"), player.Str("hardwareIdQuality")).HardwareId,
-                InstallId: IdentityRules.Normalize(IdentityKind.Install, player.Str("installId")), PlayerId: id)) is { } stored)
+                InstallId: IdentityRules.Normalize(IdentityKind.Install, player.Str("installId")), PlayerId: id,
+                DeviceIds: DeviceIdsStore.IdsOf(player.Document))) is { } stored)
         {
             log.LogWarning("A login from {Ip} as player {Player} was denied: its {Kind} {Value} is banned ({Source}).", ip, id, stored.Kind, stored.Value, stored.Source);
             return new AccessResult.Banned();
@@ -242,6 +247,7 @@ internal sealed partial class AccessService(
         // A name set before a term was added to a list: banned bans the person, force-change renames them to their own
         // random name (or a new one). Before the account token and the session are written, so both carry the new name.
         string name = player.Str("name") ?? "";
+        string? forced = null;
         switch (names.Check(name).Hit)
         {
             case { List: NameList.Banned } banned:
@@ -249,9 +255,9 @@ internal sealed partial class AccessService(
                 return new AccessResult.Banned();
             case { List: NameList.ForceChange } force:
                 string own = player.Str("hydraUsername") ?? "";
-                string renamed = RandomName().IsMatch(own) ? own : randomName;
-                player.Set("name", renamed);
-                log.LogWarning("Forced a name change for player {Player}: \"{Old}\" contains the force-change term \"{Term}\"; renamed to {New}.", id, name, force.Term, renamed);
+                forced = RandomName().IsMatch(own) ? own : randomName;
+                player.Set("name", forced);
+                log.LogWarning("Forced a name change for player {Player}: \"{Old}\" contains the force-change term \"{Term}\"; renamed to {New}.", id, name, force.Term, forced);
                 break;
         }
 
@@ -290,6 +296,13 @@ internal sealed partial class AccessService(
         }
 
         await player.SaveAsync(players, ct);
+        // Beside the record's own save: the device ids and runtime this login carried, and a forced rename's trace.
+        await DeviceIdsStore.RecordAsync(players, player.Id, identity.DeviceIds, identity.Runtime, identity.VirtualMachine, now.UtcDateTime, ct);
+        if (forced is not null)
+        {
+            await NameHistory.PushAsync(players, player.Id, name, forced, ip, "login", now.UtcDateTime, ct);
+        }
+
         if (isNew)
         {
             log.LogInformation("No existing player matched [steamId={Steam}, epicId={Epic}, hardwareId={Hardware}, installId={Install}, ip={Ip}]. Created new player with id {Player} and name {Name}.",
@@ -461,6 +474,9 @@ internal sealed partial class AccessService(
         identity.ClientVersion = Truthy(claims["clientVersion"]) ? JsString(claims["clientVersion"]) : "";
         identity.Registered = StringOnly(claims["identityRegistered"]) == "1";
         identity.NodePort = Matches.P2P.ParseNodePort(claims["nodePort"]);
+        identity.DeviceIds = IdentityRules.NormalizeDeviceIds(claims["deviceIds"]);
+        identity.Runtime = IdentityRules.NormalizeRuntime(StringOnly(claims["runtime"]));
+        identity.VirtualMachine = StringOnly(claims["virtualMachine"]) == "1";
     }
 
     private async Task<bool> ReadIpIdentityAsync(IDatabase redis, string ip, Identity identity)
@@ -500,6 +516,9 @@ internal sealed partial class AccessService(
         identity.Registered = Field("identityRegistered") == "1";
         // The TS server reads Number(nodePort) || 0; /api/identify only ever writes a parsed port or "0".
         identity.NodePort = Matches.P2P.ParseNodePort(Field("nodePort"));
+        identity.DeviceIds = IdentityRules.ParseDeviceIds(Field("deviceIds"));
+        identity.Runtime = IdentityRules.NormalizeRuntime(Field("runtime"));
+        identity.VirtualMachine = Field("virtualMachine") == "1";
         return true;
     }
 

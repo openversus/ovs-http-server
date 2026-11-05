@@ -355,6 +355,23 @@ internal static class PlayerRender
         grid.AddRow("[grey]Steam id[/]", Markup.Escape(p.SteamId is { Length: > 0 } s ? s : "-"));
         grid.AddRow("[grey]Public id[/]", Markup.Escape(p.PublicId ?? "-"));
         grid.AddRow("[grey]Connected[/]", p.Online ? $"[green]yes[/] ({Markup.Escape(p.Status ?? "?")})" : "no");
+        if (p.Runtime is { Length: > 0 } runtime)
+        {
+            grid.AddRow("[grey]Runtime[/]", $"{Markup.Escape(runtime)}{(p.VirtualMachine ? " [yellow](virtual machine)[/]" : "")}");
+        }
+
+        foreach (var device in p.DeviceIds ?? [])
+        {
+            string shared = device.Holders > 1 ? $" [yellow]shared by {device.Holders} accounts[/]" : "";
+            string past = device.Current ? "" : " [grey](past)[/]";
+            grid.AddRow($"[grey]Device {Markup.Escape(device.Kind)}[/]", $"{Markup.Escape(device.Id)}{past}{shared}");
+        }
+
+        foreach (var change in (p.NameHistory ?? []).TakeLast(10))
+        {
+            grid.AddRow("[grey]Name change[/]", $"{Markup.Escape(change.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))} \"{Markup.Escape(change.From)}\" to \"{Markup.Escape(change.To)}\" ({Markup.Escape(change.Source)}{(change.Ip.Length > 0 ? $", {Markup.Escape(change.Ip)}" : "")})");
+        }
+
         if (p.Steam is { } steam)
         {
             string state = steam.State switch
@@ -494,7 +511,7 @@ public sealed class BansLiftSettings : ConnectionSettings
     protected override string DefaultService => "access";
 
     [CommandArgument(0, "<KIND|WHO>")]
-    [Description("The value's kind (ip, cidr, steam, epic, hardware, install, id); with --all, the player (anything `player show` takes, or a player id).")]
+    [Description("The value's kind (ip, cidr, steam, epic, hardware, install, device, id); with --all, the player (anything `player show` takes, or a player id).")]
     public string Target { get; set; } = "";
 
     [CommandArgument(1, "[VALUE]")]

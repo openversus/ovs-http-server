@@ -95,7 +95,11 @@ public sealed record ConnectionView(string Id, string? Node, string? Edge, long?
 
 /// <summary>A player's record, and their current connection if they have one.</summary>
 public sealed record PlayerView(string Id, string Name, string? HydraUsername, string? SteamId, string? PublicId, string? ProfileId, bool Online, string? Status,
-    ConnectionView? Connection = null, Steam.SteamSessions.SessionView? Steam = null);
+    ConnectionView? Connection = null, Steam.SteamSessions.SessionView? Steam = null, string? Runtime = null, bool VirtualMachine = false,
+    IReadOnlyList<DeviceIdView>? DeviceIds = null, IReadOnlyList<Access.NameChange>? NameHistory = null);
+
+/// <summary>One device id of a player: its kind, the hash, how many accounts hold it, and whether it is the account's current one of that kind.</summary>
+public sealed record DeviceIdView(string Kind, string Id, long Holders, bool Current);
 
 /// <summary>A forced disconnect sent: to whom, whether they were online, and how many websocket services heard it.</summary>
 public sealed record DisconnectView(string Id, string Name, bool WasOnline, long Websockets);
@@ -499,6 +503,7 @@ internal sealed class OpsService : IOpsService
         }
 
         await players.UpdateOneAsync(Builders<BsonDocument>.Filter.Eq("_id", id), Builders<BsonDocument>.Update.Set("name", name));
+        await Access.NameHistory.PushAsync(players, id, Str(player, "name") ?? "", name, "", "manual", DateTime.UtcNow);
         if (Redis is { } redis && await redis.KeyExistsAsync($"connections:{id}"))
         {
             await redis.HashSetAsync($"connections:{id}", "username", name);
@@ -638,7 +643,7 @@ internal sealed class OpsService : IOpsService
             : ControlResult<UnbanView>.Ok(new UnbanView(lift.PlayerId, lift.Name, lift.LiftedBans, lift.NoLongerBanned, lift.StillBanned));
     }
 
-    public static readonly string[] BanValueKinds = ["ip", "cidr", "steam", "epic", "hardware", "install", "id"];
+    public static readonly string[] BanValueKinds = ["ip", "cidr", "steam", "epic", "hardware", "install", "device", "id"];
 
     public async Task<ControlResult<BanLiftView>> LiftBanValueAsync(string kind, string value, string reason)
     {
@@ -800,8 +805,25 @@ internal sealed class OpsService : IOpsService
             }
         }
 
+        var devices = new List<DeviceIdView>();
+        if (Players is { } players)
+        {
+            var current = Access.DeviceIdsStore.CurrentOf(player);
+            var seen = new HashSet<(string, string)>();
+            var history = player.GetValue(Access.DeviceIdsStore.HistoryField, BsonNull.Value) as BsonArray ?? [];
+            foreach (var (kind, hash) in history.OfType<BsonDocument>().Select(e => (e.GetValue("kind", "").ToString()!, e.GetValue("id", "").ToString()!)).Concat(current.Select(c => (c.Key, c.Value))))
+            {
+                if (hash.Length > 0 && seen.Add((kind, hash)))
+                {
+                    devices.Add(new DeviceIdView(kind, hash, await Access.DeviceIdsStore.HoldersAsync(players, hash, default), current.TryGetValue(kind, out var now) && now == hash));
+                }
+            }
+        }
+
         return new PlayerView(id, Str(player, "name") ?? "", Str(player, "hydraUsername"), Str(player, "steamId"), Str(player, "public_id"),
-            player.TryGetValue("profile_id", out var profile) && !profile.IsBsonNull ? profile.ToString() : null, online, status, connection, steam);
+            player.TryGetValue("profile_id", out var profile) && !profile.IsBsonNull ? profile.ToString() : null, online, status, connection, steam,
+            Str(player, Access.DeviceIdsStore.RuntimeField), player.GetValue(Access.DeviceIdsStore.VirtualMachineField, BsonNull.Value) is { IsBoolean: true } vm && vm.AsBoolean,
+            devices, Access.NameHistory.Of(player));
     }
 
     private async Task<MatchView> MatchAsync(IDatabase redis, string setId, string matchId, string? mode, JsonElement players, JsonElement? set, bool finished = false)

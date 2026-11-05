@@ -80,6 +80,70 @@ public static partial class IdentityRules
             : new HardwareSignal(hardwareId, hardwareIdVersion, hardwareIdQuality);
     }
 
+    /// <summary>The kinds of device id the client sends (docs/IDENTIFY.md), each a SHA-256 of its own value.</summary>
+    public static readonly string[] DeviceKinds = ["machineGuid", "boardSerial", "systemUuid", "ueMachineId", "osMachineId"];
+
+    /// <summary>The runtimes the client names.</summary>
+    public static readonly string[] Runtimes = ["windows", "proton", "crossover", "wine"];
+
+    /// <summary>
+    /// The device ids of a registration (a JSON object, kind to 64-hex hash) as kept: known kinds only, lowercased, in
+    /// <see cref="DeviceKinds"/> order; anything else is dropped. Empty for anything that is not such an object.
+    /// </summary>
+    public static SortedDictionary<string, string> NormalizeDeviceIds(JsonNode? value)
+    {
+        var ids = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        if (value is JsonObject obj)
+        {
+            foreach (string kind in DeviceKinds)
+            {
+                if (obj[kind]?.GetValueKind() == JsonValueKind.String && Hex64().IsMatch(Js.Trim(obj[kind]!.GetValue<string>())))
+                {
+                    ids[kind] = Js.Trim(obj[kind]!.GetValue<string>()).ToLowerInvariant();
+                }
+            }
+        }
+
+        return ids;
+    }
+
+    /// <summary>The device ids from their JSON text (the identity record keeps them so); empty for anything unreadable.</summary>
+    public static SortedDictionary<string, string> ParseDeviceIds(string? json)
+    {
+        if (string.IsNullOrEmpty(json))
+        {
+            return new SortedDictionary<string, string>(StringComparer.Ordinal);
+        }
+
+        try
+        {
+            return NormalizeDeviceIds(JsonNode.Parse(json));
+        }
+        catch (JsonException)
+        {
+            return new SortedDictionary<string, string>(StringComparer.Ordinal);
+        }
+    }
+
+    /// <summary>The device ids as JSON text ({} for none), for the identity record and the identify token.</summary>
+    public static JsonObject DeviceIdsJson(IReadOnlyDictionary<string, string> ids)
+    {
+        var obj = new JsonObject();
+        foreach (var (kind, id) in ids)
+        {
+            obj[kind] = id;
+        }
+
+        return obj;
+    }
+
+    /// <summary>The runtime when it is one the client names (lowercased), else "".</summary>
+    public static string NormalizeRuntime(string? value)
+    {
+        string runtime = Js.Trim(value ?? "").ToLowerInvariant();
+        return Runtimes.Contains(runtime) ? runtime : "";
+    }
+
     /// <summary>True when the account carries a Steam, Epic or install id.</summary>
     public static bool HasDurableIdentity(BsonDocument account) =>
         Normalize(IdentityKind.Steam, Str(account, "steamId")).Length > 0

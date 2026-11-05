@@ -58,6 +58,9 @@ public static class IpIdentityRefresh
             new HashEntry("installId", IdentityRules.Normalize(IdentityKind.Install, claims["installId"])),
             new HashEntry("clientVersion", clientVersion),
             new HashEntry("identityRegistered", "1"),
+            new HashEntry("deviceIds", IdentityRules.DeviceIdsJson(IdentityRules.NormalizeDeviceIds(claims["deviceIds"])).ToJsonString()),
+            new HashEntry("runtime", IdentityRules.NormalizeRuntime(Text(claims["runtime"]))),
+            new HashEntry("virtualMachine", Text(claims["virtualMachine"]) == "1" ? "1" : ""),
         ]);
         await redis.KeyExpireAsync(pending, s_recordLifetime);
         bool written = await redis.KeyRenameAsync(pending, key, When.NotExists);

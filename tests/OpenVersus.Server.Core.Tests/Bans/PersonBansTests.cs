@@ -99,12 +99,58 @@ public sealed class PersonBansTests : IAsyncLifetime
         }
     }
 
+    [SkippableFact]
+    public async Task ADeviceIdIsBannedWithThePersonUnlessTooManyAccountsHoldIt()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        string own = new('d', 64), past = new('e', 64), shared = new('f', 64);
+        var id = await SeedAsync("Someone");
+        await Players.UpdateOneAsync(new BsonDocument("_id", id), new BsonDocument("$set", new BsonDocument
+        {
+            { global::OpenVersus.Server.Core.Access.DeviceIdsStore.CurrentField, new BsonDocument { { "machineGuid", own }, { "osMachineId", shared } } },
+            { global::OpenVersus.Server.Core.Access.DeviceIdsStore.HistoryField, new BsonArray { new BsonDocument { { "kind", "machineGuid" }, { "id", past } } } },
+        }));
+        // Four other accounts on the same image: with the limit at 3, that id is theirs too and is not banned.
+        for (int i = 0; i < 4; i++)
+        {
+            await Players.InsertOneAsync(new BsonDocument { { "name", $"Other{i}" }, { global::OpenVersus.Server.Core.Access.DeviceIdsStore.HistoryField, new BsonArray { new BsonDocument { { "kind", "osMachineId" }, { "id", shared } } } } });
+        }
+
+        var record = await Bans().BanAsync(new BanRequest(id.ToString(), "banned by an administrator", "manual"));
+
+        Assert.NotNull(record);
+        Assert.Equal([past, own], record.Who.DeviceIds);
+        Assert.Equal([new SkippedDeviceId(shared, 5)], record.DeviceIdsSkipped);
+        Assert.True(await Redis.SetContainsAsync("bans:device", own));
+        Assert.True(await Redis.SetContainsAsync("bans:device", past));
+        Assert.False(await Redis.SetContainsAsync("bans:device", shared));
+        Assert.NotNull(await FindMatchAsync(new BanIdentifiers(DeviceIds: [past])));
+        Assert.Null(await FindMatchAsync(new BanIdentifiers(DeviceIds: [shared])));
+
+        var stored = await Mongo.GetCollection<BsonDocument>(PersonBans.Collection).Find(FilterDefinition<BsonDocument>.Empty).SingleAsync();
+        Assert.Equal([past, own], PersonBans.IdentifiersOf(stored).DeviceIds);
+        Assert.Equal(shared, stored["identifiers"]["device_ids_skipped"][0]["id"].AsString);
+        var trail = (YamlDotNet.RepresentationModel.YamlMappingNode)Assert.Single(Trail().Children);
+        Assert.Equal([past, own], ((YamlDotNet.RepresentationModel.YamlSequenceNode)((YamlDotNet.RepresentationModel.YamlMappingNode)trail["identifiers"])["device_ids"]).Select(n => n.ToString()));
+
+        // A reload from Mongo brings the device bans back, and a lift lets them through.
+        await ClearRedisAsync();
+        await BanStore.LoadAsync(Mongo, Redis, NullLogger.Instance, default);
+        Assert.True(await Redis.SetContainsAsync("bans:device", own));
+        var lift = await Bans().LiftAsync(id.ToString(), "a false positive", "manual");
+        Assert.NotNull(lift);
+        Assert.False(await Redis.SetContainsAsync("bans:device", own));
+        Assert.Contains(lift.NoLongerBanned, v => v.Contains(own));
+    }
+
     private IServiceProvider Stores() => new ServiceCollection()
         .AddSingleton<IConnectionMultiplexer>(_redis!)
         .AddSingleton(Mongo)
         .BuildServiceProvider();
 
     private PersonBans Bans() => new(Stores(), new TestOptions<BanSettings>(_settings), TimeProvider.System, NullLogger<PersonBans>.Instance);
+
+    private Task<BanMatch?> FindMatchAsync(BanIdentifiers who) => new BanService(Stores(), NullLogger<BanService>.Instance).FindAsync(who);
 
     // A ban file, imported and loaded as the access service does at start and when the file changes.
     private async Task<int> ImportAsync(string steamFile)

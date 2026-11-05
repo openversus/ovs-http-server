@@ -124,8 +124,15 @@ public sealed class IdentifyTests : IAsyncLifetime
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
         var request = new JsonObject
         {
-            ["installId"] = Install.ToUpperInvariant(), ["clientVersion"] = " 2026.10.08.1 ", ["nodePort"] = 7777,
-            ["hardwareId"] = new string('a', 64), ["hardwareIdVersion"] = 2, ["hardwareIdQuality"] = "Strong",
+            ["installId"] = Install.ToUpperInvariant(),
+            ["clientVersion"] = " 2026.10.08.1 ",
+            ["nodePort"] = 7777,
+            ["hardwareId"] = new string('a', 64),
+            ["hardwareIdVersion"] = 2,
+            ["hardwareIdQuality"] = "Strong",
+            ["deviceIds"] = new JsonObject { ["osMachineId"] = new string('B', 64), ["machineGuid"] = new string('c', 64), ["bogus"] = new string('d', 64) },
+            ["runtime"] = "Proton",
+            ["virtualMachine"] = true,
         };
 
         var (status, body) = await IdentifyAsync(request);
@@ -136,14 +143,18 @@ public sealed class IdentifyTests : IAsyncLifetime
         string token = (string)body["token"]!;
         var claims = IdentifyTokens.Verify(token, ServiceFactory<Program>.IdentifySecret, DateTimeOffset.UtcNow);
         Assert.NotNull(claims);
-        Assert.Equal(["id", "steamId", "epicId", "hardwareId", "hardwareIdVersion", "hardwareIdQuality", "installId", "clientVersion", "identityRegistered", "nodePort", "current_ip", "profile_id", "public_id", "wb_network_id", "username", "hydraUsername", "lobby_id", "GameplayPreferences", "steamVerified", "steamOnline", "epicVerified", "iat", "exp"],
+        Assert.Equal(["id", "steamId", "epicId", "hardwareId", "hardwareIdVersion", "hardwareIdQuality", "installId", "clientVersion", "identityRegistered", "nodePort", "current_ip", "profile_id", "public_id", "wb_network_id", "username", "hydraUsername", "lobby_id", "GameplayPreferences", "steamVerified", "steamOnline", "epicVerified", "deviceIds", "runtime", "virtualMachine", "iat", "exp"],
             claims.Select(c => c.Key));
+        // Known kinds only, lowercased, in kind order; the runtime lowercased; the flag as the record spells it.
+        Assert.Equal("""{"machineGuid":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","osMachineId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}""", claims["deviceIds"]!.ToJsonString());
+        Assert.Equal(("proton", "1"), ((string?)claims["runtime"], (string?)claims["virtualMachine"]));
         Assert.Equal((Install, "2026.10.08.1", "1", "7777", Ip, "", new string('a', 64), "2"), ((string?)claims["installId"], (string?)claims["clientVersion"], (string?)claims["identityRegistered"], (string?)claims["nodePort"], (string?)claims["current_ip"], (string?)claims["steamVerified"], (string?)claims["hardwareId"], (string?)claims["hardwareIdVersion"]));
         Assert.Equal(964, (int?)claims["GameplayPreferences"]);
         // Not a game session token (HttpServiceTests checks a game route refuses it).
         Assert.Throws<AccessTokenException>(() => AccessTokens.Verify(token, ServiceFactory<Program>.Secret, DateTimeOffset.UtcNow));
         var record = (await Redis.HashGetAllAsync($"identity:{Ip}")).ToDictionary(e => e.Name.ToString(), e => e.Value.ToString());
         Assert.Equal((Install, "1", "7777", "", "", "strong"), (record["installId"], record["identityRegistered"], record["nodePort"], record["steamId"], record["steamVerified"], record["hardwareIdQuality"]));
+        Assert.Equal((claims["deviceIds"]!.ToJsonString(), "proton", "1"), (record["deviceIds"], record["runtime"], record["virtualMachine"]));
         Assert.InRange((await Redis.KeyTimeToLiveAsync($"identity:{Ip}"))!.Value, TimeSpan.FromSeconds(200), TimeSpan.FromSeconds(300));
 
     }

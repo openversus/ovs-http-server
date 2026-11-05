@@ -426,6 +426,73 @@ public sealed class AccessIdentityTests : IAsyncLifetime
             new PersonBans(services, options, TimeProvider.System, NullLogger<PersonBans>.Instance), TimeProvider.System, NullLogger<AccessService>.Instance);
     }
 
+    [SkippableFact]
+    public async Task TheLoginKeepsEveryDeviceIdTheAccountPresentsAndRefusesABannedOne()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        string first = new('1', 64), second = new('2', 64), linux = new('3', 64);
+        var account = await SeedAsync("Devices", steam: s_steam, install: Install);
+
+        var one = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, DeviceToken(new JsonObject { ["machineGuid"] = first, ["osMachineId"] = linux }, "proton")));
+        Assert.Equal(account.ToString(), one.PlayerId);
+        var saved = await Players.Find(new BsonDocument("_id", account)).SingleAsync();
+        Assert.Equal([("machineGuid", first), ("osMachineId", linux)], DeviceIdsStore.CurrentOf(saved).Select(c => (c.Key, c.Value)));
+        Assert.Equal(("proton", false), (saved["runtime"].AsString, saved["virtualMachine"].AsBoolean));
+        var history = saved[DeviceIdsStore.HistoryField].AsBsonArray;
+        Assert.Equal([("machineGuid", first), ("osMachineId", linux)], history.Select(e => (e["kind"].AsString, e["id"].AsString)));
+        var firstSeen = history[0]["firstSeenAt"].ToUniversalTime();
+
+        // Another machine GUID later (a new prefix): the current one changes, the history keeps both, the Linux id's last-seen moves.
+        await Task.Delay(20);
+        var two = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, DeviceToken(new JsonObject { ["machineGuid"] = second, ["osMachineId"] = linux }, "proton", vm: true)));
+        Assert.Equal(account.ToString(), two.PlayerId);
+        saved = await Players.Find(new BsonDocument("_id", account)).SingleAsync();
+        Assert.Equal([("machineGuid", second), ("osMachineId", linux)], DeviceIdsStore.CurrentOf(saved).Select(c => (c.Key, c.Value)));
+        Assert.True(saved["virtualMachine"].AsBoolean);
+        history = saved[DeviceIdsStore.HistoryField].AsBsonArray;
+        Assert.Equal([("machineGuid", first), ("osMachineId", linux), ("machineGuid", second)], history.Select(e => (e["kind"].AsString, e["id"].AsString)));
+        Assert.Equal(firstSeen, history[0]["firstSeenAt"].ToUniversalTime());
+        Assert.True(history[1]["lastSeenAt"].ToUniversalTime() > history[1]["firstSeenAt"].ToUniversalTime());
+        Assert.Equal([first, linux, second], DeviceIdsStore.IdsOf(saved));
+        Assert.Equal((1L, 1L, 1L, 0L), (await DeviceIdsStore.HoldersAsync(Players, linux, default), await DeviceIdsStore.HoldersAsync(Players, first, default), await DeviceIdsStore.HoldersAsync(Players, second, default), await DeviceIdsStore.HoldersAsync(Players, new string('9', 64), default)));
+
+        // The first GUID banned (a person ban elsewhere): the account's own past id refuses its login, whatever it sends now.
+        await Redis.SetAddAsync("bans:device", first);
+        Assert.IsType<AccessResult.Banned>(await Access().LoginAsync(Ip, DeviceToken(new JsonObject { ["machineGuid"] = second }, "proton")));
+        // And a new person sending it gets no account: the check comes before one is made.
+        await Redis.KeyDeleteAsync($"identity:{Ip}");
+        long before = await Players.CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty);
+        Assert.IsType<AccessResult.Banned>(await Access().LoginAsync("198.51.100.99", DeviceToken(new JsonObject { ["machineGuid"] = first }, "windows", install: OtherInstall, steam: "")));
+        Assert.Equal(before, await Players.CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty));
+    }
+
+    [SkippableFact]
+    public async Task AForcedRenameAtLoginIsKeptInTheNameHistory()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        // "blat" is on the force-change list this fixture writes.
+        var account = await SeedAsync("blat here", steam: s_steam, install: Install);
+
+        var result = Assert.IsType<AccessResult.Ok>(await Access().LoginAsync(Ip, IdentifyToken(s_steam, verified: true)));
+
+        Assert.Equal(account.ToString(), result.PlayerId);
+        var saved = await Players.Find(new BsonDocument("_id", account)).SingleAsync();
+        Assert.NotEqual("blat here", saved["name"].AsString);
+        var change = Assert.Single(NameHistory.Of(saved));
+        Assert.Equal(("blat here", saved["name"].AsString, Ip, "login"), (change.From, change.To, change.Ip, change.Source));
+        await NameHistory.PushAsync(Players, account, saved["name"].AsString, "Fresh", "", "manual", DateTime.UtcNow);
+        await NameHistory.PushAsync(Players, account, "Fresh", "Fresh", "", "manual", DateTime.UtcNow);
+        Assert.Equal(["login", "manual"], NameHistory.Of(await Players.Find(new BsonDocument("_id", account)).SingleAsync()).Select(c => c.Source));
+    }
+
+    // An identify token with device ids (and a proved Steam id, so the login reaches the seeded account).
+    private static string DeviceToken(JsonObject deviceIds, string runtime, bool vm = false, string install = Install, string? steam = null) =>
+        IdentifyTokens.Sign(new JsonObject
+        {
+            ["steamId"] = steam ?? s_steam, ["installId"] = install, ["identityRegistered"] = "1", ["steamVerified"] = (steam ?? s_steam).Length > 0 ? "1" : "",
+            ["deviceIds"] = deviceIds, ["runtime"] = runtime, ["virtualMachine"] = vm ? "1" : "",
+        }, IdentifySecret, DateTimeOffset.UtcNow);
+
     // The token /api/identify signed for the client, which the game's login carries when the game has none of its own.
     private static string IdentifyToken(string steam, bool verified, string hardware = "") =>
         IdentifyTokens.Sign(WithHardware(new JsonObject { ["steamId"] = steam, ["installId"] = Install, ["identityRegistered"] = "1", ["steamVerified"] = verified ? "1" : "" }, hardware), IdentifySecret, DateTimeOffset.UtcNow);

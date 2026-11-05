@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using FastEndpoints;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using OpenVersus.Server.Core.Access;
 using OpenVersus.Server.Core.Bans;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Web.Site;
@@ -107,6 +108,7 @@ public sealed class PostNamechange : EndpointWithoutRequest
         {
             string trimmed = Js.Trim(name);
             await players.UpdateOneAsync(Builders<BsonDocument>.Filter.Eq("_id", player["_id"]), Builders<BsonDocument>.Update.Set("name", trimmed), cancellationToken: ct);
+            await NameHistory.PushAsync(players, player["_id"].AsObjectId, current, trimmed, ip, "web", DateTime.UtcNow, ct);
             try
             {
                 // The live session, so the name shows at once; the IP's copy only when it is this player's.

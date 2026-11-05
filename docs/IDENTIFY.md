@@ -142,6 +142,24 @@ a household behind one IP picks its web account again once.
 - Logins find an account by Steam id only through a verified one. Accounts that share a Steam id (made from claimed ids
   before tickets) are found in natural order, as the TS server found them, and logged.
 
+## Device ids, the runtime and the VM flag
+
+Beside the fingerprint, a client (2026.11.05 and later) sends `deviceIds`: up to five hashes, one per kind, each the
+lowercase hex SHA-256 of `openversus-device-v3|<kind>|<value trimmed and lowercased>`, and only the kinds the machine
+has: `machineGuid` (Windows' MachineGuid, one per Windows install, or per Wine prefix), `boardSerial` and `systemUuid`
+(the firmware table's; under Wine both are the Linux machine id, which Wine puts there), `ueMachineId` (the Unreal
+Engine's machine id from the registry, the MachineId of its crash reports; one per Windows user, or per Wine prefix)
+and `osMachineId` (Linux's `/etc/machine-id` through Wine, one per OS install; never on Windows). With them `runtime`
+(`windows`, `proton`, `crossover` or `wine`) and `virtualMachine` (the firmware names a hypervisor). To check a value by
+hand: `printf 'openversus-device-v3|ueMachineId|%s' "$(echo <value> | tr A-Z a-z)" | sha256sum`.
+
+None of them picks an account. They are for bans (docs/BANS.md: a person ban takes every device id the account ever
+presented, one `device` kind) and for the operator (`ovsctl player show`: each id, whether it is the current one of its
+kind, and how many accounts hold it). Kept: `identity:{ip}` (`deviceIds` as JSON, `runtime`, `virtualMachine`), the
+identify token's claims (`deviceIds`, `runtime`, `virtualMachine`), and the account: `deviceIds` (the current hash per
+kind), `deviceIdHistory` (every `{kind, id, firstSeenAt, lastSeenAt}`, never trimmed), `runtime`, `virtualMachine`.
+An older client sends none, and the server reads none.
+
 ## The client's other calls
 
 - `GET /ovs/client-version?v=<running version>`: the update check. The latest GitHub release of `Clients:ReleaseRepo`

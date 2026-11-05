@@ -82,6 +82,7 @@ internal sealed class PlayerRecord
     [
         "name", "hydraUsername", "ip", "GameplayPreferences", "profile_icon", "blockedPlayers", "character", "variant",
         "party_key", "steamId", "epicId", "hardwareId", "hardwareIdVersion", "hardwareIdQuality", "installId",
+        DeviceIdsStore.CurrentField, DeviceIdsStore.HistoryField, DeviceIdsStore.RuntimeField, DeviceIdsStore.VirtualMachineField,
         "lastSeenAt", "ipSeenAt", "provisional", "_id", "token", "account", "profile_id", "public_id",
     ];
 
@@ -110,6 +111,10 @@ internal sealed class PlayerRecord
         ("hardwareIdVersion", ""),
         ("hardwareIdQuality", ""),
         ("installId", ""),
+        (DeviceIdsStore.CurrentField, new BsonDocument()),
+        (DeviceIdsStore.HistoryField, new BsonArray()),
+        (DeviceIdsStore.RuntimeField, ""),
+        (DeviceIdsStore.VirtualMachineField, false),
         ("lastSeenAt", now),
         ("ipSeenAt", now),
         ("provisional", false),

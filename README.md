@@ -1,15 +1,27 @@
 # OpenVersus
 
-This project is a fork and based on the fantastic work of [multiversuskoth](https://github.com/multiversuskoth) and [thethiny](https://github.com/thethiny). The original repository is located [here](https://github.com/multiversuskoth/mvs-http-server).
+This project has been completely rewritten from the ground-up in C#, but it started its life as a fork, and was based on the fantastic work of [multiversuskoth](https://github.com/multiversuskoth) and [thethiny](https://github.com/thethiny). The original (TypeScript-based) repository is located [here](https://github.com/multiversuskoth/mvs-http-server).
 
 
-This is a very early proof-of-concept deployment, and rock-solid stability is not guaranteed, nor should it be expected. A more comprehensive `README` will be added in a later commit, but for now, here are the important bits:
+**OpenVersus** is a replacement server-side infrastructure backend for MultiVersus: HTTP, websocket, matchmaking,
+match-flow, rollback netcode, and related services which the game client talks to, written in C# (.NET 10) as one solution
+of independent services, plus the admin tool `ovsctl`. The original TypeScript fork it grew out of is kept as a reference
+under `legacy/reference/ts_server/`; it is kept strictly for reference, and is no longer run, maintained, or supported.
+The only relevant, live code in this repo belongs to the from-scratch C# reimplementation.
 
-1. The `build.sh` script in the root of this repo will build a docker image containing Mongo, Redis, and the OpenVersus HTTP servers
-2. The UDP rollback server [is available here](https://github.com/openversus/ovs-udp-server) in its own repository, along with its own Dockerfile and example `Compose` stack file. A prebuilt, statically-linked binary of this server is also included in the container image and can be configured for use via environment variables (see `.env.example` in the `examples` directory), but running it, or multiple copies of it, in its/their own container is the expected default.
-3. Example files that are expected to be available for use by `docker compose` or mapped in to the OpenVersus docker container are available in the `examples` directory in the root of this repo.
+Where things are:
 
-I will write a more comprehensive `README` and add a more production-ready example in a later commit, but this should be enough to stand up an instance in the meantime.
+1. `src/` holds the services (one project each: http, access, social, lobbies, web, realtime, edge, matchmaking,
+   matchflow, arenas, steam) and the shared `OpenVersus.Server.Core`; `tests/` their test projects; `test.sh` runs
+   them against local throwaway stores.
+2. `Dockerfile` builds every service's image from one build of the solution (`build-images.sh` builds them all).
+3. `deploy/` is the example production layout: Docker Compose projects for the stores and the services, the HAProxy router,
+   example env files, and `build.sh` / `ovs.sh` to pack a release and run it on a host. Start with `deploy/README.md`.
+4. `docs/` describes the protocol work (routes, realtime, SSC, Arenas, Rifts, seasons, bans); `tools/` holds the
+   generators and diff harnesses used during reimplementation.
+5. The UDP rollback netcode relay and the players' P2P nodes live in their own repository
+   ([ovs-rollback-server](https://github.com/openversus/ovs-rollback-server)); `deploy/build.sh` builds its image alongside
+   the rest of the images native to this repo.
 
 What follows is relevant text from the DMCA concerning reverse engineering and works based upon it, along with the `README` document from the [original repo](https://github.com/multiversuskoth).
 
@@ -58,3 +70,12 @@ Common hydra headers are also appended to all requests
 ## Schema
 
 Databse schema are contained inside the database folder and use typegoose models
+
+
+
+---
+
+OpenVersus is not affiliated with, nor endorsed by, WB, PFG, its developers, or any other related entity.
+OpenVersus is not affiliated with, nor endorsed by, any other modding project or effort, the developers of those projects, or any other related entity.
+This software is provided on an as-is, sans-warranty basis as detailed in the `LICENSE` file. Use at your own risk and discretion.
+

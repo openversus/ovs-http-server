@@ -4,7 +4,7 @@ Thanks for your interest in contributing to OpenVersus! This project is communit
 
 ## Getting Started
 
-- Make sure you have Node.js installed
+- Install the .NET 10 SDK and Docker (the test suites use throwaway Redis and MongoDB containers; see `test.sh`)
 - Fork the repository and clone it locally
 - Check if any open Issues need work before starting something new
 
@@ -26,7 +26,7 @@ Open an issue tagged `enhancement` and describe what you'd like to see, and why/
 
 ## Code Style
 
-This project uses TypeScript. Please keep your code consistent with the existing style. We use Prettier for formatting — please run it before submitting a PR.
+The server is C# (.NET 10). Keep your code consistent with the existing style and the repository's `.editorconfig`; `dotnet format` applies it. The TypeScript server under `legacy/reference/ts_server/` is a frozen reference: changes to it are not accepted.
 
 ## Questions
 

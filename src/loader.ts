@@ -4,6 +4,8 @@ import { ENABLED_SKINS } from "./data/skins";
 import { connect } from "./database/client";
 import { DataAssetModel } from "./database/DataAssets";
 import { disabledCharacters, isDisabledChar, isEnabledChar } from "./utils/garbagecan";
+import { RECOVERED_EMOTE_SLUGS } from "./data/recoveredEmotes";
+import { OVS_ANNOUNCER_SLUGS } from "./data/ovsAnnouncers";
 
 const serviceName = "Loader";
 const logPrefix: string = `[${serviceName}]:`;
@@ -52,6 +54,10 @@ const CHARACTER_SLUGS = [
 type CharacterSlug = (typeof CHARACTER_SLUGS)[number];
 
 const emotes = [
+  "emote_67_hands",
+  "emote_ovs_pleading_cat",
+  "emote_ovs_rickflick",
+  ...RECOVERED_EMOTE_SLUGS,
   "emote_velma_surprised",
   "emote_steven_stars",
   "emote_shaggy_cry",
@@ -484,6 +490,11 @@ const ringouts = [
 ];
 
 const profiles_icons = [
+  "profileicon_ovs_duck_season",
+  "profileicon_ovs_icy_glare",
+  "profileicon_ovs_batmobile",
+  "profileicon_ovs_jason",
+  "profileicon_ovs_multiversus_tattoo",
   "DC_BM_ProfileIcon_KingOfShadows",
   "DC_BM_ProfileIcon_QueenOfCalamity",
   "DC_BM_ProfileIcon_TheJoker_BottomOfTheDeck",
@@ -754,6 +765,7 @@ const announcer_packs = [
   "announcerpack_fhlh",
   "announcerpack_c029",
   "announcerpack_c038",
+  ...OVS_ANNOUNCER_SLUGS,
 ];
 
 const stats = [

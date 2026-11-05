@@ -1,8 +1,17 @@
 import { Request } from "express";
-import { redisClient, RedisPlayerConnection as FullRedisPlayerConnection } from "../config/redis";
+import {
+  redisClient,
+  redisGetActiveAccountIdsByIP,
+  redisGetUniqueActiveConnectionByIP,
+  redisSaveIdentityIfAbsent,
+  RedisPlayerConnection as FullRedisPlayerConnection,
+} from "../config/redis";
 import { logger } from "../config/logger";
 import * as AuthUtils from "../utils/auth";
 import { IAccountToken } from "../types/AccountToken";
+import { normalizeHardwareSignal, normalizeIdentity } from "./identityNormalization";
+
+export { normalizeHardwareSignal, normalizeIdentity } from "./identityNormalization";
 
 /**
  * redisClient.hGetAll() returns `{}` when the key doesn't exist and partial data
@@ -30,6 +39,71 @@ const SILENT_ROUTES = [
 function isSilentRoute(routeTag: string | null | undefined): boolean {
   if (!routeTag || typeof routeTag !== "string") return false;
   return SILENT_ROUTES.some(r => routeTag === r || routeTag.startsWith(r));
+}
+
+/**
+ * Keeps identity:<ip> alive while a registered client runs. /api/identify writes it once at
+ * launch and it lives 5 minutes (the login handshake), but the game's own /access comes again
+ * after a reconnect or a server restart, and without the record an up-to-date player counts as
+ * an unregistered "legacy" client and gets the update popup. The client polls /ovs/notifications
+ * every 2 s with the token /api/identify signed, so the record is rewritten from those verified
+ * claims whenever it is gone. The token's account id may be empty (first launch), so this reads
+ * the claims directly rather than through safeDecodeToken. Returns what was written, or null.
+ */
+export async function refreshIpIdentityFromToken(req: Request, ip: string): Promise<IAccountToken | null> {
+  if (!ip) return null;
+  let claims: IAccountToken;
+  try {
+    claims = AuthUtils.DecodeClientToken(req as any);
+  } catch {
+    return null;
+  }
+  if (!claims || claims.identityRegistered !== "1" || !claims.clientVersion) return null;
+
+  const key = `identity:${ip}`;
+  if (await redisClient.exists(key)) return null;
+
+  // Another device behind the same IP that logs in reads this record as its own identity,
+  // so it is only kept alive while this client's account is the only one playing from the IP.
+  // Still open until the game's login carries the client's own identity: while this player
+  // plays alone, a second device that logs in with neither a Steam ticket nor its own
+  // /api/identify (an outdated or Internet Archive client) is taken for this player, as the
+  // sole-active-account IP fallback in /access already does for identity-less logins.
+  const accountId = claims.id || await accountIdFromIdentityIndexes(claims);
+  const activeIds = await redisGetActiveAccountIdsByIP(ip);
+  if (activeIds.some((id) => id !== accountId)) return null;
+
+  const { hardwareId, hardwareIdVersion, hardwareIdQuality } = normalizeHardwareSignal(
+    claims.hardwareId,
+    claims.hardwareIdVersion,
+    claims.hardwareIdQuality,
+  );
+  const written = await redisSaveIdentityIfAbsent(ip, {
+    steamId: normalizeIdentity("steam", claims.steamId),
+    epicId: normalizeIdentity("epic", claims.epicId),
+    hardwareId,
+    hardwareIdVersion,
+    hardwareIdQuality,
+    installId: normalizeIdentity("install", claims.installId),
+    clientVersion: claims.clientVersion,
+    identityRegistered: "1",
+  });
+  return written ? claims : null;
+}
+
+/** The account a token's Steam, Epic or install id is indexed to, or "". */
+async function accountIdFromIdentityIndexes(claims: IAccountToken): Promise<string> {
+  const keys = [
+    ["steam", claims.steamId],
+    ["epic", claims.epicId],
+    ["install", claims.installId],
+  ] as const;
+  for (const [kind, value] of keys) {
+    const id = normalizeIdentity(kind, value);
+    const accountId = id ? await redisClient.get(`identity:${kind}:${id}`) : null;
+    if (accountId) return accountId;
+  }
+  return "";
 }
 
 /** Safely attempt to decode the JWT on a request. Returns null if missing/invalid. */
@@ -65,7 +139,7 @@ function safeGetIP(req: Request): string | null {
  * the source on meaningful events (e.g. actual notification delivery) without
  * spamming on every poll.
  */
-export type ResolutionSource = "jwt" | "steam" | "epic" | "hw" | "ip" | "unresolved";
+export type ResolutionSource = "jwt" | "steam" | "epic" | "install" | "ip" | "unresolved";
 
 export interface ResolvedAccount {
   conn: RedisPlayerConnection | null;
@@ -99,7 +173,7 @@ export async function resolveAccountWithSource(req: Request): Promise<ResolvedAc
   };
 
   // 2. SteamID
-  const steamId = (req.header("x-steam-id") as string) || token?.steamId;
+  const steamId = normalizeIdentity("steam", req.header("x-steam-id") || token?.steamId);
   if (steamId) {
     const hit = await resolveByIndex(`identity:steam:${steamId}`);
     if (hit) {
@@ -109,7 +183,7 @@ export async function resolveAccountWithSource(req: Request): Promise<ResolvedAc
   }
 
   // 3. EpicID
-  const epicId = (req.header("x-epic-id") as string) || token?.epicId;
+  const epicId = normalizeIdentity("epic", req.header("x-epic-id") || token?.epicId);
   if (epicId) {
     const hit = await resolveByIndex(`identity:epic:${epicId}`);
     if (hit) {
@@ -118,13 +192,14 @@ export async function resolveAccountWithSource(req: Request): Promise<ResolvedAc
     }
   }
 
-  // 4. HardwareID
-  const hardwareId = (req.header("x-hw-id") as string) || token?.hardwareId;
-  if (hardwareId) {
-    const hit = await resolveByIndex(`identity:hw:${hardwareId}`);
+  // 4. Persisted random installation ID. Unlike the hardware fingerprint this
+  // remains safe for archive/CrossOver clients and cannot collapse to an OEM default.
+  const installId = normalizeIdentity("install", req.header("x-install-id") || token?.installId);
+  if (installId) {
+    const hit = await resolveByIndex(`identity:install:${installId}`);
     if (hit) {
-      if (!silent) logger.info(`${logPrefix} [${routeTag}] resolved via HardwareID=${hardwareId} → id=${hit.id}`);
-      return { conn: hit, source: "hw" };
+      if (!silent) logger.info(`${logPrefix} [${routeTag}] resolved via InstallID → id=${hit.id}`);
+      return { conn: hit, source: "install" };
     }
   }
 
@@ -133,7 +208,7 @@ export async function resolveAccountWithSource(req: Request): Promise<ResolvedAc
   const reqIp = safeGetIP(req);
   const ipsToTry = [tokenIp, reqIp].filter((v, i, a) => v && a.indexOf(v) === i) as string[];
   for (const ip of ipsToTry) {
-    const conn = (await redisClient.hGetAll(`connections:${ip}`)) as RedisPlayerConnection;
+    const conn = await redisGetUniqueActiveConnectionByIP(ip) as RedisPlayerConnection | null;
     if (conn?.id) {
       if (!silent) logger.warn(`${logPrefix} [${routeTag}] resolved via IP fallback ip=${ip} → id=${conn.id}`);
       return { conn, source: "ip" };
@@ -141,7 +216,7 @@ export async function resolveAccountWithSource(req: Request): Promise<ResolvedAc
   }
   const ip = ipsToTry[0] || null;
 
-  if (!silent) logger.warn(`${logPrefix} [${routeTag}] UNRESOLVED: jwt=${token?.id ?? "-"} steam=${steamId ?? "-"} epic=${epicId ?? "-"} hw=${hardwareId ?? "-"} ip=${ip ?? "-"}`);
+  if (!silent) logger.warn(`${logPrefix} [${routeTag}] UNRESOLVED: jwt=${token?.id ?? "-"} steam=${steamId || "-"} epic=${epicId || "-"} install=${installId || "-"} ip=${ip ?? "-"}`);
   return { conn: null, source: "unresolved" };
 }
 
@@ -151,8 +226,8 @@ export async function resolveAccountWithSource(req: Request): Promise<ResolvedAc
  *   1. JWT account ID (most handler calls)
  *   2. SteamID  (unique per Steam user)
  *   3. EpicID   (unique per Epic user)
- *   4. HardwareID (unique per device, survives account changes)
- *   5. IP       (ambiguous for same-household — last resort)
+ *   4. InstallID (random and persisted by OVS for offline/archive builds)
+ *   5. IP       (only when exactly one account is recently active)
  *
  * Returns null if no identifier resolves to a known connection.
  */
@@ -180,7 +255,7 @@ export async function resolveAccountFromRequest(req: Request): Promise<RedisPlay
   };
 
   // 2. SteamID (from header or token)
-  const steamId = (req.header("x-steam-id") as string) || token?.steamId;
+  const steamId = normalizeIdentity("steam", req.header("x-steam-id") || token?.steamId);
   if (steamId) {
     const hit = await resolveByIndex(`identity:steam:${steamId}`);
     if (hit) {
@@ -190,7 +265,7 @@ export async function resolveAccountFromRequest(req: Request): Promise<RedisPlay
   }
 
   // 3. EpicID
-  const epicId = (req.header("x-epic-id") as string) || token?.epicId;
+  const epicId = normalizeIdentity("epic", req.header("x-epic-id") || token?.epicId);
   if (epicId) {
     const hit = await resolveByIndex(`identity:epic:${epicId}`);
     if (hit) {
@@ -199,12 +274,12 @@ export async function resolveAccountFromRequest(req: Request): Promise<RedisPlay
     }
   }
 
-  // 4. HardwareID (survives account resets, still unique per device)
-  const hardwareId = (req.header("x-hw-id") as string) || token?.hardwareId;
-  if (hardwareId) {
-    const hit = await resolveByIndex(`identity:hw:${hardwareId}`);
+  // 4. Persisted random installation ID (safe offline/archive fallback)
+  const installId = normalizeIdentity("install", req.header("x-install-id") || token?.installId);
+  if (installId) {
+    const hit = await resolveByIndex(`identity:install:${installId}`);
     if (hit) {
-      if (!silent) logger.info(`${logPrefix} [${routeTag}] resolved via HardwareID=${hardwareId} → id=${hit.id}`);
+      if (!silent) logger.info(`${logPrefix} [${routeTag}] resolved via InstallID → id=${hit.id}`);
       return hit;
     }
   }
@@ -217,7 +292,7 @@ export async function resolveAccountFromRequest(req: Request): Promise<RedisPlay
   const reqIp = safeGetIP(req);
   const ipsToTry = [tokenIp, reqIp].filter((v, i, a) => v && a.indexOf(v) === i) as string[];
   for (const ip of ipsToTry) {
-    const conn = (await redisClient.hGetAll(`connections:${ip}`)) as RedisPlayerConnection;
+    const conn = await redisGetUniqueActiveConnectionByIP(ip) as RedisPlayerConnection | null;
     if (conn?.id) {
       if (!silent) logger.warn(`${logPrefix} [${routeTag}] resolved via IP fallback ip=${ip} → id=${conn.id}`);
       return conn;
@@ -225,7 +300,7 @@ export async function resolveAccountFromRequest(req: Request): Promise<RedisPlay
   }
   const ip = ipsToTry[0] || null;
 
-  if (!silent) logger.warn(`${logPrefix} [${routeTag}] UNRESOLVED: jwt=${token?.id ?? "-"} steam=${steamId ?? "-"} epic=${epicId ?? "-"} hw=${hardwareId ?? "-"} ip=${ip ?? "-"}`);
+  if (!silent) logger.warn(`${logPrefix} [${routeTag}] UNRESOLVED: jwt=${token?.id ?? "-"} steam=${steamId || "-"} epic=${epicId || "-"} install=${installId || "-"} ip=${ip ?? "-"}`);
   return null;
 }
 
@@ -239,13 +314,13 @@ export async function resolveAccountId(req: Request): Promise<string | null> {
 
 /**
  * Header-free variant for non-Express contexts (WebSockets, raw IncomingMessage).
- * Tries the identifiers in the same order: accountId → steamId → epicId → hardwareId → ip.
+ * Tries the identifiers in the same order: accountId → steamId → epicId → installId → ip.
  */
 export async function resolveAccountByIdentifiers(opts: {
   accountId?: string | null;
   steamId?: string | null;
   epicId?: string | null;
-  hardwareId?: string | null;
+  installId?: string | null;
   ip?: string | null;
 }): Promise<RedisPlayerConnection | null> {
   if (opts.accountId) {
@@ -263,43 +338,41 @@ export async function resolveAccountByIdentifiers(opts: {
     return conn?.id ? conn : null;
   };
 
-  if (opts.steamId) {
-    const hit = await byIndex(`identity:steam:${opts.steamId}`);
+  const steamId = normalizeIdentity("steam", opts.steamId);
+  if (steamId) {
+    const hit = await byIndex(`identity:steam:${steamId}`);
     if (hit) {
       logger.debug(`${logPrefix} [byIdentifiers] resolved via SteamID=${opts.steamId} → id=${hit.id}`);
       return hit;
     }
   }
-  if (opts.epicId) {
-    const hit = await byIndex(`identity:epic:${opts.epicId}`);
+  const epicId = normalizeIdentity("epic", opts.epicId);
+  if (epicId) {
+    const hit = await byIndex(`identity:epic:${epicId}`);
     if (hit) {
       logger.debug(`${logPrefix} [byIdentifiers] resolved via EpicID=${opts.epicId} → id=${hit.id}`);
       return hit;
     }
   }
-  if (opts.hardwareId) {
-    const hit = await byIndex(`identity:hw:${opts.hardwareId}`);
+  const installId = normalizeIdentity("install", opts.installId);
+  if (installId) {
+    const hit = await byIndex(`identity:install:${installId}`);
     if (hit) {
-      logger.debug(`${logPrefix} [byIdentifiers] resolved via HardwareID=${opts.hardwareId} → id=${hit.id}`);
+      logger.debug(`${logPrefix} [byIdentifiers] resolved via InstallID → id=${hit.id}`);
       return hit;
     }
   }
   if (opts.ip) {
-    const conn = (await redisClient.hGetAll(`connections:${opts.ip}`)) as RedisPlayerConnection;
+    const conn = await redisGetUniqueActiveConnectionByIP(opts.ip) as RedisPlayerConnection | null;
     if (conn?.id) {
       logger.debug(`${logPrefix} [byIdentifiers] resolved via IP fallback ip=${opts.ip} → id=${conn.id}`);
       return conn;
     }
   }
-  logger.warn(`${logPrefix} [byIdentifiers] UNRESOLVED: acct=${opts.accountId ?? "-"} steam=${opts.steamId ?? "-"} epic=${opts.epicId ?? "-"} hw=${opts.hardwareId ?? "-"} ip=${opts.ip ?? "-"}`);
+  logger.warn(`${logPrefix} [byIdentifiers] UNRESOLVED: acct=${opts.accountId ?? "-"} steam=${steamId || "-"} epic=${epicId || "-"} install=${installId || "-"} ip=${opts.ip ?? "-"}`);
   return null;
 }
 
-/**
- * Write the identity index keys that feed the fallback lookups above.
- * Called from /access after a player logs in and their PlayerTester is saved.
- * Indexes TTL'd at 30 days — refreshed on every login.
- */
 /**
  * Event-based admin cookie invalidation:
  * Bump the per-IP "accounts changed" timestamp. Called from /access when a NEW
@@ -320,26 +393,35 @@ export async function bumpIpAccountsChangedAt(ip: string): Promise<void> {
   }
 }
 
+/**
+ * Write the identity index keys that feed the fallback lookups above.
+ * Called from /access after a player logs in and their PlayerTester is saved.
+ * Indexes TTL'd at 30 days — refreshed on every login. Hardware ids are never indexed:
+ * they don't identify an account.
+ */
 export async function writeIdentityIndexes(
   accountId: string,
   steamId?: string | null,
   epicId?: string | null,
-  hardwareId?: string | null,
+  installId?: string | null,
 ): Promise<void> {
   const TTL = 60 * 60 * 24 * 30; // 30 days
   const written: string[] = [];
   try {
-    if (steamId) {
-      await redisClient.set(`identity:steam:${steamId}`, accountId, { EX: TTL });
-      written.push(`steam=${steamId}`);
+    const safeSteamId = normalizeIdentity("steam", steamId);
+    const safeEpicId = normalizeIdentity("epic", epicId);
+    if (safeSteamId) {
+      await redisClient.set(`identity:steam:${safeSteamId}`, accountId, { EX: TTL });
+      written.push(`steam=${safeSteamId}`);
     }
-    if (epicId) {
-      await redisClient.set(`identity:epic:${epicId}`, accountId, { EX: TTL });
-      written.push(`epic=${epicId}`);
+    if (safeEpicId) {
+      await redisClient.set(`identity:epic:${safeEpicId}`, accountId, { EX: TTL });
+      written.push(`epic=${safeEpicId}`);
     }
-    if (hardwareId) {
-      await redisClient.set(`identity:hw:${hardwareId}`, accountId, { EX: TTL });
-      written.push(`hw=${hardwareId}`);
+    const safeInstallId = normalizeIdentity("install", installId);
+    if (safeInstallId) {
+      await redisClient.set(`identity:install:${safeInstallId}`, accountId, { EX: TTL });
+      written.push("install=<present>");
     }
     logger.info(`${logPrefix} wrote identity indexes for ${accountId}: [${written.join(", ") || "none"}]`);
   } catch (e) {

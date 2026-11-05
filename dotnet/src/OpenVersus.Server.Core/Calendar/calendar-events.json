@@ -1,0 +1,373 @@
+{
+  "body": {
+    "Events": [
+      {
+        "start_at": {
+          "_hydra_unix_date": 1716807300
+        },
+        "end_at": null,
+        "data": {
+          "featured": false,
+          "display_in_modal": true,
+          "description": {
+            "localizations": {
+              "join_discord_carousel_description": "Join in on the conversation! Scan the QR code to join now!"
+            }
+          },
+          "priority": 100,
+          "slug": "",
+          "title": {
+            "localizations": {
+              "join_discord_carousel_title": "Join the Multiverse on Discord!"
+            }
+          },
+          "titleSmall": {
+            "localizations": {
+              "join_discord_carousel_smalltitle": "Join the MVS Discord!"
+            }
+          },
+          "smallImage": "t-discord-qa-carousel-thumbnail",
+          "largeImage": "t-discord-qa-carousel-keyart"
+        },
+        "tags": [],
+        "entry": {
+          "id": "664fdbf4d936704815e777aa",
+          "root_entry_id": "664fdbf4d936704815e777aa",
+          "name": "join_discord_message (live)",
+          "calendar_type_slug": "carousel",
+          "entry_type": "one-time",
+          "deleted": false,
+          "task_start_at": {
+            "_hydra_unix_date": 1716807300
+          }
+        },
+        "disabled": false,
+        "event_record_id": "665466851854e450ed3fb9e0",
+        "state": "running",
+        "controlled_features": [
+          {
+            "feature_name": "global_message",
+            "feature_settings": {
+              "global_message_lookups": [
+                {
+                  "slug": "carousel-entries",
+                  "id": "664e296548d055d1d1c35e5a"
+                }
+              ],
+              "features": [
+                {
+                  "global_message_feature_name": "enabled",
+                  "global_message_feature_value": true
+                }
+              ]
+            }
+          }
+        ],
+        "controlled_data": [],
+        "event_type": "carousel-entry"
+      },
+      {
+        "start_at": {
+          "_hydra_unix_date": "{{start}}"
+        },
+        "end_at": null,
+        "data": {
+          "featured": false,
+          "display_in_modal": true,
+          "description": {
+            "localizations": {
+              "ovs_update_required_description": "{{updateMessage}}"
+            }
+          },
+          "priority": 1000000,
+          "slug": "ovs-required-update",
+          "title": {
+            "localizations": {
+              "ovs_update_required_title": "OpenVersus Update Required"
+            }
+          },
+          "titleSmall": {
+            "localizations": {
+              "ovs_update_required_small_title": "Update Required"
+            }
+          },
+          "smallImage": "openversus-update-required-thumbnail",
+          "largeImage": "openversus-update-required-keyart",
+          "actionData": {
+            "actionButtonTitle": {
+              "localizations": {
+                "ovs_update_required_button": "Download Update"
+              }
+            },
+            "isActionable": true,
+            "website": "{{updateUrl}}"
+          }
+        },
+        "tags": [],
+        "entry": {
+          "id": "{{entryId}}",
+          "root_entry_id": "{{entryId}}",
+          "name": "OpenVersus Required Update",
+          "calendar_type_slug": "carousel",
+          "entry_type": "one-time",
+          "deleted": false,
+          "task_start_at": {
+            "_hydra_unix_date": "{{start}}"
+          }
+        },
+        "disabled": false,
+        "event_record_id": "{{recordId}}",
+        "state": "running",
+        "controlled_features": [
+          {
+            "feature_name": "global_message",
+            "feature_settings": {
+              "global_message_lookups": [
+                {
+                  "slug": "carousel-entries",
+                  "id": "{{entryId}}"
+                }
+              ],
+              "features": [
+                {
+                  "global_message_feature_name": "enabled",
+                  "global_message_feature_value": true
+                }
+              ]
+            }
+          }
+        ],
+        "controlled_data": [],
+        "event_type": "carousel-entry"
+      },
+      {
+        "start_at": {
+          "_hydra_unix_date": 1738688400
+        },
+        "end_at": null,
+        "data": {
+          "featured": false,
+          "display_in_modal": true,
+          "description": {
+            "localizations": {
+              "s5_battlepass_message_description": "Thanks for playing OpenVersus, the community-run revival of MultiVersus. Check the leaderboards, watch live matches, see your stats and change your name on our website. Have fun and keep it respectful!"
+            }
+          },
+          "priority": 1100,
+          "slug": "",
+          "title": {
+            "localizations": {
+              "s5_battlepass_message_title": "WELCOME TO OPENVERSUS"
+            }
+          },
+          "titleSmall": {
+            "localizations": {
+              "s5_battlepass_message_smalltitle": "OpenVersus"
+            }
+          },
+          "smallImage": "s5-bp-carousel-thumbnail",
+          "largeImage": "s5-bp-carousel-keyart",
+          "actionData": {
+            "actionButtonTitle": {
+              "localizations": {
+                "carousel_button_title": "Visit Our Website"
+              }
+            },
+            "isActionable": true,
+            "website": "https://prod.openversus.org/home"
+          }
+        },
+        "tags": [],
+        "entry": {
+          "id": "67a167b43047eb97555ae04e",
+          "root_entry_id": "67a167b43047eb97555ae04e",
+          "name": "OpenVersus Welcome Message",
+          "calendar_type_slug": "carousel",
+          "entry_type": "one-time",
+          "deleted": false,
+          "task_start_at": {
+            "_hydra_unix_date": 1738688400
+          }
+        },
+        "disabled": false,
+        "event_record_id": "67a24791dd7f3f9f39c99973",
+        "state": "running",
+        "controlled_features": [
+          {
+            "feature_name": "global_message",
+            "feature_settings": {
+              "global_message_lookups": [
+                {
+                  "slug": "carousel-entries",
+                  "id": "67a167396618b602e660f62b"
+                }
+              ],
+              "features": [
+                {
+                  "global_message_feature_name": "enabled",
+                  "global_message_feature_value": true
+                }
+              ]
+            }
+          }
+        ],
+        "controlled_data": [],
+        "event_type": "carousel-entry"
+      },
+      {
+        "start_at": {
+          "_hydra_unix_date": 1741089300
+        },
+        "end_at": {
+          "_hydra_unix_date": 1742295300
+        },
+        "data": {
+          "featured": false,
+          "display_in_modal": true,
+          "description": {
+            "localizations": {
+              "rogue_rift_3_description": "Check out the event to earn milestone rewards when you collect Objective Stars from the Discipline Rogue Rift!"
+            }
+          },
+          "priority": 700,
+          "slug": "",
+          "title": {
+            "localizations": {
+              "rogue_rift_3_title": "New: Discipline Rogue Rift"
+            }
+          },
+          "titleSmall": {
+            "localizations": {
+              "rogue_rift_3_title": "New: Discipline Rogue Rift"
+            }
+          },
+          "smallImage": "harley-rift-s5-thumbnail",
+          "largeImage": "harley-rift-s5-keyart",
+          "actionData": {
+            "actionButtonTitle": {
+              "localizations": {
+                "carousel_button_title": "Check it out!"
+              }
+            },
+            "isActionable": true,
+            "website": "events?EventSlug=evt_season5_rift3"
+          }
+        },
+        "tags": [],
+        "entry": {
+          "id": "67c63bd86a796360d3f8791c",
+          "root_entry_id": "67c63bd86a796360d3f8791c",
+          "name": "Rogue Rift Event 3 Message",
+          "calendar_type_slug": "carousel",
+          "entry_type": "one-time",
+          "deleted": false,
+          "task_start_at": {
+            "_hydra_unix_date": 1741089300
+          }
+        },
+        "disabled": false,
+        "event_record_id": "67c6ea1539a0a6d2ec4fbf17",
+        "state": "running",
+        "controlled_features": [
+          {
+            "feature_name": "global_message",
+            "feature_settings": {
+              "global_message_lookups": [
+                {
+                  "slug": "carousel-entries",
+                  "id": "67c639fc989c6bb1737d7a3b"
+                }
+              ],
+              "features": [
+                {
+                  "global_message_feature_name": "enabled",
+                  "global_message_feature_value": true
+                }
+              ]
+            }
+          }
+        ],
+        "controlled_data": [],
+        "event_type": "carousel-entry"
+      },
+      {
+        "start_at": {
+          "_hydra_unix_date": 1741690500
+        },
+        "end_at": {
+          "_hydra_unix_date": 1742295300
+        },
+        "data": {
+          "featured": false,
+          "display_in_modal": true,
+          "description": {
+            "localizations": {
+              "s5_arena_mrt_1_description": "Jump into the Arena and test your mettle against furious competition! Complete Enter the Arena missions to make progress and earn special badges to flaunt your competitive prowess!"
+            }
+          },
+          "priority": 700,
+          "slug": "",
+          "title": {
+            "localizations": {
+              "s5_arena_mrt_1_title": "Compete in Arena for Prizes!"
+            }
+          },
+          "titleSmall": {
+            "localizations": {
+              "s5_arena_mrt_1_title": "Compete in Arena for Prizes!"
+            }
+          },
+          "smallImage": "wonderwoman-arena-thumbnail",
+          "largeImage": "wonderwoman-arena-keyart",
+          "actionData": {
+            "actionButtonTitle": {
+              "localizations": {
+                "carousel_button_title": "Check it out!"
+              }
+            },
+            "isActionable": true,
+            "website": "playlist?GameMode=Arena"
+          }
+        },
+        "tags": [],
+        "entry": {
+          "id": "67d00b4f3840d24b5fef9700",
+          "root_entry_id": "67d00b4f3840d24b5fef9700",
+          "name": "Arena Mode MRT 3 Message",
+          "calendar_type_slug": "carousel",
+          "entry_type": "one-time",
+          "deleted": false,
+          "task_start_at": {
+            "_hydra_unix_date": 1741690500
+          }
+        },
+        "disabled": false,
+        "event_record_id": "67d0168435cb1b2862e4551a",
+        "state": "running",
+        "controlled_features": [
+          {
+            "feature_name": "global_message",
+            "feature_settings": {
+              "global_message_lookups": [
+                {
+                  "slug": "carousel-entries",
+                  "id": "67d00b023421da5cbc4e917d"
+                }
+              ],
+              "features": [
+                {
+                  "global_message_feature_name": "enabled",
+                  "global_message_feature_value": true
+                }
+              ]
+            }
+          }
+        ],
+        "controlled_data": [],
+        "event_type": "carousel-entry"
+      }
+    ]
+  },
+  "metadata": null,
+  "return_code": 0
+}

@@ -64,6 +64,10 @@ import {
   redisGetMatchTickets,
   TOAST_RECEIVED_CHANNEL,
   RedisToastNotification,
+  REWARD_TRACK_UPDATED_CHANNEL,
+  REWARDS_GRANTED_CHANNEL,
+  RedisRewardsGrantedNotification,
+  RedisRewardTrackUpdateNotification,
   redisGetMatchConfig,
   PLAYER_LOADOUT_LOCKED_CHANNEL,
   RedisPlayerLoadoutLockedNotification,
@@ -73,12 +77,21 @@ import {
   RedisLobbyTransitionNotification,
   FRIEND_REQUEST_WS_CHANNEL,
   RedisFriendRequestWSNotification,
+  CLIENT_UPDATE_MODAL_CHANNEL,
+  WS_SEND_CHANNEL,
+  WS_DISCONNECT_CHANNEL,
+  type RedisWsSendNotification,
+  RedisClientUpdateModalNotification,
   DLLNotification,
   redisPushDLLNotification,
   RedisLobbyState,
   redisUpdatePartyKeyLobby,
   redisSetPendingJoinLobby,
-  // PARTY_MEMBER_JOIN_CHANNEL — moved to AccelByteLobbyWsService
+  redisTouchPlayerSession,
+  redisRemovePlayerSession,
+  redisRecordPlayerHeartbeat,
+  redisRemovePlayerHeartbeat,
+  DISCONNECT_HEARTBEAT_TIMEOUT_MS,
 } from "./config/redis";
 import { Server } from "https";
 import { Server as HttpServer } from "http";
@@ -92,18 +105,38 @@ import { getMapHazards } from "./data/maps";
 import ObjectID from "bson-objectid";
 import { RedisClientType } from "@redis/client";
 import env from "./env/env";
+import { nodePortFor } from "./p2p";
 import { Cosmetics, TauntSlotsClass, defaultTaunts, IDefaultTaunts } from "./database/Cosmetics";
 import { getEquippedCosmetics } from "./services/cosmeticsService";
 import { cancelMatchmakingForAll } from "./services/matchmakingService";
-import { processMatchLeave, getOrCreateRating, eloToTierDivision } from "./services/eloService";
+import { UPDATE_NOTIFICATION_PROFILES } from "./services/updateNotificationProfiles";
+import { processMatchLeave, getOrCreateRating, getPlayerRank, eloToTierDivision, processSetResult } from "./services/eloService";
+import { gamesFinishedInSet } from "./services/rankedSetXpService";
 import { PlayerTesterModel } from "./database/PlayerTester";
 import { PlayerStatsModel } from "./database/PlayerStats";
 import { INVENTORY_DEFINITIONS } from "./data/inventoryDefs";
 import { BOT_DEFAULT_PERKS, BOT_DEFAULT_CHARACTER, BOT_DEFAULT_SKIN } from "./data/botDefaults";
 import { adjustMatchToasts } from "./data/playerCounters";
 
+/**
+ * Toasts a player gets for each toast they receive: granted to their balance and shown in the
+ * in-game popup, from this one value so the two cannot disagree. Two, not one: a little more
+ * incentive to toast (Christopher, 71b5196).
+ */
+const TOAST_RECEIVED_REWARD = 2;
+
 const serviceName: string = "WebSocket";
 const logPrefix = `[${serviceName}]:`;
+
+function createToastReceivedRewards(count: number) {
+  return [{
+    RewardGuid: "OVS-TOAST-TOAST-0001",
+    Constraints: [],
+    RewardGrantMethod: "DirectInventoryItem",
+    InventoryHsda: "match_toasts",
+    DirectInventoryItemCount: count,
+  }];
+}
 
 export class WebSocketPlayer {
   init: boolean = false;
@@ -111,7 +144,8 @@ export class WebSocketPlayer {
   deleted?: boolean;
   account: SharedTypes.IAccountToken | undefined;
   matchTick: NodeJS.Timeout | undefined;
-  matchTimeout: NodeJS.Timeout | undefined;
+  /** When the game last answered the ping (ms since the epoch); set at the handshake. */
+  lastPong: number = 0;
   matchConfig?: GameNotification;
   ticket?: ON_MATCH_MAKER_STARTED_NOTIFICATION;
   ip: string;
@@ -132,16 +166,6 @@ export class WebSocketPlayer {
   sendRaw(data: Buffer<ArrayBuffer>) {
     if (!this.deleted) {
       this.ws.send(data);
-    }
-  }
-
-  /**
-   * Send a text-format message (AccelByte YAML-like format) through the Hydra WS.
-   * Some games check both binary and text messages on the same connection.
-   */
-  sendText(text: string) {
-    if (!this.deleted) {
-      this.ws.send(text);
     }
   }
 }
@@ -250,11 +274,14 @@ export interface PlayerConfig {
 }
 
 const PING_BUFFER = Buffer.from([0x0c]);
+/** The game's answer to PING_BUFFER, about 60 ms later on loopback (captured 2026-09-28). */
+const PONG_BYTE = 0x0a;
 
 export class WebSocketService {
   private ws: WebSocketServer;
   clients: Map<string, WebSocketPlayer> = new Map();
   pendingRejoin: Set<string> = new Set(); // Players whose WS will be force-closed for rejoin — skip cleanup
+  private updateDisconnectTimers: Map<string, NodeJS.Timeout> = new Map();
   redisSub: RedisClient;
 
   constructor(server: Server | HttpServer) {
@@ -283,9 +310,17 @@ export class WebSocketService {
         `[${serviceName}]: ZOMBIE-DIAG: Player ${playerWS.account.id} connecting with NEW WebSocket — replacing existing connection. ` +
         `Old WS readyState=${existingClient.ws.readyState}, deleted=${existingClient.deleted}`,
       );
+      // The old connection's close is ignored as stale, so its matchmaking ticket would stay in the queue
+      // with nobody behind it and could be matched as a ghost opponent. Drop it now.
+      this.dropReplacedTicket(existingClient).catch((err) =>
+        logger.error(`${logPrefix} Error dropping the replaced connection's ticket for ${existingClient.account?.id}: ${err}`),
+      );
     }
 
     this.clients.set(playerWS.account.id, playerWS);
+    playerWS.lastPong = Date.now();
+    redisRecordPlayerHeartbeat(playerWS.account.id)
+      .catch((err) => logger.error(`${logPrefix} Error recording heartbeat: ${err}`));
 
     // Clear pending rejoin flag if this is a reconnect after force-close
     if (this.pendingRejoin.has(playerWS.account.id)) {
@@ -303,20 +338,66 @@ export class WebSocketService {
     );
 
     redisAddOnlinePlayer(playerWS.account.id).catch((err) => logger.error(`${logPrefix} Error adding online player: ${err}`));
+    redisTouchPlayerSession(playerWS.account.id, playerWS.ip)
+      .catch((err) => logger.error(`${logPrefix} Error touching player session: ${err}`));
     logger.info(
       `[${serviceName}]: Player ${playerWS.account.id} with IP ${playerWS.ip} and name ${playerWS.account.username} connected to websocket`,
     );
   }
 
+  // Pings every connection every 20 s. A game that has not answered for DISCONNECT_HEARTBEAT_TIMEOUT_MS (three
+  // missed answers; checked on this tick, so the close comes about 80 s after the last answer) is gone even if its
+  // socket never closed: the socket is terminated, and the close runs the usual disconnect cleanup (its matchmaking
+  // ticket, lobby and session). The session is refreshed by the answer, not by the ping.
   handleHeartBeats() {
     setInterval(() => {
+      const now = Date.now();
       for (const [
         _,
         playerWS,
       ] of this.clients) {
+        const silentMs = now - playerWS.lastPong;
+        if (silentMs >= DISCONNECT_HEARTBEAT_TIMEOUT_MS) {
+          logger.warn(
+            `[${serviceName}]: Player ${playerWS.account?.id ?? "unknown"} with IP ${playerWS.ip} has not answered for ${Math.round(silentMs / 1000)} s; closing the connection`,
+          );
+          playerWS.ws.terminate();
+          continue;
+        }
         playerWS.sendRaw(PING_BUFFER);
       }
     }, 20000);
+  }
+
+  // The game answered the ping on its current connection: it is still there.
+  handlePong(playerWS: WebSocketPlayer) {
+    const playerId = playerWS.account?.id;
+    if (!playerId || this.clients.get(playerId) !== playerWS) {
+      return;
+    }
+    playerWS.lastPong = Date.now();
+    redisRecordPlayerHeartbeat(playerId)
+      .catch((err) => logger.error(`${logPrefix} Error recording heartbeat: ${err}`));
+    redisTouchPlayerSession(playerId, playerWS.ip)
+      .catch((err) => logger.error(`${logPrefix} Error refreshing player session: ${err}`));
+  }
+
+  // A newer connection replaced this one: stop its ticks and take its ticket out of the queue.
+  async dropReplacedTicket(oldClient: WebSocketPlayer) {
+    if (oldClient.matchTick) {
+      clearInterval(oldClient.matchTick);
+      oldClient.matchTick = undefined;
+    }
+    if (oldClient.ticket) {
+      logger.info(
+        `[${serviceName}]: Dropping ticket ${oldClient.ticket.matchmakingRequestId} of the replaced connection for player ${oldClient.account?.id ?? "unknown"}`,
+      );
+      await this.attemptRemoveMatchTicket(oldClient);
+      oldClient.ticket = undefined;
+      if (oldClient.account?.id) {
+        await redisUpdatePlayerStatus(oldClient.account.id, "idle");
+      }
+    }
   }
 
   async handleDisconnect(playerWS: WebSocketPlayer) {
@@ -346,6 +427,12 @@ export class WebSocketService {
         // The game will reconnect and go through the full init flow
         return;
       }
+
+      // The session expires on its own in 90 s, so a failure here must not stop the cleanup below.
+      await redisRemovePlayerSession(playerId, playerWS.ip)
+        .catch((err) => logger.error(`${logPrefix} Error removing player session for ${playerId}: ${err}`));
+      await redisRemovePlayerHeartbeat(playerId)
+        .catch((err) => logger.error(`${logPrefix} Error removing heartbeat for ${playerId}: ${err}`));
 
       // Check if this player was in a multi-player lobby — if so, disband the party
       // so remaining players aren't stuck with a ghost teammate.
@@ -478,8 +565,8 @@ export class WebSocketService {
                       } catch {}
                     }
                     // Pregame dodge — pass isPregameDodge=true so stats count it as a dodge
-                    const { processSetResult } = await import("./services/eloService.js");
-                    await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId, true);
+                    const gamesBefore = setId !== matchId ? await gamesFinishedInSet(setId) : 0;
+                    await processSetResult(winnerIds, loserIds, matchConfig.mode, [0, 0] as [number, number], winnerTeam, true, chars, matchId, true, gamesBefore, [playerId]);
                     await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: matchConfig.players.map((p) => p.playerId) }));
                     logger.info(`[${serviceName}]: Pregame dodge: ${playerId} (${playerWS.account.username}) left match ${matchId} — ELO processed`);
                   } catch (eloErr) {
@@ -640,6 +727,7 @@ export class WebSocketService {
     if (playerWS.ticket) {
       await redisPopMatchTicketsFromQueue("1v1", [playerWS.ticket]);
       await redisPopMatchTicketsFromQueue("2v2", [playerWS.ticket]);
+      await redisPopMatchTicketsFromQueue("FFA", [playerWS.ticket]);
     }
   }
 
@@ -654,10 +742,20 @@ export class WebSocketService {
       ws.on("message", (message) => {
         if (!playerWS.init) {
           if (Buffer.isBuffer(message)) {
-            this.handleHandshake(playerWS, message);
+            try {
+              this.handleHandshake(playerWS, message);
+            } catch (e) {
+              // A token the server can't verify (e.g. signed before JWT_SECRET changed): close
+              // the socket rather than keep a connection with no account behind it.
+              logger.warn(`${logPrefix} Rejected the websocket handshake from ${ip}: ${e}`);
+              ws.close();
+              return;
+            }
             // Need to send ping to client or client will disconnect
             playerWS.sendRaw(PING_BUFFER);
           }
+        } else if (Buffer.isBuffer(message) && message.length === 1 && message[0] === PONG_BYTE) {
+          this.handlePong(playerWS);
         }
       });
 
@@ -674,12 +772,6 @@ export class WebSocketService {
   }
 
   async stopMatchTick(player: WebSocketPlayer) {
-    // Clear the 100s auto-cancel timeout — match was found, no need to auto-cancel
-    if (player.matchTimeout) {
-      clearTimeout(player.matchTimeout);
-      player.matchTimeout = undefined;
-    }
-
     if (player.matchTick) {
       logger.info(
         `[${serviceName}]: Stopping matchtick for player ${player.account?.id ?? "unknown"} with IP ${player.ip} and name ${player.account?.username ?? "unknown"}`,
@@ -737,12 +829,9 @@ export class WebSocketService {
     await redisPushTicketToQueue(notification.matchType, notification);
   }
 
+  // There is no queue timeout: a ticket waits until a match is found, the player cancels or they disconnect.
+  // The game's own switch to a bot match after about two minutes is patched out by the OpenVersus client.
   handleMatchTick(client: WebSocketPlayer, notification: ON_MATCH_MAKER_STARTED_NOTIFICATION) {
-    // Clear any existing zombie timeout from a previous queue cycle
-    if (client.matchTimeout) {
-      clearTimeout(client.matchTimeout);
-    }
-
     client.matchTick = setInterval(() => {
       client.send({
         data: {},
@@ -754,19 +843,9 @@ export class WebSocketService {
         cmd: "matchmaking-tick",
       });
     }, 1000);
-
-    client.matchTimeout = setTimeout(async () => {
-      await this.cancelMatchMaking(client, notification.matchmakingRequestId);
-    }, 100_000);
   }
 
   async cancelMatchMaking(client: WebSocketPlayer, matchmakingRequestId: string) {
-    // Always clear the 100s timeout to prevent zombie timeouts from canceling future queues
-    if (client.matchTimeout) {
-      clearTimeout(client.matchTimeout);
-      client.matchTimeout = undefined;
-    }
-
     if (client.matchTick) {
       const message = {
         data: {},
@@ -854,18 +933,21 @@ export class WebSocketService {
 
         //const gameServerPort: Promise<number | undefined> = redisGetGamePort(notification.matchId).then(port => port) || GAME_SERVER_PORT;
         //const gameServerPort = redisGetGamePort(notification.matchId).then(port => port);
-        const gameServerPort = notification.rollbackPort || GAME_SERVER_PORT;
+        // A P2P match: the game's rollback server is the node on its own machine. Otherwise a player on this
+        // machine (IPv4 or IPv6 loopback) is sent loopback, everyone else a public rollback address.
+        const gameServerPort = notification.p2p ? await nodePortFor(matchPlayer.playerId) : (notification.rollbackPort || GAME_SERVER_PORT);
+        const isLocalPlayer = player.ip === "127.0.0.1" || player.ip === "::1";
+        const gameServerAddress = notification.p2p || isLocalPlayer ? "127.0.0.1" : arr[randomIndex];
         logger.info(
-          `[${serviceName}]: Match ${notification.matchId} found for player ${player.account?.id ?? "unknown"}, sending match found notification with game server port ${gameServerPort}`,
+          `[${serviceName}]: Match ${notification.matchId} found for player ${player.account?.id ?? "unknown"}, sending match found notification with game server ${gameServerAddress}:${gameServerPort}${notification.p2p ? " (P2P node)" : ""}`,
         );
         const message = {
           data: {
             MatchKey: notification.matchKey,
             MatchID: notification.matchId,
-            //Port: gameServerPort || GAME_SERVER_PORT,
             Port: gameServerPort,
             template_id: "GameServerReadyNotification",
-            IPAddress: player.ip === "127.0.0.1" ? "127.0.0.1" : arr[randomIndex],
+            IPAddress: gameServerAddress,
           },
           payload: {
             match: {
@@ -1376,6 +1458,14 @@ export class WebSocketService {
 
     // Look up hazards from map JSON data (PVE_03 always has hazards, others check JSON)
     let stageHazards: boolean = await getMapHazards(notification.map, notification.mode);
+    const selectedWorldBuffs = notification.worldBuffs ?? [];
+    const hasFriendlyFireMutator = selectedWorldBuffs.includes("ovs_friendly_fire");
+    // The client resolves GameplayConfig.WorldBuffs by asset name: a shipped
+    // mutator's slug is its asset name in lower case. The OVS mutator assets are
+    // named exactly their slugs for the same reason, so every mutator is sent as
+    // its slug; anything else (an object path, a different name) is dropped.
+    const worldBuffsForClient = selectedWorldBuffs;
+
     const message: GameNotification = {
       data: {
         MatchId: notification.matchId,
@@ -1392,11 +1482,18 @@ export class WebSocketService {
           Created: {
             _hydra_unix_date: MVSTime(new Date()),
           },
-          EventQueueSlug: "",
-          bModeGrantsProgress: true,
+          EventQueueSlug: notification.mode === "FFA" ? "evtq_ffa" : "",
+          // Retail clients discard unknown custom WorldBuff slugs while
+          // resolving UMvsGameplayConfig. Custom matches grant no progression,
+          // so false doubles as the OVS friendly-fire compatibility marker that
+          // the updated ASI can read on every peer.
+          bModeGrantsProgress: !(
+            (notification.isCustomGame ?? false) &&
+            hasFriendlyFireMutator
+          ),
           TeamData: [],
           Spectators,
-          bIsRanked: !(notification.isCustomGame ?? false),
+          bIsRanked: !(notification.isCustomGame ?? false) && notification.mode !== "FFA",
           bIsCustomGame: notification.isCustomGame ?? false,
           Players,
           CustomGameSettings: {
@@ -1415,11 +1512,13 @@ export class WebSocketService {
           RiftNodeAttunement: "Attunements:None",
           CountdownDisplay: "CountdownTypes:XvY",
           Cluster: "ec2-us-east-1-dokken",
-          WorldBuffs: notification.worldBuffs ?? [],
+          WorldBuffs: worldBuffsForClient,
           bIsTutorial: false,
           MatchId: notification.matchId,
           bIsOnlineMatch: true,
-          ModeString: (notification.isCustomGame ?? false) ? notification.mode : `ranked-${notification.mode}`,
+          ModeString: (notification.isCustomGame ?? false) || notification.mode === "FFA"
+            ? notification.mode
+            : `ranked-${notification.mode}`,
           Map: notification.map,
           bIsRift: false,
         },
@@ -1434,6 +1533,20 @@ export class WebSocketService {
       header: "",
       cmd: "update",
     };
+
+    if (notification.gameplayConfigOverride) {
+      Object.assign(message.data.GameplayConfig, notification.gameplayConfigOverride);
+    }
+    for (const [playerId, fields] of Object.entries(notification.playerConfigOverrides ?? {})) {
+      const target = message.data.GameplayConfig.Players[playerId];
+      if (target) Object.assign(target, fields);
+    }
+    if (notification.gameplayConfigTemplate) {
+      message.data.template_id = notification.gameplayConfigTemplate;
+    }
+    if (notification.gameplayConfigData) {
+      Object.assign(message.data, notification.gameplayConfigData);
+    }
 
     logwrapper.verbose("Message is: ");
     KitchenSink.TryInspectVerbose(message);
@@ -1458,8 +1571,8 @@ export class WebSocketService {
     }
 
     // Only dump full gameplay config for custom games — ranked is high-volume
-    // and not the focus of current debugging.
-    if (notification.isCustomGame) {
+    // and not the focus of current debugging. Also dumped for C#-overridden configs (rifts).
+    if (notification.isCustomGame || notification.gameplayConfigOverride) {
       logger.info(
         `[${serviceName}]: [DEBUG-GAMEPLAY-CONFIG] match=${notification.matchId} message=${JSON.stringify(message)}`,
       );
@@ -1532,7 +1645,13 @@ export class WebSocketService {
   async handleGameServerInstanceReady(notification: RedisGameServerInstanceReadyNotification) {
     let useCentralRollback = env.USE_INTERNAL_ROLLBACK === 1 ? true : false;
     let rollbackHost = useCentralRollback ? `${env.UDP_SERVER_IP}` : "127.0.0.1";
+
     let playerClients: Record<string, WebSocketPlayer>[] = [];
+    // A P2P match: the server is the node on each player's machine, whatever USE_INTERNAL_ROLLBACK says.
+    const p2p = (await redisGetMatchConfig(notification.containerMatchId).catch(() => null))?.p2p === true;
+    if (p2p) {
+      rollbackHost = "127.0.0.1";
+    }
 
     for (const playerId of notification.playerIds) {
       const client = this.clients.get(playerId);
@@ -1551,9 +1670,9 @@ export class WebSocketService {
       // const client = this.clients.get(playerId);
       const client = playerClients.find(pc => pc[playerId])?.[playerId];
 
-      const gameServerPort = notification.rollbackPort || GAME_SERVER_PORT;
+      const gameServerPort = p2p ? await nodePortFor(playerId) : (notification.rollbackPort || GAME_SERVER_PORT);
       logger.info(
-        `[${serviceName}]: Received game server instance ready for match ${notification.containerMatchId} and player ${playerId} with IP ${client?.ip ?? "unknown"} and name ${client?.account?.username ?? "unknown"}, sending game server info with port ${gameServerPort}`,
+        `[${serviceName}]: Received game server instance ready for match ${notification.containerMatchId} and player ${playerId} with IP ${client?.ip ?? "unknown"} and name ${client?.account?.username ?? "unknown"}, sending game server info with ${rollbackHost}:${gameServerPort}${p2p ? " (P2P node)" : ""}`,
       );
 
       const message = {
@@ -1716,20 +1835,20 @@ export class WebSocketService {
   async handleToastReceived(notification: RedisToastNotification) {
     logger.info(`[${serviceName}]: handleToastReceived called — toastee: ${notification?.toasteeAccountId}, toaster: ${notification?.toasterAccountId}`);
 
-    // Grant +1 match_toasts to the toastee server-side BEFORE we send the
-    // WS popup. This makes the reward real — the count persists across
+    // Grant TOAST_RECEIVED_REWARD match_toasts to the toastee server-side
+    // BEFORE we send the WS popup. This makes the reward real — the count persists across
     // inventory refetches because PlayerCounters is the source of truth
     // for the inventory endpoint now.
     //
     // If the grant throws (transient Mongo error etc.), we BAIL on the
-    // popup too — otherwise the client sees a "+1 Toasts" popup that
+    // popup too — otherwise the client sees a "+N Toasts" popup that
     // doesn't reconcile against inventory on next refresh. Better to drop
     // a rare toast event than to silently lie about the balance.
     try {
-      const newCount = await adjustMatchToasts(notification.toasteeAccountId, 2);
-      logger.info(`[${serviceName}]: Granted +1 match_toasts to ${notification.toasteeAccountId}; new count: ${newCount}`);
+      const newCount = await adjustMatchToasts(notification.toasteeAccountId, TOAST_RECEIVED_REWARD);
+      logger.info(`[${serviceName}]: Granted +${TOAST_RECEIVED_REWARD} match_toasts to ${notification.toasteeAccountId}; new count: ${newCount}`);
     } catch (e) {
-      logger.error(`[${serviceName}]: Failed to grant +1 match_toasts to ${notification.toasteeAccountId}, suppressing popup to avoid desync: ${e}`);
+      logger.error(`[${serviceName}]: Failed to grant +${TOAST_RECEIVED_REWARD} match_toasts to ${notification.toasteeAccountId}, suppressing popup to avoid desync: ${e}`);
       return;
     }
 
@@ -1737,13 +1856,7 @@ export class WebSocketService {
     // (koth stuff3@0833e18). The WS message itself is what makes the
     // in-game popup render; the actual count change is the adjustMatchToasts
     // call above.
-    const rewardsGranted = [{
-      RewardGuid: "OVS-TOAST-TOAST-0001",
-      Constraints: [],
-      RewardGrantMethod: "DirectInventoryItem",
-      InventoryHsda: "match_toasts",
-      DirectInventoryItemCount: 1,
-    }];
+    const rewardsGranted = createToastReceivedRewards(TOAST_RECEIVED_REWARD);
 
     // Send `ToastReceivedNotification` over WS to the toastee. An earlier
     // note in this codebase claimed this template_id wasn't in the game's
@@ -1775,6 +1888,65 @@ export class WebSocketService {
       cmd: "profile-notification",
     });
     logger.info(`[${serviceName}]: Sent ToastReceivedNotification to ${notification.toasteeAccountId} from ${notification.toasterUsername}`);
+  }
+
+  handleRewardTrackUpdate(notification: RedisRewardTrackUpdateNotification) {
+    const client = this.clients.get(notification.accountId);
+    if (!client) {
+      logger.warn(`[${serviceName}]: Player ${notification.accountId} not connected to WS; reward-track update will be visible on next fetch`);
+      return;
+    }
+
+    const rewardTrackMessage = {
+      data: {
+        template_id: "RewardTrackStatesUpdated",
+        UpdateContext: notification.updateContext,
+        RewardTrackStates: [{
+          TrackSlug: notification.trackSlug,
+          RewardTrackClass: notification.rewardTrackClass ?? "MvsEventRewardTrackHsda",
+          CurrentScore: notification.currentScore,
+          CurrentTier: notification.currentTier,
+          CompletedTiers: notification.completedTiers,
+          ClaimedRewards: notification.claimedRewards,
+          bHasPremium: notification.bHasPremium,
+          Guid: notification.guid ?? "00000000-0000-0000-0000-000000000000",
+          InfiniteTierThreshold: notification.infiniteTierThreshold ?? 60,
+          HighestClaimedInifiniteTier: -1,
+        }],
+      },
+      payload: {
+        frm: { id: "internal-server", type: "server-api-key" },
+        template: "realtime",
+        account_id: notification.accountId,
+        profile_id: notification.accountId,
+      },
+      header: "",
+      cmd: "profile-notification",
+    };
+    client.send(rewardTrackMessage);
+
+    logger.info(`[${serviceName}]: Sent reward-track update to ${notification.accountId}: +${notification.xpDelta}, score=${notification.currentScore}`);
+  }
+
+  handleRewardsGranted(notification: RedisRewardsGrantedNotification) {
+    const client = this.clients.get(notification.accountId);
+    if (!client) return;
+    client.send({
+      data: {
+        template_id: "OnRewardsGranted",
+        Context: notification.context,
+        RewardsGranted: notification.rewards,
+      },
+      payload: {
+        frm: { id: "internal-server", type: "server-api-key" },
+        template: "realtime",
+        account_id: notification.accountId,
+        profile_id: notification.accountId,
+      },
+      header: "",
+      cmd: "profile-notification",
+    });
+    logger.info(`[${serviceName}]: Sent OnRewardsGranted (${notification.rewards.length}) to ${notification.accountId}`);
   }
 
   handlePlayerLoadoutLocked(notification: RedisPlayerLoadoutLockedNotification) {
@@ -2580,14 +2752,14 @@ export class WebSocketService {
                 logger.warn(`[${serviceName}]: No character found for player ${pid} — ELO will use global fallback`);
               }
             }
-            const { processSetResult } = await import("./services/eloService.js");
-            await processSetResult(winnerIds, loserIds, existingSet.mode, scores as [number, number], winnerTeam, false, playerChars, notification.matchId);
+            // A walkout during the deciding game: the set completes on score, but the leaver quit (no XP for them).
+            await processSetResult(winnerIds, loserIds, existingSet.mode, scores as [number, number], winnerTeam, false, playerChars, notification.matchId,
+              false, 0, dodgedByPlayer ? [dodgedByPlayer] : []);
             } else {
               logger.info(`[${serviceName}]: ELO already processed for set ${setId}, skipping set-complete processing`);
             }
 
             // Send FullRankUpdate notification to each player with fresh ranked data
-            const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
             for (const pid of [...winnerIds, ...loserIds]) {
               const client = this.clients.get(pid);
               if (!client) continue;
@@ -2670,6 +2842,8 @@ export class WebSocketService {
                   };
                 };
 
+                // Season 5, never granted, whatever the player has claimed: the C# ranked_data says granted once the
+                // end-of-season rewards are claimed. See dotnet/docs/SEASONS.md (open items) before porting this.
                 const rankedPayload = {
                   SeasonalData: {
                     "Season:SeasonFive": {
@@ -2985,6 +3159,27 @@ export class WebSocketService {
       logger.error(`[${serviceName}]: Failed to subscribe to ${TOAST_RECEIVED_CHANNEL}: ${err}`);
     });
 
+    this.redisSub.subscribe(REWARD_TRACK_UPDATED_CHANNEL, (message) => {
+      try {
+        const notification = JSON.parse(message) as RedisRewardTrackUpdateNotification;
+        this.handleRewardTrackUpdate(notification);
+      } catch (err) {
+        logger.error(`[${serviceName}]: Error parsing reward-track update: ${err} — raw: ${message}`);
+      }
+    }).then(() => {
+      logger.info(`[${serviceName}]: Subscribed to ${REWARD_TRACK_UPDATED_CHANNEL} successfully`);
+    }).catch((err) => {
+      logger.error(`[${serviceName}]: Failed to subscribe to ${REWARD_TRACK_UPDATED_CHANNEL}: ${err}`);
+    });
+
+    this.redisSub.subscribe(REWARDS_GRANTED_CHANNEL, (message) => {
+      try {
+        this.handleRewardsGranted(JSON.parse(message) as RedisRewardsGrantedNotification);
+      } catch (err) {
+        logger.error(`[${serviceName}]: Error parsing rewards-granted message: ${err} — raw: ${message}`);
+      }
+    });
+
     this.redisSub.subscribe(PLAYER_LOADOUT_LOCKED_CHANNEL, (message) => {
       const notification = JSON.parse(message) as RedisPlayerLoadoutLockedNotification;
       this.handlePlayerLoadoutLocked(notification);
@@ -3020,11 +3215,6 @@ export class WebSocketService {
       }
     });
 
-    // NOTE: partyMemberJoinNotif subscription MOVED to AccelByteLobbyWsService.
-    // The game processes AccelByte text-format messages on the AccelByte Lobby WS
-    // (/lobby/ path), NOT on the Hydra WS. Sending it here had no effect because
-    // the game ignores AccelByte-format text on this connection.
-
     // Friend request WS notification — sends native WBPNFriendRequestReceivedNotification
     this.redisSub.subscribe(FRIEND_REQUEST_WS_CHANNEL, (message) => {
       try {
@@ -3050,6 +3240,105 @@ export class WebSocketService {
         }
       } catch (e) {
         logger.error(`[${serviceName}]: Error handling friend request WS notification: ${e}`);
+      }
+    });
+
+    // When the update gate blocks a gameplay transition, an outdated client gets a toast
+    // (ToastReceivedNotification) from the virtual update profile, with no rewards, so only
+    // the banner shows. Its session is closed ten seconds later.
+    // A message the C# server has built, sent as it is (dotnet/docs/MIGRATION-BRIDGES.md).
+    this.redisSub.subscribe(WS_SEND_CHANNEL, (message) => {
+      try {
+        const notification = JSON.parse(message) as RedisWsSendNotification;
+        for (const playerId of notification.playerIds ?? []) {
+          const client = this.clients.get(playerId);
+          if (!client) {
+            logger.warn(`[${serviceName}]: Cannot send ${String((notification.message?.data as any)?.template_id ?? notification.message?.cmd)} to ${playerId}: Hydra WS is not connected`);
+            continue;
+          }
+          client.send(notification.message);
+        }
+      } catch (error) {
+        logger.error(`[${serviceName}]: Bad ws:send message: ${error}`);
+      }
+    });
+
+    // An administrator's forced disconnect (dotnet/docs/MIGRATION-BRIDGES.md): closed as the heartbeat timeout closes
+    // a silent connection, so the usual cleanup runs and the game logs out.
+    this.redisSub.subscribe(WS_DISCONNECT_CHANNEL, (message) => {
+      try {
+        const { playerId } = JSON.parse(message) as { playerId: string };
+        const client = this.clients.get(playerId);
+        if (!client) {
+          logger.info(`[${serviceName}]: Forced disconnect of ${playerId}: not connected to this service`);
+          return;
+        }
+        logger.warn(`[${serviceName}]: Forced disconnect of ${playerId} with IP ${client.ip} (administrator); closing the connection`);
+        client.ws.terminate();
+      } catch (error) {
+        logger.error(`[${serviceName}]: Bad ws:disconnect message: ${error}`);
+      }
+    });
+
+    this.redisSub.subscribe(CLIENT_UPDATE_MODAL_CHANNEL, (message) => {
+      try {
+        const notification = JSON.parse(message) as RedisClientUpdateModalNotification;
+        const client = this.clients.get(notification.playerId);
+        if (!client) {
+          logger.warn(
+            `[${serviceName}]: Cannot show reward-free update toast to ${notification.playerId}: Hydra WS is not connected`,
+          );
+          return;
+        }
+
+        const updateProfile = UPDATE_NOTIFICATION_PROFILES[0];
+        client.send({
+          data: {
+            template_id: "ToastReceivedNotification",
+            ToasterAccountID: updateProfile.accountId,
+            RewardsGranted: [],
+          },
+          payload: {
+            frm: {
+              id: "internal-server",
+              type: "server-api-key",
+            },
+            template: "realtime",
+            account_id: notification.playerId,
+            profile_id: notification.playerId,
+          },
+          header: "",
+          cmd: "profile-notification",
+        });
+        logger.info(
+          `[${serviceName}]: Sent reward-free required-update ToastReceivedNotification to ${notification.playerId} `
+          + `as ${updateProfile.accountId} (${updateProfile.username}); nonce=${notification.nonce}`,
+        );
+
+        if (!this.updateDisconnectTimers.has(notification.playerId)) {
+          const clientAtNotification = client;
+          const disconnectTimer = setTimeout(() => {
+            this.updateDisconnectTimers.delete(notification.playerId);
+
+            // Do not disconnect a newer socket if this player happened to
+            // reconnect during the ten-second banner display window.
+            if (this.clients.get(notification.playerId) !== clientAtNotification) {
+              logger.info(
+                `[${serviceName}]: Skipping required-update WebSocket close for ${notification.playerId}: connection changed`,
+              );
+              return;
+            }
+
+            logger.info(
+              `[${serviceName}]: Closing WebSocket for ${notification.playerId} 10 seconds after required-update banner`,
+            );
+            clientAtNotification.ws.close(1000, "update-required");
+          }, 10000);
+
+          this.updateDisconnectTimers.set(notification.playerId, disconnectTimer);
+        }
+      } catch (error) {
+        logger.error(`[${serviceName}]: Error handling reward-free update toast request: ${error}`);
       }
     });
 
@@ -3139,7 +3428,6 @@ export class WebSocketService {
       try {
         const { playerIds } = JSON.parse(message);
         logger.info(`[${serviceName}]: FullRankUpdate (concede) for ${playerIds.length} players`);
-        const { getOrCreateRating, getPlayerRank } = await import("./services/eloService.js");
         for (const pid of playerIds) {
           const client = this.clients.get(pid);
           if (!client) continue;
@@ -3181,6 +3469,7 @@ export class WebSocketService {
               return { BestCharacter: { CurrentPoints: bestElo > 0 ? bestElo : elo, MaxPoints: bestElo > 0 ? bestElo : elo, GamesPlayed: wins + losses, SetsPlayed: wins + losses, CharacterSlug: bestChar, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) } }, DataByCharacter, GamesPlayed: wins + losses, LastUpdateTimestamp: { _hydra_unix_date: Math.floor(Date.now() / 1000) }, SetsPlayed: wins + losses, FinalLeaderboardRank: rank?.rank || 0 };
             };
 
+            // Season 5, never granted: see dotnet/docs/SEASONS.md (open items) before porting this.
             client.send({
               data: {
                 template_id: "FullRankUpdate",

@@ -1,6 +1,7 @@
 import { logger } from "../config/logger";
 import { INVENTORY_DEFINITIONS, InventoryDefData } from "../data/inventoryDefs";
 import { PlayerTesterModel } from "../database/PlayerTester";
+import { getUpdateNotificationProfile } from "./updateNotificationProfiles";
 
 interface ProfileMatch {
   account_id: string;
@@ -29,6 +30,34 @@ interface ProfileAccounntMatch {
 }
 
 export async function getProfileForMatch(accountId: string): Promise<ProfileMatch | undefined> {
+  const updateProfile = getUpdateNotificationProfile(accountId);
+  if (updateProfile) {
+    const profileIcon = "profile_icon_default";
+    return {
+      account_id: accountId,
+      random_distribution: 0.6911729387046968,
+      id: updateProfile.profileId,
+      account: {
+        deleted: false,
+        orphaned: false,
+        orphaned_reason: null,
+        public_id: accountId,
+        "identity.default_username": true,
+        state: "normal",
+        wbplay_data_synced: false,
+        wbplay_identity: null,
+        locale: "en-US",
+        "data.LastLoginPlatform": "EPlatform::PC",
+        id: accountId,
+        "identity.username": updateProfile.username,
+        presence_state: 1,
+        presence: "online",
+        "server_data.ProfileIcon.Slug": profileIcon,
+        "server_data.ProfileIcon.AssetPath": (INVENTORY_DEFINITIONS[profileIcon].data as InventoryDefData).AssetPath,
+      },
+    };
+  }
+
   const profile = await PlayerTesterModel.findById(accountId);
   if (profile) {
     return {

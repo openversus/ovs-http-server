@@ -1,3 +1,4 @@
+import { deploysRollbackServer, isP2PEligible } from "../p2p";
 import {
   redisClient,
   RedisTeamEntry,
@@ -7,6 +8,7 @@ import {
   redisOnGameplayConfigNotified,
   redisMatchMakingComplete,
   redisUpdateMatch,
+  redisUpdateIpMirror,
 } from "../config/redis";
 import { logger, logwrapper } from "../config/logger";
 import { getCustomRandomMapByType, getMapList } from "../data/maps";
@@ -574,7 +576,7 @@ export async function startMatch(
         const update: Record<string, string> = { character, skin };
         if (profileIcon) update.profileIcon = profileIcon;
         await redisClient.hSet(`connections:${p.playerId}`, update);
-        await redisClient.hSet(`connections:${p.ip}`, update);
+        await redisUpdateIpMirror(p.ip, p.playerId, update);
       }
     } catch (e) {
       logger.warn(`${logPrefix} Failed to sync character/skin for player ${p.playerId}: ${e}`);
@@ -672,7 +674,12 @@ export async function startMatch(
       ? lobby.mapPool[Math.floor(Math.random() * lobby.mapPool.length)]
       : await getCustomRandomMapByType(lobby.mode);
 
-    if (useOnDemandRollback) {
+    const p2p = isP2PEligible([...players, ...spectatorEntries]);
+    if (p2p) {
+      logwrapper.info(`${logPrefix} Custom match ${matchId} runs P2P (a relay only if no direct path opens)`);
+    }
+
+    if (useOnDemandRollback && deploysRollbackServer(p2p)) {
       logwrapper.info(`${logPrefix} Deploying rollback server for match ${matchId} with port: ${match.rollbackPort}`)
       let deployInfo: IDeployInfo = getDefaultDeployInfo();
       deployInfo.port = customLobbyRollbackPort;
@@ -697,6 +704,7 @@ export async function startMatch(
       mode: lobby.mode,
       rollbackPort: customLobbyRollbackPort,
       isCustomGame: true,
+      p2p,
     };
 
     // Include spectators in playerIds so they receive all match notifications
@@ -1000,7 +1008,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
         const update: Record<string, string> = { character, skin };
         if (profileIcon) update.profileIcon = profileIcon;
         await redisClient.hSet(`connections:${p.playerId}`, update);
-        await redisClient.hSet(`connections:${p.ip}`, update);
+        await redisUpdateIpMirror(p.ip, p.playerId, update);
       }
     } catch (e) {
       logger.warn(`${logPrefix} Failed to sync character/skin for rematch player ${p.playerId}: ${e}`);
@@ -1092,7 +1100,12 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
       ? lobby.mapPool[Math.floor(Math.random() * lobby.mapPool.length)]
       : await getCustomRandomMapByType(lobby.mode);
 
-    if (useOnDemandRollback) {
+    const p2p = isP2PEligible([...players, ...rematchSpectatorEntries]);
+    if (p2p) {
+      logwrapper.info(`${logPrefix} Custom match ${matchId} runs P2P (a relay only if no direct path opens)`);
+    }
+
+    if (useOnDemandRollback && deploysRollbackServer(p2p)) {
       logwrapper.info(`${logPrefix} Deploying rollback server for match ${matchId} with port: ${match.rollbackPort}`)
       let deployInfo: IDeployInfo = getDefaultDeployInfo();
       deployInfo.port = customLobbyRollbackPort;
@@ -1116,6 +1129,7 @@ async function triggerRematch(lobbyCode: string): Promise<void> {
       mode: lobby.mode,
       rollbackPort: customLobbyRollbackPort,
       isCustomGame: true,
+      p2p,
     };
 
     const playerIds = [...players, ...rematchSpectatorEntries].map((p) => p.playerId);

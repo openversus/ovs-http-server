@@ -3,6 +3,7 @@ import env from "../env/env";
 import ObjectID from "bson-objectid";
 import { getAllAssets, getAssetsByType } from "../loadAssets";
 import { ITaunt, getAllTaunts, getTauntsByChar } from "./taunts";
+import { INVENTORY_DEFINITIONS } from "./inventoryDefs";
 
 const serviceName: string = "Data.Characters";
 const logPrefix: string = `[${serviceName}]:`;
@@ -61,7 +62,8 @@ export function unlockAllCharacters(accountId: string) {
     return {
       id: ObjectID().toHexString(),
       count: 1,
-      data: {},
+      // Restored from bp-and-toasts: custom slugs need their item metadata too.
+      data: INVENTORY_DEFINITIONS[asset.slug]?.data ?? {},
       actions: [],
       server_data: {},
       item_slug: asset.slug,

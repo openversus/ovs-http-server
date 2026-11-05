@@ -1,0 +1,119 @@
+0x140912ca0	video/mp4
+0x1409b0d30	b2c/
+0x1409b0d60	children/
+0x140b84b20	abcdefghijklmnop | /wbasandbox/v1/event
+0x140ba7210	/pcbidata/v1/event | event.wbinsights.com | dev-event.wbinsights.com | WBNC SDK (WinHttp) | failed to initialize agWinHttpTransport | wbWinHttpTransport::wbWinHttpTransport | C:\jenkins\workspace\Steam_Release\Game\MultiVersus\Plugins\wbpc\Source\WBPC\Private\WBPCLibrary\src\winhttptransport\Transport\wbWinHttpTransport.cpp | https | multipart/mixed;boundary=abcdefghijklmnop | Content-Type
+0x140d1a280	/loot_maps/%s/loot/%s/builds/%s/open/%s/grant_to/%s
+0x140d308a0	Client object has not been created | Invalid report category | Invalid country code |   | Win  | zd_ticket_submit | Invalid report category | reporter_display_name | reported_hydra_account_id | reported_display_name | description | country_code | client_version | os_version | platform | force_dev | cheating | exploiting/boosting | griefing/inactivity/trolling/spam | offensive_content/player_abuse/harrassment/inappropriate_language
+0x140f932a0	friends/me/invitations/{0}/accept
+0x140f93530	social/me/block/{0}
+0x140f943c0	friends/me/invitations/{0}/cancel
+0x140f97d00	friends/me/invitations/{0}/decline
+0x140f99970	device_name | auth_type | user_flow | redirect_uri | sessions/device
+0x140f99e00	social/me/blocked
+0x140f99fb0	friends/me/invitations/incoming
+0x140f9a160	friends/me/invitations/outgoing
+0x140f9a310	friends/me
+0x140f9abc0	realtime/config
+0x140f9b5e0	account_id | friends/me/invitations
+0x140f9b8d0	accounts/me
+0x140f9baf0	email | password | sessions/auth/password
+0x140f9be40	code | grant_type | sessions/auth/token
+0x140fa1bd0	accounts/me/age_information
+0x140fa3540	social/me/unblock/{0}
+0x140fa3780	friends/me/unfriend/{0}
+0x1412640c0	/ | _run | /framedumps/ | frame | %s%i*
+0x1412661f0	framedumps/ | _run
+0x141355450	ContentComponent in AdaptationSet is not supported, ignoring this AdaptationSet. | FramePacking in AdaptationSet is not supported, ignoring this AdaptationSet. | interlace | Interlace video in AdaptationSet is not supported, ignoring this AdaptationSet. | Rating in AdaptationSet is not supported, ignoring this AdaptationSet. | Viewpoint in AdaptationSet is not supported, ignoring this AdaptationSet. | urn:mpeg:dash:stereoid:2011 | Unsupported AdaptationSet Role found ("%s"), ignoring this AdaptationSet. | urn:mpeg:dash:role:2011 | main | alternate | supplementary | commentary | dub | emergency | caption | subtitle | sign | description | Unsupported Role type "%s" found. | main | urn:mpeg:dash:role:2011 | sign | caption | description | enhanced-audio-intelligibility | Unsupported Accessibility type "%s" found. | SubRepresentations are not supported, ignoring this Representation. | urn:scte:dash:cc:cea-608:2015 | 608: | urn:scte:dash:cc:cea-708:2015 | 708: | Representation dependencies are not supported, ignoring this Representation. | Media stream structures are not supported, ignoring this Representation. | FramePacking in Representation is not supported, ignoring this Representation. | interlace | Interlace video in Representation is not supported, ignoring this Representation. | ContentProtection in Representation is not supported. Must be on enclosing AdaptationSet! Ignoring this Representation. | More than one codec found for Representation, using only first codec. | Could not mandatory Representation@mimeType or the enclosing AdaptationSet. Ignoring this Representation. | application/mp4 | application/ttml+xml | stpp | text/vtt | wvtt | image/jpeg | image/png | Thumbnail representations are not supported, ignoring this Representation. | Neither @codecs found on Representation or AdaptationSet level, ignoring this Representation. | Could not parse Representation@codecs "%s", possibly unsupported codec. Ignoring this Representation. | Unknown type of representation "%s" in Period "%s", ignoring. | video/mp4 | application/mp4 | Subtitle representation "%s" in Period "%s" cannot be decoded, ignoring. | urn:mpeg:dash:23003:3:audio_channel_configuration:2011 | urn:mpeg:mpegB:cicp:ChannelConfiguration | tag:dolby.com,2014:dash:audio_channel_configuration:2011 | Audio representation "%s" in Period "%s" rejected by application. | Video representation "%s" in Period "%s" rejected by application. | Inconsistent @availabilityTimeComplete value across <SegmentTemplate> hierarchy for representation "%s" in Period "%s", ignoring. | Inconsistent @availabilityTimeComplete value across <SegmentTemplate> / <BaseURL> hierarchy for representation "%s" in Period "%s", ignoring. | encoder | captured | encoder | Representation <ProducerReferenceTime> references a <UTCTiming> element not present in the MPD! Ignoring this element! | urn:mpeg:dash:utc:http-iso:2014 | urn:mpeg:dash:utc:direct:2014 | ContentProtection is not supported, ignoring this AdaptationSet. | urn:mpeg:dash:utc:http-xsdate:2014 | urn:mpeg:dash:utc:http-head:2014 | Representation uses <ProducerReferenceTime> of unsupported type, ignoring. | Inconsistent @availabilityTimeComplete value across the Representations in AdaptationSet "%s" in Period "%s", ignoring. | , | AdaptationSet references self in adaptation-set-switching property!
+0x1413c5040	video/mp4 | audio/mp4 | application/mp4 | application/octet-stream
+0x1413c51d0	; codecs="%s" | video/mp4 | audio/mp4 | application/mp4 | application/octet-stream
+0x142677ee0	https://int-api.wbagora.com | https://dokken-api.wbagora.com | /objects/ReplayFile/unique/ | GET | application/json | Content-Type | X-Hydra-API-Key | X-Hydra-Server-Private-Key
+0x142a45f90	POST | application/x-ag-json | Content-Type | X-Hydra-Developer-Access-Key | X-Hydra-Developer-Access-Key-Secret | X-Hydra-Environment-ID | /entries | /calendar/
+0x142a47070	POST | application/x-ag-json | Content-Type | X-Hydra-Developer-Access-Key | X-Hydra-Developer-Access-Key-Secret | X-Hydra-Environment-ID | /discounts | /commerce/sales/
+0x142a47590	POST | application/x-ag-json | Content-Type | X-Hydra-Developer-Access-Key | X-Hydra-Developer-Access-Key-Secret | X-Hydra-Environment-ID | /commerce/sales
+0x142a48050	DELETE | application/x-ag-json | Content-Type | X-Hydra-Developer-Access-Key | X-Hydra-Developer-Access-Key-Secret | X-Hydra-Environment-ID | ?force_delete=true | /entries/ | /calendar/
+0x142a484f0	DELETE | application/x-ag-json | Content-Type | X-Hydra-Developer-Access-Key | X-Hydra-Developer-Access-Key-Secret | X-Hydra-Environment-ID | /commerce/sales/
+0x142a4d520	PUT | application/x-ag-json | Content-Type | GET | X-Hydra-HTTP-Method | X-Hydra-Developer-Access-Key | X-Hydra-Developer-Access-Key-Secret | X-Hydra-Environment-ID | /entries | /calendar/
+0x142a4da40	GET | application/x-ag-json | Content-Type | X-Hydra-Developer-Access-Key | X-Hydra-Developer-Access-Key-Secret | X-Hydra-Environment-ID | /commerce/products
+0x1432a01a0	RendererGPUBenchmark | Benchmark0 | Benchmark1 | ALUHeavyNoise | s/GigaPix | TexHeavy | DepTexHeavy | FillOnly | Bandwidth | VertThroughPut1 | s/GigaVert | VertThroughPut2
+0x144426210	RayIntersect | s/Run | Fractal | Renderer | nullrhi
+0x144f9f5b0	/access
+0x144fab980	/access
+0x144fd7550	ids | s/bulk | /accounts/bulk
+0x144fd76d0	ids | /bulk | /accounts/
+0x144fd78f0	/matches/matchmaking/request/ | /cancel
+0x144fd91b0	/finalize | / | /commerce/purchases/ | authorized
+0x144fd9620	/ | /personalized/ | /layout/
+0x144fd98d0	/commerce/steam/mtx_user_info/
+0x144fd9f20	/leave | /matches/ | account_id
+0x144fda420	/accounts/
+0x144fda5f0	/accounts/
+0x144fda790	/ | /accounts/
+0x144fda970	/matches/
+0x144fdab70	/matches/all/ | templates | states
+0x144fdb040	/products | /commerce/catalog/
+0x144fdb4d0	/commerce/purchases/ | purchases
+0x144fdbda0	price_slug | /purchase | /products/ | /commerce/catalog/
+0x144fdd630	/request | /matches/matchmaking/
+0x144fdd810	HydraDriveService::syncDrive: Hydra Drive is not enabled. | /sync | /drives/
+0x144fddd00	/accounts/
+0x144fddeb0	/accounts/
+0x144fde060	/matches/
+0x144fe81e0	/block | /accounts/me/relationships/
+0x144feb090	/my_products | /store/store_products/
+0x144fed800	/relationships/followers | /accounts/ | results
+0x144ff4890	/unblock | /accounts/me/relationships/
+0x144ff4a20	/unfollow | /accounts/me/relationships/
+0x1450535f0	/participants/ | /instances/ | /arenas/
+0x145053920	/instances | /arenas/ | arena_instances
+0x145053b10	/participants | /groups/ | /arenas/
+0x145054730	/batch
+0x145059f00	/ | /clans/
+0x14505b5d0	/file_storage/
+0x14505c830	/global_configurations/ | /global_configuration_types/
+0x14505caf0	/global_configurations | /global_configuration_types/ | results
+0x14505dbe0	/inventory | /profiles/
+0x14505dd70	/inventory | /profiles/ | tions | modifications
+0x145060180	/accounts/me/notifications/
+0x145060de0	id | /accounts/me/notifications/ | Received a notification without a command or id. This usually means the notification was not persistent and its payload was too big to send over push notifications. Ignoring.
+0x1450615d0	/ | /unique/ | /objects/
+0x1450617e0	/upsert | / | /unique/ | /objects/
+0x145061a20	/upsert | /unique/ | /objects/
+0x145065060	ids | s/bulk | /profiles/bulk
+0x1450654c0	/score-and-rank/ | /leaderboards/
+0x145065780	ids | /leaderboards/bulk/score-and-rank/
+0x145065a80	/profiles/
+0x145065c50	/profiles/
+0x145065df0	/leaderboards/
+0x145066420	/run | /profiles/search_queries/
+0x1450666c0	/show | /leaderboards/ | leaders
+0x1450668b0	/around/ | /leaderboards/ | leaders
+0x145066ac0	/around/me | /leaderboards/ | leaders
+0x145066cb0	/friends | /leaderboards/ | leaders
+0x145066ea0	/profiles/
+0x1450679d0	/score-and-rank/ | /participant_leaderboards/ | /seasons/types/
+0x145067d00	/participants/ | /instances/ | /seasons/
+0x145068aa0	/ssc/invoke/
+0x145068bf0	/ssc/invoke/
+0x145068d50	/ssc/invoke/
+0x145069300	/ | /virtual_commerce/purchases/
+0x145496850	file: | // | localhost/ | crypto\store\loader_file.c | rb | -----BEGIN 
+0x14554e380	%%CollationBin | Sequence | icudt64l-coll | collations/default | standard | collation
+0x1455bca60	NumberElements/ | /patterns/
+0x1455d8110	gregorian | calendar/ | /DateTimePatterns | calendar/gregorian/DateTimePatterns
+0x1456486d0	integer-width/
+0x14564a260	none | percent | permille | currency | per-measure-unit/
+0x14564a370	precision-unlimited | precision-currency-standard | precision-currency-cash | precision-increment/
+0x14564a7d0	scale/
+0x14564a9d0	latn | latin | numbering-system/
+0x14564aac0	currency | currency/ | none | percent | permille | measure-unit/
+0x14565f3c0	%variantleapcyclicNameSets | /zodiacs/dayParts | /years | /format | /abbreviatedGyMdkHmsSEDFwWahKzYeugAZvcLQqVUOXxrbB
+0x14568c780	icudt64l-unit | units | Narrow | Short | /compound/per
+0x145956eb0	/rsrc
+0x14598a330	%!PS-Adobe-3.0 Resource-CIDFont | StartData | /sfnts | StartData | /sfnts | (Hex)
+0x145a8ae80	sha256// |  public key hash: sha256//%s | ;sha256// | rb | -----BEGIN PUBLIC KEY-----
+0x145aada00	Unknown error | No error | SSL: couldn't create a context: %s | h2 | ALPN: offers %s | http/1.1 | ALPN: offers %s | Error setting ALPN | failed setting cipher list: %s | Cipher selection: %s | failed setting TLS 1.3 cipher suite: %s | TLS 1.3 cipher selection: %s | failed setting curves list: '%s' | ROOT | 1.3.6.1.5.5.7.3.1 | SSL: Out of memory allocating for OID list | successfully imported Windows CA store | error importing Windows CA store, continuing anyway | error importing CA certificate blob | error importing CA certificate blob, continuing anyway | none | error setting certificate verify locations:  CAfile: %s CApath: %s |  CAfile: %s | successfully loaded CRL file: |   CRLfile: %s | error loading CRL file: %s | error signaled by ssl ctx callback | SSL: couldn't create a context (handle) | Failed set SNI | Unknown error | No error | SSL: ossl_associate_connection failed: %s | Unknown error | No error | SSL: SSL_set_session failed: %s | SSL re-using session ID | Unknown error | No error | SSL: SSL_set_fd failed: %s | No SSLv2 support | No SSLv3 support | Unrecognized parameter passed via CURLOPT_SSLVERSION | Insufficient randomness
+0x145aaff90	h2 | NPN, negotiated HTTP2 (%s) | http/1.1 | NPN, negotiated HTTP1.1 | NPN, no overlap, use HTTP1.1
+0x145ac51d0	file | localhost/ | 127.0.0.1/ | /\:*?"<>| | https | %%%02x | [%*45[0123456789abcdefABCDEF:.]%c%n | %*[^]]%c%n | %ld | ftp. | ftp | dict. | dict | ldap. | ldap | imap. | imap | smtp. | smtp | pop3. | pop3 | http
+0x145ae4b60	client wsi | client stash | lws_client_connect_via_info | lws_free | http/1.1
+0x145af11a0	/dev/urandom | %s258EAFA5-E914-47DA-95CA-C5AB0DC85B11

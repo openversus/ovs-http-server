@@ -1,0 +1,20 @@
+{
+  "slug": "t-discord-qa-carousel-keyart",
+  "name": "T_DISCORD_QA_CAROUSEL_KEYART",
+  "created_at": {
+    "_hydra_unix_date": 1716600359
+  },
+  "updated_at": {
+    "_hydra_unix_date": 1716600359
+  },
+  "s3_object_id": "dokken/production/985a8eab-T_DISCORD_QA_CAROUSEL_KEYART.png",
+  "auto_sync": true,
+  "file_size": 2957542,
+  "file_type": "image/png",
+  "filename": "985a8eab-T_DISCORD_QA_CAROUSEL_KEYART.png",
+  "md5_checksum": "b44f98481fe7da20ffbf619846c865ee",
+  "auth_exempt": false,
+  "data": {},
+  "id": "66513e27569e3e6210a7a9c8",
+  "download_url": "https://wb-agora-hydra-file-storage-dokken.s3.amazonaws.com/dokken/production/985a8eab-T_DISCORD_QA_CAROUSEL_KEYART.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5J6YDD2RMJ4AQTRN%2F20250318%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250318T023404Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=7b855a1bb278cf44de72286663a0f99110a5084cb713cfd32e922048825107e2"
+}

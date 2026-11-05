@@ -1,0 +1,282 @@
+{
+  "character_wonder_woman": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_harleyquinn": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_taz": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_steven": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_c16": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_bugs_bunny": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "taunt_bugs_dance",
+      "emote_beckon"
+    ]
+  },
+  "character_shaggy": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_C028": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_creature": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_finn": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_BananaGuard": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_Jason": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_arya": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_tom_and_jerry": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_C017": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_superman": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_velma": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_C023A": {
+    "TauntSlots": [
+      "taunt_c023A_default",
+      "emote_generic_boom",
+      "taunt_c023A_umbrella",
+      "emote_shaggy_cry"
+    ]
+  },
+  "character_batman": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_C023B": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_C018": {
+    "TauntSlots": [
+      "taunt_c018_Trumpet",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_jake": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_C021": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_C020": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_garnet": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_c019": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_c036": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_C026": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_C030": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_c024": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_C027": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_C031": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_C025": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_c038": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  },
+  "character_C029": {
+    "TauntSlots": [
+      "emote_rock_on",
+      "emote_generic_heart",
+      "emote_c023a_mogwhy",
+      "emote_beckon"
+    ]
+  }
+}

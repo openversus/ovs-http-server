@@ -1,7 +1,22 @@
+import { CHROMIUM_SHAGGY_SLUG, CHROMIUM_BANANAGUARD_SLUG, CHROMIUM_SUPERMAN_SLUG, CHROMIUM_BATMAN_SLUG, CHROMIUM_PILOT, CHROMIUM_BATCH5, CHROMIUM_BATCH6, CHROMIUM_BATCH7, CHROMIUM_BATCH8, CHROMIUM_JOKER_TBWL_SLUG } from "./chromiumSkins";
+import { SHIRTLESS_TATTOO_SHAGGY_SLUG } from "./ovsBattlepassInventory";
+import { PINK_MOUNTAINEER_JASON_SLUG } from "./pinkMountaineerJason";
+import { LIME_SUPERMAN_SLUG } from "./limeSuperman";
+import { LEBRON_50CENT_SLUG } from "./lebron50Cent";
+
+const CHROMIUM_WONDER_WOMAN_SLUG = CHROMIUM_PILOT[0].slug;
+const CHROMIUM_HARLEY_QUINN_SLUG = CHROMIUM_PILOT[1].slug;
+const CHROMIUM_FINN_SLUG = CHROMIUM_PILOT[2].slug;
+const [CHROMIUM_VELMA, CHROMIUM_STEVEN, CHROMIUM_JAKE, CHROMIUM_GARNET, CHROMIUM_REINDOG] = CHROMIUM_BATCH5.map(skin => skin.slug);
+const [CHROMIUM_GIZMO, CHROMIUM_STRIPE, CHROMIUM_IRON_GIANT, CHROMIUM_TAZ, CHROMIUM_MARVIN] = CHROMIUM_BATCH6.map(skin => skin.slug);
+const [CHROMIUM_TOM_AND_JERRY, CHROMIUM_BLACK_ADAM, CHROMIUM_RICK, CHROMIUM_MORTY, CHROMIUM_LEBRON, CHROMIUM_BUGS_BUNNY, CHROMIUM_JASON_FINN, CHROMIUM_ARYA, CHROMIUM_AGENT_SMITH, CHROMIUM_POWERPUFF_GIRLS] = CHROMIUM_BATCH7.map(skin => skin.slug);
+const [CHROMIUM_NUBIA, CHROMIUM_SAMURAI_JACK, CHROMIUM_BETELGEUSE, CHROMIUM_RAVEN, CHROMIUM_MARCELINE, CHROMIUM_AQUAMAN, CHROMIUM_LOLA_BUNNY] = CHROMIUM_BATCH8.map(skin => skin.slug);
+
 export const ENABLED_SKINS = {
   character_wonder_woman: {
     Slugs: [
       "skin_wonder_woman_default",
+      CHROMIUM_WONDER_WOMAN_SLUG,
       "skin_c001_s01",
       "skin_c001_s05",
       "skin_c001_s06",
@@ -25,6 +40,7 @@ export const ENABLED_SKINS = {
   character_velma: {
     Slugs: [
       "skin_velma_default",
+      CHROMIUM_VELMA,
       "skin_c014_s02",
       "skin_c014_s03",
       "skin_c014_s01",
@@ -51,6 +67,7 @@ export const ENABLED_SKINS = {
   character_tom_and_jerry: {
     Slugs: [
       "skin_tom_and_jerry_default",
+      CHROMIUM_TOM_AND_JERRY,
       "skin_c010_s01",
       "skin_c010_s02",
       "skin_c010_s05",
@@ -73,6 +90,9 @@ export const ENABLED_SKINS = {
   character_superman: {
     Slugs: [
       "skin_superman_default",
+      CHROMIUM_SUPERMAN_SLUG,
+      LIME_SUPERMAN_SLUG,
+      "skin_ovs_omniman_superman",
       "skin_c003_s01",
       "skin_c003_s02",
       "skin_c003_s05",
@@ -99,6 +119,7 @@ export const ENABLED_SKINS = {
   character_steven: {
     Slugs: [
       "skin_steven_default",
+      CHROMIUM_STEVEN,
       "skin_c011_s01",
       "skin_c011_s02",
       "skin_c011_s03",
@@ -121,6 +142,8 @@ export const ENABLED_SKINS = {
   character_shaggy: {
     Slugs: [
       "skin_shaggy_default",
+      CHROMIUM_SHAGGY_SLUG,
+      SHIRTLESS_TATTOO_SHAGGY_SLUG,
       "skin_c002_s01",
       "skin_c002_s03",
       "skin_c002_s02",
@@ -147,6 +170,7 @@ export const ENABLED_SKINS = {
   character_jake: {
     Slugs: [
       "skin_jake_default",
+      CHROMIUM_JAKE,
       "skin_c005_s01",
       "skin_c005_s02",
       "skin_c005_s03",
@@ -163,6 +187,7 @@ export const ENABLED_SKINS = {
   character_harleyquinn: {
     Slugs: [
       "skin_harley_default",
+      CHROMIUM_HARLEY_QUINN_SLUG,
       "skin_c008_s01",
       "skin_c008_s02",
       "skin_c008_s03",
@@ -189,6 +214,7 @@ export const ENABLED_SKINS = {
   character_garnet: {
     Slugs: [
       "skin_garnet_default",
+      CHROMIUM_GARNET,
       "skin_c012_s02",
       "skin_c012_s01",
       "skin_c012_s06",
@@ -209,6 +235,7 @@ export const ENABLED_SKINS = {
   character_finn: {
     Slugs: [
       "skin_finn_default",
+      CHROMIUM_FINN_SLUG,
       "skin_c013_s02",
       "skin_c013_s01",
       "skin_c013_s04",
@@ -229,6 +256,7 @@ export const ENABLED_SKINS = {
   character_creature: {
     Slugs: [
       "skin_creature_default",
+      CHROMIUM_REINDOG,
       "skin_c009_s03",
       "skin_c009_s09",
       "skin_c009_s01",
@@ -256,6 +284,7 @@ export const ENABLED_SKINS = {
     Slugs: [
       "skin_c028_default",
       "skin_c028_s03",
+      CHROMIUM_JOKER_TBWL_SLUG,
       "skin_c028_s02",
       "skin_c028_s01",
       "skin_c028_s04",
@@ -281,6 +310,7 @@ export const ENABLED_SKINS = {
   character_C023B: {
     Slugs: [
       "skin_c023b_default",
+      CHROMIUM_STRIPE,
       "skin_c023b_s03",
       "skin_c023b_s14",
       "skin_c023b_s02",
@@ -301,6 +331,7 @@ export const ENABLED_SKINS = {
   character_C023A: {
     Slugs: [
       "skin_c023A_default",
+      CHROMIUM_GIZMO,
       "skin_c023A_s01",
       "skin_c023A_s02",
       "skin_c023A_s14",
@@ -320,6 +351,7 @@ export const ENABLED_SKINS = {
   character_C021: {
     Slugs: [
       "skin_c021_default",
+      CHROMIUM_BLACK_ADAM,
       "skin_c021_s01",
       "skin_c021_s02",
       "skin_c021_s03",
@@ -341,6 +373,7 @@ export const ENABLED_SKINS = {
   character_C020: {
     Slugs: [
       "skin_c020_default",
+      CHROMIUM_RICK,
       "skin_c020_s02",
       "skin_c020_s14",
       "skin_c020_s20",
@@ -358,6 +391,7 @@ export const ENABLED_SKINS = {
   character_c019: {
     Slugs: [
       "skin_c019_default",
+      CHROMIUM_MORTY,
       "skin_c019_s01",
       "skin_c019_s02",
       "skin_c019_s014",
@@ -376,6 +410,7 @@ export const ENABLED_SKINS = {
   character_C018: {
     Slugs: [
       "skin_c018_default",
+      CHROMIUM_MARVIN,
       "skin_c018_s03",
       "skin_c018_s04",
       "skin_c018_s01",
@@ -396,6 +431,7 @@ export const ENABLED_SKINS = {
     Slugs: [
       "skin_c017_s01",
       "skin_iron_giant_default",
+      CHROMIUM_IRON_GIANT,
       "skin_c017_s02",
       "skin_c017_s04",
       "skin_c017_s05",
@@ -415,6 +451,8 @@ export const ENABLED_SKINS = {
   character_c16: {
     Slugs: [
       "skin_c016_default",
+      CHROMIUM_LEBRON,
+      LEBRON_50CENT_SLUG,
       "skin_c016_s01",
       "skin_c016_s02",
       "skin_c016_s04",
@@ -430,6 +468,7 @@ export const ENABLED_SKINS = {
   character_taz: {
     Slugs: [
       "skin_taz_default",
+      CHROMIUM_TAZ,
       "skin_c015_s03",
       "skin_c015_s02",
       "skin_c015_s01",
@@ -452,6 +491,7 @@ export const ENABLED_SKINS = {
   character_bugs_bunny: {
     Slugs: [
       "skin_bugs_bunny_default",
+      CHROMIUM_BUGS_BUNNY,
       "skin_c007_s04",
       "skin_c007_s03",
       "skin_c007_s02",
@@ -476,6 +516,8 @@ export const ENABLED_SKINS = {
   character_Jason: {
     Slugs: [
       "skin_jason_000",
+      PINK_MOUNTAINEER_JASON_SLUG,
+      CHROMIUM_JASON_FINN,
       "skin_c035_s14",
       "skin_c035_s20",
       "skin_c035_s01",
@@ -496,6 +538,7 @@ export const ENABLED_SKINS = {
   character_BananaGuard: {
     Slugs: [
       "skin_bananaguard_default",
+      CHROMIUM_BANANAGUARD_SLUG,
       "skin_c034_s01",
       "skin_c034_s14",
       "skin_c034_s20",
@@ -511,6 +554,7 @@ export const ENABLED_SKINS = {
   character_arya: {
     Slugs: [
       "skin_arya_default",
+      CHROMIUM_ARYA,
       "skin_c006_s01",
       "skin_c006_s23",
       "skin_c006_s24",
@@ -531,6 +575,7 @@ export const ENABLED_SKINS = {
   character_batman: {
     Slugs: [
       "skin_batman_default",
+      CHROMIUM_BATMAN_SLUG,
       "skin_c004_s01",
       "skin_c004_s02",
       "skin_c004_s05",
@@ -562,6 +607,7 @@ export const ENABLED_SKINS = {
   character_c036: {
     Slugs: [
       "skin_c036",
+      CHROMIUM_AGENT_SMITH,
       "skin_c036_s20",
       "skin_c036_s18",
       "skin_c036_s14",
@@ -579,6 +625,7 @@ export const ENABLED_SKINS = {
   character_C030: {
     Slugs: [
       "skin_c030_default",
+      CHROMIUM_POWERPUFF_GIRLS,
       "skin_c030_s01",
       "c030_s32",
       "c030_s31",
@@ -599,6 +646,7 @@ export const ENABLED_SKINS = {
   character_C027: {
     Slugs: [
       "skin_C027_default",
+      CHROMIUM_NUBIA,
       "skin_c027_s20",
       "skin_C027_s01",
       "skin_c027_s25",
@@ -613,6 +661,7 @@ export const ENABLED_SKINS = {
   character_C026: {
     Slugs: [
       "skin_c026_default",
+      CHROMIUM_SAMURAI_JACK,
       "skin_c026_s04",
       "skin_c026_s03",
       "skin_c026_s02",
@@ -635,6 +684,7 @@ export const ENABLED_SKINS = {
   character_c024: {
     Slugs: [
       "skin_c024_default",
+      CHROMIUM_BETELGEUSE,
       "skin_c024_s22",
       "skin_c024_s01",
       "skin_c024_s28",
@@ -647,6 +697,7 @@ export const ENABLED_SKINS = {
   character_C025: {
     Slugs: [
       "skin_C025_default",
+      CHROMIUM_RAVEN,
       "skin_c025_s24",
       "skin_c025_s23",
       "skin_c025_s01",
@@ -665,6 +716,7 @@ export const ENABLED_SKINS = {
   character_C031: {
     Slugs: [
       "skin_c031_s05",
+      CHROMIUM_MARCELINE,
       "skin_c031_s00",
       "c031_s02",
       "c031_s00",
@@ -677,6 +729,7 @@ export const ENABLED_SKINS = {
   character_C029: {
     Slugs: [
       "c029_default",
+      CHROMIUM_AQUAMAN,
       "skin_c029_s01",
       "skin_c029_s32",
       "skin_c029_s04",
@@ -697,6 +750,7 @@ export const ENABLED_SKINS = {
   character_c038: {
     Slugs: [
       "C038",
+      CHROMIUM_LOLA_BUNNY,
       "skin_c038_s01",
       "skin_c038_s05",
       "skin_c038_s02",

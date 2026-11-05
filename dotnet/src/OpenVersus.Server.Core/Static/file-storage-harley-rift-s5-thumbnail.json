@@ -1,0 +1,20 @@
+{
+  "slug": "harley-rift-s5-thumbnail",
+  "name": "harley_rift_s5_thumbnail",
+  "created_at": {
+    "_hydra_unix_date": 1741047249
+  },
+  "updated_at": {
+    "_hydra_unix_date": 1741047249
+  },
+  "s3_object_id": "dokken/production/8338ebac-harley_rift_s5_thumbnail.png",
+  "auto_sync": true,
+  "file_size": 219351,
+  "file_type": "image/png",
+  "filename": "8338ebac-harley_rift_s5_thumbnail.png",
+  "md5_checksum": "8c8f19d575d098e979e5ca2567f5865a",
+  "auth_exempt": false,
+  "data": {},
+  "id": "67c645d16e3939f376d9a32d",
+  "download_url": "https://wb-agora-hydra-file-storage-dokken.s3.amazonaws.com/dokken/production/8338ebac-harley_rift_s5_thumbnail.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5J6YDD2RMJ4AQTRN%2F20250318%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250318T023404Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=97b1779ca052d5d36051659898b0497b0ec98c27fe3a6f3cd62242de26488357"
+}

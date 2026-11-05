@@ -1,0 +1,20 @@
+{
+  "slug": "openversus-update-required-keyart",
+  "name": "openversus_update_required_keyart",
+  "created_at": {
+    "_hydra_unix_date": 1789190400
+  },
+  "updated_at": {
+    "_hydra_unix_date": 1789190400
+  },
+  "s3_object_id": "openversus/openversus-update-required-keyart.png",
+  "auto_sync": true,
+  "file_size": 1938140,
+  "file_type": "image/png",
+  "filename": "openversus-update-required-keyart.png",
+  "md5_checksum": "3396aac1cbf19d744d834a1fcf1f0c9c",
+  "auth_exempt": true,
+  "data": {},
+  "id": "68c3f0000000000000000001",
+  "download_url": "{{assets}}openversus-update-required-keyart.png"
+}

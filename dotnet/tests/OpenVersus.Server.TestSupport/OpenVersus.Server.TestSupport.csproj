@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- What the service test projects share: the route table, a factory for any service, the route ownership check. -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenVersus.Server.Core\OpenVersus.Server.Core.csproj" />
+    <ProjectReference Include="..\..\src\OpenVersus.Server.Http.Shared\OpenVersus.Server.Http.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

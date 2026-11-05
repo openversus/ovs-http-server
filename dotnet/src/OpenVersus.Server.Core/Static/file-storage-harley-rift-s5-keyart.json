@@ -1,0 +1,20 @@
+{
+  "slug": "harley-rift-s5-keyart",
+  "name": "harley_rift_s5_keyart",
+  "created_at": {
+    "_hydra_unix_date": 1741047207
+  },
+  "updated_at": {
+    "_hydra_unix_date": 1741047207
+  },
+  "s3_object_id": "dokken/production/86e37e3d-harley_Rift_S5_keyart.png",
+  "auto_sync": true,
+  "file_size": 1670879,
+  "file_type": "image/png",
+  "filename": "86e37e3d-harley_Rift_S5_keyart.png",
+  "md5_checksum": "81680a025ba09e4c4a28b93d358b20f7",
+  "auth_exempt": false,
+  "data": {},
+  "id": "67c645a73451e4f30b3b739b",
+  "download_url": "https://wb-agora-hydra-file-storage-dokken.s3.amazonaws.com/dokken/production/86e37e3d-harley_Rift_S5_keyart.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5J6YDD2RMJ4AQTRN%2F20250318%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250318T023404Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=5078a1ad56984a6fa47ceb26bc9eab3840d77bda2a5f33dc95d305c7f94b182a"
+}

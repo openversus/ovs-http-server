@@ -1,0 +1,334 @@
+using System.Text.Json.Nodes;
+using OpenVersus.Server.Core.Compat;
+
+namespace OpenVersus.Server.Core.Lobbies;
+
+// The game's lobby tree (jmap multiversus.h: UMvsPlayerLobby, and under it UMvsPartyLobby, UCustomGameLobby,
+// UMvsRiftLobby, UMvsArenaLobby) as the server keeps it: one record per lobby, lobby:{id} (LobbyStore). The base class's
+// parser, which every kind's answer meets (the virtual at 0x1428e9290, build f97148ff), requires MatchID, LeaderID,
+// ReadyPlayers and Teams. The base is shaped by the party lobby, the one every login makes; the other kinds conform to it.
+//
+// lobby:{id}, JSON, with the TS server's fields (ssc.ts, websocket.ts), which every reader of the key relies on:
+//   lobbyId, ownerId (who leads), ownerUsername, mode ("1v1", "2v2", ... in a party; "rift_lobby" and "arena_lobby" name
+//   the kind), playerIds (in the order they joined), createdAt (ms)
+// Any other field (joinable; a rift lobby's riftConfigSlug, chapterGuid, chapterDifficulty) is kept as it was read. A
+// record with no playerIds array (an older custom lobby) is no lobby here. Custom lobbies are still their own documents
+// (custom_lobby_ssc:{id}, CustomLobbyService) until they move onto the base.
+
+/// <summary>A lobby as lobby:{id} holds it; its kind (<see cref="Template"/>) is the game's lobby template.</summary>
+public abstract class Lobby
+{
+    private readonly JsonObject _json;
+
+    private protected Lobby(string id, string ownerId, string ownerUsername, string mode, List<string> playerIds, JsonNode? createdAt, JsonObject? read)
+    {
+        Id = id;
+        OwnerId = ownerId;
+        OwnerUsername = ownerUsername;
+        Mode = mode;
+        PlayerIds = playerIds;
+        CreatedAt = createdAt;
+        _json = read?.DeepClone().AsObject() ?? new JsonObject
+        {
+            ["lobbyId"] = id,
+            ["ownerId"] = ownerId,
+            ["ownerUsername"] = ownerUsername,
+            ["mode"] = mode,
+            ["playerIds"] = null,
+            ["createdAt"] = createdAt?.DeepClone(),
+        };
+    }
+
+    public string Id { get; }
+
+    /// <summary>The player who leads the lobby (the game's LeaderID).</summary>
+    public string OwnerId { get; set; }
+
+    /// <summary>The name of the player who made the lobby, as it was then.</summary>
+    public string OwnerUsername { get; }
+
+    public string Mode { get; set; }
+
+    /// <summary>The players, in the order they joined.</summary>
+    public List<string> PlayerIds { get; }
+
+    public JsonNode? CreatedAt { get; }
+
+    /// <summary>The game's lobby template: party_lobby, rift_lobby, arena_lobby.</summary>
+    public abstract string Template { get; }
+
+    /// <summary>When the lobby was made (whole seconds); a createdAt that is not a number is the TS server's NaN date, sent as 0.</summary>
+    public long CreatedSeconds => CreatedAt is JsonValue v && v.TryGetValue<double>(out double ms) && double.IsFinite(ms) ? (long)Math.Floor(ms / 1000) : 0;
+
+    /// <summary>A player joins: they are added after the players already in it. A kind may change the lobby with it.</summary>
+    public virtual void Join(string playerId) => PlayerIds.Add(playerId);
+
+    /// <summary>A field the base does not model (a kind's own), as read; null when absent.</summary>
+    protected JsonNode? Field(string name) => _json[name];
+
+    /// <summary>Sets a field the base does not model; it is written with the lobby.</summary>
+    public void SetField(string name, JsonNode? value) => _json[name] = value;
+
+    /// <summary>The record: the fields as read, with the base's own set from this object.</summary>
+    public string ToJson()
+    {
+        var json = _json.DeepClone().AsObject();
+        json["ownerId"] = OwnerId;
+        json["mode"] = Mode;
+        json["playerIds"] = new JsonArray([.. PlayerIds.Select(p => (JsonNode?)p)]);
+        return Js.Stringify(json);
+    }
+
+    /// <summary>The lobby a stored record holds, of the kind its mode names; null when it is not JSON or has no playerIds.</summary>
+    public static Lobby? FromJson(string id, string raw)
+    {
+        JsonObject? json;
+        try
+        {
+            json = Js.Parse(raw) as JsonObject;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+
+        if (json?["playerIds"] is not JsonArray ids)
+        {
+            return null;
+        }
+
+        string ownerId = Str(json, "ownerId") ?? "", ownerUsername = Str(json, "ownerUsername") ?? "", mode = Str(json, "mode") ?? "";
+        var playerIds = ids.Select(n => n is JsonValue v && v.TryGetValue(out string? s) ? s : Js.Stringify(n)).ToList();
+        return mode switch
+        {
+            RiftLobby.TemplateName => new RiftLobby(id, ownerId, ownerUsername, playerIds, json["createdAt"], json),
+            ArenaLobby.TemplateName => new ArenaLobby(id, ownerId, ownerUsername, playerIds, json["createdAt"], json),
+            _ => new PartyLobby(id, ownerId, ownerUsername, mode, playerIds, json["createdAt"], json),
+        };
+    }
+
+    private static string? Str(JsonObject? obj, string key) => obj?[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
+}
+
+/// <summary>The party lobby (UMvsPartyLobby): the one every login makes; its mode is the party's game mode.</summary>
+public sealed class PartyLobby : Lobby
+{
+    public const string TemplateName = "party_lobby";
+
+    /// <summary>A new party lobby (createdAt in ms).</summary>
+    public PartyLobby(string id, string ownerId, string ownerUsername, string mode, List<string> playerIds, long createdAtMs)
+        : base(id, ownerId, ownerUsername, mode, playerIds, createdAtMs, null)
+    {
+    }
+
+    internal PartyLobby(string id, string ownerId, string ownerUsername, string mode, List<string> playerIds, JsonNode? createdAt, JsonObject read)
+        : base(id, ownerId, ownerUsername, mode, playerIds, createdAt, read)
+    {
+    }
+
+    public override string Template => TemplateName;
+
+    /// <summary>
+    /// The mode a login's new party lobby falls back to: 2v2, the game's main mode. Lobbies:LoginMode names the mode wanted
+    /// (2v2 Testing Grounds by default), taken while its queue is open (Matchmaking.TestingGrounds.LoginMode).
+    /// </summary>
+    public const string LoginMode = "2v2";
+
+    /// <summary>A solo party lobby that a join makes a duo takes the duo's form of its mode (<see cref="DuoMode"/>).</summary>
+    public override void Join(string playerId)
+    {
+        base.Join(playerId);
+        if (PlayerIds.Count == 2)
+        {
+            Mode = DuoMode(Mode);
+        }
+    }
+
+    /// <summary>
+    /// A mode as a duo plays it: 1v1 is 2v2, ranked 1v1 is ranked 2v2, and FFA (which a duo may not play) is 2v2; any other
+    /// mode stays. The game's mode select sends 1v1, 2v2 and, for FFA, its event queue evtq_ffa (bench, 2026-10-10). Ranked
+    /// is named both ways the code has known it (the TS server's ranked-1v1, and 1v1_ranked); which one the game sends is
+    /// not seen yet.
+    /// </summary>
+    public static string DuoMode(string mode) => mode switch
+    {
+        "1v1" or "" => "2v2",
+        "ranked-1v1" => "ranked-2v2",
+        "1v1_ranked" => "2v2_ranked",
+        "evtq_ffa" => "2v2",
+        _ => mode,
+    };
+}
+
+/// <summary>The rift lobby (UMvsRiftLobby, RiftLobbyService): a rift, a chapter and a difficulty.</summary>
+public sealed class RiftLobby : Lobby
+{
+    public const string TemplateName = "rift_lobby";
+
+    internal RiftLobby(string id, string ownerId, string ownerUsername, List<string> playerIds, JsonNode? createdAt, JsonObject read)
+        : base(id, ownerId, ownerUsername, TemplateName, playerIds, createdAt, read)
+    {
+    }
+
+    public override string Template => TemplateName;
+
+    public string RiftConfigSlug => Field("riftConfigSlug") is JsonValue v && v.TryGetValue(out string? s) ? s : "";
+
+    public int ChapterDifficulty => Field("chapterDifficulty") is JsonValue d && d.TryGetValue(out double n) ? (int)n : 0;
+}
+
+/// <summary>
+/// The Arena lobby (UMvsArenaLobby, ArenaLobbyService): eight teams of two. Its record adds two fields to the TS set,
+/// written only here (a party record never has them): teams {player: team index} (a player it does not name, the creator,
+/// placed before anyone joins, is on team 0) and homes {player: the party lobby they came from}, where a leave takes them
+/// back.
+/// </summary>
+public sealed class ArenaLobby : Lobby
+{
+    public const string TemplateName = "arena_lobby";
+
+    /// <summary>The lobby's teams: eight of two (WB: "8 teams of 2").</summary>
+    public const int TeamCount = 8, TeamSize = 2;
+
+    public const int Capacity = TeamCount * TeamSize;
+
+    internal ArenaLobby(string id, string ownerId, string ownerUsername, List<string> playerIds, JsonNode? createdAt, JsonObject read)
+        : base(id, ownerId, ownerUsername, TemplateName, playerIds, createdAt, read)
+    {
+    }
+
+    public override string Template => TemplateName;
+
+    public bool IsFull => PlayerIds.Count >= Capacity;
+
+    /// <summary>The health every team starts the Arena with (WB: "Each team starts at 100 Health").</summary>
+    public const int StartingLife = 100;
+
+    /// <summary>Whether the Arena has started: its teams are set (the "arena" field).</summary>
+    public bool IsStarted => Field("arena") is JsonObject;
+
+    /// <summary>The started Arena's teams, by team index: each its participants, players and bots.</summary>
+    public IReadOnlyList<IReadOnlyList<string>> ArenaTeams =>
+        Field("arena")?["teams"] is JsonArray teams
+            ? [.. teams.Select(t => (IReadOnlyList<string>)[.. (t as JsonArray ?? []).Select(p => p?.GetValue<string>() ?? "")])]
+            : [];
+
+    /// <summary>The started Arena's teams' health, by team index.</summary>
+    public IReadOnlyList<int> ArenaLife => Field("arena")?["life"] is JsonArray life ? [.. life.Select(l => l?.GetValue<int>() ?? 0)] : [];
+
+    /// <summary>The started Arena's round (0 before it starts).</summary>
+    public int ArenaRound => Field("arena")?["round"] is JsonValue r && r.TryGetValue(out int round) ? round : 0;
+
+    /// <summary>The places no player holds: as many bots fill them when the Arena starts.</summary>
+    public int EmptyPlaces => Enumerable.Range(0, TeamCount).Sum(t => TeamSize - Math.Min(TeamSize, PlayerIds.Count(p => TeamOf(p) == t)));
+
+    /// <summary>
+    /// The Arena's teams as it starts, always all <see cref="Capacity"/> places: each team's players (in lobby order), its
+    /// empty places taken by <paramref name="bots"/> in order (<see cref="EmptyPlaces"/> of them).
+    /// </summary>
+    public IReadOnlyList<IReadOnlyList<string>> Roster(IReadOnlyList<string> bots)
+    {
+        int next = 0;
+        var teams = new List<IReadOnlyList<string>>();
+        for (int t = 0; t < TeamCount; t++)
+        {
+            var team = PlayerIds.Where(p => TeamOf(p) == t).Take(TeamSize).ToList();
+            while (team.Count < TeamSize)
+            {
+                team.Add(bots[next++]);
+            }
+
+            teams.Add(team);
+        }
+
+        return teams;
+    }
+
+    /// <summary>Starts the Arena: <paramref name="teams"/> (all its places), each at <see cref="StartingLife"/>, round 1.</summary>
+    public void Start(IReadOnlyList<IReadOnlyList<string>> teams, long startedAtMs)
+    {
+        if (teams.Count != TeamCount || teams.Any(t => t.Count != TeamSize))
+        {
+            throw new ArgumentException($"an Arena starts with {TeamCount} teams of {TeamSize}", nameof(teams));
+        }
+
+        SetField("arena", new JsonObject
+        {
+            ["teams"] = new JsonArray([.. teams.Select(t => (JsonNode?)new JsonArray([.. t.Select(p => (JsonNode?)JsonValue.Create(p))]))]),
+            ["life"] = new JsonArray([.. Enumerable.Repeat((JsonNode?)null, TeamCount).Select(_ => (JsonNode?)JsonValue.Create(StartingLife))]),
+            ["round"] = 1,
+            ["startedAt"] = startedAtMs,
+        });
+    }
+
+    /// <summary>A round's 2v2s: the teams paired at random (all <see cref="TeamCount"/> of them, in pairs).</summary>
+    public static IReadOnlyList<(int A, int B)> Pairings(Random random)
+    {
+        int[] order = [.. Enumerable.Range(0, TeamCount)];
+        random.Shuffle(order);
+        return [.. Enumerable.Range(0, TeamCount / 2).Select(i => (order[i * 2], order[i * 2 + 1]))];
+    }
+
+    /// <summary>The team <paramref name="playerId"/> is on.</summary>
+    public int TeamOf(string playerId) => Field("teams")?[playerId] is JsonValue v && v.TryGetValue(out int team) ? team : 0;
+
+    /// <summary>The party lobby <paramref name="playerId"/> came from, if any.</summary>
+    public string? HomeOf(string playerId) => Field("homes")?[playerId] is JsonValue v && v.TryGetValue(out string? home) ? home : null;
+
+    public void SetHome(string playerId, string partyLobbyId) => SetMap("homes", playerId, partyLobbyId);
+
+    /// <summary>Moves <paramref name="playerId"/> to <paramref name="team"/>: false when it is no team, they are on it, or it is full.</summary>
+    public bool SwitchTeam(string playerId, int team)
+    {
+        if (team < 0 || team >= TeamCount || !PlayerIds.Contains(playerId) || TeamOf(playerId) == team
+            || PlayerIds.Count(p => p != playerId && TeamOf(p) == team) >= TeamSize)
+        {
+            return false;
+        }
+
+        SetMap("teams", playerId, team);
+        return true;
+    }
+
+    /// <summary>A player leaves (or is kicked): off the lobby, its teams and its homes. The lead passes as Successor says.</summary>
+    public void Remove(string playerId)
+    {
+        PlayerIds.Remove(playerId);
+        foreach (string field in new[] { "teams", "homes" })
+        {
+            if (Field(field) is JsonObject map && map.ContainsKey(playerId))
+            {
+                var kept = map.DeepClone().AsObject();
+                kept.Remove(playerId);
+                SetField(field, kept);
+            }
+        }
+
+        if (OwnerId == playerId && PlayerIds.Count > 0)
+        {
+            // The one lead rule for every lobby: the longest-tenured player still in it (playerIds is in join order).
+            OwnerId = PlayerIds[0];
+        }
+    }
+
+    private void SetMap(string field, string key, JsonNode value)
+    {
+        var map = (Field(field) as JsonObject)?.DeepClone().AsObject() ?? [];
+        map[key] = value;
+        SetField(field, map);
+    }
+
+    /// <summary>A player joins on the first team with room (a party's partner, whose leader is alone on team 0, joins them).</summary>
+    public override void Join(string playerId)
+    {
+        var taken = PlayerIds.GroupBy(TeamOf).ToDictionary(g => g.Key, g => g.Count());
+        int team = Enumerable.Range(0, TeamCount).FirstOrDefault(t => taken.GetValueOrDefault(t) < TeamSize, -1);
+        if (team < 0)
+        {
+            throw new InvalidOperationException($"arena lobby {Id} is full");
+        }
+
+        base.Join(playerId);
+        SetMap("teams", playerId, team);
+    }
+}

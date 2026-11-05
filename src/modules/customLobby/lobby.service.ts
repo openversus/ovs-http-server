@@ -11,6 +11,7 @@ import {
   type RedisMatchTicket,
   type RedisTeamEntry,
   type MATCH_FOUND_NOTIFICATION,
+  redisUpdateIpMirror,
 } from "../../config/redis";
 import { logger, logwrapper } from "../../config/logger";
 import env from "../../env/env";
@@ -33,6 +34,7 @@ import {
   type PlayerConfig,
 } from "./lobby.types";
 import { IDeployInfo, DeployInfo, getDefaultDeployInfo } from "../../services/rollbackService";
+import { getPlayersRequiringClientUpdate, requestClientUpdateModalsForPlayers } from "../../services/clientUpdateGate";
 
 const logPrefix = "[CustomLobby.Service]:";
 const LOBBY_EX = 2 * 24 * 60 * 60; // 2 days
@@ -1569,6 +1571,21 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
   const lobby = (await getLobby(lobbyId)) as CustomLobby | null;
   if (!lobby || lobby.LeaderID !== leaderId) return null;
 
+  const humanPlayerIds = lobby.Teams.flatMap((team) =>
+    Object.entries(team.Players)
+      .filter(([, player]) => player.BotSettingSlug === "")
+      .map(([playerId]) => playerId),
+  );
+  const outdatedPlayers = await getPlayersRequiringClientUpdate(humanPlayerIds);
+  if (outdatedPlayers.length > 0) {
+    await requestClientUpdateModalsForPlayers(outdatedPlayers.map((player) => player.accountId));
+    logger.warn(
+      `${logPrefix} Blocked SSC custom match start because update is required for: `
+      + outdatedPlayers.map((p) => `${p.accountId}:${p.clientVersion || "legacy"}`).join(", "),
+    );
+    return null;
+  }
+
   const matchId = ObjectID().toHexString();
   const resultId = ObjectID().toHexString();
   const selectedMaps = lobby.Maps.filter((m) => m.IsSelected);
@@ -1637,7 +1654,7 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
         if (character && skin) {
           await redisClient.hSet(`connections:${playerId}`, { character, skin });
           const ip = freshConn?.current_ip;
-          if (ip) await redisClient.hSet(`connections:${ip}`, { character, skin });
+          if (ip) await redisUpdateIpMirror(ip, playerId, { character, skin });
         }
 
         playerConfig = {
@@ -1742,6 +1759,21 @@ export async function startCustomMatch(lobbyId: string, leaderId: string) {
         }
       }
     }
+  }
+
+  // The rollback server gets one input slot per human (bots are left out of /ovs_register)
+  // and indexes them by PlayerIndex, so every human needs an index below the human count.
+  // The interleaved numbering above breaks that when bots sit between humans: in FFA every
+  // player is their own team (index = team), and in 2v2 two humans on one team against bots
+  // get 0 and 2. Then number humans first, then bots, each in their current order.
+  const humanEntries = teamEntries.filter((e) => !e.isBot);
+  if (humanEntries.some((e) => e.playerIndex >= humanEntries.length)) {
+    const byIndex = (a: RedisTeamEntry, b: RedisTeamEntry) => a.playerIndex - b.playerIndex;
+    const botEntries = teamEntries.filter((e) => e.isBot);
+    [...humanEntries.sort(byIndex), ...botEntries.sort(byIndex)].forEach((entry, index) => {
+      entry.playerIndex = index;
+    });
+    logger.info(`${logPrefix} Match ${matchId}: renumbered players humans first (a human sat past the rollback's ${humanEntries.length} input slot(s))`);
   }
 
   const allEntries = [...teamEntries, ...spectatorEntries];

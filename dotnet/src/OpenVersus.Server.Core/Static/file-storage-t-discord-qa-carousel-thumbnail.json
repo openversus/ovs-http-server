@@ -1,0 +1,20 @@
+{
+  "slug": "t-discord-qa-carousel-thumbnail",
+  "name": "T_DISCORD_QA_CAROUSEL_THUMBNAIL",
+  "created_at": {
+    "_hydra_unix_date": 1716600359
+  },
+  "updated_at": {
+    "_hydra_unix_date": 1716600359
+  },
+  "s3_object_id": "dokken/production/cbeff8f4-T_DISCORD_QA_CAROUSEL_THUMBNAIL.png",
+  "auto_sync": true,
+  "file_size": 153984,
+  "file_type": "image/png",
+  "filename": "cbeff8f4-T_DISCORD_QA_CAROUSEL_THUMBNAIL.png",
+  "md5_checksum": "8aa891a30e01905d63217bcc34ea8b8e",
+  "auth_exempt": false,
+  "data": {},
+  "id": "66513e27569e3e6210a7a9c9",
+  "download_url": "https://wb-agora-hydra-file-storage-dokken.s3.amazonaws.com/dokken/production/cbeff8f4-T_DISCORD_QA_CAROUSEL_THUMBNAIL.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5J6YDD2RMJ4AQTRN%2F20250318%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250318T023404Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=663dacc04e201233757b0602008fbc59b53ed48e8426fa00d5ac638402249d47"
+}

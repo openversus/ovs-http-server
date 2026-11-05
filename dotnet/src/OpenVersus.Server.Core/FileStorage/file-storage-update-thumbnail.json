@@ -1,0 +1,20 @@
+{
+  "slug": "openversus-update-required-thumbnail",
+  "name": "openversus_update_required_thumbnail",
+  "created_at": {
+    "_hydra_unix_date": 1789190400
+  },
+  "updated_at": {
+    "_hydra_unix_date": 1789190400
+  },
+  "s3_object_id": "openversus/openversus-update-required-thumbnail.png",
+  "auto_sync": true,
+  "file_size": 264814,
+  "file_type": "image/png",
+  "filename": "openversus-update-required-thumbnail.png",
+  "md5_checksum": "4ed0753aca41527f33a828e632ae6fd3",
+  "auth_exempt": true,
+  "data": {},
+  "id": "68c3f0000000000000000002",
+  "download_url": "{{assets}}openversus-update-required-thumbnail.png"
+}

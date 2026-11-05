@@ -1,3 +1,4 @@
+import { deploysRollbackServer, isP2PEligible } from "../p2p";
 import { logger } from "../config/logger";
 import express, { Request, Response } from "express";
 import {
@@ -201,7 +202,7 @@ sscRouter.put("/ssc/invoke/match_set_concede", async (req: Request, res: Respons
             const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
             try {
               const chars = await getPlayerCharacters([...winnerIds, ...loserIds], setId);
-              await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars, setId);
+              await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars, setId, false, 0, [playerId]);
               await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
             } catch (e) {
               logger.error(`[SSC.Routes]: Error processing concede ELO: ${e}`);
@@ -387,7 +388,7 @@ async function handleRankedSetCheckin(playerId: string) {
           const loserIds = winnerTeam === 0 ? team1Ids : team0Ids;
           try {
             const chars = await getPlayerCharacters([...winnerIds, ...loserIds], setId);
-            await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars, setId);
+            await processSetResult(winnerIds, loserIds, setState.mode, scores as [number, number], winnerTeam, true, chars, setId, false, 0, [pid]);
             await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
           } catch (e) {
             logger.error(`[SSC.Routes]: Error processing disconnect concede ELO: ${e}`);
@@ -456,6 +457,7 @@ async function handleRankedSetCheckin(playerId: string) {
             winnerIds, loserIds, setState.mode,
             scores as [number, number], winnerTeam,
             setState.conceded || false, chars, setId,
+            false, 0, setState.concedingPlayer ? [setState.concedingPlayer] : [],
           );
           await redisClient.publish("ranked_set:fullrankupdate", JSON.stringify({ playerIds: allPlayerIds }));
         } catch (e) {
@@ -528,8 +530,11 @@ async function createNextSetMatch(setId: string, setState: any) {
   // Select new map
   const map = await getRandomMapByType(setState.mode, matchId);
 
-  // Deploy rollback server if on-demand
-  if (useOnDemandRollback) {
+  // P2P (decided here as well, for the deploy; redisOnGameplayConfigNotified would decide it the same way)
+  const p2p = isP2PEligible(setState.players);
+
+  // Deploy rollback server if on-demand (for a P2P match only as the relay, P2P_DEPLOY_RELAY)
+  if (useOnDemandRollback && deploysRollbackServer(p2p)) {
     const deployInfo = getDefaultDeployInfo();
     deployInfo.port = rollbackPort;
     deployInfo.entrypoint = deployInfo.entrypoint.replace("CHANGEMEDEFAULTPORT", deployInfo.port.toString());
@@ -548,6 +553,7 @@ async function createNextSetMatch(setId: string, setState: any) {
     map,
     mode: setState.mode,
     rollbackPort,
+    p2p,
   };
 
   await redisOnGameplayConfigNotified(notification);

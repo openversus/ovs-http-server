@@ -4,6 +4,7 @@ import { FriendListModel } from "../../database/FriendList";
 import { FriendRequestModel } from "../../database/FriendRequest";
 import { redisClient, redisSetBlockedPlayers } from "../../config/redis";
 import { logger } from "../../config/logger";
+import { getUpdateNotificationProfile } from "../../services/updateNotificationProfiles";
 import { profileIconAssetPath } from "../../services/profileIcons";
 
 const logPrefix = "[Friends.Service]:";
@@ -273,12 +274,14 @@ export async function searchProfiles(query: string) {
 
 export async function getProfileBulk(userIds: string[]) {
   const objectIds = userIds
-    .filter((id) => Types.ObjectId.isValid(id))
+    .filter((id) => !getUpdateNotificationProfile(id) && Types.ObjectId.isValid(id))
     .map((id) => new Types.ObjectId(id));
 
-  const profiles = await PlayerTesterModel.find({ _id: { $in: objectIds } }).lean();
+  const profiles = objectIds.length > 0
+    ? await PlayerTesterModel.find({ _id: { $in: objectIds } }).lean()
+    : [];
 
-  return profiles.map((profile) => {
+  const liveProfiles = profiles.map((profile) => {
     const playerId = profile._id.toString();
     const username = profile.name || profile.hydraUsername || "Unknown";
 
@@ -313,6 +316,44 @@ export async function getProfileBulk(userIds: string[]) {
       },
     };
   });
+
+  const virtualUpdateProfiles = userIds.flatMap((playerId) => {
+    const profile = getUpdateNotificationProfile(playerId);
+    if (!profile) return [];
+
+    // Keep this response identical to the live profile shape above. Only the
+    // backing record is virtual; the game resolves it through the normal path.
+    return [{
+      id: playerId,
+      account_id: playerId,
+      updated_at: new Date(),
+      created_at: new Date(),
+      account: {
+        deleted: false,
+        orphaned: false,
+        orphaned_reason: null,
+        public_id: playerId,
+        identity: {
+          default_username: true,
+          username: profile.username,
+        },
+        state: "normal",
+        wbplay_data_synced: false,
+        wbplay_identity: null,
+        locale: "en-US",
+        data: { LastLoginPlatform: "EPlatform::PC" },
+        id: playerId,
+        server_data: {
+          ProfileIcon: {
+            Slug: "profile_icon_default",
+            AssetPath: "",
+          },
+        },
+      },
+    }];
+  });
+
+  return [...liveProfiles, ...virtualUpdateProfiles];
 }
 
 // export async function addBlockedPlayer(accountId: string, blockId: string) {

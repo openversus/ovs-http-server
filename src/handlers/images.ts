@@ -38,8 +38,6 @@ export async function handleImages(req: Request<{ image: string }, {}, {}, {}>, 
   const nc_path_gif3 = path.join(__dirname, `../static/${nc_name_gif3}`);
   const nc_path_gifBB = path.join(__dirname, `../static/${nc_name_gifBB}`);
 
-  logger.info(`${logPrefix} Received request for image: ${req.params.image}`);
-
   switch (req.params.image) {
 
     case nc_name_favicon_96:

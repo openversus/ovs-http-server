@@ -1,0 +1,7 @@
+{
+  "code": 400,
+  "msg": "There are no valid Layout models for type slug dokken-layout-type and variant slug battlepass-variant.",
+  "hydra_error": 1,
+  "relying_party_error": 0,
+  "body": {}
+}

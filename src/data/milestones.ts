@@ -1,3 +1,12 @@
+import { createHash } from "crypto";
+import { CHROMIUM_FIGHTER_PASS } from "./chromiumSkins";
+import { FIGHTER_PASS_TIERS, FIGHTER_PASS_TOAST_SLUG } from "./fighterPass";
+import { PINK_MOUNTAINEER_JASON_SLUG } from "./pinkMountaineerJason";
+import { SHIRTLESS_TATTOO_SHAGGY_SLUG } from "./ovsBattlepassInventory";
+import { ONE_TOUGH_BANANA_SLUG } from "./oneToughBananaTaunt";
+import { TWERK_IT_OUT_SLUG } from "./twerkItOutTaunt";
+import { LEBRON_50CENT_SLUG } from "./lebron50Cent";
+
 export const MILESTONE_REWARDS = {
   mrt_mastery_account: {
     slug: "mrt_mastery_account",
@@ -23361,7 +23370,7 @@ export const MILESTONE_REWARDS = {
       FeatureName: "global_message",
       FeatureTemplateSlug: "milestone-reward-tracks",
       MatchData: {
-        bGrantsProgressFromMatches: false,
+        bGrantsProgressFromMatches: true,
       },
       RewardsForEveryTier: [],
       RewardTrackClass: "MvsEventRewardTrackHsda",
@@ -80051,21 +80060,22 @@ export const MILESTONE_REWARDS = {
             {
               Constraints: [],
               RewardGrantMethod: "DirectInventoryItem",
-              RewardGuid: "1F0998114F7BB7C8D352C3AAFC4BA201",
+              RewardGuid: "0F5D4A11E3B5419C8F2D7C8B4A0E11C3",
               DirectInventoryItemCount: 1,
-              InventoryHsda: "character_C029",
+              InventoryHsda: "emote_67_hands",
             },
           ],
           ScoreThreshold: 0,
-          TierGuid: "5A44B3F9428A35AEE479AF923854E5D7",
+          TierGuid: "5A44B3F9428A35AEE479AF923854E5DA",
         },
         {
-          DisplayType: 0,
+          DisplayType: 1,
+          // Tier 2: emote_ovs_pleading_cat (community-submitted Tom-style cat)
           Rewards: [
             {
               Constraints: [],
               DirectInventoryItemCount: 1,
-              InventoryHsda: "banner_like_bodacious",
+              InventoryHsda: "emote_ovs_pleading_cat",
               RewardGrantMethod: "DirectInventoryItem",
               RewardGuid: "07759B244F637FA4752C6EA33AD38111",
             },
@@ -80074,13 +80084,15 @@ export const MILESTONE_REWARDS = {
           TierGuid: "6892435741990251FD20D287616C5A79",
         },
         {
-          DisplayType: 0,
+          DisplayType: 1,
+          // Tier 3: emote_ovs_rickflick (community submission)
           Rewards: [
             {
               Constraints: [],
-              RewardGrantMethod: "RewardTableLookup",
+              DirectInventoryItemCount: 1,
+              InventoryHsda: "emote_ovs_rickflick",
+              RewardGrantMethod: "DirectInventoryItem",
               RewardGuid: "18B5081B41501581DFFD15B1C0A25511",
-              RewardHsda: "reward_perk_currency_500",
             },
           ],
           ScoreThreshold: 4000,
@@ -80088,17 +80100,48 @@ export const MILESTONE_REWARDS = {
         },
         {
           DisplayType: 1,
+          // Tier 4: profileicon_ovs_duck_season (community by slashrflik)
           Rewards: [
             {
               Constraints: [],
               DirectInventoryItemCount: 1,
-              InventoryHsda: "ring_out_vfx_slime_monster",
+              InventoryHsda: "profileicon_ovs_duck_season",
               RewardGrantMethod: "DirectInventoryItem",
               RewardGuid: "960C431243A62A7612BC41A9C7D5CFE9",
             },
           ],
           ScoreThreshold: 6000,
           TierGuid: "4D3DBF7F458DC475196E04B7AFD7EA6C",
+        },
+        {
+          DisplayType: 1,
+          // Tier 5: skin_ovs_omniman_superman (first OVS skin ship — Superman variant)
+          Rewards: [
+            {
+              Constraints: [],
+              DirectInventoryItemCount: 1,
+              InventoryHsda: "skin_ovs_omniman_superman",
+              RewardGrantMethod: "DirectInventoryItem",
+              RewardGuid: "7A3F0E2C4B1D88E69521A8FCD0E6B4C5",
+            },
+          ],
+          ScoreThreshold: 7000,
+          TierGuid: "8C2D1F7A4E908B3251743C9DAB5F0E12",
+        },
+        {
+          DisplayType: 1,
+          // Tier 6: Chromium Shaggy, after Omni-Man; later rewards stay intact.
+          Rewards: [
+            {
+              Constraints: [],
+              DirectInventoryItemCount: 1,
+              InventoryHsda: "skin_ovs_chromium_shaggy",
+              RewardGrantMethod: "DirectInventoryItem",
+              RewardGuid: "B0421D494D5B459496F922C3BA8CDD7B",
+            },
+          ],
+          ScoreThreshold: 7500,
+          TierGuid: "4A47137F80E44C109A971DA30B72F20B",
         },
         {
           DisplayType: 0,
@@ -81019,9 +81062,11 @@ export const MILESTONE_REWARDS = {
           TierGuid: "F0F26B504A17E8E6315AE784EA5AABF5",
         },
       ],
+      // End Game's pass is OpenVersus's first season (a key of our own, so the client's string table doesn't swap in
+      // its "Season 5").
       Title: {
         localizations: {
-          loc_Season_5: "Season 5",
+          loc_OVS_Season_1: "OVS Season 1",
         },
       },
       XpIcon: "/Game/Panda_Main/UI/Assets/Icons/currencyicons_2024/t_ui_icon_battlepassxp.t_ui_icon_battlepassxp",
@@ -86387,3 +86432,175 @@ export const MILESTONE_REWARDS = {
     },
   },
 };
+
+// Each character mastery track becomes that character's Fighter Pass: toasts on
+// every tier, battle-pass XP on tiers 5, 10 and 15 and the Chromium skin as the capstone
+// (FIGHTER_PASS_TIERS). Native TierGuids are kept; everything the server does
+// not grant (perk currency, lootboxes, per-level rewards) is removed.
+const rewardGuid = (seed: string) => createHash("sha256").update(seed).digest("hex").slice(0, 32).toUpperCase();
+for (const { trackSlug, skinSlug } of CHROMIUM_FIGHTER_PASS) {
+  const track = (MILESTONE_REWARDS as Record<string, any>)[trackSlug];
+  const nativeTiers = track?.data?.Tiers;
+  if (!nativeTiers || nativeTiers.length < FIGHTER_PASS_TIERS.length) {
+    throw new Error(`Missing Chromium Fighter Pass track ${trackSlug}`);
+  }
+  track.data.RewardsForEveryTier = [];
+  track.data.bDoesLastTierRecurInfinitely = false;
+  track.data.Tiers = FIGHTER_PASS_TIERS.map(({ threshold, reward }, index) => ({
+    ...nativeTiers[index],
+    ScoreThreshold: threshold,
+    Rewards: [reward.kind === "battlepassXp"
+      ? {
+        Constraints: [],
+        RewardGrantMethod: "RewardTableLookup",
+        RewardGuid: rewardGuid(`ovs-fighter-pass:${trackSlug}:${index}:${reward.rewardHsda}`),
+        RewardHsda: reward.rewardHsda,
+      }
+      : {
+        Constraints: [],
+        DirectInventoryItemCount: reward.kind === "toasts" ? reward.count : 1,
+        InventoryHsda: reward.kind === "toasts" ? FIGHTER_PASS_TOAST_SLUG : skinSlug,
+        RewardGrantMethod: "DirectInventoryItem",
+        // The Chromium GUID predates the tier rebuild; keep it stable for saved claims.
+        RewardGuid: reward.kind === "toasts"
+          ? rewardGuid(`ovs-fighter-pass:${trackSlug}:${index}:toasts`)
+          : rewardGuid(`ovs-fighter-pass:${trackSlug}:${skinSlug}`),
+      }],
+  }));
+}
+
+// The battle-pass widget presents only the first reward in each tier. Chromium
+// now lives in Fighter Passes, leaving one seasonal sequence of unique skins,
+// community rewards, recovered/custom emotes and the game's unreleased cosmetics
+// (unreleasedCosmetics.ts), in a shuffled order (2026-10-02).
+// Tier N is the Nth slug.
+const battlepassTiers = MILESTONE_REWARDS.mrt_battlepass_season_five.data.Tiers as any[];
+// The End Game battle pass, one reward per tier, in Tuggernuts's order (2026-10-07): the valuable items spread out
+// (early: One Tough Banana, Sailor Aquaman, the Tooniverse skins; mid: Jason, Cackle, Bugs Crying, Painter
+// Beetlejuice; late: Finn's dance, Laughing Shaggy, Peace Among Worlds; last: Twerk It Out; Dumpster Fire at tier 5), no two
+// skins in a row, taunts apart, the Toasties every few tiers.
+export const OVS_BATTLEPASS_REWARD_SLUGS: string[] = [
+  "profileicon_ovs_multiversus_tattoo", // 1: No Regrets (SoraMVS), the free tier
+  "emote_superman_smile", // 2
+  "emote_ovs_toastie_beaten", // 3
+  "skin_C027_s14", // 4: Tooniverse Nubia
+  "emote_ovs_dumpster_fire", // 5: Dumpster Fire (RosettaSt0ned), moved up from the last tier at his request (2026-10-26)
+  "emote_ovs_wut", // 6
+  ONE_TOUGH_BANANA_SLUG, // 7: One Tough Banana, early valuable
+  "emote_ovs_snowflake", // 8
+  "skin_c029_s05", // 9: Sailor Aquaman, early valuable
+  "emote_ovs_toastie_sleepy", // 10
+  "profileicon_ovs_duck_season", // 11: Time is Ticking (ALFREDO JOHNSON)
+  "emote_ovs_pleading_cat", // 12
+  "skin_c030_s14", // 13: Tooniverse The Powerpuff Girls
+  "emote_taz_tongue", // 14
+  "banner_pve_unknown_rare", // 15
+  "emote_ovs_toastie_sick", // 16
+  "emote_ovs_mistletoe", // 17
+  "profileicon_ovs_icy_glare", // 18
+  "emote_arya_laugh", // 19
+  "emote_ovs_dizzy", // 20
+  PINK_MOUNTAINEER_JASON_SLUG, // 21: Pink Abdominal Mountaineer Jason, mid valuable
+  "emote_ovs_toastie_shocked", // 22
+  "emote_ovs_green_light_go", // 23
+  "taunt_c023b_cackle", // 24: Stripe's Cackle, mid valuable
+  "emote_c016_mind", // 25
+  "emote_ovs_bugs_cry", // 26: Bugs Bunny Crying, mid valuable
+  "emote_ovs_toastie_cute", // 27
+  "skin_ovs_painter_beetlejuice", // 28: Painter Beetlejuice, mid
+  "emote_ovs_gizmo_smith", // 29
+  "profileicon_ovs_jason", // 30
+  "emote_ovs_popcorn", // 31
+  "Taunt_C028_CardSpring", // 32
+  "emote_ovs_toastie_lol", // 33
+  "emote_ovs_halo", // 34
+  "skin_ovs_omniman_superman", // 35: Supraman
+  "emote_ovs_taz_get_in", // 36
+  "HB_SD_ProfileIcon_IntoTheMysteryMachineGang", // 37
+  "emote_ovs_toastie_starstruck", // 38
+  "taunt_finn_dance2", // 39: Finn's dance, late
+  "emote_67_hands", // 40
+  "ring_out_vfx_pfg_arrival", // 41
+  "emote_ovs_cozy_tea", // 42
+  SHIRTLESS_TATTOO_SHAGGY_SLUG, // 43: Laughing Shaggy, late valuable
+  "emote_ovs_toastie_angry", // 44
+  "emote_reindog_hearts", // 45
+  "profileicon_ovs_batmobile", // 46
+  "emote_ovs_rickflick", // 47: Peace Among Worlds, late valuable
+  "emote_ovs_jdawg", // 48: J-800 (Glassconsumer69)
+  "emote_ovs_toastie_cool", // 49
+  LEBRON_50CENT_SLUG, // 50: Get Rich or Dunk Tryin' (Glassconsumer69), near the end (Tuggernuts 2026-10-08)
+  "emote_ovs_gingerbread_man", // 51
+  TWERK_IT_OUT_SLUG, // 52: Twerk It Out (Tuggernuts), the last tier
+];
+
+// Every tier is 2,000 XP apart (~4 matches at 500 XP): tier N unlocks at (N-1) x 2000.
+export const OVS_BATTLEPASS_XP_PER_TIER = 2000;
+
+// Past the native track's last tier, tiers are copies of it, each with its own TierGuid.
+const lastNativeTier = battlepassTiers[battlepassTiers.length - 1];
+OVS_BATTLEPASS_REWARD_SLUGS.forEach((slug, rewardIndex) => {
+  const tier = battlepassTiers[rewardIndex] ?? (battlepassTiers[rewardIndex] = {
+    ...lastNativeTier,
+    TierGuid: createHash("sha256").update(`ovs-battlepass-tier:${slug}`).digest("hex").slice(0, 32).toUpperCase(),
+  });
+  tier.ScoreThreshold = rewardIndex * OVS_BATTLEPASS_XP_PER_TIER;
+  tier.Rewards = [{
+    Constraints: [],
+    DirectInventoryItemCount: 1,
+    InventoryHsda: slug,
+    RewardGrantMethod: "DirectInventoryItem",
+    RewardGuid: createHash("sha256").update(`ovs-battlepass:${slug}`).digest("hex").slice(0, 32).toUpperCase(),
+  }];
+});
+
+// One tier per reward.
+battlepassTiers.splice(OVS_BATTLEPASS_REWARD_SLUGS.length);
+// The native pass ended in a recurring tier (lootbox_battlepass_end) the game treats as its
+// infinite tier rather than a claimable one; here the last tier is a reward like the rest.
+MILESTONE_REWARDS.mrt_battlepass_season_five.data.bDoesLastTierRecurInfinitely = false;
+// A fighter level's XP toast shows the fighter's portrait, so it reads apart from the account level's XP book (the
+// game labels both "Event XP"; XpIcon is a Texture2D). The fighter's own end-of-game mastery icon (CharacterData
+// EOGPortrait) where it has one; else its default skin's roster portrait (the texture of its reward thumbnail);
+// Banana Guard his full portrait. Read from the game files 2026-10-06; the Witch (hidden) has none.
+export const FIGHTER_XP_ICONS: Record<string, string> = {
+  mrt_mastery_arya: "/Game/Panda_Main/Characters/Arya/UI/UI_C006_EoGMastery_Icon.UI_C006_EoGMastery_Icon",
+  mrt_mastery_banana_guard: "/Game/Character/BananaGuard/UI/FullPortrait_C034.FullPortrait_C034",
+  mrt_mastery_batman: "/Game/Panda_Main/Characters/BatmanV2/UI/UI_C004_EoGMastery_Icon.UI_C004_EoGMastery_Icon",
+  mrt_mastery_bugs_bunny: "/Game/Panda_Main/Characters/BugsBunnyV2/UI/UI_C007_EoGMastery_Icon.UI_C007_EoGMastery_Icon",
+  mrt_mastery_c003: "/Game/Panda_Main/Characters/Superman/UI/UI_C003_EoGMastery_Icon.UI_C003_EoGMastery_Icon",
+  mrt_mastery_c017: "/Game/Panda_Main/Characters/C017/UI/portrait_mastery_c017.portrait_mastery_c017",
+  mrt_mastery_c018: "/Game/Character/Captures/C018/C018_C018_S00.C018_C018_S00",
+  mrt_mastery_c019: "/Game/Panda_Main/Characters/C019/UI/portrait_mastery_c019.portrait_mastery_c019",
+  mrt_mastery_c020: "/Game/Panda_Main/Characters/C020/UI/UI_C020_EoGMastery_Icon.UI_C020_EoGMastery_Icon",
+  mrt_mastery_c021: "/Game/Character/Captures/C021/C021_C021_S00.C021_C021_S00",
+  mrt_mastery_c023a: "/Game/Character/Captures/C023A/C023A_C023A_S00.C023A_C023A_S00",
+  mrt_mastery_c023b: "/Game/Character/Captures/C023B/C023B_C023B_S00.C023B_C023B_S00",
+  mrt_mastery_c024: "/Game/Character/Captures/C024/C024_C024_S00.C024_C024_S00",
+  mrt_mastery_c025: "/Character_C025/Character/C025/Skins/T_C025_S00.T_C025_S00",
+  mrt_mastery_c026: "/Game/Character/Captures/C026/C026_C026_S00.C026_C026_S00",
+  mrt_mastery_c027: "/Game/Character/Captures/C027/C027_C027_S00.C027_C027_S00",
+  mrt_mastery_c028: "/Game/Character/Captures/C028/C028_C028_S00.C028_C028_S00",
+  mrt_mastery_c029: "/CharacterC029/C029/aquaman_roster.aquaman_roster",
+  mrt_mastery_c030: "/MvsSeason03/Character/C030/UI/t_fighterthumbnail_powerpuffgirls.t_fighterthumbnail_powerpuffgirls",
+  mrt_mastery_c031: "/Character_C031/C031/Skins/C031_placeholder_capture.C031_placeholder_capture",
+  mrt_mastery_c036: "/Game/Character/C036/UI/FullPortrait_C036_S00.FullPortrait_C036_S00",
+  mrt_mastery_c038: "/Character_C038/lola_roster_02.lola_roster_02",
+  mrt_mastery_creature: "/Game/Panda_Main/Characters/Creature/UI/UI_C009_EoGMastery_Icon.UI_C009_EoGMastery_Icon",
+  mrt_mastery_finn: "/Game/Panda_Main/Characters/Finn/UI/UI_C013_EoGMastery_Icon.UI_C013_EoGMastery_Icon",
+  mrt_mastery_garnet: "/Game/Panda_Main/Characters/Garnet/UI/portrait_mastery_garnet.portrait_mastery_garnet",
+  mrt_mastery_harleyquinn: "/Game/Panda_Main/Characters/HarleyQuinn/UI/UI_C008_EoGMastery_Icon.UI_C008_EoGMastery_Icon",
+  mrt_mastery_jake: "/Game/Panda_Main/Characters/Jake/UI/UI_C005_EoGMastery_Icon.UI_C005_EoGMastery_Icon",
+  mrt_mastery_jason: "/Game/Character/Captures/Jason/Jason_Jason_Skin_000.Jason_Jason_Skin_000",
+  mrt_mastery_lebron: "/Game/Panda_Main/Characters/c016/UI/portrait_mastery_C016.portrait_mastery_C016",
+  mrt_mastery_shaggy: "/Game/Panda_Main/Characters/Shaggy/UI/UI_C002_EoGMastery_Icon.UI_C002_EoGMastery_Icon",
+  mrt_mastery_steven: "/Game/Panda_Main/Characters/Steven/UI/UI_C011_EoGMastery_Icon.UI_C011_EoGMastery_Icon",
+  mrt_mastery_taz: "/Game/Panda_Main/Characters/C015/UI/UI_C015_EoGMastery_Icon.UI_C015_EoGMastery_Icon",
+  mrt_mastery_tom_and_jerry: "/Game/Panda_Main/Characters/TomAndJerry/UI/UI_C010_EoGMastery_Icon.UI_C010_EoGMastery_Icon",
+  mrt_mastery_velma: "/Game/Panda_Main/Characters/Velma/UI/portrait_mastery_Velma.portrait_mastery_Velma",
+  mrt_mastery_wonder_woman: "/Game/Panda_Main/Characters/WonderWomanV2/UI/UI_C001_EoGMastery_Icon.UI_C001_EoGMastery_Icon",
+};
+for (const [slug, icon] of Object.entries(FIGHTER_XP_ICONS)) {
+  const track = (MILESTONE_REWARDS as Record<string, { data: Record<string, unknown> }>)[slug];
+  if (track) track.data.XpIcon = icon;
+}

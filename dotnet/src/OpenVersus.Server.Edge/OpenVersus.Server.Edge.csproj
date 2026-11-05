@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The edge in front of the realtime gateway: holds the game's websocket and links it to a gateway node, moving it to
+       another when that node goes, so a node's crash or update drops no one. Its own executable and image; any number
+       of replicas behind the TLS-terminating proxy. -->
+  <ItemGroup>
+    <ProjectReference Include="..\OpenVersus.Server.Core\OpenVersus.Server.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenVersus.Server.Edge.Tests" />
+  </ItemGroup>
+
+</Project>

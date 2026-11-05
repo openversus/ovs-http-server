@@ -153,6 +153,8 @@ const AllTaunts: ITaunt[] = [
       "taunt_c019_headbentover",
       "taunt_c019_listening",
       "taunt_c019_music",
+      // OVS-made (data/twerkItOutTaunt.ts).
+      "taunt_morty_twerkitout",
     ],
   },
   {
@@ -253,6 +255,8 @@ const AllTaunts: ITaunt[] = [
       "taunt_bananaguard_default",
       "taunt_bananaguard_mamasaid",
       "taunt_c034_Taunt1",
+      // OVS-made (data/oneToughBananaTaunt.ts).
+      "taunt_bananaguard_onetoughbanana",
     ],
   },
   {

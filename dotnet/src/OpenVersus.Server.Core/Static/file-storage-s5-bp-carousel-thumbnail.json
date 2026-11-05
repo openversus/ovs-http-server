@@ -1,0 +1,20 @@
+{
+  "slug": "s5-bp-carousel-thumbnail",
+  "name": "s5_bp_carousel_thumbnail",
+  "created_at": {
+    "_hydra_unix_date": 1738631201
+  },
+  "updated_at": {
+    "_hydra_unix_date": 1738631201
+  },
+  "s3_object_id": "dokken/production/6d849a8f-MVS_SEASON5_bp_carousel_thumbnail.png",
+  "auto_sync": true,
+  "file_size": 568876,
+  "file_type": "image/png",
+  "filename": "6d849a8f-MVS_SEASON5_bp_carousel_thumbnail.png",
+  "md5_checksum": "a498f47be9a4d273326f3ebfffb02a1b",
+  "auth_exempt": false,
+  "data": {},
+  "id": "67a168217d5313a213518cdb",
+  "download_url": "https://wb-agora-hydra-file-storage-dokken.s3.amazonaws.com/dokken/production/6d849a8f-MVS_SEASON5_bp_carousel_thumbnail.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5J6YDD2RMJ4AQTRN%2F20250318%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250318T023404Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=91d27ebc7b63e8ee727453cd0f71831cf38b3e737107b11625038467c5390449"
+}

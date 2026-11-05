@@ -1,0 +1,20 @@
+{
+  "slug": "beginnermode-carousel-thumbnail",
+  "name": "beginnermode_carousel_thumbnail",
+  "created_at": {
+    "_hydra_unix_date": 1728661117
+  },
+  "updated_at": {
+    "_hydra_unix_date": 1728661117
+  },
+  "s3_object_id": "dokken/production/2d3f9f10-t_begginnermode_carousel_thumbnail.png",
+  "auto_sync": true,
+  "file_size": 531510,
+  "file_type": "image/png",
+  "filename": "2d3f9f10-t_begginnermode_carousel_thumbnail.png",
+  "md5_checksum": "50b2a2478fa37729c5d13a08ff2a8b57",
+  "auth_exempt": false,
+  "data": {},
+  "id": "6709467d7f18dba761677c39",
+  "download_url": "https://wb-agora-hydra-file-storage-dokken.s3.amazonaws.com/dokken/production/2d3f9f10-t_begginnermode_carousel_thumbnail.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA5J6YDD2RMJ4AQTRN%2F20250318%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250318T023404Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=e11f0abea5c177b10b8e842b1b1191b8e9baf132b9088b6ac52ed3486299352c"
+}

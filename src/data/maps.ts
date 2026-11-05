@@ -175,7 +175,7 @@ export async function getRandomMapByType(mode: string, matchID: string): Promise
       return "PVE_03";
     }
   }
-  else if (mode === "2v2") {
+  else if (mode === "2v2" || mode === "FFA") {
     mapType = (await all2v2Maps).filter(map => map.enabled);
   }
   else {
@@ -184,7 +184,7 @@ export async function getRandomMapByType(mode: string, matchID: string): Promise
   }
   if (mapType.length === 0) {
     logger.error(`${logPrefix} No enabled maps found for mode ${mode}`);
-    if (mode === "2v2")
+    if (mode === "2v2" || mode === "FFA")
     {
       var selectedMap = getRandomMap2v2();
       logger.info(`${logPrefix} Selected map ${selectedMap} for MatchID ${matchID} and mode ${mode} from backup list`);

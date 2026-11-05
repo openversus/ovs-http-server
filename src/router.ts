@@ -140,6 +140,14 @@ router.get("/file_storage", (req: Request<{}, {}, {}, {}>, res: Response) => {
   h.handleFile_storage(req, res);
 });
 
+router.get("/file_storage/openversus-update-required-keyart", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  h.handleFile_storage_openversus_update_required_keyart(req, res);
+});
+
+router.get("/file_storage/openversus-update-required-thumbnail", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  h.handleFile_storage_openversus_update_required_thumbnail(req, res);
+});
+
 router.get("/file_storage/beginnermode-carousel-keyart", (req: Request<{}, {}, {}, {}>, res: Response) => {
   // @ts-ignore TODO : implementation. Remove comment once implemented`
   h.handleFile_storage_beginnermode_carousel_keyart(req, res);
@@ -548,6 +556,11 @@ router.post("/matches/matchmaking/2v2-retail/request", (req: Request<{}, {}, {},
   h.handleMatches_matchmaking_2v2_retail_request(req, res);
 });
 
+router.post("/matches/matchmaking/ffa/request", (req: Request<{}, {}, {}, {}>, res: Response) => {
+  // @ts-ignore TODO : align the shared matchmaking request type with Express's body generic.
+  h.handleMatches_matchmaking_ffa_request(req, res);
+});
+
 router.post("/matches/matchmaking/request/:id/cancel", async (req: Request<{ id: string }>, res: Response) => {
   await h.handle_cancel_matchmaking(req, res);
 });
@@ -674,6 +687,16 @@ router.get("/ssc/invoke/get_hiss_calendar_events", (req: Request<{}, {}, {}, {}>
   // @ts-ignore TODO : implementation. Remove comment once implemented`
   h.handleSsc_invoke_get_hiss_calendar_events(req, res);
 });
+
+// Battle-pass claims. Registered for PUT and POST: the reference server uses PUT.
+for (const method of ["put", "post"] as const) {
+  router[method]("/ssc/invoke/claim_all_milestone_reward_track_tiers", (req: Request<{}, {}, any, {}>, res: Response) => {
+    h.handleSsc_invoke_claim_all_milestone_reward_track_tiers(req, res);
+  });
+  router[method]("/ssc/invoke/claim_milestone_reward_track_tiers", (req: Request<{}, {}, any, {}>, res: Response) => {
+    h.handleSsc_invoke_claim_milestone_reward_track_tiers(req, res);
+  });
+}
 
 router.get("/ssc/invoke/get_milestone_reward_tracks", (req: Request<{}, {}, {}, {}>, res: Response) => {
   // @ts-ignore TODO : implementation. Remove comment once implemented`

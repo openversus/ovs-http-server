@@ -14,6 +14,7 @@ import {
   redisGetLobbyRedirect,
   redisGetPlayerLobby,
   redisRemoveExistingTicketsForPlayer,
+  redisUpdateIpMirror,
 } from "../config/redis";
 import { Cosmetics, CosmeticsModel, TauntSlotsClass } from "../database/Cosmetics";
 import { getEquippedCosmetics } from "../services/cosmeticsService";
@@ -23,12 +24,18 @@ import { randomUUID } from "crypto";
 import { MVSTime } from "../utils/date";
 import env from "../env/env";
 import { cancelMatchmaking, cancelMatchmakingForAll, MATCH_TYPES, queueMatch } from "../services/matchmakingService";
+import { ffaQueueClosedFailure, isFfaQueueOpen } from "../services/ffaSchedule";
 import * as SharedTypes from "../types/shared-types";
 import { HYDRA_ACCESS_TOKEN, SECRET, decodeToken } from "../middleware/auth";
 import * as AuthUtils from "../utils/auth";
 import * as KitchenSink from "../utils/garbagecan";
 import { PlayerStatsModel, RecentMatchPlayerStats } from "../database/PlayerStats";
 import { isTwosdayActive } from "../services/twosdayService";
+import {
+  getPlayersRequiringClientUpdate,
+  hydraClientUpdateFailure,
+  requestClientUpdateModalsForPlayers,
+} from "../services/clientUpdateGate";
 
 const serviceName = "Handlers.Matches";
 const logPrefix = `[${serviceName}]:`;
@@ -111,6 +118,19 @@ export async function handleMatches_id(req: Request<{}, {}, {}, {}>, res: Respon
     // Twosday: no new party members (a party formed before the window keeps working); the player gets their own lobby.
     && (existingLobby.playerIds.includes(aID) || !(await isTwosdayActive()))) {
     // This is a JOIN — player is accepting an invite to an existing lobby
+    const outdatedMembers = await getPlayersRequiringClientUpdate([
+      aID,
+      ...(existingLobby.playerIds || []),
+    ]);
+    if (outdatedMembers.length > 0) {
+      await requestClientUpdateModalsForPlayers(outdatedMembers.map((player) => player.accountId));
+      logger.warn(
+        `${logPrefix} Blocked lobby join because update is required for: `
+        + outdatedMembers.map((p) => `${p.accountId}:${p.clientVersion || "legacy"}`).join(", "),
+      );
+      res.status(200).send(hydraClientUpdateFailure());
+      return;
+    }
     logger.info(`${logPrefix} Player ${aID} (${playerUsername}) joining existing lobby ${matchId} owned by ${existingLobby.ownerId}`);
 
     // Add joining player to lobby state
@@ -819,13 +839,32 @@ export interface MATCH_MAKING_REQUEST {
   match: string;
 }
 
-export async function handleMatches_matchmaking_1v1_retail_request(req: Request<{}, {}, MATCH_MAKING_REQUEST, {}>, res: Response) {
+export async function handleMatches_matchmaking_1v1_retail_request(
+  req: Request<{}, {}, MATCH_MAKING_REQUEST, {}>,
+  res: Response,
+  requestedMatchType: MATCH_TYPES = MATCH_TYPES.ONE_V_ONE,
+) {
   // const account = req.token;
 
-  logger.info(`${logPrefix} Received 1v1 retail matchmaking request`);
+  const isFfa = requestedMatchType === MATCH_TYPES.FFA;
+  logger.info(`${logPrefix} Received ${isFfa ? "FFA" : "1v1 retail"} matchmaking request`);
 
   // If the player's lobby has 2+ players, force 2v2 instead of 1v1
   const preCheckAccount = AuthUtils.DecodeClientToken(req);
+
+  const outdatedRequester = await getPlayersRequiringClientUpdate([preCheckAccount.id]);
+  if (outdatedRequester.length > 0) {
+    await requestClientUpdateModalsForPlayers(outdatedRequester.map((player) => player.accountId));
+    logger.warn(`${logPrefix} Blocked ${isFfa ? "FFA" : "1v1"} matchmaking for outdated client ${preCheckAccount.id}`);
+    res.status(200).send(hydraClientUpdateFailure());
+    return;
+  }
+
+  if (isFfa && !isFfaQueueOpen()) {
+    logger.info(`${logPrefix} Rejected FFA matchmaking for ${preCheckAccount.id}: outside the weekend window`);
+    res.status(200).send(ffaQueueClosedFailure());
+    return;
+  }
 
   // Remove any stale tickets for this player before creating a new one
   try {
@@ -845,6 +884,11 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
   if (preCheckLobbyId) {
     const preCheckLobby = await redisGetLobbyState(preCheckLobbyId);
     if (preCheckLobby && preCheckLobby.playerIds.length >= 2) {
+      if (isFfa) {
+        logger.warn(`${logPrefix} Rejected FFA matchmaking for party ${preCheckLobbyId}; FFA is solo-entry only`);
+        res.status(200).json({ error: "FFA matchmaking requires a solo party" });
+        return;
+      }
       logger.info(`${logPrefix} Lobby ${preCheckLobbyId} has ${preCheckLobby.playerIds.length} players, redirecting 1v1 request to 2v2 handler`);
       return handleMatches_matchmaking_2v2_retail_request(req, res);
     }
@@ -885,7 +929,7 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
 
   await redisClient.hSet(`connections:${aID}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
   if (rPlayerConnectionByID.current_ip) {
-    await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+    await redisUpdateIpMirror(rPlayerConnectionByID.current_ip, aID, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
   }
 
   const data = {
@@ -912,7 +956,7 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
         founderpackcoolnameflag: true,
         closed_alpha_battlepass_completed: true,
     },
-    criteria_slug: "1v1-retail",
+    criteria_slug: isFfa ? "ffa" : "1v1-retail",
     cluster: req.body.data.MultiplayParams.MultiplayClusterSlug,
     players_connection_info: {
       [aID]: {
@@ -975,7 +1019,14 @@ export async function handleMatches_matchmaking_1v1_retail_request(req: Request<
     id: ObjectID().toHexString(),
   };
   res.send(data);
-  await queueMatch(aID, [aID], data.from_match, data.id, MATCH_TYPES.ONE_V_ONE);
+  await queueMatch(aID, [aID], data.from_match, data.id, requestedMatchType);
+}
+
+export async function handleMatches_matchmaking_ffa_request(
+  req: Request<{}, {}, MATCH_MAKING_REQUEST, {}>,
+  res: Response,
+) {
+  return handleMatches_matchmaking_1v1_retail_request(req, res, MATCH_TYPES.FFA);
 }
 
 export async function handleMatches_matchmaking_2v2_retail_request(req: Request<{}, {}, MATCH_MAKING_REQUEST, {}>, res: Response) {
@@ -1034,13 +1085,24 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
 
   await redisClient.hSet(`connections:${aID}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
   if (rPlayerConnectionByID.current_ip) {
-    await redisClient.hSet(`connections:${rPlayerConnectionByID.current_ip}`, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
+    await redisUpdateIpMirror(rPlayerConnectionByID.current_ip, aID, { character: playerLoadout.character, skin: playerLoadout.skin, profileIcon: playerLoadout.profileIcon });
   }
 
   // Look up the lobby to include ALL players in matchmaking, not just the requester
   const lobbyId = await redisGetPlayerLobby(aID);
   const lobbyState = lobbyId ? await redisGetLobbyState(lobbyId) : null;
   const allPlayerIds = lobbyState ? lobbyState.playerIds : [aID];
+
+  const outdatedPartyMembers = await getPlayersRequiringClientUpdate(allPlayerIds);
+  if (outdatedPartyMembers.length > 0) {
+    await requestClientUpdateModalsForPlayers(outdatedPartyMembers.map((player) => player.accountId));
+    logger.warn(
+      `${logPrefix} Blocked 2v2 matchmaking because update is required for: `
+      + outdatedPartyMembers.map((p) => `${p.accountId}:${p.clientVersion || "legacy"}`).join(", "),
+    );
+    res.status(200).send(hydraClientUpdateFailure());
+    return;
+  }
 
   // Also clear stale ranked set state for any teammates in the lobby (they might
   // have lingering pointers to a different dead set than the requester's).
@@ -1095,7 +1157,7 @@ export async function handleMatches_matchmaking_2v2_retail_request(req: Request<
       const pConn = await redisClient.hGetAll(`connections:${pid}`) as unknown as RedisPlayerConnection;
       if (pConn?.current_ip) {
         await redisClient.hSet(`connections:${pid}`, { character: pLoadout.character, skin: pLoadout.skin, profileIcon: pLoadout.profileIcon });
-        await redisClient.hSet(`connections:${pConn.current_ip}`, { character: pLoadout.character, skin: pLoadout.skin, profileIcon: pLoadout.profileIcon });
+        await redisUpdateIpMirror(pConn.current_ip, pid, { character: pLoadout.character, skin: pLoadout.skin, profileIcon: pLoadout.profileIcon });
       }
     }
   }

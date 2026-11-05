@@ -367,6 +367,12 @@ internal static class PlayerRender
             grid.AddRow($"[grey]Device {Markup.Escape(device.Kind)}[/]", $"{Markup.Escape(device.Id)}{past}{shared}");
         }
 
+        if (p.RecentQuits > 0 || p.QuitLockoutUntil is not null || p.QuitsTotal > 0)
+        {
+            string lockout = p.QuitLockoutUntil is { } until ? $" [red]matchmaking refused until {Markup.Escape(until.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"))}[/]" : "";
+            grid.AddRow("[grey]Walk-outs[/]", $"{p.RecentQuits} in the window, {p.QuitsTotal} ever, {p.QuitTimeouts} lockout(s){lockout}");
+        }
+
         foreach (var change in (p.NameHistory ?? []).TakeLast(10))
         {
             grid.AddRow("[grey]Name change[/]", $"{Markup.Escape(change.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))} \"{Markup.Escape(change.From)}\" to \"{Markup.Escape(change.To)}\" ({Markup.Escape(change.Source)}{(change.Ip.Length > 0 ? $", {Markup.Escape(change.Ip)}" : "")})");

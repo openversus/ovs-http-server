@@ -149,7 +149,7 @@ ENGINE = [("POST", "/datarouter/api/v1/public/data/clients", "string", "Unreal D
 # OpenVersus's own routes, by caller (checked against the handlers' comments and the rollback server's source,
 # 2026-09-28). Order matters: the first match wins.
 OVS_KINDS = [
-    ("ovs-client", re.compile(r"^/(api/identify|ovs/client-version|ovs/client-settings|ovs/notifications|ovs/friends|ovs/all-players)(/|$)")),
+    ("ovs-client", re.compile(r"^/(api/identify|ovs/client-version|ovs/client-settings|ovs/notifications|ovs/quit|ovs/friends|ovs/all-players)(/|$)")),
     ("ovs-rollback", re.compile(r"^/(ovs_register|ovs_match_started|ovs_end_match|ovs_match_status|api/ovs_match_status|mvsi_register|mvsi_end_match|ovs_match_inputs|ovs_p2p_ready|ovs_p2p_failed|ovs_node_config)$")),
     ("ovs-admin", re.compile(r"^/(admin|api/admin|syncAsset)(/|$)")),
     ("ovs-web", re.compile(r"^/(matches$|api/matches|stats|leaderboard$|api/leaderboard|namechange|account/|home|theme\.|favicon|images/|assets/)")),

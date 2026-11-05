@@ -190,6 +190,11 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
             return new MatchmakingAnswer(200, gate.FailureBody());
         }
 
+        if (services.GetService<IQuitTracker>() is { } quits1v1 && await quits1v1.RefuseLockedAsync([me], log, "1v1 matchmaking"))
+        {
+            return new MatchmakingAnswer(200, gate.FailureBody());
+        }
+
         if (queue.IsFfa && !await Matchmaking.FfaSchedule.IsOpenAsync(services, time.GetUtcNow(), ffa.CurrentValue))
         {
             log.LogInformation("Rejected FFA matchmaking for {Player}: outside the weekend window", me);
@@ -391,6 +396,11 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         var all = lobbyPlayers ?? [id];
 
         if (await gate.BlockOutdatedAsync(all, log, "2v2 matchmaking"))
+        {
+            return new MatchmakingAnswer(200, gate.FailureBody());
+        }
+
+        if (services.GetService<IQuitTracker>() is { } quits2v2 && await quits2v2.RefuseLockedAsync(all, log, "2v2 matchmaking"))
         {
             return new MatchmakingAnswer(200, gate.FailureBody());
         }

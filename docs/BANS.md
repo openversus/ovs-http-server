@@ -133,3 +133,20 @@ Every name change is kept on the account (`nameHistory`, the last 200): the name
 IP, and the route (`web` for the website's `/namechange`, `manual` for `ovsctl player rename`, `login` for a forced
 change at login). `ovsctl player show` lists the last ten. Nothing acts on it: it is there to be read when a name that
 was fine at a glance turns out not to have been.
+
+## Walking out of matches
+
+The OpenVersus client reports every exit the game asks for itself (Alt+F4, the window's close button, the menu's quit) to
+`POST /ovs/quit` just before the game goes; a kill from outside (Task Manager, a crash) is not seen. On the screens of a
+matchmade match (the perk selection, the match, the rematch vote) there is no menu to quit by, so an exit there is a
+walk-out. The access to it is the identify token, as `/ovs/notifications`.
+
+The lobbies service counts it when the player was in a matchmade match (`player:{id}` status `in_match`, a Casual
+rematch vote, or a ranked set) and was the first to leave that match: whoever is left can find their game stuck waiting,
+and their only way out is the same exit, so a second leaver is never counted. A custom lobby and a match against bots
+alone never count. `Quits:Limit` (3) counted quits within `Quits:WindowMinutes` (30) refuse the player's matchmaking
+tickets (1v1, 2v2, FFA, Testing Grounds) for `Quits:LockoutMinutes` (15), the same way an outdated client's are, and
+each refused request shows the banner `Quits:BannerTitle` / `Quits:BannerMessage` (`{minutes}` left). `Quits:Enabled`
+off keeps the reports in the log and counts nothing. The account keeps two lifetime counters, `ragequit_total` (every
+counted quit) and `ragequit_put_in_timeout` (every lockout); `ovsctl player show` lists the count in the window, the
+lockout, and both.

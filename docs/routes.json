@@ -1563,6 +1563,23 @@
   },
   {
     "method": "POST",
+    "path": "/ovs/quit",
+    "area": "ovs",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /ovs/quit"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-client",
+    "in_game": false,
+    "in_server": true,
+    "owner": "web"
+  },
+  {
+    "method": "POST",
     "path": "/ovs_end_match",
     "area": "ovs_end_match",
     "binary": null,

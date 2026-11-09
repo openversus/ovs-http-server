@@ -20,7 +20,8 @@ namespace OpenVersus.Server.Core.Matches;
 //     matchmaking-cancel {id: the cancel's id, state 3} and the player is set idle. A player holding none gets nothing, as
 //     the TS handler did nothing without a running tick.
 //   Found (the match flow, when it tells a launched match's players): each player's tick stops, and a player who held a
-//     ticket is set in_match (the TS stopMatchTick wrote it only with a tick running).
+//     ticket is set in_match (the TS stopMatchTick wrote it only with a tick running). A Casual rematch has no ticket:
+//     its players are set in_match where it starts (Rematches).
 //   Dropped (LobbyDisconnects: the player's game closed, or a newer login replaced its connection): the ticket the player
 //     held, if it was queued before that, leaves its list, their tick stops and they are set idle; the others holding the
 //     same ticket (the rest of the party) are cancelled as by the game's cancel, with the ticket's request id.
@@ -131,8 +132,11 @@ public static class MatchmakingQueue
         return true;
     }
 
-    /// <summary>A match was found for <paramref name="players"/>: their ticks stop, and those who held a ticket are in_match.</summary>
-    public static async Task FoundAsync(IDatabase redis, IEnumerable<string> players)
+    /// <summary>
+    /// A match (<paramref name="matchId"/>) was found for <paramref name="players"/>: their ticks stop, and those who held
+    /// a ticket are in_match.
+    /// </summary>
+    public static async Task FoundAsync(IDatabase redis, IEnumerable<string> players, string? matchId = null)
     {
         var all = players.Distinct().ToList();
         foreach (string player in all)
@@ -143,8 +147,9 @@ public static class MatchmakingQueue
             }
         }
 
-        // The match they were found for, as one group: the first of them to walk out is the one it counts against (QuitTracker).
-        await QuitTracker.GroupAsync(redis, all);
+        // The match they were found for, as one group: the first of them to walk out is the one it counts against
+        // (QuitTracker); a rematch stays in the group of the game it follows.
+        await QuitTracker.GroupAsync(redis, all, matchId);
     }
 
     /// <summary>The ticket one of <paramref name="players"/> holds (the first found), as pushed; null when none holds one.</summary>

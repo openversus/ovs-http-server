@@ -18,16 +18,27 @@ namespace OpenVersus.Server.Core.Matches;
 // Walking out of a matchmade match (docs/BANS.md, "Walking out of matches"). The OpenVersus client reports every exit the
 // game asks for itself (Alt+F4, the window's close button; a kill from outside is not seen) to POST /ovs/quit before
 // the game goes. On those screens (the perk selection, the match, the rematch vote) there is no menu to quit by, so an
-// exit there is a walk-out. Only the FIRST player to leave a match (or set) is counted: the game of whoever is left
-// can hang waiting for them, and their only way out is the same exit. Three in a rolling 30 minutes lock the player
-// out of matchmaking for 15 minutes: their ticket is refused and a banner says so. Custom lobbies never count, nor a
-// match against bots alone.
+// exit there is a walk-out. Only the FIRST player to leave a match (with the rematches that follow it; or a set) is
+// counted: the game of whoever is left can hang waiting for them, and their only way out is the same exit. Three in a
+// rolling 30 minutes lock the player out of matchmaking for 15 minutes: their ticket is refused and a banner says so.
+// Custom lobbies never count, nor a match against bots alone.
 //
-//   player:{id} status           in_match from the match being found to its end (MatchmakingQueue, MatchStatusEvents)
+// An unranked match (Casual, Testing Grounds) is played again by its rematch vote, game after game, and each of those
+// games counts as the first does: the rematch puts its players in_match again (it has no ticket to do it: Rematches)
+// and stays in the first game's group, so a player who walks out just as it starts leaves the other, facing nobody,
+// not the first to leave.
+//
+// Whatever the verdict (a custom lobby's quit never counts), a quit while a rematch vote the player has a say in is open
+// is their decline: the vote is over for everyone (Rematches.WalkedOutAsync), and no rematch starts without them.
+//
+//   player:{id} status           in_match from the match being found to its end (MatchmakingQueue, MatchStatusEvents),
+//                                and from a rematch's start to its end (Rematches)
 //   casual_rematch_player:{id}   while a Casual rematch vote is open (Rematches)
 //   player_ranked_set:{id}       the ranked set, from its first game to its end (RankedSets)
-//   quit_group:{id}              the match found for this player, written with it (MatchmakingQueue.FoundAsync):
-//                                what the first-leaver rule is per; quit_group_humans:{group} how many humans it has
+//   quit_group:{id}              the match found for this player, written with it (MatchmakingQueue.FoundAsync) and kept
+//                                by its rematches: what the first-leaver rule is per; quit_group_humans:{group} how
+//                                many humans it has
+//   quit_rematch:{match}         a rematch on its way to being found (Rematches): it keeps its players' group
 //   quit_leaver:{group}          the first player who left it
 //   quits:{id}                   when the player's counted quits happened (a sorted set, trimmed to the window)
 //   quit_lockout:{id}            until when matchmaking is refused (ms), with the lockout as its TTL
@@ -36,7 +47,7 @@ namespace OpenVersus.Server.Core.Matches;
 /// <summary>Walking out of matches: how many in how long lock a player out of matchmaking, and for how long.</summary>
 public sealed class QuitSettings
 {
-    [Description("On: a quit the client reports from a matchmade match counts, and enough of them lock the player out of matchmaking. Off: reports are logged and nothing else.")]
+    [Description("On: a quit the client reports from a matchmade match counts, and enough of them lock the player out of matchmaking. Off: reports are logged and nothing counts. Either way a quit during a rematch vote declines the rematch for everyone.")]
     public bool Enabled { get; set; } = true;
 
     [Description("How many counted quits within WindowMinutes lock the player out.")]
@@ -88,6 +99,7 @@ internal sealed class QuitTracker(IServiceProvider services, IOptionsMonitor<Qui
     public const string GroupPrefix = "quit_group:";
     public const string GroupHumansPrefix = "quit_group_humans:";
     public const string LeaverPrefix = "quit_leaver:";
+    public const string RematchPrefix = "quit_rematch:";
     public const string QuitsPrefix = "quits:";
     public const string LockoutPrefix = "quit_lockout:";
     /// <summary>The account's lifetime count of counted quits.</summary>
@@ -98,9 +110,44 @@ internal sealed class QuitTracker(IServiceProvider services, IOptionsMonitor<Qui
     /// <summary>How long a found match's group is remembered: longer than a set with its rematches.</summary>
     public static readonly TimeSpan GroupTtl = TimeSpan.FromMinutes(45);
 
-    /// <summary>MatchmakingQueue.FoundAsync: the players matched together, under one group, with how many of them are human.</summary>
-    public static async Task GroupAsync(IDatabase redis, IReadOnlyList<string> players)
+    /// <summary>How long a rematch may take from its launch to being found: as long as the launch itself is kept (MatchLaunches).</summary>
+    public static readonly TimeSpan RematchTtl = TimeSpan.FromMinutes(20);
+
+    /// <summary>Rematches, before the launch: the match that starts as <paramref name="matchId"/> is a rematch, and keeps its players' group.</summary>
+    public static Task RematchAsync(IDatabase redis, string matchId) => redis.StringSetAsync(RematchPrefix + matchId, "1", RematchTtl);
+
+    /// <summary>The rematch named <paramref name="matchId"/> was never launched.</summary>
+    public static Task NoRematchAsync(IDatabase redis, string matchId) => redis.KeyDeleteAsync(RematchPrefix + matchId);
+
+    /// <summary>
+    /// MatchmakingQueue.FoundAsync: the players matched together, under one group, with how many of them are human. A
+    /// rematch (<see cref="RematchAsync"/>, by <paramref name="matchId"/>) whose humans are all still in one group together
+    /// stays in it, for <see cref="GroupTtl"/> more: whoever left it first, at the vote too, stays the only one counted.
+    /// </summary>
+    public static async Task GroupAsync(IDatabase redis, IReadOnlyList<string> players, string? matchId = null)
     {
+        if (matchId is not null && await redis.KeyDeleteAsync(RematchPrefix + matchId))
+        {
+            var playing = players.Distinct().Where(p => !p.StartsWith("Bot", StringComparison.OrdinalIgnoreCase)).ToList();
+            var groups = new HashSet<string>();
+            foreach (string player in playing)
+            {
+                groups.Add((await redis.StringGetAsync(GroupPrefix + player)).ToString());
+            }
+
+            if (groups.Count == 1 && groups.Single() is { Length: > 0 } kept)
+            {
+                foreach (string player in playing)
+                {
+                    await redis.KeyExpireAsync(GroupPrefix + player, GroupTtl);
+                }
+
+                await redis.KeyExpireAsync(GroupHumansPrefix + kept, GroupTtl);
+                await redis.KeyExpireAsync(LeaverPrefix + kept, GroupTtl);
+                return;
+            }
+        }
+
         string group = MongoDB.Bson.ObjectId.GenerateNewId().ToString();
         int humans = players.Distinct().Count(p => !p.StartsWith("Bot", StringComparison.OrdinalIgnoreCase));
         await redis.StringSetAsync(GroupHumansPrefix + group, humans, GroupTtl);
@@ -112,11 +159,25 @@ internal sealed class QuitTracker(IServiceProvider services, IOptionsMonitor<Qui
 
     public async Task<QuitVerdict> ReportAsync(string playerId, DateTimeOffset now)
     {
+        var verdict = await CountAsync(playerId, now);
+        // The game is going, whatever the verdict: a rematch vote the player has a say in is over for everyone, as by
+        // their decline. After the verdict, which reads the vote.
+        if (await Rematches.WalkedOutAsync(Redis(), playerId) is { } vote)
+        {
+            log.LogInformation("Quit reported by {Player} during the rematch vote of {Vote}: the rematch is declined for everyone", playerId, vote);
+        }
+
+        return verdict;
+    }
+
+    private async Task<QuitVerdict> CountAsync(string playerId, DateTimeOffset now)
+    {
         var redis = Redis();
         var current = settings.CurrentValue;
         var locked = await LockedUntilAsync(redis, playerId, now);
-        // The context: a ranked set is a group of its own; a Casual rematch vote or a found match still under way goes by
-        // the group the match was found with. Nothing else (the menus, a custom lobby, a match the server never made) counts.
+        // The context: a ranked set is a group of its own; a Casual rematch vote or a found match still under way (its
+        // rematches too) goes by the group the match was found with. Nothing else (the menus, a custom lobby, a match the
+        // server never made) counts.
         string ranked = (await redis.StringGetAsync($"player_ranked_set:{playerId}")).ToString();
         string status = (await redis.HashGetAsync($"player:{playerId}", "status")).ToString();
         bool rematch = await redis.KeyExistsAsync(RematchVotes.CasualPlayerKey(playerId));

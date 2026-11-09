@@ -336,7 +336,7 @@ internal sealed class MatchLaunchStream(IServiceProvider services, IGameplayConf
         }
 
         // The players' searches are over (their ticks stop; those who held a ticket are in_match), then each is told.
-        await MatchmakingQueue.FoundAsync(redis, players);
+        await MatchmakingQueue.FoundAsync(redis, players, matchId);
         bool p2p = RollbackCallbacks.Truthy(notification["p2p"]);
         var settings = rollback.CurrentValue;
         foreach (string playerId in players)

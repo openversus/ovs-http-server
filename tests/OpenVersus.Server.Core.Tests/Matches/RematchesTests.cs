@@ -44,14 +44,14 @@ public sealed class RematchesTests : IAsyncLifetime
         public Task<bool> LeaveLobbyFromBeforeLoginAsync(string playerId) => throw new NotSupportedException();
     }
 
-    private sealed class Launcher : IMatchLauncher
+    private sealed class Launcher(bool starts = true) : IMatchLauncher
     {
         public List<MatchLaunch> Launched { get; } = [];
 
         public Task<LaunchedMatch?> LaunchAsync(MatchLaunch launch, CancellationToken ct)
         {
             Launched.Add(launch);
-            return Task.FromResult<LaunchedMatch?>(new LaunchedMatch(Id(900), 57001));
+            return Task.FromResult(starts ? new LaunchedMatch(Id(900), 57001) : null);
         }
 
         public Task<int?> RollbackPortAsync(IDatabase redis) => Task.FromResult<int?>(57001);
@@ -156,6 +156,17 @@ public sealed class RematchesTests : IAsyncLifetime
         ["isCustomGame"] = true,
         ["gameplayConfigOverride"] = new JsonObject { ["bIsCustomGame"] = false },
     };
+
+    // Two players against each other: a 1v1 the matchmaker made (Casual's, Testing Grounds').
+    private static JsonObject OneVsOneConfig()
+    {
+        var config = CasualConfig();
+        config["mode"] = "1v1";
+        config["players"] = new JsonArray(
+            new JsonObject { ["playerId"] = P1, ["partyId"] = "party-a", ["playerIndex"] = 0, ["teamIndex"] = 0, ["isHost"] = true, ["ip"] = "198.51.100.1", ["isBot"] = false },
+            new JsonObject { ["playerId"] = P2, ["partyId"] = "party-b", ["playerIndex"] = 1, ["teamIndex"] = 1, ["isHost"] = false, ["ip"] = "198.51.100.2", ["isBot"] = false });
+        return config;
+    }
 
     private async Task<List<string>> SentAsync(int atLeast, int waitMs = 1500)
     {
@@ -295,6 +306,163 @@ public sealed class RematchesTests : IAsyncLifetime
         Assert.Equal(config["worldBuffs"]!.ToJsonString(), launch.NotificationFields!["worldBuffs"]!.ToJsonString());
         Assert.Equal(12, launch.NotificationFields["customNumRingouts"]!.GetValue<int>());
         Assert.Equal("evtq_2v2testinggrounds", launch.GameplayConfigOverride!["EventQueueSlug"]!.GetValue<string>());
+    }
+
+    [SkippableFact]
+    // A rematch has no ticket, and a found match sets in_match only where one was held (MatchmakingQueue.FoundAsync): the
+    // rematch sets its players in_match itself, so a walk-out of it counts as one of the first game does (QuitTracker).
+    // The steps are the services' own: the search, the match found, its end, the vote, the rematch, its announcement.
+    public async Task ARematchsPlayersAreInAMatchAgainSoAWalkOutOfItCounts()
+    {
+        Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
+        string list = $"list{Id(300)}";
+        foreach (string id in new[] { P1, P2 })
+        {
+            await Db.HashSetAsync($"player:{id}", "status", "idle");
+            await Db.StringSetAsync(GatewayPresence.ConnectionKey(id), "1");
+            await MatchmakingQueue.QueueAsync(Db, Js.Stringify(new JsonObject { ["matchType"] = list, ["players"] = new JsonArray(new JsonObject { ["id"] = id }) }));
+        }
+
+        await MatchmakingQueue.FoundAsync(Db, [P1, P2], Match);
+        Assert.Equal("in_match", (string?)await Db.HashGetAsync($"player:{P1}", "status"));
+
+        // The game ends (MatchEnd sets each player idle) and its vote opens; both accept.
+        foreach (string id in new[] { P1, P2 })
+        {
+            await Db.HashSetAsync($"player:{id}", "status", "idle");
+        }
+
+        await RematchVotes.OpenCasualAsync(Db, TimeProvider.System, Match, OneVsOneConfig());
+        var launcher = new Launcher();
+        var rematches = Service(new Lobbies(), launcher);
+        await rematches.AcceptAsync(P1);
+        await rematches.AcceptAsync(P2);
+        // The match flow announces the rematch, under the name it was launched with: nobody holds a ticket this time.
+        await MatchmakingQueue.FoundAsync(Db, [P1, P2], Assert.Single(launcher.Launched).MatchId);
+
+        Assert.Equal("in_match", (string?)await Db.HashGetAsync($"player:{P1}", "status"));
+        Assert.Equal("in_match", (string?)await Db.HashGetAsync($"player:{P2}", "status"));
+        var verdict = await Quits().ReportAsync(P1, DateTimeOffset.UtcNow);
+        Assert.Equal((true, "the first to leave", 1), (verdict.Counted, verdict.Reason, verdict.Count));
+    }
+
+    // P1 and P2 searched, were matched as Match, and played it: its vote is open (MatchEnd set each idle first).
+    private async Task PlayedAMatchmadeMatchAsync()
+    {
+        string list = $"list{Id(300)}";
+        foreach (string id in new[] { P1, P2 })
+        {
+            await Db.HashSetAsync($"player:{id}", "status", "idle");
+            await Db.StringSetAsync(GatewayPresence.ConnectionKey(id), "1");
+            await MatchmakingQueue.QueueAsync(Db, Js.Stringify(new JsonObject { ["matchType"] = list, ["players"] = new JsonArray(new JsonObject { ["id"] = id }) }));
+        }
+
+        await MatchmakingQueue.FoundAsync(Db, [P1, P2], Match);
+        foreach (string id in new[] { P1, P2 })
+        {
+            await Db.HashSetAsync($"player:{id}", "status", "idle");
+        }
+
+        await RematchVotes.OpenCasualAsync(Db, TimeProvider.System, Match, OneVsOneConfig());
+    }
+
+    private async Task<List<string>> DeclinedAsync(int expected) =>
+        [.. (await SentAsync(expected + 2)).Where(m => m.Contains("RematchDeclinedNotification", StringComparison.Ordinal))];
+
+    [SkippableFact]
+    // A vote is no majority's: one decline ends it for everyone, and a walk-out at the vote is one. The player is counted
+    // (a matchmade match), the vote is over, both are sent back, and the timer starts nothing.
+    public async Task AWalkOutAtTheVoteDeclinesTheRematchForEveryone()
+    {
+        Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
+        await PlayedAMatchmadeMatchAsync();
+
+        var left = await Quits().ReportAsync(P1, DateTimeOffset.UtcNow);
+
+        Assert.Equal((true, "the first to leave"), (left.Counted, left.Reason));
+        foreach (string key in new[] { RematchVotes.CasualKey(Match), RematchVotes.CasualPlayerKey(P1), RematchVotes.CasualPlayerKey(P2) })
+        {
+            Assert.False(await Db.KeyExistsAsync(key), key);
+        }
+
+        var launcher = new Launcher();
+        await Service(new Lobbies(), launcher).TimerAsync($"casual:{Match}");
+        Assert.Empty(launcher.Launched);
+        var declined = await DeclinedAsync(2);
+        Assert.Equal(2, declined.Count);
+        Assert.All(declined, m => Assert.Contains($"\"MatchId\":\"{Match}\"", m, StringComparison.Ordinal));
+    }
+
+    [SkippableFact]
+    // The same in a custom lobby, where a quit never counts: a player's walk-out at the vote ends it, and everyone in the
+    // lobby is sent back, the spectator too. A spectator's quit declines nothing (they have no say), nor does a quit with
+    // no vote open (from the lobby's menus, or mid-match).
+    public async Task AWalkOutAtACustomLobbysVoteDeclinesItAndOnlyAPlayersDoes()
+    {
+        Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
+        await OpenLobbyVoteAsync();
+        var now = DateTimeOffset.UtcNow;
+
+        Assert.False((await Quits().ReportAsync(Spectator, now)).Counted);
+        Assert.True(await Db.KeyExistsAsync(RematchVotes.LobbyTimerKey(Lobby)));
+
+        var left = await Quits().ReportAsync(P2, now);
+        Assert.Equal((false, "not in a matchmade match"), (left.Counted, left.Reason));
+        Assert.False(await Db.KeyExistsAsync(RematchVotes.LobbyTimerKey(Lobby)));
+        var lobbies = new Lobbies();
+        await Service(lobbies).TimerAsync($"lobby:{Lobby}:{Match}");
+        Assert.Equal(0, lobbies.Rematches);
+        Assert.Equal(3, (await DeclinedAsync(3)).Count);
+
+        // No vote is open now: a quit from the lobby declines nothing.
+        await Quits().ReportAsync(P1, now);
+        Assert.Equal(3, (await DeclinedAsync(4)).Count);
+    }
+
+    [SkippableFact]
+    // A player who walks out just as the rematch starts (everyone accepted; it is launched, not yet found) is counted, and
+    // the one left facing nobody has the same one way out: the rematch stays in the group of the game it follows, so they
+    // are not the first to leave, and nothing counts against them.
+    public async Task ThePlayerLeftBehindByAWalkOutAsTheRematchStartsIsNotCounted()
+    {
+        Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
+        await PlayedAMatchmadeMatchAsync();
+        var launcher = new Launcher();
+        var rematches = Service(new Lobbies(), launcher);
+        await rematches.AcceptAsync(P1);
+        await rematches.AcceptAsync(P2);
+        var now = DateTimeOffset.UtcNow;
+
+        var left = await Quits().ReportAsync(P1, now);
+        Assert.Equal((true, "the first to leave"), (left.Counted, left.Reason));
+        await MatchmakingQueue.FoundAsync(Db, [P1, P2], Assert.Single(launcher.Launched).MatchId);
+
+        Assert.Equal("in_match", (string?)await Db.HashGetAsync($"player:{P2}", "status"));
+        var stuck = await Quits().ReportAsync(P2, now.AddSeconds(40));
+        Assert.Equal((false, "not the first to leave", 0), (stuck.Counted, stuck.Reason, stuck.Count));
+    }
+
+    private QuitTracker Quits() => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
+        new TestOptions<QuitSettings>(new QuitSettings()), NullLogger<QuitTracker>.Instance);
+
+    [SkippableFact]
+    // A Casual rematch that cannot start leaves its players idle, as the vote found them; and a voter whose record is
+    // gone (their disconnect's cleanup) gets none holding a status alone.
+    public async Task ACasualRematchThatCannotStartLeavesItsPlayersIdle()
+    {
+        Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
+        await Db.HashSetAsync($"player:{P1}", "status", "idle");
+        await RematchVotes.OpenCasualAsync(Db, TimeProvider.System, Match, OneVsOneConfig());
+        var launcher = new Launcher(starts: false);
+        var rematches = Service(new Lobbies(), launcher);
+
+        await rematches.AcceptAsync(P1);
+        await rematches.AcceptAsync(P2);
+
+        Assert.Single(launcher.Launched);
+        Assert.Equal("idle", (string?)await Db.HashGetAsync($"player:{P1}", "status"));
+        Assert.False(await Db.KeyExistsAsync($"player:{P2}"));
+        Assert.All(await SentAsync(2), m => Assert.Contains("RematchDeclinedNotification", m, StringComparison.Ordinal));
     }
 
     [SkippableFact]

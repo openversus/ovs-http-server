@@ -143,6 +143,13 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
 
         /// <summary>Solo entry only: FFA and 1v1 Testing Grounds (the game's bPartyEligible false; 2v2's takes parties).</summary>
         public bool IsSoloOnly => IsFfa || TestingGrounds == Matchmaking.TestingGrounds.OneVsOne;
+
+        /// <summary>
+        /// What a refusal's log line calls a search of it ("2v2 Testing Grounds matchmaking"): the queue by its name, since
+        /// <paramref name="size"/> (1v1, 2v2) alone names only the handler, which FFA, Casual, Testing Grounds and Arenas share.
+        /// </summary>
+        public string Search(string size) =>
+            $"{(TestingGrounds is { } testingGrounds ? testingGrounds.ListedMode : IsFfa ? "FFA" : IsCasual ? $"Casual {size}" : List1v1 == Arenas.ArenaMatchmaking.List ? "Arena" : size)} matchmaking";
     }
 
     private static readonly Queue Regular = new("1v1-retail", "2v2-retail", "1v1", "2v2");
@@ -185,12 +192,12 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         string kind = queue.IsFfa ? "FFA" : queue.TestingGrounds is not null ? "Testing Grounds" : "1v1";
         log.LogInformation("Received {Kind} {Criteria} matchmaking request", kind, queue.Criteria1v1);
 
-        if (await gate.BlockOutdatedAsync([me], log, "1v1 matchmaking"))
+        if (await gate.BlockOutdatedAsync([me], log, queue.Search("1v1")))
         {
             return new MatchmakingAnswer(200, gate.FailureBody());
         }
 
-        if (services.GetService<IQuitTracker>() is { } quits1v1 && await quits1v1.RefuseLockedAsync([me], log, "1v1 matchmaking"))
+        if (services.GetService<IQuitTracker>() is { } quits1v1 && await quits1v1.RefuseLockedAsync([me], log, queue.Search("1v1")))
         {
             return new MatchmakingAnswer(200, gate.FailureBody());
         }
@@ -395,12 +402,12 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         var lobbyPlayers = lobbyId is null ? null : await LobbyStore.PlayersOfAsync(redis, lobbyId);
         var all = lobbyPlayers ?? [id];
 
-        if (await gate.BlockOutdatedAsync(all, log, "2v2 matchmaking"))
+        if (await gate.BlockOutdatedAsync(all, log, queue.Search("2v2")))
         {
             return new MatchmakingAnswer(200, gate.FailureBody());
         }
 
-        if (services.GetService<IQuitTracker>() is { } quits2v2 && await quits2v2.RefuseLockedAsync(all, log, "2v2 matchmaking"))
+        if (services.GetService<IQuitTracker>() is { } quits2v2 && await quits2v2.RefuseLockedAsync(all, log, queue.Search("2v2")))
         {
             return new MatchmakingAnswer(200, gate.FailureBody());
         }

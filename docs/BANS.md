@@ -109,7 +109,7 @@ Three YAML lists, each a top-level `terms:` list of single-quoted strings (`Bans
 never pattern syntax. A blank term is skipped.
 
 - **Banned** (`banned_names.yaml`): a name containing a term anywhere bans the person.
-- **Force change** (`force_change_names.yaml`): a name containing a term as a whole word (neither neighbour a letter or
+- **Force change** (`force_change_names.yaml`): a name containing a term as a whole word (neither neighbor a letter or
   digit; `_`, spaces and symbols separate words) must change.
 - **Allowed** (`allowed_names.yaml`): words that contain a term but are fine. An occurrence that lies entirely inside
   an allowed word is not a hit; the same term elsewhere in the name still is.
@@ -144,9 +144,23 @@ walk-out. The access to it is the identify token, as `/ovs/notifications`.
 The lobbies service counts it when the player was in a matchmade match (`player:{id}` status `in_match`, a Casual
 rematch vote, or a ranked set) and was the first to leave that match: whoever is left can find their game stuck waiting,
 and their only way out is the same exit, so a second leaver is never counted. A custom lobby and a match against bots
-alone never count. `Quits:Limit` (3) counted quits within `Quits:WindowMinutes` (30) refuse the player's matchmaking
+alone never count.
+
+An unranked match (Casual, Testing Grounds) is played again through its rematch vote, game after game, and each of those
+games counts as the first does: the rematch sets its players `in_match` again (nobody holds a ticket there, which is
+what sets it for a match the matchmaker finds) and stays in the first game's group, so the first-leaver rule is per
+match with the rematches that follow it, as it is per ranked set: a player who walks out just as a rematch starts
+leaves the other facing nobody, and that player is not the first to leave.
+
+A rematch vote is no majority's: one decline ends it for everyone, and no answer by its timer is an accept. A quit
+reported while a vote is open, by a player with a say in it, is their decline, whatever kind of match it was (a custom
+lobby's too, where the quit itself never counts) and with `Quits:Enabled` on or off: the vote is over, everyone is sent
+`RematchDeclinedNotification`, and no rematch starts. A spectator's quit declines nothing, nor a quit with no vote open.
+
+`Quits:Limit` (3) counted quits within `Quits:WindowMinutes` (30) refuse the player's matchmaking
 tickets (1v1, 2v2, FFA, Testing Grounds) for `Quits:LockoutMinutes` (15), the same way an outdated client's are, and
-each refused request shows the banner `Quits:BannerTitle` / `Quits:BannerMessage` (`{minutes}` left). `Quits:Enabled`
+each refused request shows the banner `Quits:BannerTitle` / `Quits:BannerMessage` (`{minutes}` left). The refusal is
+logged under the queue's own name (`Refused 2v2 Testing Grounds matchmaking: ...`). `Quits:Enabled`
 off keeps the reports in the log and counts nothing. The account keeps two lifetime counters, `ragequit_total` (every
 counted quit) and `ragequit_put_in_timeout` (every lockout); `ovsctl player show` lists the count in the window, the
 lockout, and both.

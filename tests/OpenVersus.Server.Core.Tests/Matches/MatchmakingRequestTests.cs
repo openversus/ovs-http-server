@@ -148,7 +148,8 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     // FFA always open unless a test says otherwise (FfaScheduleTests has the window). Twosday off unless a test turns it
     // on (Twosday:Enabled), so a run on a real Tuesday evening is like any other.
     private MatchmakingRequestService Service(MongoDB.Driver.IMongoDatabase? mongo = null, FfaSettings? ffa = null, TimeProvider? time = null, bool withRedis = true,
-        TestingGroundsSettings? testingGrounds = null, BetaSpeedSettings? betaSpeed = null, RankedSettings? ranked = null, bool twosday = false, bool party = false, bool quits = false)
+        TestingGroundsSettings? testingGrounds = null, BetaSpeedSettings? betaSpeed = null, RankedSettings? ranked = null, bool twosday = false, bool party = false, bool quits = false,
+        Microsoft.Extensions.Logging.ILogger<MatchmakingRequestService>? log = null)
     {
         var collection = new ServiceCollection();
         if (quits && _redis is not null)
@@ -190,7 +191,17 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         return new MatchmakingRequestService(services, _gate, _cosmetics,
             new EloRatings(services, rankedOptions, TimeProvider.System, NullLogger<EloRatings>.Instance), _launcher,
             new TestOptions<LobbySettings>(new LobbySettings { GameVersion = "195303.1.1" }), new TestOptions<FfaSettings>(ffa ?? new FfaSettings { WeekendOnly = false }),
-            rankedOptions, time ?? TimeProvider.System, NullLogger<MatchmakingRequestService>.Instance);
+            rankedOptions, time ?? TimeProvider.System, log ?? NullLogger<MatchmakingRequestService>.Instance);
+    }
+
+    // The service's log lines, kept.
+    private sealed class Lines : Microsoft.Extensions.Logging.ILogger<MatchmakingRequestService>
+    {
+        public List<string> Logged { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Logged.Add(formatter(state, exception));
     }
 
     // start_arena_direct's (the arenas service's), on the same Redis, gate and launcher.
@@ -252,6 +263,31 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
         var banner = (JsonObject)Js.Parse((string?)await Db.ListGetByIndexAsync(PlayerMessages.NotificationPrefix + Me, 0))!;
         Assert.Contains("touch some grass", Js.Stringify(banner));
         Assert.Contains("9 minutes", Js.Stringify(banner));
+    }
+
+    [SkippableFact]
+    // Both Testing Grounds queues refuse a locked-out player as every other queue does: no ticket, the banner, and the
+    // refusal logged under the queue's own name (1v1 and 2v2 alone would name only the handler every queue shares).
+    public async Task APlayerLockedOutForWalkingOutIsRefusedByBothTestingGroundsQueues()
+    {
+        Skip.If(_redis is null, "set OVS_TEST_REDIS to run");
+        await PlayerAsync(Me);
+        await Db.StringSetAsync(QuitTracker.LockoutPrefix + Me, DateTimeOffset.UtcNow.AddMinutes(9).ToUnixTimeMilliseconds());
+        var wednesday = new Clock(DateTimeOffset.Parse("2026-10-07T18:00:00Z"));
+        var log = new Lines();
+
+        foreach (string criteria in new[] { "EVT_2_Player_1-retail", "EVT_4_Player_2-retail" })
+        {
+            var answer = (await Service(ffa: new FfaSettings(), time: wednesday, quits: true, log: log).RequestAsync(criteria, Asking(Me) with { BetaSpeed = "110" }, CancellationToken.None))!;
+            Assert.Equal(200, answer.Status);
+            Assert.Contains("client_update_required", Js.Stringify(answer.Body));
+            Assert.Null(answer.After);
+        }
+
+        Assert.Empty(await TicketsAsync());
+        Assert.Equal(2, await Db.ListLengthAsync(PlayerMessages.NotificationPrefix + Me));
+        Assert.Contains(log.Logged, l => l.StartsWith("Refused 1v1 Testing Grounds matchmaking", StringComparison.Ordinal) && l.Contains(Me));
+        Assert.Contains(log.Logged, l => l.StartsWith("Refused 2v2 Testing Grounds matchmaking", StringComparison.Ordinal) && l.Contains(Me));
     }
 
     private static PartyRequest Asking(string player) => new(player, new JsonObject { ["id"] = player, ["profile_id"] = "0000000000000000000b0900" }, Ip,
@@ -907,7 +943,7 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
 
     [SkippableFact]
     // FFA is solo entry: a lobby of two is answered as queued (a refused request would leave the game waiting, its cancel
-    // greyed out), nothing is queued, and both games are told the search started and then that it was cancelled, each
+    // grayed out), nothing is queued, and both games are told the search started and then that it was canceled, each
     // player gets a banner (no toast), and the party's ready goes.
     public async Task AnFfaRequestFromALobbyOfTwoIsAnsweredThenCancelled()
     {

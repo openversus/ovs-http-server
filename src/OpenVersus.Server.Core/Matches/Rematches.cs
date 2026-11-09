@@ -28,11 +28,19 @@ namespace OpenVersus.Server.Core.Matches;
 //   The timer (RematchSweep, in lobbies): a vote still open when its 25 s are up starts the rematch, accepted or not:
 //     on the game's post-match screen the timer running out is a rematch.
 //   rematch_decline (lobbies): the vote is over, and everyone (a lobby's players, spectators too; a Casual match's
-//     players) is sent RematchDeclinedNotification, which takes the game back to its menus.
+//     players) is sent RematchDeclinedNotification, which takes the game back to its menus. The vote is no majority's:
+//     one decline ends it for everyone, and no answer by the timer is an accept.
+//   A walk-out (the game's exit, reported to POST /ovs/quit: QuitTracker, in the web service) by one of the vote's
+//     players while it is open is their decline: the vote is over and everyone is sent back, whatever kind of match it
+//     was. Not a spectator's (they have no say), and nothing when no vote is open (a quit from a lobby's menus, or
+//     mid-match, declines nothing).
 //   The start: a lobby's match as its leader's start_custom_match (ICustomLobbyService.RematchAsync); a Casual match
 //     again with the same players, teams, player indexes, host and parties, the bots the same fighters (bot_config, a
 //     day), on a new map, unranked as before (IMatchLauncher). A rematch that cannot start (no player but bots left in
-//     the lobby's teams, a client that must update, no rollback port) is declined for everyone.
+//     the lobby's teams, a client that must update, no rollback port) is declined for everyone. A Casual rematch's
+//     players are in a match again from here (player:{id} status in_match: nobody holds a ticket, which is what sets it
+//     for a match the matchmaker finds), and the rematch is named for the quit tracker, which keeps it in the group of
+//     the game it follows (QuitTracker): a walk-out of the rematch counts as one of the first game does.
 //
 // The vote's timer key is its claim: the accept or the timer that deletes it (a script comparing it with the match, for
 // a lobby: GETDEL, for a Casual match) is the one that starts the rematch, so it starts once, whichever replica of
@@ -43,7 +51,8 @@ namespace OpenVersus.Server.Core.Matches;
 // Redis, written  ssc_custom_lobby_rematch_timer:{lobby} = match EX 30; ssc_custom_lobby_rematch_accept:{lobby} set EX 30;
 //                 ssc_custom_lobby_match:{match} deleted; casual_rematch:{match} = config EX 30;
 //                 casual_rematch_accept:{match} set EX 30; casual_rematch_player:{player} = match EX 30;
-//                 rematch:due (ZADD; ZREM by the sweep)
+//                 rematch:due (ZADD; ZREM by the sweep); a Casual rematch's start: player:{player} status in_match
+//                 (idle again when it cannot start), quit_rematch:{the rematch} (QuitTracker)
 // Published       ws:send (RematchDeclinedNotification)
 //
 // Unlike the TS server's (each asserted by tools/matches/match_end_diff.mjs):
@@ -201,6 +210,36 @@ internal sealed class Rematches(IServiceProvider services, ICustomLobbyService l
         await DeclinedAsync(redis, RematchVotes.Voters(config), match);
     }
 
+    /// <summary>
+    /// The game of <paramref name="playerId"/> is exiting (its quit report: QuitTracker) while a rematch vote they have a
+    /// say in is open: that is their decline, so the vote is over and everyone in it is sent back. What was declined, for
+    /// the log; null when they are in no open vote (or it was just started or declined: the claim is the vote's own).
+    /// </summary>
+    public static async Task<string?> WalkedOutAsync(IDatabase redis, string playerId)
+    {
+        if ((string?)await redis.StringGetAsync(RematchVotes.LobbyPlayerKey(playerId)) is { Length: > 0 } lobbyId
+            && (string?)await redis.StringGetAsync(RematchVotes.LobbyTimerKey(lobbyId)) is { Length: > 0 } lobbyMatch
+            && await CustomLobbyService.HumansAsync(redis, lobbyId) is { } humans)
+        {
+            if (!humans.Playing.Contains(playerId) || !await ClaimLobbyAsync(redis, lobbyId, lobbyMatch))
+            {
+                return null;
+            }
+
+            await DeclinedAsync(redis, humans.All, "");
+            return $"custom lobby {lobbyId}";
+        }
+
+        if ((string?)await redis.StringGetAsync(RematchVotes.CasualPlayerKey(playerId)) is not { Length: > 0 } match
+            || await ClaimCasualAsync(redis, match) is not { } config)
+        {
+            return null;
+        }
+
+        await DeclinedAsync(redis, RematchVotes.Voters(config), match);
+        return $"Casual match {match}";
+    }
+
     public async Task TimerAsync(string entry, CancellationToken ct)
     {
         var redis = Redis();
@@ -304,9 +343,28 @@ internal sealed class Rematches(IServiceProvider services, ICustomLobbyService l
             fields["customNumRingouts"] = ringouts.DeepClone();
         }
 
-        var launched = await launcher.LaunchAsync(new MatchLaunch(mode, MatchmakingMaps.Pick(mode, matchId, log), mode, players,
-            GameplayConfigOverride: config["gameplayConfigOverride"] as JsonObject ?? BotDefaults.UnrankedConfigOverride(),
-            BotPerks: BotDefaults.PerksArray(), NotificationFields: fields), ct);
+        // Its players are in a match again, and the quit tracker knows the match by name as a rematch. Both before the
+        // launch: once launched, the match flow may find it (or call it off, and set its players idle) at any moment.
+        // Both undone when it does not launch (no rollback port, or the launch failed): nobody is in a match then.
+        string rematchId = MongoDB.Bson.ObjectId.GenerateNewId().ToString();
+        await QuitTracker.RematchAsync(redis, rematchId);
+        await StatusAsync(redis, voters, "in_match");
+        LaunchedMatch? launched = null;
+        try
+        {
+            launched = await launcher.LaunchAsync(new MatchLaunch(mode, MatchmakingMaps.Pick(mode, matchId, log), mode, players,
+                GameplayConfigOverride: config["gameplayConfigOverride"] as JsonObject ?? BotDefaults.UnrankedConfigOverride(),
+                BotPerks: BotDefaults.PerksArray(), NotificationFields: fields, MatchId: rematchId), ct);
+        }
+        finally
+        {
+            if (launched is null)
+            {
+                await QuitTracker.NoRematchAsync(redis, rematchId);
+                await StatusAsync(redis, voters, "idle");
+            }
+        }
+
         if (launched is null)
         {
             log.LogWarning("The rematch of Casual match {Match} could not start: declined for everyone", matchId);
@@ -315,6 +373,19 @@ internal sealed class Rematches(IServiceProvider services, ICustomLobbyService l
         }
 
         log.LogInformation("Casual match {Match} is the rematch of {Previous}", launched.MatchId, matchId);
+    }
+
+    // player:{id} status, only where the player's record is there: a player whose session is gone (their disconnect's
+    // cleanup) gets no record holding a status alone (as MatchStatusEvents' idle).
+    private static async Task StatusAsync(IDatabase redis, IEnumerable<string> playerIds, string status)
+    {
+        foreach (string id in playerIds)
+        {
+            var set = redis.CreateTransaction();
+            set.AddCondition(Condition.KeyExists($"player:{id}"));
+            _ = set.HashSetAsync($"player:{id}", "status", status);
+            await set.ExecuteAsync();
+        }
     }
 
     // RematchDeclinedNotification: the game goes back to its menus. A lobby's names no match (as the TS server's).

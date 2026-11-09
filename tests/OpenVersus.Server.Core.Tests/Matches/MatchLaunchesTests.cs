@@ -185,6 +185,30 @@ public sealed class MatchLaunchesTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // The match flow finds a rematch under the name it was launched with (Rematches names it for the quit tracker
+    // beforehand): its players stay in the group of the game it follows. The same match unnamed is a group of its own.
+    public async Task ARematchFoundByTheMatchFlowKeepsItsPlayersGroup()
+    {
+        Skip.If(_redis is null, "OVS_TEST_REDIS not set");
+        await QuitTracker.GroupAsync(Db, [P1, P2, Spectator]);
+        string group = (string)(await Db.StringGetAsync(QuitTracker.GroupPrefix + P1))!;
+        var stream = Stream();
+        await stream.EnsureGroupAsync(Db);
+
+        await QuitTracker.RematchAsync(Db, Match);
+        await MatchLaunches.AnnounceAsync(Db, Match, Notification(), s_parties);
+        Assert.Equal(1, await stream.ReadAsync(Db, CancellationToken.None));
+        Assert.Equal(group, (string?)await Db.StringGetAsync(QuitTracker.GroupPrefix + P1));
+        Assert.Equal(group, (string?)await Db.StringGetAsync(QuitTracker.GroupPrefix + P2));
+        Assert.False(await Db.KeyExistsAsync(QuitTracker.RematchPrefix + Match));
+
+        string next = Id(101);
+        await MatchLaunches.AnnounceAsync(Db, next, Notification().Replace(Match, next, StringComparison.Ordinal), s_parties);
+        Assert.Equal(1, await stream.ReadAsync(Db, CancellationToken.None));
+        Assert.NotEqual(group, (string?)await Db.StringGetAsync(QuitTracker.GroupPrefix + P1));
+    }
+
+    [SkippableFact]
     public async Task EachGameIsToldWhereToConnectThenMatchmakingCompleteThenTheConfig()
     {
         Skip.If(_redis is null, "OVS_TEST_REDIS not set");

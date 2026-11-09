@@ -17,7 +17,9 @@ public sealed class QuitTrackerTests : IAsyncLifetime
     private static readonly string? s_mongo = Environment.GetEnvironmentVariable("OVS_TEST_MONGO");
     private const string TestMongoDb = "ovs_quit_tests";
     private MongoClient? _mongo;
-    private static readonly DateTimeOffset s_now = new(2026, 11, 5, 20, 0, 0, TimeSpan.Zero);
+    // The real clock's now, to the millisecond (a lockout is kept in ms): RefuseLockedAsync reads the real clock, so a
+    // date written here would pass only until its lockout was over.
+    private static readonly DateTimeOffset s_now = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
     private ConnectionMultiplexer? _redis;
     private readonly QuitSettings _settings = new();
 
@@ -108,6 +110,39 @@ public sealed class QuitTrackerTests : IAsyncLifetime
         await Db.StringSetAsync(RematchVotes.CasualPlayerKey(Me), "match1");
         var rematch = await Tracker().ReportAsync(Me, s_now.AddMinutes(2));
         Assert.Equal((true, 2), (rematch.Counted, rematch.Count));
+    }
+
+    [SkippableFact]
+    // Every launch's players are grouped when their match is found (MatchmakingQueue.FoundAsync), a custom lobby's too:
+    // nobody there held a ticket, so they are left as they were, and a quit from it is not a walk-out.
+    public async Task AMatchFoundWithoutATicketIsNotAMatchmadeOne()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS to run");
+        foreach (string id in new[] { Me, Other })
+        {
+            await Db.HashSetAsync($"player:{id}", "status", "idle");
+        }
+
+        await MatchmakingQueue.FoundAsync(Db, [Me, Other]);
+
+        var verdict = await Tracker().ReportAsync(Me, s_now);
+        Assert.Equal((false, "not in a matchmade match", 0), (verdict.Counted, verdict.Reason, verdict.Count));
+    }
+
+    [SkippableFact]
+    // A group a player still carries from a match with another human is not the next match's: one found for them alone
+    // (against bots, launched without a ticket) is a group of its own, so a quit at its rematch vote is still one from a
+    // match against bots.
+    public async Task ABotMatchAfterAMatchWithAHumanIsStillAMatchAgainstBots()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS to run");
+        await MatchFoundAsync(Me, Other);
+        await Db.HashSetAsync($"player:{Me}", "status", "idle");
+        await MatchmakingQueue.FoundAsync(Db, [Me], "0000000000000000000a0900");
+        await Db.StringSetAsync(RematchVotes.CasualPlayerKey(Me), "0000000000000000000a0900");
+
+        var verdict = await Tracker().ReportAsync(Me, s_now);
+        Assert.Equal((false, "a match against bots", 0), (verdict.Counted, verdict.Reason, verdict.Count));
     }
 
     [SkippableFact]

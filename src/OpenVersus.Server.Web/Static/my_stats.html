@@ -199,6 +199,21 @@
           </div>
         </div>
 
+        <div id="random_section" hidden>
+          <div class="section_title">Played as Random</div>
+          <div class="subtitle">The fighters Random rolled for you, each counted once per set by the game it played. These sets are in Random's own record above, and are not part of those fighters' records.</div>
+          <div class="char_tables">
+            <div>
+              <h3>1v1</h3>
+              <table><thead><tr><th>Fighter</th><th class="num">W</th><th class="num">L</th><th class="num">Win %</th></tr></thead><tbody id="random_1v1_tbody"></tbody></table>
+            </div>
+            <div>
+              <h3>2v2</h3>
+              <table><thead><tr><th>Fighter</th><th class="num">W</th><th class="num">L</th><th class="num">Win %</th></tr></thead><tbody id="random_2v2_tbody"></tbody></table>
+            </div>
+          </div>
+        </div>
+
         <div class="section_title">1v1 Matchups</div>
         <div class="matchup_picker"><label for="matchup_char">Playing as</label><select id="matchup_char"></select></div>
         <table>
@@ -244,6 +259,9 @@
     // Ranked record, per-character records and 1v1 matchups (PlayerStats.characters_1v1/_2v2,
     // written per set by recordSetStats), as the stored wins and losses: the one count every
     // record has kept the same way (the dodge counters changed meaning on 2026-04-20).
+    // Random (the Random pick) is a character here: its entry counts each set played as Random
+    // once, so the records still add up to the sets played, and holds the fighters it rolled in
+    // `fighters`, shown in a section of their own and never added to those fighters' records.
     (function() {
       const chars = JSON.parse(document.getElementById("char_data").textContent || "{}");
       const CHARACTER_NAMES = {
@@ -259,7 +277,9 @@
         'character_c029': 'Aquaman', 'character_c030': 'Powerpuff Girls', 'character_c031': 'Marceline',
         'character_bananaguard': 'Banana Guard', 'character_jason': 'Jason Voorhees',
         'character_c036': 'Agent Smith', 'character_c038': 'Lola Bunny', 'character_c16': 'LeBron James',
+        'character_ovs_random': 'Random',
       };
+      const RANDOM = 'character_ovs_random';
       const nameOf = (slug) => {
         if (!slug) return "Unknown";
         const lower = String(slug).toLowerCase();
@@ -271,11 +291,14 @@
       const winPct = (w, l) => (w + l) > 0 ? ((w / (w + l)) * 100).toFixed(1) + "%" : "—";
 
       const played = (c) => ({ wins: n(c.wins), losses: n(c.losses) });
-      const rowsFor = (mode) => Object.entries(chars[mode] || {})
+      const rowsOf = (entries) => Object.entries(entries || {})
         .filter(([slug]) => slug && slug !== "unknown")
         .map(([slug, c]) => Object.assign({ slug, c: c || {} }, played(c || {})))
         .filter(r => r.wins + r.losses > 0)
         .sort((a, b) => (b.wins + b.losses) - (a.wins + a.losses));
+      const rowsFor = (mode) => rowsOf(chars[mode]);
+      // The fighters played as Random in a mode (inside Random's entry).
+      const randomRowsFor = (mode) => rowsOf(((chars[mode] || {})[RANDOM] || {}).fighters);
 
       // textContent only, so names from the data can never inject markup.
       function textCell(tr, text, className) {
@@ -332,20 +355,41 @@
         if (rows.length === 0) emptyRow(tbody, "No ranked " + mode + " sets yet.", 4);
       }
 
+      // ─── Played as Random ───────────────────────────────────────────
+      let anyRandom = false;
+      for (const mode of ["1v1", "2v2"]) {
+        const tbody = document.getElementById("random_" + mode + "_tbody");
+        const rows = randomRowsFor(mode);
+        anyRandom = anyRandom || rows.length > 0;
+        for (const r of rows) {
+          const tr = document.createElement("tr");
+          textCell(tr, nameOf(r.slug), "move_name");
+          textCell(tr, fmt(r.wins), "num win");
+          textCell(tr, fmt(r.losses), "num loss");
+          textCell(tr, winPct(r.wins, r.losses), "num");
+          tbody.appendChild(tr);
+        }
+        if (rows.length === 0) emptyRow(tbody, "No ranked " + mode + " sets as Random yet.", 4);
+      }
+      document.getElementById("random_section").hidden = !anyRandom;
+
       // ─── 1v1 matchups ───────────────────────────────────────────────
+      // Each character played, then each fighter played as Random (its entry inside Random's).
       const picker = document.getElementById("matchup_char");
       const matchupBody = document.getElementById("matchups_tbody");
-      const mine = rowsFor("1v1").filter(r => Object.keys(r.c.matchups || {}).length > 0);
+      const withMatchups = (r) => Object.keys(r.c.matchups || {}).length > 0;
+      const mine = rowsFor("1v1").filter(withMatchups).map(r => Object.assign(r, { key: r.slug, label: nameOf(r.slug) }))
+        .concat(randomRowsFor("1v1").filter(withMatchups).map(r => Object.assign(r, { key: RANDOM + "/" + r.slug, label: nameOf(r.slug) + " as Random" })));
       for (const r of mine) {
         const opt = document.createElement("option");
-        opt.value = r.slug;
-        opt.textContent = nameOf(r.slug) + " (" + fmt(r.wins + r.losses) + " sets)";
+        opt.value = r.key;
+        opt.textContent = r.label + " (" + fmt(r.wins + r.losses) + " sets)";
         picker.appendChild(opt);
       }
 
-      function renderMatchups(slug) {
+      function renderMatchups(key) {
         matchupBody.textContent = "";
-        const own = (chars["1v1"] || {})[slug] || {};
+        const own = (mine.find(r => r.key === key) || { c: {} }).c;
         const rows = Object.entries(own.matchups || {})
           .filter(([opp]) => opp && opp !== "unknown")
           .map(([opp, m]) => ({
@@ -372,7 +416,7 @@
 
       picker.disabled = mine.length === 0;
       picker.addEventListener("change", () => renderMatchups(picker.value));
-      renderMatchups(mine.length ? mine[0].slug : "");
+      renderMatchups(mine.length ? mine[0].key : "");
     })();
   </script>
   <script>

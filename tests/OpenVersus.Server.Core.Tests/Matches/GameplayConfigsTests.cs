@@ -378,6 +378,20 @@ public sealed class GameplayConfigsTests : IAsyncLifetime
     }
 
     [Fact]
+    // What a fighter won as Random (kept inside Random's entry, apart from the fighter's own) counts for its tracker;
+    // Random's own count of those sets does not.
+    public void AStatTrackerCountsWhatTheFighterWonAsRandom()
+    {
+        var stats = Stats(new BsonDocument
+        {
+            { "character_C025", new BsonDocument("wins", 3) },
+            { RandomFighter.Character, new BsonDocument { { "wins", 50 }, { "fighters", new BsonDocument { { "character_C025", new BsonDocument("wins", 4) }, { "character_jake", new BsonDocument("wins", 9) } } } } },
+        });
+
+        Assert.Equal(7, StatTrackerValues.Value("stattracking_c025wins", stats));
+    }
+
+    [Fact]
     public void AStatTrackerFindsAFighterStoredUnderItsAlias()
     {
         var stats = Stats(twoVsTwo: new BsonDocument("character_creature", new BsonDocument("wins", 7)));

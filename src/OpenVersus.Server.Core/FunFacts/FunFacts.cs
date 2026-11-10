@@ -884,6 +884,10 @@ public static partial class FunFactRules
         {
             return name;
         }
+        if (Matches.RandomFighter.IsRandom(slug))
+        {
+            return "Random";
+        }
         string clean = slug.StartsWith("character_", StringComparison.Ordinal) ? slug["character_".Length..] : slug;
         if (CCode().IsMatch(clean))
         {

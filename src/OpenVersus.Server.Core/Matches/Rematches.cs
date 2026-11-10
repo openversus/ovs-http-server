@@ -40,8 +40,9 @@ namespace OpenVersus.Server.Core.Matches;
 //     mid-match, declines nothing).
 //   The start: a lobby's match as its leader's start_custom_match (ICustomLobbyService.RematchAsync); a Casual match
 //     again with the same players, teams, player indexes, host and parties, the bots the same fighters (bot_config, a
-//     day), on a new map, unranked as before (IMatchLauncher). A rematch that cannot start (no player but bots left in
-//     the lobby's teams, a client that must update, no rollback port) is declined for everyone. A Casual rematch's
+//     day), a player who picked Random a new one (RandomFighter), on a new map, unranked as before (IMatchLauncher). A
+//     rematch that cannot start (no player but bots left in the lobby's teams, a client that must update, no rollback
+//     port) is declined for everyone. A Casual rematch's
 //     players are in a match again from here (player:{id} status in_match: nobody holds a ticket, which is what sets it
 //     for a match the matchmaker finds), and the rematch is named for the quit tracker, which keeps it in the group of
 //     the game it follows (QuitTracker): a walk-out of the rematch counts as one of the first game does.
@@ -486,6 +487,12 @@ internal sealed class Rematches(IServiceProvider services, ICustomLobbyService l
         if (config["customNumRingouts"] is JsonValue ringouts)
         {
             fields["customNumRingouts"] = ringouts.DeepClone();
+        }
+
+        // Whoever played the match as Random plays the rematch as a new fighter (the match config rolls it).
+        if (await RandomFighter.RollAgainAsync(redis, matchId) is { Count: > 0 } again)
+        {
+            log.LogInformation("The rematch of Casual match {Match}: {Players} picked Random and roll(s) again", matchId, string.Join(", ", again));
         }
 
         // Its players are in a match again, and the quit tracker knows the match by name as a rematch. Both before the

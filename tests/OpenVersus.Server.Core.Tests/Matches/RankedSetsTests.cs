@@ -28,7 +28,7 @@ public sealed class RankedSetsTests : IAsyncLifetime
     private const string TestMongoDb = "ovs_ranked_set_tests";
     private const string Prefix = "00000000000000000010";
     private static string Id(int n) => $"{Prefix}{n:D4}";
-    private static readonly string Set = Id(100), Game2 = Id(200), P1 = Id(1), P2 = Id(2);
+    private static readonly string Set = Id(100), Game2 = Id(200), Game3 = Id(300), P1 = Id(1), P2 = Id(2);
 
     private ConnectionMultiplexer? _redis;
     private IMongoClient? _mongo;
@@ -271,6 +271,127 @@ public sealed class RankedSetsTests : IAsyncLifetime
         var launch = Assert.Single(await Db.StreamRangeAsync(MatchLaunches.Stream), e => (string?)e["match"] == game);
         Assert.Equal("[]", (string?)launch["complete"]);
         Assert.Null(await RatingAsync(P1));
+    }
+
+    // A game of the set as its config left it: each player's fighter, and who went in as Random.
+    private async Task GameAsync(string game, string p1Fighter, string p2Fighter, params string[] random)
+    {
+        await Db.StringSetAsync($"match_characters:{game}", Js.Stringify(new JsonObject { [P1] = p1Fighter, [P2] = p2Fighter }));
+        foreach (string id in random)
+        {
+            await Db.SetAddAsync(RandomFighter.PickersKey(game), id);
+        }
+    }
+
+    private static JsonObject Config(string game) => new() { ["players"] = Players(), ["mode"] = "1v1", ["matchId"] = game };
+
+    [SkippableFact]
+    // The pick is locked for the set, the fighter is not: before the next game is announced, the session of a player who
+    // plays the set as Random holds the pick again (the next config rolls it); the other player's fighter stays.
+    public async Task APlayerWhoPickedRandomRollsAgainForTheNextGame()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync(gamesPlayed: 1, 1, 0);
+        await GameAsync(Set, "character_jake", "character_finn", P1);
+        await Db.HashSetAsync($"connections:{P1}", [new HashEntry("character", "character_jake"), new HashEntry("skin", "skin_jake_default")]);
+        await Db.HashSetAsync($"connections:{P2}", [new HashEntry("character", "character_finn"), new HashEntry("skin", "skin_finn_default")]);
+        var sets = Sets();
+
+        await sets.CheckinAsync(P1, Set);
+        Assert.Equal("character_jake", (string?)await Db.HashGetAsync($"connections:{P1}", "character"));
+        await sets.CheckinAsync(P2, Set);
+        _games.Add((string?)await Db.StringGetAsync($"ranked_set_match:{Set}") ?? throw new Xunit.Sdk.XunitException("no next game"));
+
+        Assert.Equal(RandomFighter.Character, (string?)await Db.HashGetAsync($"connections:{P1}", "character"));
+        Assert.Equal(RandomFighter.Skin, (string?)await Db.HashGetAsync($"connections:{P1}", "skin"));
+        Assert.Equal("character_finn", (string?)await Db.HashGetAsync($"connections:{P2}", "character"));
+    }
+
+    [SkippableFact]
+    // The same from the set's own record when the game's key is gone (it lives 30 min from its config).
+    public async Task TheSetRemembersWhoPlaysItAsRandom()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync(gamesPlayed: 1, 1, 0);
+        await GameAsync(Set, "character_jake", "character_finn", P1);
+        await SetGames.RecordAsync(Db, Set, Set, 0);
+        await Db.KeyDeleteAsync(RandomFighter.PickersKey(Set));
+        await Db.HashSetAsync($"connections:{P1}", "character", "character_jake");
+        var sets = Sets();
+
+        await sets.CheckinAsync(P1, Set);
+        await sets.CheckinAsync(P2, Set);
+        _games.Add((string?)await Db.StringGetAsync($"ranked_set_match:{Set}") ?? throw new Xunit.Sdk.XunitException("no next game"));
+
+        Assert.Equal(RandomFighter.Character, (string?)await Db.HashGetAsync($"connections:{P1}", "character"));
+        Assert.InRange((await Db.KeyTimeToLiveAsync(SetGames.Key(Set)))!.Value, TimeSpan.FromMinutes(29), TimeSpan.FromMinutes(30));
+    }
+
+    [SkippableFact]
+    // A whole set played as Random, three fighters, won 2-1: each game's winner and fighters are kept as it is counted
+    // (game 1's own keys would be gone by the third), and the set's end rates Random and every fighter by its game.
+    public async Task ASetPlayedAsRandomRatesRandomAndEveryFighterByItsGame()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync(gamesPlayed: 0, 0, 0);
+        var sets = Sets();
+        string[] both = [P1, P2];
+
+        await GameAsync(Set, "character_jake", "character_finn", P1);
+        await sets.RecordWinnerAsync(both, Set, 0);
+        Assert.Equal(GameEnd.Continues, (await sets.GameEndedAsync(Set, both, Config(Set), counts: true)).Kind);
+        // Game 1's keys expire long before a third game ends.
+        await Db.KeyDeleteAsync([new RedisKey($"match_characters:{Set}"), new RedisKey(RandomFighter.PickersKey(Set))]);
+
+        await Db.StringSetAsync($"ranked_set_match:{Set}", Game2);
+        await GameAsync(Game2, "character_taz", "character_finn", P1);
+        await sets.RecordWinnerAsync(both, Game2, 1);
+        Assert.Equal(GameEnd.Continues, (await sets.GameEndedAsync(Game2, both, Config(Game2), counts: true)).Kind);
+
+        await Db.StringSetAsync($"ranked_set_match:{Set}", Game3);
+        await GameAsync(Game3, "character_shaggy", "character_finn", P1);
+        await sets.RecordWinnerAsync(both, Game3, 0);
+        Assert.Equal(GameEnd.Over, (await sets.GameEndedAsync(Game3, both, Config(Game3), counts: true)).Kind);
+
+        // Two new players at 0, K 64, expected 0.5, a 2-1: the winner's delta is round(64 * 0.5 * 0.85) = 27.
+        var winner = (await RatingAsync(P1))!;
+        Assert.Equal(new BsonDocument
+        {
+            { RandomFighter.Character, new BsonDocument { { "elo", 27 }, { "wins", 1 }, { "losses", 0 }, { "streak", 1 } } },
+            { "character_jake", new BsonDocument { { "elo", 27 }, { "wins", 1 }, { "losses", 0 }, { "streak", 1 } } },
+            { "character_taz", new BsonDocument { { "elo", 0 }, { "wins", 0 }, { "losses", 1 }, { "streak", 0 } } },
+            { "character_shaggy", new BsonDocument { { "elo", 27 }, { "wins", 1 }, { "losses", 0 }, { "streak", 1 } } },
+        }.OrderBy(e => e.Name), winner["characters_1v1"].AsBsonDocument.OrderBy(e => e.Name));
+        Assert.Equal(27, winner["elo_1v1"].AsInt32);
+        Assert.Equal(1, winner["wins_1v1"].AsInt32);
+        Assert.Equal(0, winner["losses_1v1"].AsInt32);
+        // The other player kept one fighter: rated as ever.
+        var loser = (await RatingAsync(P2))!;
+        Assert.Equal(new BsonDocument("character_finn", new BsonDocument { { "elo", 0 }, { "wins", 0 }, { "losses", 1 }, { "streak", 0 } }), loser["characters_1v1"]);
+        await AssertDroppedAsync();
+        Assert.False(await Db.KeyExistsAsync(SetGames.Key(Set)));
+    }
+
+    [SkippableFact]
+    // A concede is a 2-0 for the other team whatever the games were: every fighter a Random picker played in the set
+    // gets the win and the rating, the one that lost game 1 and the one of the game the set ended in alike.
+    public async Task AConcedeIsATwoNilSetForEveryFighterPlayed()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync(gamesPlayed: 1, 0, 1);
+        await GameAsync(Set, "character_jake", "character_finn", P1);
+        await SetGames.RecordAsync(Db, Set, Set, 1);
+        await Db.StringSetAsync($"ranked_set_match:{Set}", Game2);
+        await GameAsync(Game2, "character_taz", "character_finn", P1);
+
+        await Sets().ConcedeAsync(P2);
+
+        // A concede counts in full: 64 * 0.5 = 32.
+        var winner = (await RatingAsync(P1))!["characters_1v1"].AsBsonDocument;
+        Assert.Equal(new BsonDocument { { "elo", 32 }, { "wins", 1 }, { "losses", 0 }, { "streak", 1 } }, winner[RandomFighter.Character]);
+        Assert.Equal(new BsonDocument { { "elo", 32 }, { "wins", 1 }, { "losses", 0 }, { "streak", 1 } }, winner["character_jake"]);
+        Assert.Equal(new BsonDocument { { "elo", 32 }, { "wins", 1 }, { "losses", 0 }, { "streak", 1 } }, winner["character_taz"]);
+        Assert.False(await Db.KeyExistsAsync(SetGames.Key(Set)));
     }
 
     [SkippableFact]

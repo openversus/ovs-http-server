@@ -446,8 +446,13 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
             var characters = await CharactersAsync(redis, [.. winners, .. losers], setId);
             // End Game's set XP: the dodger is the quitter, and the games the set finished before decide whether it pays.
             int gamesBefore = setId == matchId ? 0 : GamesFinished(await RollbackCallbacks.JsonAsync(redis, $"ranked_set:{setId}"));
+            // A Random picker's fighters: the set's counted games, and this one's (rolled with its config). A dodge
+            // concedes the set, a 2-0: every one of them counts as the set went, so it is no way to roll again for free.
+            var teams = configPlayers.Where(p => !RollbackCallbacks.Truthy(p["isSpectator"]) && Str(p["playerId"]).Length > 0)
+                .GroupBy(p => Str(p["playerId"])).ToDictionary(g => g.Key, g => IsNumber(g.First()["teamIndex"], 0) ? 0 : 1);
             await ratings.RateAsync(new SetOutcome(winners, losers, mode!, 0, 0, winnerTeam, IsConcede: true, characters, matchId, IsPregameDodge: true,
-                QuitterIds: [playerId], GamesBeforeDodge: gamesBefore), CancellationToken.None);
+                QuitterIds: [playerId], GamesBeforeDodge: gamesBefore,
+                RandomPickers: await SetGames.RandomPickersAsync(redis, setId, matchId, teams, winnerTeam, concede: true)), CancellationToken.None);
             log.LogInformation("Pregame dodge rated ({Reason}): {Player} left match {Match}", reason, playerId, matchId);
             if (services.GetService<IMongoDatabase>() is { } mongo)
             {
@@ -485,6 +490,8 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
                 await redis.KeyDeleteAsync($"ranked_set_checkins:{setId}");
                 await redis.KeyDeleteAsync($"ranked_set_match:{setId}");
             }
+
+            await redis.KeyDeleteAsync(SetGames.Key(setId));
         }
 
         // Every human of the match is released, spectators too: they wait on the same screen.

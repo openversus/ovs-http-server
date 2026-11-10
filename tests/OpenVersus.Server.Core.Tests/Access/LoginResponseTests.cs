@@ -47,6 +47,26 @@ public sealed class LoginResponseTests
         Assert.Equal(1.25, trackers["season5"]!["HighestDamageDealt"]!.GetValue<double>());
     }
 
+    [Fact]
+    // The sets a fighter played as Random are kept inside Random's entry: they count for that fighter's wins and matches.
+    public void AFightersTrackersCountTheSetsItPlayedAsRandom()
+    {
+        var stats = new BsonDocument("characters_1v1", new BsonDocument
+        {
+            { "character_A", new BsonDocument { { "wins", 1 }, { "losses", 2 } } },
+            { "character_ovs_random", new BsonDocument { { "wins", 5 }, { "losses", 1 }, { "fighters", new BsonDocument
+                {
+                    { "character_A", new BsonDocument { { "wins", 2 }, { "losses", 1 } } },
+                    { "character_B", new BsonDocument("losses", 1) },
+                } } } },
+        });
+        var trackers = LoginResponse.Build(Values(), StatTrackers.From(new BsonDocument(), stats))["profile"]!["server_data"]!["stat_trackers"]!;
+        Assert.Equal(3, trackers["character_wins"]!["character_A"]!.GetValue<double>());
+        Assert.Equal(6, trackers["character_matches"]!["character_A"]!.GetValue<double>());
+        Assert.Equal(1, trackers["character_matches"]!["character_B"]!.GetValue<double>());
+        Assert.Equal(6, trackers["character_matches"]!["character_ovs_random"]!.GetValue<double>());
+    }
+
     [Theory]
     [InlineData(2.5, 3)]
     [InlineData(-2.5, -2)]

@@ -248,7 +248,8 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
             Assign(data, configData);
         }
 
-        // Each player's fighter (bots and spectators have none here), kept for the set: a fighter is locked for it.
+        // Each player's fighter in this match (bots and spectators have none here), kept for its results and ratings: a
+        // fighter is locked for a ranked set, but for a Random pick's, which is new each game (RandomFighter).
         var characters = new JsonObject();
         foreach (var player in players.Where(p => !RollbackCallbacks.Truthy(p["isSpectator"])))
         {
@@ -624,8 +625,9 @@ internal sealed class GameplayConfigs(IServiceProvider services, ICosmeticsServi
 /// names (wins, ring-outs, total or highest damage dealt) for the fighter its bundle belongs to (AssociatedCharacter,
 /// stat-tracker-characters.json, from the TS server's data/inventoryDefs.ts by tools/matches/stat_tracker_characters.mjs),
 /// summed over the player's playerstats entries for that fighter in both modes (characters_1v1 and characters_2v2; the
-/// highest damage is the highest of them), rounded. An entry is that fighter's when its key is character_{AssociatedCharacter}
-/// (in any case, or the alias below), or the key without "character_" and underscores is the AssociatedCharacter.
+/// highest damage is the highest of them; the wins it played as Random, kept inside Random's entry, count too), rounded.
+/// An entry is that fighter's when its key is character_{AssociatedCharacter} (in any case, or the alias below), or the
+/// key without "character_" and underscores is the AssociatedCharacter.
 /// </summary>
 internal static class StatTrackerValues
 {
@@ -710,7 +712,10 @@ internal static class StatTrackerValues
                 continue;
             }
 
-            foreach (var entry in chars)
+            // The fighter's entries, and what it played as Random (inside Random's entry: SetRatings).
+            var inRandom = chars.GetValue(RandomFighter.Character, BsonNull.Value) is BsonDocument random
+                && random.GetValue(SetRatings.RandomFightersField, BsonNull.Value) is BsonDocument fighters ? fighters.Where(f => f.Value is BsonDocument) : [];
+            foreach (var entry in chars.Concat(inRandom))
             {
                 string stored = entry.Name;
                 string name = (stored.StartsWith("character_", StringComparison.Ordinal) ? stored["character_".Length..] : stored)

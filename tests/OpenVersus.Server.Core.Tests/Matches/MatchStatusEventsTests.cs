@@ -551,6 +551,36 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // A dodge is no way to roll again for free, and it concedes the set as a 2-0: the fighter a Random picker was rolled
+    // for the dodged game loses rating, with Random and the fighter of the game before, which it had won.
+    public async Task ADodgeCostsARandomPickerTheFighterTheyDodgedWith()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync();
+        await SeedSetAsync();
+        await Db.SetAddAsync("online_players", P1);
+        // P2 played game 1 (the set's id) as Random and won it, and was rolled another fighter for this game.
+        await Db.StringSetAsync($"match_characters:{Set}", Js.Stringify(new JsonObject { [P1] = "character_jake", [P2] = "character_finn" }));
+        await Db.SetAddAsync(RandomFighter.PickersKey(Set), P2);
+        await SetGames.RecordAsync(Db, Set, Set, 1);
+        await Db.StringSetAsync($"match_characters:{Match}", Js.Stringify(new JsonObject { [P1] = "character_jake", [P2] = "character_taz" }));
+        await Db.SetAddAsync(RandomFighter.PickersKey(Match), P2);
+
+        await SendAsync(Event("PlayerDisconnect", P2));
+
+        var ratings = Mongo.GetCollection<BsonDocument>("eloratings");
+        var dodger = await ratings.Find(new BsonDocument("account_id", P2)).FirstAsync();
+        var characters = dodger["characters_1v1"].AsBsonDocument;
+        Assert.Equal(["character_finn", RandomFighter.Character, "character_taz"], characters.Names.Order(StringComparer.Ordinal));
+        Assert.All(characters, c => Assert.Equal((0, 1), (c.Value["wins"].ToInt32(), c.Value["losses"].ToInt32())));
+        Assert.Equal(characters[RandomFighter.Character]["elo"], characters["character_taz"]["elo"]);
+        Assert.Equal(1, dodger["losses_1v1"].ToInt32());
+        var winner = await ratings.Find(new BsonDocument("account_id", P1)).FirstAsync();
+        Assert.True(characters["character_taz"]["elo"].ToDouble() < winner["characters_1v1"]["character_jake"]["elo"].ToDouble());
+        Assert.False(await Db.KeyExistsAsync(SetGames.Key(Set)));
+    }
+
+    [SkippableFact]
     public async Task AnUnratedDodgeSkipsOnlyTheRating()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");

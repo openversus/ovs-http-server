@@ -701,9 +701,9 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    // The Random fighter is rolled when the player queues: the ticket's skill is the rolled fighter's rating, the session
-    // holds that fighter for the match, and the lobby pick stays Random.
-    public async Task ARandomPickIsRolledAtTheQueueAndQueuesOnThatFightersRating()
+    // The Random pick queues as a character of its own: on the Random rating, and before it has one on the player's best
+    // character's. No fighter is rolled at the queue (the match config rolls it, for every game): the session holds the pick.
+    public async Task ARandomPickQueuesOnTheRandomRatingAndIsNotRolledAtTheQueue()
     {
         string? mongoUri = Environment.GetEnvironmentVariable("OVS_TEST_MONGO");
         Skip.If(_redis is null || string.IsNullOrEmpty(mongoUri), "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
@@ -727,11 +727,17 @@ public sealed class MatchmakingRequestTests : IAsyncLifetime
 
             var answer = (await Service(mongo).RequestAsync("1v1-retail", Asking(Me), CancellationToken.None))!;
             await answer.After!();
-            string rolled = (string?)await Db.HashGetAsync($"connections:{Me}", "character") ?? "";
-            int index = BotFighters.All.Select(f => f.Character).ToList().IndexOf(rolled);
-            Assert.True(index >= 0, $"rolled {rolled}");
-            Assert.Equal(1000 + index, (double)Js.Parse(await QueuedAsync())!["players"]![0]!["skill"]!);
+            Assert.Equal(1000 + BotFighters.All.Count - 1, (double)Js.Parse(await QueuedAsync())!["players"]![0]!["skill"]!);
+            Assert.Equal(RandomFighter.Character, (string?)await Db.HashGetAsync($"connections:{Me}", "character"));
             Assert.Equal(RandomFighter.Character, (string?)await Db.HashGetAsync($"player:{Me}", "character"));
+
+            // Once Random has a rating (its first rated set), that is the skill, whatever the other characters hold.
+            await mongo.GetCollection<MongoDB.Bson.BsonDocument>("eloratings").UpdateOneAsync(new MongoDB.Bson.BsonDocument("account_id", Me),
+                new MongoDB.Bson.BsonDocument("$set", new MongoDB.Bson.BsonDocument($"characters_1v1.{RandomFighter.Character}", new MongoDB.Bson.BsonDocument("elo", 777))));
+            answer = (await Service(mongo).RequestAsync("1v1-retail", Asking(Me), CancellationToken.None))!;
+            await answer.After!();
+            Assert.Equal(777, (double)Js.Parse(await QueuedAsync())!["players"]![0]!["skill"]!);
+            Assert.Equal(RandomFighter.Character, (string?)await Db.HashGetAsync($"connections:{Me}", "character"));
         }
         finally
         {

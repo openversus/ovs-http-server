@@ -63,7 +63,9 @@ namespace OpenVersus.Server.Core.Matches;
 // Each player's skill is their rating for the character in player:{id} (eloratings characters_1v1/characters_2v2, made
 // with the default rating when missing, as getOrCreateRating); for a character with none, their rating in the mode
 // (Ranked:NewCharacterSkill Account; the TS server searched at 0, and so waited out the window: Zero), 0 when this
-// service has no Mongo. partyId is the request's match (the game's lobby match), not the lobby id.
+// service has no Mongo. The Random pick (RandomFighter) is a character here as any other: it searches on the Random
+// rating (what its sets are rated on), and before it has one on the player's best character's. Its fighter is rolled
+// when the match config is built, not here. partyId is the request's match (the game's lobby match), not the lobby id.
 //
 // Cancel: everyone in the requester's lobby (or the requester) is canceled (MatchmakingQueue; the TS server published
 // matchmaking:cancel for its websocket); each of those players' party_ready:{lobby} is deleted. Answer {body: {}, metadata: null,
@@ -447,7 +449,6 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
                 && !(await redis.HashGetAsync($"connections:{pid}", "current_ip")).IsNullOrEmpty)
             {
                 await PlayedLoadout.RecordAsync(redis, pid, character, skin, Get(loadout, "profileIcon"));
-                await RollRandomAsync(redis, pid);
             }
         }
 
@@ -533,18 +534,7 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         }
 
         await PlayedLoadout.RecordAsync(redis, id, character, skin, Get(loadout, "profileIcon"));
-        await RollRandomAsync(redis, id);
         return (id, profile, null);
-    }
-
-    // The Random fighter is rolled when the player queues (not when the match is made), so the ticket's skill is that
-    // fighter's rating (TicketAsync) and the match plays that fighter: the match config finds it already in the session.
-    private async Task RollRandomAsync(IDatabase redis, string playerId)
-    {
-        if (await RandomFighter.ResolveAsync(redis, "queue-" + Guid.NewGuid().ToString("N"), playerId, $"connections:{playerId}") is { } pick)
-        {
-            log.LogInformation("Player {Player} queued as Random: rolled {Character} ({Skin})", playerId, pick.Character, pick.Skin);
-        }
     }
 
     // The Hydra matchmaking request the game is answered with. The 2v2 answer starts with its id; the 1v1 one ends with it.
@@ -703,14 +693,7 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
         foreach (string pid in players)
         {
             var config = await HashAsync(redis, $"player:{pid}");
-            // A Random pick's rolled fighter (RollRandomAsync put it in the session).
-            string character = Get(config, "character") ?? "";
-            if (RandomFighter.IsRandom(character) && (string?)await redis.HashGetAsync($"connections:{pid}", "character") is { Length: > 0 } rolled)
-            {
-                character = rolled;
-            }
-
-            var entry = new JsonObject { ["id"] = pid, ["region"] = "MVSI", ["skill"] = await SkillAsync(pid, character, matchType, ct) };
+            var entry = new JsonObject { ["id"] = pid, ["region"] = "MVSI", ["skill"] = await SkillAsync(pid, Get(config, "character") ?? "", matchType, ct) };
             if (Get(config, "ip") is { } ip)
             {
                 entry["ip"] = ip;
@@ -765,12 +748,13 @@ internal sealed class MatchmakingRequestService(IServiceProvider services, IClie
                 return JsonValue.Create(value);
             }
 
-            // The Random fighter (RandomFighter) has no rating of its own: the player's best character rating in this mode.
+            // The Random pick with no rating of its own yet (it has one from its first rated set, read above as any
+            // character's): the player's best character rating in this mode.
             if (RandomFighter.IsRandom(character) && rating.TryGetValue(field, out var all) && all is BsonDocument allMap
                 && allMap.Values.OfType<BsonDocument>().Select(s => s.TryGetValue("elo", out var e) && e.IsNumeric ? e.ToDouble() : 0).DefaultIfEmpty(0).Max() is var best
                 && best != 0 && !double.IsNaN(best))
             {
-                log.LogInformation("Player {Player} picked Random: using their best character ELO = {Elo}", playerId, best);
+                log.LogInformation("Player {Player} picked Random, which has no rating yet: using their best character ELO = {Elo}", playerId, best);
                 return JsonValue.Create(best);
             }
 

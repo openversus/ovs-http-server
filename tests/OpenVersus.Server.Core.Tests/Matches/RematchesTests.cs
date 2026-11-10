@@ -311,6 +311,29 @@ public sealed class RematchesTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // Whoever played the match as Random (RandomFighter: match_random:{match}) goes into the rematch with the pick in
+    // their session again, so its config rolls them a new fighter; the others keep theirs.
+    public async Task ACasualRematchRollsARandomPickAgain()
+    {
+        Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
+        await Db.HashSetAsync($"connections:{P1}", [new("character", "character_jake"), new("skin", "skin_jake_default")]);
+        await Db.HashSetAsync($"connections:{P2}", [new("character", "character_finn"), new("skin", "skin_finn_default")]);
+        await Db.SetAddAsync(RandomFighter.PickersKey(Match), P1);
+        await RematchVotes.OpenCasualAsync(Db, TimeProvider.System, Match, CasualConfig());
+        var launcher = new Launcher();
+        var rematches = Service(new Lobbies(), launcher);
+
+        await rematches.AcceptAsync(P1);
+        Assert.Equal("character_jake", (string?)await Db.HashGetAsync($"connections:{P1}", "character"));
+        await rematches.AcceptAsync(P2);
+
+        Assert.Single(launcher.Launched);
+        Assert.Equal(RandomFighter.Character, (string?)await Db.HashGetAsync($"connections:{P1}", "character"));
+        Assert.Equal(RandomFighter.Skin, (string?)await Db.HashGetAsync($"connections:{P1}", "skin"));
+        Assert.Equal("character_finn", (string?)await Db.HashGetAsync($"connections:{P2}", "character"));
+    }
+
+    [SkippableFact]
     // A 2v2 Testing Grounds match played again keeps what makes it one: its mutators (the rollback tick rate reads Beta
     // Speed) and its ringouts to win (6 lives each with Individual Stocks), beside its config override.
     public async Task ATestingGroundsRematchKeepsItsMutatorsAndRingouts()

@@ -40,18 +40,21 @@ namespace OpenVersus.Server.Core.Matches;
 //                 concedingPlayer}; ranked_set_match:{set}, match_to_set:{game}; match_server_crash:{set},
 //                 match_server_crash:{its game}; ranked_set_crashed:{set} (at check-in);
 //                 ranked_disconnect:{player}; online_players; match:{game}, {game} (RatedMatches);
-//                 match_characters:{game}, match_characters:{set}, connections:{player} character, username
+//                 match_characters:{game}, match_characters:{set}, connections:{player} character, username;
+//                 match_random:{game} (RandomFighter: who went into a game as Random)
 // Redis, written  ranked_set_lock:{set} (EX 10 s, around everything a set request does); ranked_set_checkins:{set} (SADD,
 //                 EX 10 min); ranked_set:{set} (checkins: the members) EX 10 min; set_match_dedup:{set}:{gamesPlayed} NX
 //                 EX 30 s; elo_processed_set:{set} NX EX 5 min ("set_over", "concede", "disconnect_concede": the TS
 //                 websocket skips a set it finds there); a dropped set: player_ranked_set:{each player} (and
 //                 ranked_disconnect:{each player} at a faceoff or crash), ranked_set:{set}, ranked_set_checkins:{set},
-//                 ranked_set_crashed:{set},
-//                 ranked_set_match:{set} deleted; a stale ranked_disconnect:{player} (online again) deleted
+//                 ranked_set_crashed:{set}, ranked_set_games:{set},
+//                 ranked_set_match:{set} deleted; a stale ranked_disconnect:{player} (online again) deleted;
+//                 ranked_set_games:{set} (SetGames: each counted game's winner, fighters and Random pickers) EX 30 min
 //   next game     match:{game} (one ticket of every player: skill 0, region local, partyId the game; no isPasswordMatch,
 //                 so it is rated) EX 20 min; {game} (the notification: the set's players as they were, a map, p2p) EX 20
 //                 min; ranked_set:{set} with checkins [] and ranked_set_checkins:{set} deleted, player_ranked_set:{each}
-//                 and match_to_set:{game} (the TS websocket's fallback) EX 20 min; ranked_set_match:{set} EX 30 min
+//                 and match_to_set:{game} (the TS websocket's fallback) EX 20 min; ranked_set_match:{set} EX 30 min;
+//                 connections:{player} character, skin back to the Random pick for a player who plays the set as Random
 //                 realtime:due (DelayedMessages: a leaver's empty config, and a set over at check-in's leaver)
 // Sent (ws:send)  what the TS websocket built from the ranked_set channels, to every player of the set:
 //                 MatchSetCheckinNotification {CheckedInAccountId, CheckedInCount (the set's checkins), TotalPlayers} at
@@ -80,6 +83,10 @@ namespace OpenVersus.Server.Core.Matches;
 //     checking in; the others' check-ins then found no set and got no answer).
 //   - characters (for the ratings) come from the current game's match_characters first: a player keeps their fighter
 //     for the whole set, so it is the same one as game 1's, and the newest copy.
+//   - but for a player who picked Random: the pick is what they keep for the set, and every game of it rolls them a new
+//     fighter (RandomFighter; the TS server had no Random pick). Before a next game is announced their session holds the
+//     pick again, so its config rolls; and the set keeps each counted game's winner and fighters (SetGames), from which
+//     its ratings credit every fighter they played (SetRatings).
 //   - the next game's set keys (ranked_set, player_ranked_set, match_to_set) live 20 min, as the match's own (TS: 10):
 //     the TS websocket refreshes them only at the game's end, and a game can take ~9.5 min from its creation (perks
 //     30 s, connecting up to 45 s, up to 7.5 min of play, loading and the play after the end).
@@ -412,6 +419,7 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
         set["scores"] = scores.DeepClone();
         await redis.StringSetAsync($"ranked_set:{setId}", Js.Stringify(set), s_setTtl);
         await redis.StringSetAsync(scoreKey, winner.ToString(System.Globalization.CultureInfo.InvariantCulture), s_setTtl);
+        await SetGames.RecordAsync(redis, setId, matchId, winner);
         log.LogInformation("Ranked set {Set} scores updated: {Team0}-{Team1}", setId, Js.Stringify(scores[0]), Js.Stringify(scores[1]));
     }
 
@@ -505,6 +513,7 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
             {
                 scores = new JsonArray(0, 0);
                 scores[(int)winIndex] = 1;
+                await SetGames.RecordAsync(redis, setId, matchId, (int)winIndex);
             }
 
             await redis.KeyDeleteAsync($"ranked_set_pending_winner:{matchId}");
@@ -559,7 +568,8 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
     }
 
     // The set is over: rated once (elo_processed_set "set_complete"), the winner the team with more wins, each fighter
-    // this game's (match_characters:{match}, else game 1's, else the connection); then dropped.
+    // this game's (match_characters:{match}, else game 1's, else the connection; a Random picker's every fighter of the
+    // set: SetGames); then dropped.
     private async Task<GameEndResult> SetOverAsync(IDatabase redis, JsonObject? set, string setId, string matchId, IReadOnlyList<string> playerIds, double team0Wins, double team1Wins,
         string? quitter = null)
     {
@@ -582,7 +592,8 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
             {
                 await ratings.RateAsync(new SetOutcome(winners, losers, Text(set?["mode"]) ?? "", (int)team0Wins, (int)team1Wins, winnerTeam, false,
                     await CharactersAsync(redis, [.. winners, .. losers], setId, matchId), matchId,
-                    QuitterIds: quitter is { Length: > 0 } ? [quitter] : null), CancellationToken.None);
+                    QuitterIds: quitter is { Length: > 0 } ? [quitter] : null,
+                    RandomPickers: await SetGames.RandomPickersAsync(redis, setId, matchId, Teams(players), winnerTeam, concede: false)), CancellationToken.None);
             }
             catch (Exception e) when (e is not OutOfMemoryException)
             {
@@ -646,7 +657,8 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
                 var losers = winnerTeam == 0 ? team1 : team0;
                 await ratings.RateAsync(new SetOutcome(winners, losers, mode, team0Wins, team1Wins, winnerTeam, isConcede,
                     await CharactersAsync(redis, [.. winners, .. losers], setId, current), setId,
-                    QuitterIds: quitter is { Length: > 0 } ? [quitter] : null), CancellationToken.None);
+                    QuitterIds: quitter is { Length: > 0 } ? [quitter] : null,
+                    RandomPickers: await SetGames.RandomPickersAsync(redis, setId, current, Teams(players), winnerTeam, isConcede)), CancellationToken.None);
             }
 
             if (services.GetService<IMongoDatabase>() is { } mongo)
@@ -667,7 +679,7 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
     }
 
     // Each player's fighter: the current game's match_characters, then game 1's (the same fighter: it is locked for the
-    // set), then the player's connection.
+    // set; a Random picker's is the one of their latest game), then the player's connection.
     private static async Task<Dictionary<string, string>> CharactersAsync(IDatabase redis, IEnumerable<string> playerIds, string setId, string current)
     {
         var characters = new Dictionary<string, string>();
@@ -705,6 +717,13 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
         {
             log.LogError("No rollback port for the next game of set {Set}: it cannot go on", setId);
             return;
+        }
+
+        // Whoever plays the set as Random plays this game as a new fighter (its config rolls it): by the game before, and
+        // by the set's counted games.
+        if (await RandomFighter.RollAgainAsync(redis, await CurrentGameAsync(redis, setId), await SetGames.PickersAsync(redis, setId)) is { Count: > 0 } again)
+        {
+            log.LogInformation("Set {Set}: {Players} picked Random and roll(s) again for the next game", setId, string.Join(", ", again));
         }
 
         string matchId = ObjectId.GenerateNewId().ToString();
@@ -852,6 +871,7 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
         await redis.KeyDeleteAsync($"ranked_set_checkins:{setId}");
         await redis.KeyDeleteAsync($"ranked_set_match:{setId}");
         await redis.KeyDeleteAsync($"ranked_set_crashed:{setId}");
+        await redis.KeyDeleteAsync(SetGames.Key(setId));
     }
 
     // MatchSetLeaverNotification to every player (AccountId: the leaver) after `after`, then the empty config 500 ms later,
@@ -899,6 +919,21 @@ internal sealed class RankedSets(IServiceProvider services, IMatchLauncher launc
     // The set's players, each once, in order.
     private static List<string> PlayerIds(JsonObject set) =>
         [.. (set["players"] as JsonArray ?? []).Select(p => Text(p?["playerId"])).OfType<string>().Distinct()];
+
+    // Each of the set's players' team.
+    private static Dictionary<string, int> Teams(JsonArray players)
+    {
+        var teams = new Dictionary<string, int>();
+        foreach (var player in players)
+        {
+            if (Text(player?["playerId"]) is { Length: > 0 } id && Number(player?["teamIndex"]) is var team && !double.IsNaN(team))
+            {
+                teams[id] = (int)team;
+            }
+        }
+
+        return teams;
+    }
 
     private static (int Team0, int Team1) Scores(JsonObject set) =>
         set["scores"] is JsonArray { Count: >= 2 } scores ? ((int)Number(scores[0]), (int)Number(scores[1])) : (0, 0);

@@ -305,8 +305,8 @@ internal sealed class MissionService(IServiceProvider services, IOptionsMonitor<
         }
         else
         {
-            // The lobby pick, or the real fighter when it was Random.
-            (character, skin) = await Matches.RandomFighter.PlayedAsync(redis, playerId);
+            // The lobby pick, or the real fighter of this match when it was Random.
+            (character, skin) = await Matches.RandomFighter.PlayedAsync(redis, playerId, matchId);
         }
 
         rift |= Bool(config?["bIsRift"]) ?? false;

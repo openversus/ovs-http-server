@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using OpenVersus.Server.Core.Leaderboards;
+using OpenVersus.Server.Core.Matches;
 
 namespace OpenVersus.Server.Core.Tests.Leaderboards;
 
@@ -210,6 +211,146 @@ public sealed class SetRatingsTests : IAsyncLifetime
               "matchups": { "character_jake": { "losses": 1, "tossupLosses": 1 } },
               "teammates": { "character_taz": { "losses": 1 } } }
             """)), Sorted(d["characters_2v2"]["unknown"].AsBsonDocument));
+    }
+
+    private static FighterCredit Credit(string character, bool won, FighterElo elo) => new(character, won, elo);
+
+    [Fact]
+    // What a set does to each fighter a Random picker played in it: one entry per fighter, however many of its games.
+    public void ARandomPickersFightersAreCreditedByTheGamesTheyPlayed()
+    {
+        static (string, bool?)[] Games(params (string, bool?)[] games) => games;
+        // Won 2-0: both fighters the win and the rating.
+        Assert.Equal([Credit("jake", true, FighterElo.Up), Credit("finn", true, FighterElo.Up)], SetCredits.Of(true, Games(("jake", true), ("finn", true))));
+        // Won 2-1: the two that won the same; the one that lost its game a loss, its rating as it was.
+        Assert.Equal([Credit("jake", true, FighterElo.Up), Credit("finn", false, FighterElo.Flat), Credit("taz", true, FighterElo.Up)],
+            SetCredits.Of(true, Games(("jake", true), ("finn", false), ("taz", true))));
+        // Lost 0-2: every fighter the loss and the rating loss.
+        Assert.Equal([Credit("jake", false, FighterElo.Down), Credit("finn", false, FighterElo.Down)], SetCredits.Of(false, Games(("jake", false), ("finn", false))));
+        // Lost 1-2: the fighter that won its game loses rating as the others, and its record shows the win.
+        Assert.Equal([Credit("jake", true, FighterElo.Down), Credit("finn", false, FighterElo.Down), Credit("taz", false, FighterElo.Down)],
+            SetCredits.Of(false, Games(("jake", true), ("finn", false), ("taz", false))));
+        // Rolled twice, a win and a loss: once, as the set went.
+        Assert.Equal([Credit("jake", true, FighterElo.Up), Credit("finn", true, FighterElo.Up)], SetCredits.Of(true, Games(("jake", true), ("jake", false), ("finn", true))));
+        Assert.Equal([Credit("jake", false, FighterElo.Down), Credit("finn", false, FighterElo.Down)], SetCredits.Of(false, Games(("jake", true), ("jake", false), ("finn", false))));
+        // Rolled twice and won both: still once.
+        Assert.Equal([Credit("jake", true, FighterElo.Up)], SetCredits.Of(true, Games(("jake", true), ("jake", true))));
+        // A game the set ended in before its result (a concede, a dodge) counts for its fighter as the set went.
+        Assert.Equal([Credit("jake", false, FighterElo.Flat), Credit("finn", true, FighterElo.Up)], SetCredits.Of(true, Games(("jake", false), ("finn", null))));
+        Assert.Equal([Credit("jake", true, FighterElo.Down), Credit("finn", false, FighterElo.Down)], SetCredits.Of(false, Games(("jake", true), ("finn", null))));
+        // No fighter known: nothing but the Random rating moves.
+        Assert.Empty(SetCredits.Of(true, Games(("", true))));
+    }
+
+    [SkippableFact]
+    // A set played as Random, won 2-1: Random is the character rated (and what the other player is measured against);
+    // each fighter played is written beside it by its own game, and the mode's rating is the best of them all.
+    public async Task ASetWonAsRandomRatesRandomAndEachFighterPlayed()
+    {
+        Skip.If(_mongo is null, "set OVS_TEST_MONGO to run");
+        await RatingAsync(A, sets: 5, new BsonDocument
+        {
+            { RandomFighter.Character, new BsonDocument { { "elo", 100 }, { "wins", 1 }, { "losses", 0 }, { "streak", 0 } } },
+            { "character_jake", new BsonDocument { { "elo", 100 }, { "wins", 5 }, { "losses", 0 }, { "streak", 2 } } },
+            { "character_taz", new BsonDocument { { "elo", 300 }, { "wins", 0 }, { "losses", 0 }, { "streak", 4 } } },
+            { "character_shaggy", new BsonDocument { { "elo", 50 }, { "wins", 0 }, { "losses", 2 }, { "streak", 0 } } },
+        }, elo: 300);
+        await RatingAsync(B, sets: 20, new BsonDocument("character_finn", new BsonDocument { { "elo", 100 }, { "wins", 20 }, { "losses", 0 }, { "streak", 0 } }), elo: 100);
+
+        var deltas = await Writer().RateAsync(new SetOutcome([A], [B], "1v1", 2, 1, 0, false, Fighters((A, "character_shaggy"), (B, "character_finn")), "m",
+            RandomPickers: new Dictionary<string, IReadOnlyList<FighterCredit>>
+            {
+                [A] = [Credit("character_jake", true, FighterElo.Up), Credit("character_taz", false, FighterElo.Flat), Credit("character_shaggy", true, FighterElo.Up)],
+            }), default);
+
+        // Random, 100 against finn's 100: expected 0.5, K 64, a 2-1: round(64 * 0.5 * 0.85) = 27.
+        Assert.Equal(27, deltas[A]);
+        var a = await Of(Ratings, A);
+        var characters = a["characters_1v1"].AsBsonDocument;
+        Assert.Equal(new BsonDocument { { "elo", 127 }, { "wins", 2 }, { "losses", 0 }, { "streak", 1 } }, characters[RandomFighter.Character]);
+        // jake won its game, its third in a row (+20%): round(27.2 * 1.2) = 33.
+        Assert.Equal(new BsonDocument { { "elo", 133 }, { "wins", 6 }, { "losses", 0 }, { "streak", 3 } }, characters["character_jake"]);
+        // taz lost its game in a set that was won: the loss, the streak gone, the rating as it was.
+        Assert.Equal(new BsonDocument { { "elo", 300 }, { "wins", 0 }, { "losses", 1 }, { "streak", 0 } }, characters["character_taz"]);
+        // shaggy won its game from 50: expected 1 / (1 + 10^(50/800)) = 0.464; round(64 * 0.536 * 0.85) = 29.
+        Assert.Equal(new BsonDocument { { "elo", 79 }, { "wins", 1 }, { "losses", 2 }, { "streak", 1 } }, characters["character_shaggy"]);
+        // The mode's: the best character's (taz), one set won, Random's streak.
+        Assert.Equal(300, a["elo_1v1"].AsInt32);
+        Assert.Equal(6, a["wins_1v1"].AsInt32);
+        Assert.Equal(0, a["losses_1v1"].AsInt32);
+        Assert.Equal(1, a["win_streak_1v1"].AsInt32);
+
+        // B was up against Random's 100 (not the fighters' ratings: their average, 150, would cost 13; shaggy's 50, 15):
+        // K 32, round(32 * -0.5 * 0.85) = -14.
+        Assert.Equal(-14, deltas[B]);
+        Assert.Equal(86, (await Of(Ratings, B))["characters_1v1"]["character_finn"]["elo"].AsInt32);
+
+        // The set stats: Random's entry alone among A's characters, the set once (so the characters' counts still add up
+        // to the sets played), and inside it each fighter by its own game and expected score: taz was expected to win
+        // (0.64), a choke. The fighters' own entries are not touched. To B, A was Random.
+        var stats = (await Of(Stats, A))["characters_1v1"].AsBsonDocument;
+        Assert.Equal([RandomFighter.Character], stats.Names);
+        Assert.Equal(Sorted(BsonDocument.Parse("""
+            { "wins": 1, "tossupWins": 1, "matchups": { "character_finn": { "wins": 1, "tossupWins": 1 } },
+              "fighters": {
+                "character_jake": { "wins": 1, "tossupWins": 1, "matchups": { "character_finn": { "wins": 1, "tossupWins": 1 } } },
+                "character_taz": { "losses": 1, "chokes": 1, "matchups": { "character_finn": { "losses": 1, "chokes": 1 } } },
+                "character_shaggy": { "wins": 1, "tossupWins": 1, "matchups": { "character_finn": { "wins": 1, "tossupWins": 1 } } } } }
+            """)), Sorted(stats[RandomFighter.Character].AsBsonDocument));
+        Assert.Equal(Sorted(BsonDocument.Parse($$"""{ "losses": 1, "tossupLosses": 1, "matchups": { "{{RandomFighter.Character}}": { "losses": 1, "tossupLosses": 1 } } }""")),
+            Sorted((await Of(Stats, B))["characters_1v1"]["character_finn"].AsBsonDocument));
+    }
+
+    [SkippableFact]
+    // A first set as Random, lost 1-2: Random starts from the default rating as any character does; every fighter loses
+    // rating, once (taz played two games), and the one that won its game keeps the win on its record.
+    public async Task ASetLostAsRandomCostsEveryFighterPlayedOnce()
+    {
+        Skip.If(_mongo is null, "set OVS_TEST_MONGO to run");
+        await RatingAsync(C, sets: 0);
+        await RatingAsync(D, sets: 0, new BsonDocument("character_jake", new BsonDocument { { "elo", 1000 }, { "wins", 0 }, { "losses", 0 }, { "streak", 0 } }), elo: 1000);
+
+        var deltas = await Writer().RateAsync(new SetOutcome([D], [C], "1v1", 1, 2, 1, false, Fighters((C, "character_taz"), (D, "character_jake")), "m",
+            RandomPickers: new Dictionary<string, IReadOnlyList<FighterCredit>>
+            {
+                [C] = SetCredits.Of(false, [("character_finn", true), ("character_taz", false), ("character_taz", false)]),
+            }), default);
+
+        // 1000 against 1000, K 64, a 2-1: round(-27.2) = -27, capped at -24; the winner gains 27.
+        Assert.Equal(-24, deltas[C]);
+        Assert.Equal(27, deltas[D]);
+        var c = await Of(Ratings, C);
+        Assert.Equal(Sorted(new BsonDocument
+        {
+            { RandomFighter.Character, new BsonDocument { { "elo", 976 }, { "wins", 0 }, { "losses", 1 }, { "streak", 0 } } },
+            { "character_finn", new BsonDocument { { "elo", 976 }, { "wins", 1 }, { "losses", 0 }, { "streak", 0 } } },
+            { "character_taz", new BsonDocument { { "elo", 976 }, { "wins", 0 }, { "losses", 1 }, { "streak", 0 } } },
+        }), Sorted(c["characters_1v1"].AsBsonDocument));
+        Assert.Equal(976, c["elo_1v1"].AsInt32);
+        Assert.Equal(1, c["losses_1v1"].AsInt32);
+        var stats = (await Of(Stats, C))["characters_1v1"].AsBsonDocument;
+        Assert.Equal([RandomFighter.Character], stats.Names);
+        Assert.Equal(1, stats[RandomFighter.Character]["losses"].AsInt32);
+        var fighters = stats[RandomFighter.Character][SetRatings.RandomFightersField].AsBsonDocument;
+        Assert.Equal(["character_finn", "character_taz"], fighters.Names.Order());
+        Assert.Equal(1, fighters["character_finn"]["wins"].AsInt32);
+        Assert.Equal(1, fighters["character_taz"]["losses"].AsInt32);
+    }
+
+    [SkippableFact]
+    // A Random picker rated before any fighter of theirs is known: Random alone, in the rating and in the set stats.
+    public async Task ARandomPickerWithNoFighterKnownIsRatedAsRandomAlone()
+    {
+        Skip.If(_mongo is null, "set OVS_TEST_MONGO to run");
+        await Writer().RateAsync(new SetOutcome([A], [B], "1v1", 0, 0, 0, true, Fighters((A, RandomFighter.Character), (B, "character_finn")), "m",
+            RandomPickers: new Dictionary<string, IReadOnlyList<FighterCredit>> { [A] = [] }), default);
+
+        Assert.Equal([RandomFighter.Character], (await Of(Ratings, A))["characters_1v1"].AsBsonDocument.Names);
+        var stats = (await Of(Stats, A))["characters_1v1"].AsBsonDocument;
+        Assert.Equal([RandomFighter.Character], stats.Names);
+        Assert.Equal(1, stats[RandomFighter.Character]["wins"].AsInt32);
+        Assert.False(stats[RandomFighter.Character].AsBsonDocument.Contains(SetRatings.RandomFightersField));
+        Assert.Equal([RandomFighter.Character], (await Of(Stats, B))["characters_1v1"]["character_finn"]["matchups"].AsBsonDocument.Names);
     }
 
     [Theory]

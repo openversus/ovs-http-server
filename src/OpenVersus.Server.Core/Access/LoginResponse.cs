@@ -102,7 +102,8 @@ public static class LoginResponse
 
 /// <summary>
 /// The stat trackers the TS server computes for /access from eloratings (wins) and playerstats (per character, both
-/// modes merged). Numbers are JavaScript's: doubles throughout, damage totals rounded half up at every step.
+/// modes merged; a fighter's wins and matches with the sets it played as Random, kept inside Random's entry). Numbers are
+/// JavaScript's: doubles throughout, damage totals rounded half up at every step.
 /// </summary>
 public sealed class StatTrackers
 {
@@ -139,6 +140,18 @@ public sealed class StatTrackers
                 if (highest > stats._highestDamage)
                 {
                     stats._highestDamage = highest;
+                }
+
+                // Random's entry holds the sets played as Random apart from the fighters' own (SetRatings): a fighter's
+                // wins and matches count the ones it played there too.
+                if (data?.GetValue(Leaderboards.SetRatings.RandomFightersField, BsonNull.Value) is BsonDocument fighters)
+                {
+                    foreach (var fighter in fighters)
+                    {
+                        var played = fighter.Value as BsonDocument;
+                        stats._wins[fighter.Name] = stats._wins.GetValueOrDefault(fighter.Name) + Num(played, "wins");
+                        stats._matches[fighter.Name] = stats._matches.GetValueOrDefault(fighter.Name) + Num(played, "wins") + Num(played, "losses");
+                    }
                 }
             }
         }

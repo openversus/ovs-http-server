@@ -49,10 +49,15 @@ public static class GatewayProtocol
 /// <summary>The gateway's timing (the realtime executable).</summary>
 public sealed class GatewaySettings
 {
-    // At most 25 s: the game drops a connection it has not been pinged on for about 30 s.
-    [Description("How often each connection is pinged, in ms. The game answers every ping, and goes back to its title screen when it has not been pinged for about 30 s, hence at most 25,000.")]
+    // At most 25 s. The game closes a connection that has received nothing at all for 64 s (its code: any message
+    // resets that clock, and the comparison is in whole seconds); it was taken for about 30 s without a ping before.
+    [Description("How often each connection is pinged, in ms. The game answers every ping, and goes back to its title screen when its connection has received nothing for 64 s; at most 25,000.")]
     [Range(100, 25000)]
     public int PingIntervalMs { get; set; } = 20000;
+
+    [Description("How often the players of an open rematch vote are pinged as well, in ms, so the vote's check (Rematches:PresenceCheck) can tell a game that is gone from one that is slow. 0: no such pings, and the check goes by the connection alone.")]
+    [Range(0, 25000)]
+    public int VotePingIntervalMs { get; set; } = 1000;
 
     [Description("A connection whose game has not answered a ping for this long (ms) is closed, at the next ping round: about 80 s after the last answer with the defaults, as the TS websocket.")]
     [Range(1000, 600000)]

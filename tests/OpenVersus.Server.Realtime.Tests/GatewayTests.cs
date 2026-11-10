@@ -387,6 +387,40 @@ public sealed class GatewayTests : IAsyncLifetime
     }
 
     [Fact]
+    // The players of an open rematch vote (VotePings) are pinged at each round of the vote's pings and both sides are
+    // counted; a player in no vote is neither pinged by it nor counted, whatever regular pings their game answers.
+    public async Task A_player_in_an_open_rematch_vote_is_pinged_and_their_answers_are_counted()
+    {
+        if (_factory is null)
+        {
+            return;
+        }
+
+        var game = await ConnectAsync();
+        var pings = _factory.Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>().OfType<GatewayVotePings>().Single();
+        await pings.TickAsync(Redis);
+        await Task.Delay(600);
+        Assert.Equal((0, 0), await VotePings.CountsAsync(Redis, _player));
+
+        await VotePings.StartAsync(Redis, [_player], DateTimeOffset.UtcNow.AddSeconds(25));
+        for (int i = 0; i < 3; i++)
+        {
+            await pings.TickAsync(Redis);
+        }
+
+        await UntilAsync(async () => await VotePings.CountsAsync(Redis, _player) is { Sent: >= 3, Answered: >= 3 });
+        Assert.False(game.Closed.IsCompleted);
+
+        // The vote is over: no more of its pings, and no more answers counted.
+        await Redis.KeyDeleteAsync(VotePings.ActiveKey);
+        await pings.TickAsync(Redis);
+        var after = await VotePings.CountsAsync(Redis, _player);
+        await pings.TickAsync(Redis);
+        await Task.Delay(600);
+        Assert.Equal(after, await VotePings.CountsAsync(Redis, _player));
+    }
+
+    [Fact]
     public async Task A_socket_that_never_sends_its_first_frame_is_closed()
     {
         if (_factory is null)

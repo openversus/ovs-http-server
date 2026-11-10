@@ -157,6 +157,16 @@ reported while a vote is open, by a player with a say in it, is their decline, w
 lobby's too, where the quit itself never counts) and with `Quits:Enabled` on or off: the vote is over, everyone is sent
 `RematchDeclinedNotification`, and no rematch starts. A spectator's quit declines nothing, nor a quit with no vote open.
 
+A player who is gone without a quit report (a crash, a kill from outside) says nothing, and nothing would be an accept.
+So `Rematches:PresenceCheckSeconds` (7) before the vote's timer, every player of the vote must still be there, or the
+rematch is declined for everyone (`Rematches:PresenceCheck`, on): a live connection, and answers to the pings the
+gateway sends a vote's players every second (`Gateway:VotePingIntervalMs`); a player who has missed
+`Rematches:MissedPingPercent` (25, rounded up) or more of them by the check is gone. Late answers count, so a game that
+stalled and caught up passes. A connection from another login than the one the match was played on (the game was
+restarted) is logged, and declines the rematch only with `Rematches:DeclineNewLogins` on: a game whose websocket
+dropped logs in again before reconnecting too, and its token does not tell the two apart. The lobbies service logs each
+such decline with the player and the reason.
+
 `Quits:Limit` (3) counted quits within `Quits:WindowMinutes` (30) refuse the player's matchmaking
 tickets (1v1, 2v2, FFA, Testing Grounds) for `Quits:LockoutMinutes` (15), the same way an outdated client's are, and
 each refused request shows the banner `Quits:BannerTitle` / `Quits:BannerMessage` (`{minutes}` left). The refusal is

@@ -29,6 +29,9 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
     /// <summary>The current connections held here.</summary>
     public ICollection<GatewayConnection> Connections => _current.Values;
 
+    /// <summary>The players being pinged for a rematch vote, as GatewayVotePings last read them: their answers are counted.</summary>
+    public IReadOnlySet<string> VotePinged { get; set; } = new HashSet<string>();
+
     public bool TryGet(string playerId, out GatewayConnection connection) => _current.TryGetValue(playerId, out connection!);
 
     public async Task HandleAsync(HttpContext context)
@@ -216,6 +219,10 @@ internal sealed class GatewayNode(IServiceProvider services, IOptionsMonitor<Gat
                 {
                     connection.LastAnswerMs = time.GetUtcNow().ToUnixTimeMilliseconds();
                     await RecordAsync("ping answer", playerId, () => GatewayPresence.AnsweredAsync(redis, info, time.GetUtcNow()));
+                    if (VotePinged.Contains(playerId))
+                    {
+                        await RecordAsync("vote ping answer", playerId, () => VotePings.AnsweredAsync(redis, playerId));
+                    }
                 }
             }
         }

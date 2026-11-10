@@ -23,6 +23,7 @@ public static class GatewayHosting
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<GatewayNode>();
         builder.Services.AddHostedService<GatewayPings>();
+        builder.Services.AddHostedService<GatewayVotePings>();
         builder.Services.AddHostedService<GatewayTicks>();
         builder.Services.AddHostedService<GatewaySubscriber>();
         builder.AddGatewayReaper();
@@ -157,6 +158,68 @@ internal sealed class GatewayPings(GatewayNode node, IOptionsMonitor<GatewaySett
 /// a matchmaking queue (realtime:queued, MatchmakingQueue) is sent matchmaking-tick with its request id: one HMGET per
 /// second for the node's players, whoever queued them.
 /// </summary>
+/// <summary>
+/// Pings the players of an open rematch vote (<see cref="VotePings"/>) that this node holds, every
+/// Gateway:VotePingIntervalMs, and counts each ping; their answers are counted where they arrive (GatewayNode).
+/// </summary>
+internal sealed class GatewayVotePings(IServiceProvider services, GatewayNode node, IOptionsMonitor<GatewaySettings> settings, TimeProvider time,
+    ILogger<GatewayVotePings> log) : BackgroundService
+{
+    private static readonly byte[] s_ping = [GatewayProtocol.Ping];
+    private static readonly HashSet<string> s_nobody = [];
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (services.GetService<IConnectionMultiplexer>()?.GetDatabase() is not { } redis)
+        {
+            return;
+        }
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            int interval = settings.CurrentValue.VotePingIntervalMs;
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(interval > 0 ? interval : 1000), time, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            try
+            {
+                if (interval > 0)
+                {
+                    await TickAsync(redis);
+                }
+                else
+                {
+                    node.VotePinged = s_nobody;
+                }
+            }
+            catch (Exception e) when (e is RedisException or TimeoutException)
+            {
+                log.LogError("Vote pings: {Error}", e.Message);
+            }
+        }
+    }
+
+    internal async Task TickAsync(IDatabase redis)
+    {
+        var held = node.Connections.ToList();
+        var pinged = held.Count == 0 ? s_nobody : await VotePings.ActiveAsync(redis, time.GetUtcNow());
+        node.VotePinged = pinged;
+        foreach (var connection in held)
+        {
+            if (pinged.Contains(connection.Info.PlayerId) && connection.Send(s_ping))
+            {
+                await VotePings.SentAsync(redis, connection.Info.PlayerId);
+            }
+        }
+    }
+}
+
 internal sealed class GatewayTicks(IServiceProvider services, GatewayNode node, TimeProvider time, ILogger<GatewayTicks> log) : BackgroundService
 {
     internal static TimeSpan Interval { get; set; } = TimeSpan.FromSeconds(1);

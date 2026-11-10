@@ -53,8 +53,13 @@ The game's realtime connection (/access hands out its address: `Realtime:Domain`
 - checks the first frame's session token as every service checks it (`AccessTokens.Verify`, Access:JwtSecret); a frame
   that holds none, or a bad or expired token, is closed with nothing sent (code 1000: the TS server's close had no code,
   which .NET cannot send). A socket that sends no first frame within Gateway:HandshakeTimeoutMs (30 s) is closed;
-- answers with the id frame and a ping, pings every Gateway:PingIntervalMs (20 s; at most 25 s, the game gives up at
-  about 30 s), and drops a game silent for Gateway:SilenceCutoffMs (61 s, checked at each ping);
+- answers with the id frame and a ping, pings every Gateway:PingIntervalMs (20 s; at most 25 s), and drops a game
+  silent for Gateway:SilenceCutoffMs (61 s, checked at each ping). The game answers each ping with one pong and closes
+  a connection that has received nothing at all for 64 s: any message resets that clock (read from its code,
+  2026-11-10; it was taken for "about 30 s without a ping" before, which the limits here still allow for);
+- pings the players of an open rematch vote every Gateway:VotePingIntervalMs (1 s) as well and counts the pings and
+  their answers (`realtime:votepings`, `realtime:votepings:{player}`: Core/Realtime/VotePings.cs), for the vote's
+  check of who is still there (Core/Matches/Rematches.cs, `Rematches:PresenceCheck`);
 - delivers `ws:send` to the players whose current connection it holds, encoding each message once
   (`HydraEncoder.Encode(..., webSocket: true)`, from the JSON read with a JS object's key order), and closes on
   `ws:disconnect {playerId, connectionId?, except?, code?, reason?}` (no code: dropped at once, the ops command's).

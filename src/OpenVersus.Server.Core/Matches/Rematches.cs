@@ -1,14 +1,18 @@
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using OpenVersus.Server.Core.Clients;
 using OpenVersus.Server.Core.Compat;
 using OpenVersus.Server.Core.CustomLobbies;
 using OpenVersus.Server.Core.Matchmaking;
 using OpenVersus.Server.Core.Realtime;
+using OpenVersus.Server.Core.Settings;
 using StackExchange.Redis;
 
 namespace OpenVersus.Server.Core.Matches;
@@ -42,6 +46,24 @@ namespace OpenVersus.Server.Core.Matches;
 //     for a match the matchmaker finds), and the rematch is named for the quit tracker, which keeps it in the group of
 //     the game it follows (QuitTracker): a walk-out of the rematch counts as one of the first game does.
 //
+//   Who is still there (lobbies, Rematches:PresenceCheck): a player who is gone without a word (a crash, a kill from
+//     outside, a client that reports no quit) says nothing, and nothing is an accept. So Rematches:PresenceCheckSeconds
+//     (7) before the timer, each of the vote's players must be there, or the rematch is declined for everyone, as by a
+//     decline: early enough for every game to be told before its own timer runs out. There means all of:
+//       a live connection (realtime:conn:{player}: the gateway deletes it when the socket closes);
+//       on the session they played the match on (the hash of its token, kept when the vote opened:
+//       rematch_presence:{vote}). A connection opened again on the same session is fine; one from a new login is not:
+//       that game was closed, or crashed, and started again. Only with Rematches:DeclineNewLogins, and logged
+//       otherwise: a game whose websocket dropped logs in again before it reconnects too (docs/REALTIME.md), and by
+//       its token that looks the same as a restart;
+//       and answering: from the vote's start its players are pinged every second (Realtime/VotePings.cs), and a game
+//       that has missed Rematches:MissedPingPercent (25, rounded up) or more of them by the check is gone. Late answers
+//       count, so a game that stalled (alt-tabbed) and caught up passes; what fails is one still several seconds
+//       behind at the check.
+//     Nothing is declined for what is not known: no session kept (an older match flow) and too few pings counted
+//     (an older gateway, Gateway:VotePingIntervalMs 0) each skip their part. A game that goes in the last seconds
+//     before the timer is still in the rematch; its match is called off as any match nobody connects to.
+//
 // The vote's timer key is its claim: the accept or the timer that deletes it (a script comparing it with the match, for
 // a lobby: GETDEL, for a Casual match) is the one that starts the rematch, so it starts once, whichever replica of
 // lobbies gets there. A decline deletes it too.
@@ -52,7 +74,9 @@ namespace OpenVersus.Server.Core.Matches;
 //                 ssc_custom_lobby_match:{match} deleted; casual_rematch:{match} = config EX 30;
 //                 casual_rematch_accept:{match} set EX 30; casual_rematch_player:{player} = match EX 30;
 //                 rematch:due (ZADD; ZREM by the sweep); a Casual rematch's start: player:{player} status in_match
-//                 (idle again when it cannot start), quit_rematch:{the rematch} (QuitTracker)
+//                 (idle again when it cannot start), quit_rematch:{the rematch} (QuitTracker);
+//                 rematch_presence:{vote} hash player -> session token hash EX 60, realtime:votepings (VotePings) at a
+//                 vote's start; rematch_checked:{vote} NX EX 60 (the check, once)
 // Published       ws:send (RematchDeclinedNotification)
 //
 // Unlike the TS server's (each asserted by tools/matches/match_end_diff.mjs):
@@ -67,8 +91,46 @@ namespace OpenVersus.Server.Core.Matches;
 // Who is still there is not checked for a Casual rematch: that is the realtime gateway's to know; until then a player
 // who left without declining is in the rematch (the TS lobby rematch is the same).
 
+/// <summary>Rematch votes (the lobbies service).</summary>
+public sealed class RematchSettings
+{
+    [Description("On: shortly before a rematch vote's timer runs out, every player of the vote must still be there (a live connection, on the game session they played the match on, answering the vote's pings), or the rematch is declined for everyone. Off: no answer by the timer is an accept, whoever is left.")]
+    public bool PresenceCheck { get; set; } = true;
+
+    [Description("How long before the vote's timer the check runs, in seconds: enough for the decline to reach every game before its own timer runs out.")]
+    [Range(1, 20)]
+    public int PresenceCheckSeconds { get; set; } = 7;
+
+    [Description("A player who has missed this many percent (rounded up) of the vote's pings by the check is gone. Late answers count: only a game still behind at the check fails.")]
+    [Range(1, 100)]
+    public int MissedPingPercent { get; set; } = 25;
+
+    [Description("On: a player whose connection at the check belongs to another login than the one they played the match on (the game was closed, or crashed, and started again) is gone. Off: that is only logged (\"would be declined\"). Off by default because a game whose websocket drops also logs in again before it reconnects, and a token alone does not tell that from a restart: turn it on once the log shows it only fires for restarts.")]
+    public bool DeclineNewLogins { get; set; }
+}
+
 public static class RematchVotes
 {
+    /// <summary>The session each of a vote's players was on when it opened (player -> its token's hash); <paramref name="entry"/> as on rematch:due.</summary>
+    public static string PresenceKey(string entry) => $"rematch_presence:{entry}";
+
+    /// <summary>Set by whichever replica runs a vote's check.</summary>
+    public static string CheckedKey(string entry) => $"rematch_checked:{entry}";
+
+    // A vote opened (entry as on rematch:due): the session each player is on is kept for its check, and the gateway
+    // pings them until the timer (VotePings).
+    private static async Task PresenceAsync(IDatabase redis, string entry, IReadOnlyList<string> players, double dueMs)
+    {
+        foreach (string id in players)
+        {
+            string token = (await redis.HashGetAsync($"connections:{id}", "jwt")).ToString();
+            await redis.HashSetAsync(PresenceKey(entry), id, token.Length > 0 ? GatewayPresence.TokenHash(token) : "");
+        }
+
+        await redis.KeyExpireAsync(PresenceKey(entry), TimeSpan.FromSeconds(60));
+        await VotePings.StartAsync(redis, players, DateTimeOffset.FromUnixTimeMilliseconds((long)dueMs));
+    }
+
     public const string DueKey = "rematch:due";
 
     /// <summary>How long a vote is open (the game's RematchTimeoutSeconds).</summary>
@@ -94,7 +156,13 @@ public static class RematchVotes
 
         await redis.KeyDeleteAsync($"ssc_custom_lobby_match:{matchId}");
         await redis.StringSetAsync(LobbyTimerKey(lobbyId), matchId, s_ttl);
-        await redis.SortedSetAddAsync(DueKey, $"lobby:{lobbyId}:{matchId}", Due(time));
+        double due = Due(time);
+        await redis.SortedSetAddAsync(DueKey, $"lobby:{lobbyId}:{matchId}", due);
+        if (await CustomLobbyService.HumansAsync(redis, lobbyId) is { } humans)
+        {
+            await PresenceAsync(redis, $"lobby:{lobbyId}:{matchId}", humans.Playing, due);
+        }
+
         return true;
     }
 
@@ -107,7 +175,9 @@ public static class RematchVotes
             await redis.StringSetAsync(CasualPlayerKey(id), matchId, s_ttl);
         }
 
-        await redis.SortedSetAddAsync(DueKey, $"casual:{matchId}", Due(time));
+        double due = Due(time);
+        await redis.SortedSetAddAsync(DueKey, $"casual:{matchId}", due);
+        await PresenceAsync(redis, $"casual:{matchId}", Voters(config), due);
     }
 
     internal static async Task AcceptedAsync(IDatabase redis, string acceptKey, string playerId)
@@ -137,6 +207,12 @@ public interface IRematches
 
     /// <summary>A vote's 25 s are up (<paramref name="entry"/>, from rematch:due): the rematch started if the vote is still open.</summary>
     Task TimerAsync(string entry, CancellationToken ct = default);
+
+    /// <summary>
+    /// Shortly before a vote's timer (<paramref name="entry"/>, from rematch:due): while Rematches:PresenceCheck is on and
+    /// the vote is still open, the rematch is declined for everyone when one of its players is not there any more.
+    /// </summary>
+    Task CheckAsync(string entry, CancellationToken ct = default);
 }
 
 internal sealed class Rematches(IServiceProvider services, ICustomLobbyService lobbies, IMatchLauncher launcher, IClientUpdateGate gate,
@@ -264,6 +340,75 @@ internal sealed class Rematches(IServiceProvider services, ICustomLobbyService l
         {
             log.LogWarning("Ignoring rematch timer entry {Entry}", entry);
         }
+    }
+
+    public async Task CheckAsync(string entry, CancellationToken ct)
+    {
+        var current = services.GetService<IOptionsMonitor<RematchSettings>>()?.CurrentValue ?? new RematchSettings();
+        if (!current.PresenceCheck)
+        {
+            return;
+        }
+
+        var redis = Redis();
+        string[] parts = entry.Split(':');
+        if (parts is ["lobby", var lobbyId, var matchId])
+        {
+            if ((string?)await redis.StringGetAsync(RematchVotes.LobbyTimerKey(lobbyId)) != matchId
+                || await CustomLobbyService.HumansAsync(redis, lobbyId) is not { } humans
+                || await GoneAsync(redis, entry, humans.Playing, current) is not { } gone
+                || !await ClaimLobbyAsync(redis, lobbyId, matchId))
+            {
+                return;
+            }
+
+            log.LogWarning("The rematch in custom lobby {Lobby} is declined for everyone: {Player} is not there ({Why})", lobbyId, gone.Player, gone.Why);
+            await DeclinedAsync(redis, humans.All, "");
+        }
+        else if (parts is ["casual", var match])
+        {
+            if (await RollbackCallbacks.JsonAsync(redis, RematchVotes.CasualKey(match)) is not { } config
+                || await GoneAsync(redis, entry, RematchVotes.Voters(config), current) is not { } gone
+                || await ClaimCasualAsync(redis, match) is not { } claimed)
+            {
+                return;
+            }
+
+            log.LogWarning("The rematch of Casual match {Match} is declined for everyone: {Player} is not there ({Why})", match, gone.Player, gone.Why);
+            await DeclinedAsync(redis, RematchVotes.Voters(claimed), match);
+        }
+    }
+
+    // The first of a vote's players who is not there any more, and why; null when all of them are (the header's "Who
+    // is still there").
+    private async Task<(string Player, string Why)?> GoneAsync(IDatabase redis, string entry, IReadOnlyList<string> players, RematchSettings settings)
+    {
+        foreach (string id in players)
+        {
+            if (!await redis.KeyExistsAsync(GatewayPresence.ConnectionKey(id)))
+            {
+                return (id, "no live connection");
+            }
+
+            string played = (await redis.HashGetAsync(RematchVotes.PresenceKey(entry), id)).ToString();
+            if (played.Length > 0 && (await redis.HashGetAsync(GatewayPresence.ConnectionKey(id), "token")).ToString() != played)
+            {
+                if (settings.DeclineNewLogins)
+                {
+                    return (id, "a new login since the match");
+                }
+
+                log.LogWarning("Rematch vote {Vote}: {Player} is on a new login since the match; the rematch would be declined with Rematches:DeclineNewLogins on", entry, id);
+            }
+
+            var (sent, answered) = await VotePings.CountsAsync(redis, id);
+            if (VotePings.Gone(sent, answered, settings.MissedPingPercent))
+            {
+                return (id, $"{answered} answers to {sent} pings");
+            }
+        }
+
+        return null;
     }
 
     private static async Task<bool> AllAcceptedAsync(IDatabase redis, string acceptKey, IReadOnlyList<string> voters)
@@ -455,6 +600,22 @@ internal sealed class RematchSweep(IServiceProvider services, IRematches rematch
                 await rematches.TimerAsync(member.ToString(), ct);
             }
         }
+
+        // The votes whose timer is Rematches:PresenceCheckSeconds away or less: each one's check, once, by whichever
+        // replica marks it.
+        var current = services.GetService<IOptionsMonitor<RematchSettings>>()?.CurrentValue ?? new RematchSettings();
+        if (!current.PresenceCheck)
+        {
+            return;
+        }
+
+        foreach (var member in await redis.SortedSetRangeByScoreAsync(RematchVotes.DueKey, now, now + (current.PresenceCheckSeconds * 1000L), Exclude.Start, take: 100))
+        {
+            if (await redis.StringSetAsync(RematchVotes.CheckedKey(member.ToString()), "1", TimeSpan.FromSeconds(60), When.NotExists))
+            {
+                await rematches.CheckAsync(member.ToString(), ct);
+            }
+        }
     }
 }
 
@@ -464,6 +625,7 @@ public static class RematchHosting
     public static WebApplicationBuilder AddRematches(this WebApplicationBuilder builder)
     {
         builder.Services.TryAddSingleton(TimeProvider.System);
+        builder.AddSetting<RematchSettings>("Rematches");
         builder.Services.TryAddSingleton<IRematches, Rematches>();
         builder.Services.AddHostedService<RematchSweep>();
         return builder;

@@ -112,13 +112,38 @@ public sealed class RematchesTests : IAsyncLifetime
         }
 
         await Db.KeyDeleteAsync(RematchVotes.DueKey);
+        await Db.KeyDeleteAsync(VotePings.ActiveKey);
     }
 
     private IDatabase Db => _redis!.GetDatabase();
 
-    private IRematches Service(ICustomLobbyService lobbies, Launcher? launcher = null) => new Rematches(
-        new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
-        lobbies, launcher ?? new Launcher(), new CurrentClients(), NullLogger<Rematches>.Instance);
+    private IRematches Service(ICustomLobbyService lobbies, Launcher? launcher = null, RematchSettings? settings = null)
+    {
+        var collection = new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!);
+        if (settings is not null)
+        {
+            collection.AddSingleton<Microsoft.Extensions.Options.IOptionsMonitor<RematchSettings>>(new TestOptions<RematchSettings>(settings));
+        }
+
+        return new Rematches(collection.BuildServiceProvider(), lobbies, launcher ?? new Launcher(), new CurrentClients(), NullLogger<Rematches>.Instance);
+    }
+
+    // The player's game is there: its login's session, and a live connection opened with a session's token (its own
+    // unless another is given).
+    private async Task ThereAsync(string player, string? connectionToken = null, string connection = "c1")
+    {
+        await Db.HashSetAsync($"connections:{player}", "jwt", $"token-of-{player}");
+        await Db.HashSetAsync(GatewayPresence.ConnectionKey(player), [new("id", connection), new("token", GatewayPresence.TokenHash(connectionToken ?? $"token-of-{player}"))]);
+    }
+
+    // What the gateway counted for the player since the vote opened.
+    private Task PingsAsync(string player, int sent, int answered) =>
+        Db.HashSetAsync(VotePings.CountsKey(player), [new("sent", sent), new("answered", answered)]);
+
+    private sealed class At(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
 
     // P1 in team 0; P2 and a bot in team 1; a spectator in team 4. P1 was ready.
     private async Task OpenLobbyVoteAsync()
@@ -441,6 +466,144 @@ public sealed class RematchesTests : IAsyncLifetime
         var stuck = await Quits().ReportAsync(P2, now.AddSeconds(40));
         Assert.Equal((false, "not the first to leave", 0), (stuck.Counted, stuck.Reason, stuck.Count));
     }
+
+    [SkippableFact]
+    // A vote keeps the session each player is on and starts their pings; its check, 7 s before the timer, leaves it alone
+    // while everyone is there: a live connection on that session (a new connection of the same session too) and no more
+    // than a quarter of the pings unanswered. The timer then starts the rematch as ever.
+    public async Task TheCheckLeavesAVoteAloneWhileEveryoneIsThere()
+    {
+        Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
+        await ThereAsync(P1);
+        await ThereAsync(P2);
+        await PingsAsync(P1, 5, 5);
+        await RematchVotes.OpenCasualAsync(Db, TimeProvider.System, Match, OneVsOneConfig());
+
+        string entry = $"casual:{Match}";
+        Assert.Equal(GatewayPresence.TokenHash($"token-of-{P2}"), (string?)await Db.HashGetAsync(RematchVotes.PresenceKey(entry), P2));
+        Assert.Equal([P1, P2], (await VotePings.ActiveAsync(Db, DateTimeOffset.UtcNow.AddSeconds(20))).Order());
+        Assert.Empty(await VotePings.ActiveAsync(Db, DateTimeOffset.UtcNow.AddSeconds(26)));
+        Assert.Equal((0, 0), await VotePings.CountsAsync(Db, P1));
+
+        await RematchVotes.OpenCasualAsync(Db, TimeProvider.System, Match, OneVsOneConfig());
+        await ThereAsync(P2, connection: "c2");
+        await PingsAsync(P1, 17, 19);
+        await PingsAsync(P2, 17, 12);
+        var launcher = new Launcher();
+        var rematches = Service(new Lobbies(), launcher);
+        await rematches.CheckAsync(entry);
+
+        Assert.True(await Db.KeyExistsAsync(RematchVotes.CasualKey(Match)));
+        await rematches.TimerAsync(entry);
+        Assert.Single(launcher.Launched);
+        Assert.Empty(await DeclinedAsync(0));
+    }
+
+    [SkippableTheory]
+    // One player who is not there any more is a decline for everyone: no live connection; a connection from a new login
+    // (the game was closed, or crashed, and started again); a quarter of the vote's pings or more unanswered.
+    [InlineData("no connection")]
+    [InlineData("new login")]
+    [InlineData("silent")]
+    public async Task TheCheckDeclinesTheRematchWhenAPlayerIsGone(string how)
+    {
+        Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
+        await ThereAsync(P1);
+        await ThereAsync(P2);
+        await RematchVotes.OpenCasualAsync(Db, TimeProvider.System, Match, OneVsOneConfig());
+        await PingsAsync(P1, 17, 17);
+        await PingsAsync(P2, 17, how == "silent" ? 11 : 17);
+        if (how == "no connection")
+        {
+            await Db.KeyDeleteAsync(GatewayPresence.ConnectionKey(P2));
+        }
+        else if (how == "new login")
+        {
+            await ThereAsync(P2, connectionToken: "the-token-of-a-new-login", connection: "c2");
+        }
+
+        var launcher = new Launcher();
+        if (how == "new login")
+        {
+            // Only with Rematches:DeclineNewLogins: by default it is logged, and the vote goes on.
+            await Service(new Lobbies(), launcher).CheckAsync($"casual:{Match}");
+            Assert.True(await Db.KeyExistsAsync(RematchVotes.CasualKey(Match)));
+        }
+
+        var rematches = Service(new Lobbies(), launcher, how == "new login" ? new RematchSettings { DeclineNewLogins = true } : null);
+        await rematches.CheckAsync($"casual:{Match}");
+
+        Assert.False(await Db.KeyExistsAsync(RematchVotes.CasualKey(Match)));
+        var declined = await DeclinedAsync(0);
+        Assert.Equal(2, declined.Count);
+        Assert.All(declined, m => Assert.Contains($"\"MatchId\":\"{Match}\"", m, StringComparison.Ordinal));
+        await rematches.TimerAsync($"casual:{Match}");
+        Assert.Empty(launcher.Launched);
+    }
+
+    [SkippableFact]
+    // In a custom lobby the check goes by the players, not the spectators (they have no say); a player gone sends
+    // everyone back, the spectator too. With Rematches:PresenceCheck off nothing is checked.
+    public async Task TheCheckInACustomLobbyGoesByItsPlayersAndOffChecksNothing()
+    {
+        Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
+        await ThereAsync(P1);
+        await ThereAsync(P2);
+        await OpenLobbyVoteAsync();
+        string entry = $"lobby:{Lobby}:{Match}";
+        Assert.Equal([P1, P2], (await VotePings.ActiveAsync(Db, DateTimeOffset.UtcNow)).Order());
+
+        // The spectator has no connection at all: nothing is declined.
+        var lobbies = new Lobbies();
+        await Service(lobbies).CheckAsync(entry);
+        Assert.True(await Db.KeyExistsAsync(RematchVotes.LobbyTimerKey(Lobby)));
+
+        await Db.KeyDeleteAsync(GatewayPresence.ConnectionKey(P2));
+        await Service(lobbies, settings: new RematchSettings { PresenceCheck = false }).CheckAsync(entry);
+        Assert.True(await Db.KeyExistsAsync(RematchVotes.LobbyTimerKey(Lobby)));
+
+        await Service(lobbies).CheckAsync(entry);
+        Assert.False(await Db.KeyExistsAsync(RematchVotes.LobbyTimerKey(Lobby)));
+        Assert.Equal(3, (await DeclinedAsync(1)).Count);
+        await Service(lobbies).TimerAsync(entry);
+        Assert.Equal(0, lobbies.Rematches);
+    }
+
+    [SkippableFact]
+    // The sweep runs a vote's check once, when its timer is Rematches:PresenceCheckSeconds away or less, and not before.
+    public async Task TheSweepChecksAVoteOnceSevenSecondsBeforeItsTimer()
+    {
+        Skip.If(string.IsNullOrEmpty(s_redis), "set OVS_TEST_REDIS to run");
+        await ThereAsync(P1);
+        var opened = DateTimeOffset.UtcNow;
+        await RematchVotes.OpenCasualAsync(Db, new At(opened), Match, OneVsOneConfig());
+        var services = new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider();
+        var rematches = Service(new Lobbies());
+
+        // 17 s in: 8 s to go, too early. P2 has no connection, and nothing is declined yet.
+        await new RematchSweep(services, rematches, new At(opened.AddSeconds(17)), NullLogger<RematchSweep>.Instance).SweepAsync(Db, CancellationToken.None);
+        Assert.True(await Db.KeyExistsAsync(RematchVotes.CasualKey(Match)));
+
+        await new RematchSweep(services, rematches, new At(opened.AddSeconds(18.5)), NullLogger<RematchSweep>.Instance).SweepAsync(Db, CancellationToken.None);
+        Assert.False(await Db.KeyExistsAsync(RematchVotes.CasualKey(Match)));
+        Assert.True(await Db.KeyExistsAsync(RematchVotes.CheckedKey($"casual:{Match}")));
+        Assert.Equal(2, (await DeclinedAsync(0)).Count);
+    }
+
+    [Theory]
+    // A quarter of the pings (rounded up) missed is gone; one ping may still be on its way; fewer than four pings say
+    // nothing; answers past the pings (the regular ping's) count for nothing.
+    [InlineData(17, 12, false)]
+    [InlineData(17, 11, true)]
+    [InlineData(16, 12, false)]
+    [InlineData(16, 11, true)]
+    [InlineData(3, 0, false)]
+    [InlineData(4, 2, true)]
+    [InlineData(4, 3, false)]
+    [InlineData(18, 30, false)]
+    [InlineData(0, 0, false)]
+    public void AQuarterOfTheVotesPingsMissedIsGone(int sent, int answered, bool gone) =>
+        Assert.Equal(gone, VotePings.Gone(sent, answered, 25));
 
     private QuitTracker Quits() => new(new ServiceCollection().AddSingleton<IConnectionMultiplexer>(_redis!).BuildServiceProvider(),
         new TestOptions<QuitSettings>(new QuitSettings()), NullLogger<QuitTracker>.Instance);

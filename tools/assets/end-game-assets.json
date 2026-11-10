@@ -66,10 +66,10 @@
     "character_slug": "character_C023B"
   },
   {
-    "slug": "skin_ovs_pink_abdominal_mountaineer_jason",
-    "assetType": "SkinData",
-    "assetPath": "/OVS/Rewards/Skins/PinkMountaineerJason/Catalog/skin_ovs_pink_abdominal_mountaineer_jason.skin_ovs_pink_abdominal_mountaineer_jason",
-    "character_slug": "character_Jason"
+    "slug": "profileicon_ovs_vibe_coding",
+    "assetType": "ProfileIconData",
+    "assetPath": "/OVS/Rewards/ProfileIcons/VibeCoding/profileicon_ovs_vibe_coding.profileicon_ovs_vibe_coding",
+    "character_slug": ""
   },
   {
     "slug": "emote_ovs_mistletoe",

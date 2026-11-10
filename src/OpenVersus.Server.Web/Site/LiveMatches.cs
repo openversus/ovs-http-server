@@ -18,6 +18,9 @@ namespace OpenVersus.Server.Web.Site;
 /// how many players are playing in each queue's matches (playing: the players of every match in progress and every set
 /// between its games, by the mode the match is listed with; the game's main menu panel shows it beside searching), and Arenas is on
 /// (arenaOpen: the game's main menu panel shows the Arena count only then; the page does not show it), and when it was made.
+/// A match being played also says how (transport: p2p, relay, or relay-fallback) and, for each player whose client
+/// reports them, their live network figures (net: delay, ping, depth; Core.Matches.LiveNetStats); a match that ended
+/// keeps each player's final ones (net.final: their figures for the whole match).
 /// </summary>
 public sealed class LiveMatches(IServiceProvider services, IOpsService ops, IOptionsMonitor<FfaSettings> ffa, TimeProvider time, ILogger<LiveMatches> log)
 {
@@ -90,6 +93,7 @@ public sealed class LiveMatches(IServiceProvider services, IOpsService ops, IOpt
     {
         var matches = new JsonArray();
         var playing = s_queues.ToDictionary(q => q, _ => 0);
+        var live = services.GetService<IConnectionMultiplexer>()?.GetDatabase();
         var views = await ops.MatchesAsync();
         if (views.Value is { } list)
         {
@@ -100,17 +104,50 @@ public sealed class LiveMatches(IServiceProvider services, IOpsService ops, IOpt
                     playing[mode] += m.Teams.Values.Sum(players => players.Count);
                 }
 
+                // Each player's figures as their client reports them (net: while the game is played, only while fresh,
+                // so an older client has none; once it ended, the final ones, marked so), and, while it is played, how
+                // (transport).
+                IReadOnlyDictionary<string, Core.Matches.LiveNetStat> net = new Dictionary<string, Core.Matches.LiveNetStat>();
+                string? transport = null;
+                if (live is not null)
+                {
+                    try
+                    {
+                        net = await Core.Matches.LiveNetStats.ReadAsync(live, m.MatchId, time.GetUtcNow());
+                        transport = m.Finished ? null : await Core.Matches.LiveNetStats.TransportAsync(live, m.MatchId);
+                    }
+                    catch (Exception e) when (e is RedisException or TimeoutException)
+                    {
+                        log.LogError("Live matches: the live figures of {Match} could not be read: {Error}", m.MatchId, e.Message);
+                    }
+                }
+
                 var teams = new JsonObject();
                 foreach (var (team, players) in m.Teams)
                 {
-                    teams[team] = new JsonArray([.. players.Select(p => (JsonNode?)new JsonObject { ["playerId"] = p.Id, ["username"] = p.Name, ["character"] = p.Character })]);
+                    teams[team] = new JsonArray([.. players.Select(p =>
+                    {
+                        var player = new JsonObject { ["playerId"] = p.Id, ["username"] = p.Name, ["character"] = p.Character };
+                        if (net.TryGetValue(p.Id, out var stat))
+                        {
+                            player["net"] = new JsonObject { ["delay"] = stat.Delay, ["ping"] = stat.Ping, ["depth"] = stat.Depth, ["final"] = stat.Final };
+                        }
+
+                        return (JsonNode?)player;
+                    })]);
                 }
 
-                matches.Add(new JsonObject
+                var match = new JsonObject
                 {
                     ["setId"] = m.SetId, ["matchId"] = m.MatchId, ["mode"] = m.Mode, ["scores"] = new JsonArray([.. m.Scores.Select(s => (JsonNode?)s)]),
                     ["gamesPlayed"] = m.GamesPlayed, ["conceded"] = m.Conceded, ["teams"] = teams, ["finished"] = m.Finished,
-                });
+                };
+                if (transport is not null)
+                {
+                    match["transport"] = transport;
+                }
+
+                matches.Add(match);
             }
         }
 

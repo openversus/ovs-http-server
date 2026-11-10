@@ -166,6 +166,8 @@ public sealed class OvsCtlTests : IAsyncLifetime
     [InlineData("player", "rename", "someone", "else")]
     [InlineData("ranked", "floor-reset")]
     [InlineData("ranked", "floor-reset", "--apply", "--min-sets", "5")]
+    [InlineData("asset", "retire", "skin_gone")]
+    [InlineData("asset", "retire", "skin_gone", "--replace-with", "profileicon_instead", "--equip", "skin_default", "--apply")]
     public async Task OpsWithoutTheirDatabaseAreRefusedClearly(params string[] args)
     {
         // The test service has neither Redis nor Mongo.

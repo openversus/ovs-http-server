@@ -190,6 +190,10 @@ internal sealed class MatchStatusEvents(IServiceProvider services, ISetRatings r
             return;
         }
 
+        // Whoever sends these is a rollback server carrying the match: a player's P2P node sends none. For a match
+        // given to the nodes it is the only sign of a relay taken without asking (LiveNetStats, the live matches page).
+        await redis.StringSetAsync(LiveNetStats.OnRelayKey(matchId), "1", s_matchTtl, When.NotExists);
+
         switch (ev)
         {
             case "MatchStarted":

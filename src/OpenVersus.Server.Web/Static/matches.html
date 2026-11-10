@@ -204,6 +204,31 @@
           font-size: 11px;
           font-weight: 700;
       }
+      /* What each player's client reports while the game is played: input delay, ping, rollback depth. */
+      .net_line {
+          margin-top: 2px;
+          color: #5a6170;
+          font-family: Arial, sans-serif;
+          font-size: 11px;
+          white-space: nowrap;
+      }
+      .net_line b {
+          color: var(--ink, #1f2937);
+          font-weight: 700;
+      }
+      /* How the game is played: between the players' own machines, or over a relay. */
+      .transport_flag {
+          display: block;
+          margin-top: 4px;
+          font-family: Arial, sans-serif;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 1px;
+          color: #6b7280;
+      }
+      .transport_flag.transport_p2p {
+          color: #15803d;
+      }
       .finished_flag {
           display: block;
           margin-top: 4px;
@@ -334,12 +359,21 @@
   function renderPlayer(p, rightSide) {
     const img = getCharacterImage(p.character);
     const charName = getCharacterName(p.character);
+    // The player's own client's figures (numbers only): frames of input delay, ping, and the mean depth of its
+    // rollbacks over its last report (10 s); once its match ended (final), over the whole match. Missing for a client
+    // that does not report them.
+    const n = p.net;
+    const netTitle = n && n.final
+      ? "This player's game's figures for the whole match: the input delay it ended on (frames), its last ping, and its average rollback depth (frames)"
+      : "Input delay (frames), ping, and average rollback depth (frames) over the last 10 seconds, as this player's game reports them";
+    const net = n ? `<div class="net_line" title="${netTitle}">Delay <b>${Number(n.delay) || 0}</b> · Ping <b>${Number(n.ping) || 0}</b> ms · Rollback <b>${(Number(n.depth) || 0).toFixed(1)}</b></div>` : '';
     return `
       <div class="player_row">
         <div class="char_icon" style="${img ? `background-image:url('${img}')` : ''}"></div>
         <div class="player_meta">
           <div class="player_name" title="${escapeHtml(p.username)}">${escapeHtml(p.username)}</div>
           <div class="char_name">${escapeHtml(charName)}</div>
+          ${net}
         </div>
       </div>
     `;
@@ -365,12 +399,17 @@
     const concede = m.conceded ? '<span class="concede_flag">CONCEDED</span>' : '';
     // A match that ended a few minutes ago (the server lists it for a while after its end).
     const finished = m.finished ? '<span class="finished_flag">FINISHED</span>' : '';
+    // How the game is played, while it is: P2P (between the players' own machines) or over the relay.
+    const transport = m.transport === 'p2p' ? '<span class="transport_flag transport_p2p" title="Played directly between the players\' machines">P2P</span>'
+      : m.transport === 'relay-fallback' ? '<span class="transport_flag" title="No direct path opened between the players, so the relay carries it">RELAY (NO DIRECT PATH)</span>'
+      : m.transport === 'relay' ? '<span class="transport_flag" title="Carried by the relay server">RELAY</span>' : '';
     return `
       <div class="match_card${m.finished ? ' finished' : ''}">
         <div class="team team_left">${team0}</div>
         <div class="score_block">
           ${score}
           <div class="mode_pill${pillClass}">${escapeHtml(pillText || '')}</div>
+          ${transport}
           ${concede}
           ${finished}
         </div>

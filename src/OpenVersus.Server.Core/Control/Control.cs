@@ -157,6 +157,9 @@ public static class ControlApi
         // The season's rating reset: a dry run unless apply=true.
         control.MapPost("/ops/ranked/floor-reset", async (bool? apply, int? minSets, IOpsService ops) =>
             ToResult(await ops.RankedFloorResetAsync(apply == true, minSets ?? 10)));
+        // An asset out of the players' data: a dry run unless apply=true.
+        control.MapPost("/ops/assets/retire", async (string? asset, string? replaceWith, string? equip, bool? apply, IOpsService ops) =>
+            ToResult(await ops.RetireAssetAsync(asset ?? "", replaceWith, equip, apply == true)));
 
         // Any other path under /control is said to be one, with the service and its version (a CLI newer than the service
         // asks for endpoints it does not have): the game's fallback would answer it, asking for a game token.

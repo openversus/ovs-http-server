@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using OpenVersus.Server.Core.Inventory;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Ops;
 using OpenVersus.Server.Core.Steam;
@@ -681,6 +682,101 @@ public sealed class RankedFloorResetCommand : AsyncCommand<RankedFloorResetSetti
             }
 
             _console.Write(table);
+        });
+    }
+}
+
+/// <summary>ovsctl asset retire: the match flow service by default (any service with Mongo and Redis will do).</summary>
+public sealed class AssetRetireSettings : ConnectionSettings
+{
+    protected override string DefaultService => "matchflow";
+
+    [CommandArgument(0, "<ASSET>")]
+    [Description("The slug of the asset that left the game (any kind but a fighter).")]
+    public string Asset { get; set; } = "";
+
+    [CommandOption("--replace-with <ITEM>")]
+    [Description("The item whoever was paid it holds instead (any kind). Its catalog row must be there before --apply. Without it, their entry is just removed.")]
+    public string? ReplaceWith { get; set; }
+
+    [CommandOption("--equip <ASSET>")]
+    [Description("What whoever has it equipped holds instead: an enabled asset of the same kind (and the same fighter, for a fighter's skins and taunts). Needed for --apply only when someone has it equipped.")]
+    public string? Equip { get; set; }
+
+    [CommandOption("--apply")]
+    [Description("Write it. Without it, a dry run: the counts of what would change, nothing written.")]
+    public bool Apply { get; set; }
+}
+
+public sealed class AssetRetireCommand : AsyncCommand<AssetRetireSettings>
+{
+    private readonly IAnsiConsole _console;
+
+    public AssetRetireCommand(IAnsiConsole console)
+    {
+        _console = console;
+    }
+
+    protected override async Task<int> ExecuteAsync(CommandContext context, AssetRetireSettings settings, CancellationToken cancellation)
+    {
+        using var client = ControlClient.For(settings);
+        // Markup only in the format string: what is interpolated is escaped, markup included.
+        return OvsCtl.Report(_console, settings, await client.RetireAssetAsync(settings.Asset, settings.ReplaceWith, settings.Equip, settings.Apply), r =>
+        {
+            string kind = r.AssetType ?? "no longer in the catalog";
+            if (r.Applied)
+            {
+                _console.MarkupLineInterpolated($"[red]Retired[/] {r.Asset} ({kind}):");
+            }
+            else
+            {
+                _console.MarkupLineInterpolated($"[yellow]Dry run[/] for {r.Asset} ({kind}); add --apply to write it:");
+            }
+
+            string does = r.Applied ? "now" : "would";
+            string instead = r.Equip ?? "(no --equip named)";
+            var table = new Table().Border(TableBorder.Rounded).AddColumn("What").AddColumn("Count");
+            table.AddRow(Markup.Escape(r.ReplaceWith is null ? $"Owners who {does} lose their entry" : $"Owners who {does} hold {r.ReplaceWith} instead"), r.Owners.ToString());
+            foreach (var equipped in r.Equipped)
+            {
+                table.AddRow(Markup.Escape($"Players with it equipped in {equipped.Collection} who {does} hold {instead}"), equipped.Documents.ToString());
+            }
+
+            if (r.Equipped.Count == 0)
+            {
+                table.AddRow("Players with it equipped", "0");
+            }
+
+            table.AddRow(Markup.Escape($"Players whose live session or cache {(r.Applied ? "held" : "holds")} it"), r.SessionsChanged.ToString());
+            table.AddRow(Markup.Escape(r.Applied ? "Catalog rows removed" : "Catalog rows to remove"), r.AssetRowsRemoved.ToString());
+            _console.Write(table);
+            if (!r.Applied && r.Equip is null && (r.Equipped.Count > 0 || r.SessionsChanged > 0))
+            {
+                _console.MarkupLineInterpolated($"[red]Someone has it equipped[/]: --apply needs --equip (what they hold instead).");
+            }
+
+            if (r.ReplaceWith is not null && !r.ReplacementInCatalog)
+            {
+                _console.MarkupLineInterpolated($"[red]{r.ReplaceWith} is not an enabled asset in the catalog[/]: sync its row before --apply.");
+            }
+            else if (r.ReplaceWith is not null && !r.ReplacementPaidOnly)
+            {
+                _console.MarkupLineInterpolated($"[yellow]Note[/]: this service gives {r.ReplaceWith} to every player (it is not on its paid-only list). If it is meant to be a reward, this service runs an older build.");
+            }
+
+            if (r.StillNamedIn.Count == 0)
+            {
+                _console.MarkupLineInterpolated($"No document names {r.Asset}{(r.Applied ? " any more" : "")}.");
+            }
+            else
+            {
+                _console.MarkupLineInterpolated($"{(r.Applied ? "Still named in" : "Named in")}: {string.Join(", ", r.StillNamedIn.Select(n => $"{n.Collection} ({n.Documents})"))}");
+            }
+
+            if (r.NotSearched.Count > 0)
+            {
+                _console.MarkupLineInterpolated($"Not searched: {string.Join(", ", r.NotSearched)}");
+            }
         });
     }
 }

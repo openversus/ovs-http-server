@@ -164,6 +164,10 @@ public interface IOpsService
 
     /// <summary>The season's rating reset (Leaderboards.RankedFloorReset): every rating to the bottom of its tier; written only with <paramref name="apply"/>.</summary>
     Task<ControlResult<RankedFloorResetView>> RankedFloorResetAsync(bool apply, int minSets);
+
+    /// <summary>Takes an asset out of the players' data (Inventory.AssetRetirement): its owners hold <paramref name="replaceWith"/> (when given), who
+    /// has it equipped holds <paramref name="equip"/>, its catalog row goes; written only with <paramref name="apply"/>.</summary>
+    Task<ControlResult<Inventory.AssetRetirementView>> RetireAssetAsync(string asset, string? replaceWith, string? equip, bool apply);
 }
 
 internal sealed class OpsService : IOpsService
@@ -710,6 +714,17 @@ internal sealed class OpsService : IOpsService
         double defaultElo = (_services.GetService<Microsoft.Extensions.Options.IOptionsMonitor<Leaderboards.RankedSettings>>()?.CurrentValue ?? new Leaderboards.RankedSettings()).DefaultElo;
         var view = await Leaderboards.RankedFloorReset.RunAsync(mongo.GetCollection<BsonDocument>("eloratings"), minSets, defaultElo, apply, _log, CancellationToken.None);
         return ControlResult<RankedFloorResetView>.Ok(view);
+    }
+
+    public async Task<ControlResult<Inventory.AssetRetirementView>> RetireAssetAsync(string asset, string? replaceWith, string? equip, bool apply)
+    {
+        if (_services.GetService<IMongoDatabase>() is not { } mongo)
+        {
+            return NoMongo<Inventory.AssetRetirementView>();
+        }
+
+        var (view, refused) = await Inventory.AssetRetirement.RunAsync(mongo, Redis, asset, replaceWith, equip, apply, _log, CancellationToken.None);
+        return view is null ? ControlResult<Inventory.AssetRetirementView>.Refused(refused ?? "refused") : ControlResult<Inventory.AssetRetirementView>.Ok(view);
     }
 
     private async Task<(BsonDocument? Value, string? Error)> ResolveAsync(IMongoCollection<BsonDocument> players, string who)

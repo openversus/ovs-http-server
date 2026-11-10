@@ -581,6 +581,21 @@ public sealed class MatchStatusEventsTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    // Only a rollback server sends match status events (a player's P2P node sends none): the first one marks the match
+    // as carried by a relay, which is how the live matches page tells a P2P match that ended up on one.
+    public async Task AnEventMarksTheMatchAsCarriedByARelay()
+    {
+        Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");
+        await SeedAsync(config: new JsonObject { ["p2p"] = true });
+        Assert.Equal(LiveNetStats.P2P, await LiveNetStats.TransportAsync(Db, Match));
+
+        await SendAsync(Event("MatchStarted", P1));
+
+        Assert.Equal(LiveNetStats.RelayAfterP2P, await LiveNetStats.TransportAsync(Db, Match));
+        Assert.InRange((await Db.KeyTimeToLiveAsync(LiveNetStats.OnRelayKey(Match)))!.Value, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(30));
+    }
+
+    [SkippableFact]
     public async Task AnUnratedDodgeSkipsOnlyTheRating()
     {
         Skip.IfNot(Configured, "set OVS_TEST_REDIS and OVS_TEST_MONGO to run");

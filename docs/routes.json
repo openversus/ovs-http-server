@@ -1544,6 +1544,23 @@
     "owner": "social"
   },
   {
+    "method": "POST",
+    "path": "/ovs/netstats",
+    "area": "ovs",
+    "binary": null,
+    "capture": 0,
+    "server": [
+      "POST /ovs/netstats"
+    ],
+    "notes": [
+      "server only"
+    ],
+    "kind": "ovs-client",
+    "in_game": false,
+    "in_server": true,
+    "owner": "web"
+  },
+  {
     "method": "GET",
     "path": "/ovs/notifications",
     "area": "ovs",

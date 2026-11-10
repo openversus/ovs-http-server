@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Text.Json;
 using OpenVersus.Server.Core.Control;
 using OpenVersus.Server.Core.Hosting;
+using OpenVersus.Server.Core.Inventory;
 using OpenVersus.Server.Core.Leaderboards;
 using OpenVersus.Server.Core.Ops;
 using OpenVersus.Server.Core.Settings;
@@ -209,6 +210,10 @@ public sealed class ControlClient : IDisposable
 
     public Task<ControlReply<RankedFloorResetView>> RankedFloorResetAsync(bool apply, int minSets) =>
         SendAsync<RankedFloorResetView>(HttpMethod.Post, $"/control/ops/ranked/floor-reset?apply={(apply ? "true" : "false")}&minSets={minSets}");
+
+    public Task<ControlReply<AssetRetirementView>> RetireAssetAsync(string asset, string? replaceWith, string? equip, bool apply) =>
+        SendAsync<AssetRetirementView>(HttpMethod.Post, $"/control/ops/assets/retire?asset={Uri.EscapeDataString(asset)}&replaceWith={Uri.EscapeDataString(replaceWith ?? "")}"
+            + $"&equip={Uri.EscapeDataString(equip ?? "")}&apply={(apply ? "true" : "false")}");
 
     private async Task<ControlReply<T>> SendAsync<T>(HttpMethod method, string path, HttpContent? body = null)
     {

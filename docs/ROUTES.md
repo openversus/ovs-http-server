@@ -156,6 +156,7 @@ Every row in `routes.json` has a `kind`: `game`, or one of OpenVersus's own (`ov
 | POST | `/ovs/friends/request` | social | — | yes | server only |
 | PUT | `/ovs/friends/send-request/{targetId}` | social | — | yes | server only |
 | DELETE | `/ovs/friends/{friendId}` | social | — | yes | server only |
+| POST | `/ovs/netstats` | web | — | yes | server only |
 | GET | `/ovs/notifications` | web | capture ×2299 | yes | capture only; server only |
 | POST | `/ovs/quit` | web | — | yes | server only |
 

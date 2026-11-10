@@ -56,6 +56,14 @@ public static class OvsCtl
                 ranked.AddCommand<RankedFloorResetCommand>("floor-reset").WithDescription("The season's rating reset: every rating (each character's, and the mode's) back to the bottom of its tier (Gold to 1000, Platinum to 1500, ...); under 500 stays; fewer than --min-sets sets goes to the default rating. Wins, losses and streaks are kept. A dry run unless --apply; back up eloratings first.")
                     .WithExample("ranked", "floor-reset").WithExample("ranked", "floor-reset", "--apply").WithExample("ranked", "floor-reset", "--min-sets", "5", "--apply");
             });
+            config.AddBranch("asset", asset =>
+            {
+                asset.SetDescription("An asset's place in the players' data. Asks the match flow service by default (any service with Mongo and Redis will do).");
+                asset.AddCommand<AssetRetireCommand>("retire").WithDescription("Take an asset that left the game (a skin, profile icon, banner, ring-out effect, taunt, stat tracker, announcer pack, perk, emote; not a fighter) out of the players' data: whoever was paid it is paid --replace-with instead (or just loses the entry), whoever has it equipped holds --equip (an enabled asset of the same kind), and its catalog row is deleted. A dry run (the counts, and every collection that names it) unless --apply; safe to run again.")
+                    .WithExample("asset", "retire", "skin_of_theirs", "--replace-with", "profileicon_instead", "--equip", "skin_character_default")
+                    .WithExample("asset", "retire", "skin_of_theirs", "--replace-with", "profileicon_instead", "--equip", "skin_character_default", "--apply")
+                    .WithExample("asset", "retire", "banner_of_theirs", "--equip", "banner_default", "--apply");
+            });
             config.AddBranch("steam", steam =>
             {
                 steam.SetDescription("The Steam identity service: the connection to Steam and the auth sessions it holds.");

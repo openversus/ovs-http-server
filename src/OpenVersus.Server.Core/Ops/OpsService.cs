@@ -167,7 +167,7 @@ public interface IOpsService
 
     /// <summary>Takes an asset out of the players' data (Inventory.AssetRetirement): its owners hold <paramref name="replaceWith"/> (when given), who
     /// has it equipped holds <paramref name="equip"/>, its catalog row goes; written only with <paramref name="apply"/>.</summary>
-    Task<ControlResult<Inventory.AssetRetirementView>> RetireAssetAsync(string asset, string? replaceWith, string? equip, bool apply);
+    Task<ControlResult<Inventory.AssetRetirementView>> RetireAssetAsync(string asset, string? replaceWith, string? equip, bool apply, bool search = false);
 }
 
 internal sealed class OpsService : IOpsService
@@ -716,14 +716,14 @@ internal sealed class OpsService : IOpsService
         return ControlResult<RankedFloorResetView>.Ok(view);
     }
 
-    public async Task<ControlResult<Inventory.AssetRetirementView>> RetireAssetAsync(string asset, string? replaceWith, string? equip, bool apply)
+    public async Task<ControlResult<Inventory.AssetRetirementView>> RetireAssetAsync(string asset, string? replaceWith, string? equip, bool apply, bool search = false)
     {
         if (_services.GetService<IMongoDatabase>() is not { } mongo)
         {
             return NoMongo<Inventory.AssetRetirementView>();
         }
 
-        var (view, refused) = await Inventory.AssetRetirement.RunAsync(mongo, Redis, asset, replaceWith, equip, apply, _log, CancellationToken.None);
+        var (view, refused) = await Inventory.AssetRetirement.RunAsync(mongo, Redis, asset, replaceWith, equip, apply, _log, CancellationToken.None, search);
         return view is null ? ControlResult<Inventory.AssetRetirementView>.Refused(refused ?? "refused") : ControlResult<Inventory.AssetRetirementView>.Ok(view);
     }
 

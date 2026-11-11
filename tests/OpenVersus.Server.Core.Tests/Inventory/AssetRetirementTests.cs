@@ -120,7 +120,7 @@ public sealed class AssetRetirementTests : IAsyncLifetime
         new() { { "slug", slug }, { "assetType", type }, { "character_slug", character }, { "enabled", enabled }, { "assetPath", $"/Test/{slug}.{slug}" } };
 
     private Task<(AssetRetirementView? View, string? Refused)> RunAsync(bool apply, string asset = Skin, string? replaceWith = Icon, string? equip = Default) =>
-        AssetRetirement.RunAsync(Mongo, Db, asset, replaceWith, equip, apply, NullLogger.Instance, default);
+        AssetRetirement.RunAsync(Mongo, Db, asset, replaceWith, equip, apply, NullLogger.Instance, default, search: true);
 
     private async Task<BsonDocument> ItemsAsync(string id) => (await Of("playeritems").Find(new BsonDocument("_id", ObjectId.Parse(id))).FirstAsync())["items"].AsBsonDocument;
 
@@ -142,6 +142,11 @@ public sealed class AssetRetirementTests : IAsyncLifetime
         Assert.True(view.ReplacementInCatalog);
         Assert.Equal([new AssetMention("dataassets", 1), new AssetMention("matchhistory", 1), new AssetMention("playeritems", 2), new AssetMention("playertesters", 1)], view.StillNamedIn);
         Assert.Empty(view.NotSearched);
+        // Unasked, the database is not searched (the counts are the same).
+        var (quick, _) = await AssetRetirement.RunAsync(Mongo, Db, Skin, Icon, Default, apply: false, NullLogger.Instance, default);
+        Assert.False(quick!.Searched);
+        Assert.Empty(quick.StillNamedIn);
+        Assert.Equal((2, 1, 1), (quick.Owners, quick.SessionsChanged, quick.AssetRowsRemoved));
 
         Assert.Equal(1, (await ItemsAsync(P1))[Skin].AsInt32);
         Assert.Equal(Skin, (await PlayerAsync(P1))["variant"].AsString);

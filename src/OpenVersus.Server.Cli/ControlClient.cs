@@ -211,9 +211,16 @@ public sealed class ControlClient : IDisposable
     public Task<ControlReply<RankedFloorResetView>> RankedFloorResetAsync(bool apply, int minSets) =>
         SendAsync<RankedFloorResetView>(HttpMethod.Post, $"/control/ops/ranked/floor-reset?apply={(apply ? "true" : "false")}&minSets={minSets}");
 
-    public Task<ControlReply<AssetRetirementView>> RetireAssetAsync(string asset, string? replaceWith, string? equip, bool apply) =>
-        SendAsync<AssetRetirementView>(HttpMethod.Post, $"/control/ops/assets/retire?asset={Uri.EscapeDataString(asset)}&replaceWith={Uri.EscapeDataString(replaceWith ?? "")}"
-            + $"&equip={Uri.EscapeDataString(equip ?? "")}&apply={(apply ? "true" : "false")}");
+    /// <summary>How long <see cref="RetireAssetAsync"/> waits: it reads every player's equip slots (and, asked to search, every collection).</summary>
+    public static readonly TimeSpan LongOperationTimeout = TimeSpan.FromMinutes(30);
+
+    public Task<ControlReply<AssetRetirementView>> RetireAssetAsync(string asset, string? replaceWith, string? equip, bool apply, bool search)
+    {
+        // Not the ten seconds every other command answers within: the service works through whole collections.
+        _http.Timeout = LongOperationTimeout;
+        return SendAsync<AssetRetirementView>(HttpMethod.Post, $"/control/ops/assets/retire?asset={Uri.EscapeDataString(asset)}&replaceWith={Uri.EscapeDataString(replaceWith ?? "")}"
+            + $"&equip={Uri.EscapeDataString(equip ?? "")}&apply={(apply ? "true" : "false")}&search={(search ? "true" : "false")}");
+    }
 
     private async Task<ControlReply<T>> SendAsync<T>(HttpMethod method, string path, HttpContent? body = null)
     {
@@ -223,7 +230,12 @@ public sealed class ControlClient : IDisposable
             using var request = new HttpRequestMessage(method, path) { Content = body };
             response = await _http.SendAsync(request);
         }
-        catch (Exception e) when (e is HttpRequestException or SocketException or TaskCanceledException)
+        catch (TaskCanceledException)
+        {
+            // It was reached and did not answer in time: what was asked may still be running there.
+            return new ControlReply<T>(default, $"no answer from the control API at {Where} within {_http.Timeout.TotalSeconds:0} s; the service may still be working on it (see its log)", Unreachable: true);
+        }
+        catch (Exception e) when (e is HttpRequestException or SocketException)
         {
             return new ControlReply<T>(default, $"cannot reach the control API at {Where}: {e.InnerException?.Message ?? e.Message}", Unreachable: true);
         }

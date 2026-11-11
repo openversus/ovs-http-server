@@ -706,6 +706,10 @@ public sealed class AssetRetireSettings : ConnectionSettings
     [CommandOption("--apply")]
     [Description("Write it. Without it, a dry run: the counts of what would change, nothing written.")]
     public bool Apply { get; set; }
+
+    [CommandOption("--search")]
+    [Description("Afterwards, search every collection for the asset's name and list where it is still named (read only). Reads the whole database through the service: minutes on a real one.")]
+    public bool Search { get; set; }
 }
 
 public sealed class AssetRetireCommand : AsyncCommand<AssetRetireSettings>
@@ -721,7 +725,7 @@ public sealed class AssetRetireCommand : AsyncCommand<AssetRetireSettings>
     {
         using var client = ControlClient.For(settings);
         // Markup only in the format string: what is interpolated is escaped, markup included.
-        return OvsCtl.Report(_console, settings, await client.RetireAssetAsync(settings.Asset, settings.ReplaceWith, settings.Equip, settings.Apply), r =>
+        return OvsCtl.Report(_console, settings, await client.RetireAssetAsync(settings.Asset, settings.ReplaceWith, settings.Equip, settings.Apply, settings.Search), r =>
         {
             string kind = r.AssetType ?? "no longer in the catalog";
             if (r.Applied)
@@ -764,7 +768,11 @@ public sealed class AssetRetireCommand : AsyncCommand<AssetRetireSettings>
                 _console.MarkupLineInterpolated($"[yellow]Note[/]: this service gives {r.ReplaceWith} to every player (it is not on its paid-only list). If it is meant to be a reward, this service runs an older build.");
             }
 
-            if (r.StillNamedIn.Count == 0)
+            if (!r.Searched)
+            {
+                _console.MarkupLineInterpolated($"Not searched for other mentions of {r.Asset}; --search reads every collection for them (slow).");
+            }
+            else if (r.StillNamedIn.Count == 0)
             {
                 _console.MarkupLineInterpolated($"No document names {r.Asset}{(r.Applied ? " any more" : "")}.");
             }

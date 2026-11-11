@@ -35,9 +35,12 @@ namespace OpenVersus.Server.Core.Inventory;
 // paks can equip it again until it updates): every step finds what names the asset now.
 // A fighter (CharacterData) is refused: a fighter is its skins, taunts, perk pages, ratings and stats too, not a slot's
 // value.
-// Last, read only: every collection is searched for the asset's name (as text, in each document), but the match
-// archives and any collection too large to read through, so what is left is seen, not assumed: a match's history may
-// keep naming what it was played with, and nothing here rewrites that.
+// Last, read only and only when asked (search): every collection is searched for the asset's name (as text, in each
+// document), but the match archives and any collection too large to read through, so what is left is seen, not
+// assumed: a match's history may keep naming what it was played with, and nothing here rewrites that. It reads the
+// whole database through this service, minutes on a real one, which is why it is not done unasked.
+// The rest reads every player's record, cosmetics and perk pages once: longer on a real database than a control
+// command usually takes (ovsctl waits for this one).
 
 /// <summary>A collection and how many of its documents name the asset.</summary>
 public sealed record AssetMention(string Collection, long Documents);
@@ -49,7 +52,7 @@ public sealed record AssetMention(string Collection, long Documents);
 /// named afterwards (in a dry run: now), with the collections that were not searched.
 /// </summary>
 public sealed record AssetRetirementView(bool Applied, string Asset, string? AssetType, string? ReplaceWith, string? Equip, long Owners, IReadOnlyList<AssetMention> Equipped,
-    long SessionsChanged, long AssetRowsRemoved, bool ReplacementInCatalog, bool ReplacementPaidOnly, IReadOnlyList<AssetMention> StillNamedIn, IReadOnlyList<string> NotSearched);
+    long SessionsChanged, long AssetRowsRemoved, bool ReplacementInCatalog, bool ReplacementPaidOnly, IReadOnlyList<AssetMention> StillNamedIn, IReadOnlyList<string> NotSearched, bool Searched = true);
 
 public static class AssetRetirement
 {
@@ -67,9 +70,12 @@ public static class AssetRetirement
 
     /// <summary>The view, or why it was refused (nothing written).</summary>
     public static async Task<(AssetRetirementView? View, string? Refused)> RunAsync(IMongoDatabase mongo, IDatabase? redis, string asset, string? replaceWith, string? equip,
-        bool apply, ILogger log, CancellationToken ct)
+        bool apply, ILogger log, CancellationToken ct, bool search = false)
     {
         asset = asset.Trim();
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        log.LogInformation("Asset {Asset}: {What} started (replace with {ReplaceWith}, equip {Equip}{Search})", asset, apply ? "retirement" : "a dry run of its retirement",
+            replaceWith ?? "nothing", equip ?? "nothing", search ? ", then a search of every collection" : "");
         replaceWith = replaceWith?.Trim() is { Length: > 0 } r ? r : null;
         equip = equip?.Trim() is { Length: > 0 } e ? e : null;
         foreach (var (name, slug) in new[] { ("asset", asset), ("replacement", replaceWith), ("fallback", equip) })
@@ -202,16 +208,20 @@ public static class AssetRetirement
         }
 
         var equipped = slots.GroupBy(s => s.Collection).Select(g => new AssetMention(g.Key, g.Count())).OrderBy(m => m.Collection, StringComparer.Ordinal).ToList();
-        var (named, notSearched) = await NamedInAsync(mongo, asset, ct);
-        var view = new AssetRetirementView(apply, asset, type, replaceWith, equip, owners, equipped, holding.Count, assetRows, inCatalog,
-            replaceWith is not null && Ownership.IsRestricted(replaceWith), named, notSearched);
+        // The writes are done: said now, before the search (which may take minutes and changes nothing).
         if (apply)
         {
-            log.LogWarning("Asset {Asset} ({Type}) retired: {Owners} owner(s){Replaced}; equipped by {Equipped}, now {Equip}; {Sessions} player(s) in Redis; {Rows} catalog row(s) removed; still named in {Named}",
-                asset, type ?? "not in the catalog", owners, replaceWith is null ? "" : $" now hold {replaceWith}",
+            log.LogWarning("Asset {Asset} ({Type}) retired in {Seconds:0.0} s: {Owners} owner(s){Replaced}; equipped by {Equipped}, now {Equip}; {Sessions} player(s) in Redis; {Rows} catalog row(s) removed",
+                asset, type ?? "not in the catalog", started.Elapsed.TotalSeconds, owners, replaceWith is null ? "" : $" now hold {replaceWith}",
                 equipped.Count == 0 ? "nobody" : string.Join(", ", equipped.Select(m => $"{m.Collection} ({m.Documents})")), equip ?? "nothing",
-                holding.Count, assetRows, named.Count == 0 ? "nothing searched" : string.Join(", ", named.Select(n => $"{n.Collection} ({n.Documents})")));
+                holding.Count, assetRows);
         }
+
+        var (named, notSearched) = search ? await NamedInAsync(mongo, asset, ct) : ([], []);
+        var view = new AssetRetirementView(apply, asset, type, replaceWith, equip, owners, equipped, holding.Count, assetRows, inCatalog,
+            replaceWith is not null && Ownership.IsRestricted(replaceWith), named, notSearched, search);
+        log.LogInformation("Asset {Asset}: {What} finished in {Seconds:0.0} s{Named}", asset, apply ? "retirement" : "dry run", started.Elapsed.TotalSeconds,
+            !search ? "" : named.Count == 0 ? "; named in no collection searched" : "; still named in " + string.Join(", ", named.Select(n => $"{n.Collection} ({n.Documents})")));
 
         return (view, null);
     }
